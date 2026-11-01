@@ -1296,39 +1296,34 @@ impl VideoModel for FalVideoModel {
         let response_headers = resp.response_headers;
         let raw_body = resp.value;
 
-        // Extract video URL from response. fal-video-model.ts buildResult:
-        // `mediaType` is the response's `content_type`, else `video/mp4`.
-        let media_type = raw_body
+        // fal-video-model.ts buildResult reads `response.video.url` only: an
+        // empty string counts as missing, and there is no top-level fallback.
+        let video_url = raw_body
             .get("video")
-            .and_then(|video| video.get("content_type"))
+            .and_then(|video| video.get("url"))
+            .and_then(Value::as_str)
+            .filter(|url| !url.is_empty());
+        let (Some(video), Some(video_url)) = (raw_body.get("video"), video_url) else {
+            return Err(AiMuxError::invalid_response_data(
+                "No video URL in response".to_string(),
+            ));
+        };
+
+        // `mediaType` is the response's `content_type`, else `video/mp4`.
+        let media_type = video
+            .get("content_type")
             .and_then(Value::as_str)
             .filter(|content_type| !content_type.is_empty())
             .unwrap_or("video/mp4")
             .to_string();
-        let videos: Vec<VideoData> = if let Some(video) = raw_body
-            .get("video")
-            .and_then(|v| v.get("url"))
-            .and_then(|v| v.as_str())
-        {
-            vec![VideoData::Url {
-                url: video.to_string(),
-                media_type,
-            }]
-        } else if let Some(url) = raw_body.get("url").and_then(|v| v.as_str()) {
-            vec![VideoData::Url {
-                url: url.to_string(),
-                media_type,
-            }]
-        } else {
-            return Err(AiMuxError::invalid_response_data(
-                "Fal video result missing video URL".to_string(),
-            ));
-        };
 
         Ok(VideoOperationStatus::Completed(VideoResult {
-            videos,
+            videos: vec![VideoData::Url {
+                url: video_url.to_string(),
+                media_type,
+            }],
             warnings: Vec::new(),
-            provider_metadata: None,
+            provider_metadata: Some(fal_video_metadata(&raw_body, video, video_url)),
             response: VideoResponse {
                 timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
@@ -1336,4 +1331,50 @@ impl VideoModel for FalVideoModel {
             },
         }))
     }
+}
+
+/// `providerMetadata.fal` of a completed video (`fal-video-model.ts`
+/// buildResult): the video's fields under `videos`, then the job's `seed`,
+/// `timings`, `has_nsfw_concepts` when present, and `prompt` when truthy.
+fn fal_video_metadata(
+    raw_body: &Value,
+    video: &Value,
+    video_url: &str,
+) -> aimux_core::shared::SharedProviderMetadata {
+    let field = |key: &str| video.get(key).cloned().unwrap_or(Value::Null);
+    let mut fal = Map::new();
+    fal.insert(
+        "videos".into(),
+        json!([{
+            "url": video_url,
+            "width": field("width"),
+            "height": field("height"),
+            "duration": field("duration"),
+            "fps": field("fps"),
+            "contentType": field("content_type"),
+        }]),
+    );
+    if let Some(seed) = raw_body.get("seed").filter(|seed| !seed.is_null()) {
+        fal.insert("seed".into(), seed.clone());
+    }
+    if let Some(timings) = raw_body.get("timings").filter(|timings| !timings.is_null()) {
+        fal.insert("timings".into(), timings.clone());
+    }
+    if let Some(nsfw) = raw_body
+        .get("has_nsfw_concepts")
+        .filter(|nsfw| !nsfw.is_null())
+    {
+        fal.insert("has_nsfw_concepts".into(), nsfw.clone());
+    }
+    if let Some(prompt) = raw_body
+        .get("prompt")
+        .and_then(Value::as_str)
+        .filter(|prompt| !prompt.is_empty())
+    {
+        fal.insert("prompt".into(), json!(prompt));
+    }
+
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
+    metadata.insert(options::NAMESPACE.into(), fal);
+    metadata
 }

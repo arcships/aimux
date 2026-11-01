@@ -441,3 +441,102 @@ async fn should_not_report_headers_from_the_queue_submission() {
         .unwrap();
     assert_eq!(start.response.headers, None);
 }
+
+/// fal-video-model.ts buildResult: a completed response without
+/// `video.url` is an error, and there is no top-level `url` fallback.
+#[tokio::test]
+async fn should_throw_when_the_video_url_is_missing() {
+    let server = MockServer::start().await;
+    mock_queue_and_result(&server, &json!({})).await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .video("fal-ai/kling-video");
+    let call = VideoCallOptions::new("A cat playing");
+    let start = model.do_start(&call).await.unwrap();
+
+    let error = model.do_status(&start.operation, &call).await.unwrap_err();
+    let aimux_core::error::AiMuxError::InvalidResponseData { message, .. } = &error else {
+        panic!("expected InvalidResponseData, got {error:?}");
+    };
+    assert_eq!(message, "No video URL in response");
+
+    // The top-level `url` is not read, and an empty string is not a URL.
+    for body in [
+        json!({ "url": "https://cdn.fal.run/video.mp4" }),
+        json!({ "video": { "url": "" } }),
+    ] {
+        let server = MockServer::start().await;
+        mock_queue_and_result(&server, &body).await;
+        let model = create_fal(FalProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        })
+        .unwrap()
+        .video("fal-ai/kling-video");
+        let call = VideoCallOptions::new("A cat playing");
+        let start = model.do_start(&call).await.unwrap();
+        assert!(
+            model.do_status(&start.operation, &call).await.is_err(),
+            "{body} should not produce a video"
+        );
+    }
+}
+
+/// `providerMetadata.fal` of a completed status (fal-video-model.ts
+/// buildResult): the video under `videos`, then `seed` and `timings`.
+#[tokio::test]
+async fn should_include_provider_metadata_in_a_completed_status() {
+    let server = MockServer::start().await;
+    mock_queue_and_result(
+        &server,
+        &json!({
+            "video": {
+                "url": "https://fal.media/files/video-output.mp4",
+                "width": 1920,
+                "height": 1080,
+                "duration": 5.0,
+                "fps": 24,
+                "content_type": "video/mp4",
+            },
+            "seed": 12345,
+            "timings": { "inference": 45.5 },
+        }),
+    )
+    .await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .video("fal-ai/kling-video");
+    let call = VideoCallOptions::new("A cat playing");
+    let start = model.do_start(&call).await.unwrap();
+
+    let status = model.do_status(&start.operation, &call).await.unwrap();
+    let VideoOperationStatus::Completed(result) = status else {
+        panic!("expected a completed status, got {status:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(result.provider_metadata.as_ref().unwrap()).unwrap(),
+        json!({
+            "fal": {
+                "videos": [{
+                    "url": "https://fal.media/files/video-output.mp4",
+                    "width": 1920,
+                    "height": 1080,
+                    "duration": 5.0,
+                    "fps": 24,
+                    "contentType": "video/mp4",
+                }],
+                "seed": 12345,
+                "timings": { "inference": 45.5 },
+            },
+        })
+    );
+}
