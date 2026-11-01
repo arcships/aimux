@@ -267,3 +267,50 @@ async fn should_reject_more_than_4_character_images_per_identity() {
         .to_string()
     );
 }
+
+/// A generation that ends `failed`, or `completed` without an image, fails
+/// with `InvalidResponseDataError` (luma-image-model.ts pollForImageUrl), not
+/// an API call error.
+#[tokio::test]
+async fn should_fail_with_invalid_response_data_for_a_failed_or_imageless_generation() {
+    for (poll, message) in [
+        (
+            json!({ "id": "gen-123", "state": "failed", "failure_reason": "Generation failed" }),
+            "Image generation failed.",
+        ),
+        (
+            json!({ "id": "gen-123", "state": "completed", "assets": null }),
+            "Image generation completed but no image was found.",
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/dream-machine/v1/generations/image"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/dream-machine/v1/generations/gen-123"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(poll))
+            .mount(&server)
+            .await;
+        let model = create_luma(LumaProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        })
+        .unwrap()
+        .image("photon-1");
+        let error = model.do_generate(&options(PROMPT)).await.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                aimux_core::error::AiMuxError::InvalidResponseData { message: m, .. } if m == message
+            ),
+            "{error:?}"
+        );
+    }
+}

@@ -18,7 +18,6 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
@@ -421,10 +420,10 @@ impl ImageModel for LumaImageModel {
                     luma_failed_response_handler(),
                 )
                 .await?;
-                let response_body = pr.raw_value.as_ref().map(ToString::to_string);
                 let pv = pr.value;
 
                 let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                // luma-image-model.ts pollForImageUrl
                 if state == "completed" {
                     return pv
                         .get("assets")
@@ -432,23 +431,15 @@ impl ImageModel for LumaImageModel {
                         .and_then(|v| v.as_str())
                         .map(|url| PollStep::Ready(url.to_string()))
                         .ok_or_else(|| {
-                            AiMuxError::invalid_response_data(format!(
-                                "Luma generation {generation_id} completed without assets.image"
-                            ))
+                            AiMuxError::invalid_response_data(
+                                "Image generation completed but no image was found.",
+                            )
                         });
                 }
                 if state == "failed" {
-                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some(state.to_string()),
-                        message: "Image generation failed.".into(),
-                        response_body,
-                        ..ApiCallError::new(
-                            "Image generation failed.",
-                            poll_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    })));
+                    return Err(AiMuxError::invalid_response_data(
+                        "Image generation failed.",
+                    ));
                 }
                 Ok(PollStep::Pending)
             },
