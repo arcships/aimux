@@ -1488,6 +1488,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recraft and Replicate download the generated images through the
+  provider's `fetch`, like the request that made them; a custom transport
+  (a proxy, a signing decorator, a test double) used to see the request but
+  not the downloads, which went out on the process default transport.
+
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
