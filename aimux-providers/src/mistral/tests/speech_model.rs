@@ -325,3 +325,37 @@ mod do_generate {
         let (_, _) = generate(options).await;
     }
 }
+
+/// aimux's own: the `mistral` namespace is parsed against
+/// `mistralSpeechModelOptions` with `parseProviderOptions`. A `refAudio`
+/// that is empty (`z.string().min(1)`), not a string or `null` fails with the
+/// upstream message and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for mistral in [
+            json!({ "refAudio": "" }),
+            json!({ "refAudio": 1 }),
+            json!({ "refAudio": null }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let model = provider_with(&fetch, MistralProviderSettings::default()).speech(MODEL_ID);
+            let mut options = text_options();
+            options.provider_options = Some(mistral_options(mistral.clone()));
+            let Err(error) = model.do_generate(&options).await else {
+                panic!("an invalid namespace fails: {mistral}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {mistral}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid mistral provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+}

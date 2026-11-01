@@ -1539,6 +1539,10 @@ mod provider_options_schema {
             json!({ "documentImageLimit": "8" }),
             json!({ "reasoningEffort": "medium" }),
             json!({ "promptCacheKey": null }),
+            json!({ "documentPageLimit": "64" }),
+            json!({ "structuredOutputs": "true" }),
+            json!({ "strictJsonSchema": 1 }),
+            json!({ "parallelToolCalls": null }),
         ] {
             let fetch = MockFetch::new(Vec::new());
             let call = CallOptions {
