@@ -9,7 +9,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
-use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
+use aimux_core::video_model::{VideoCallOptions, VideoModel, VideoOperationStatus, generate_video};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::{FalProviderSettings, create_fal};
 
@@ -47,7 +47,10 @@ fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
 async fn mock_queue_and_result(server: &MockServer, result: &Value) {
     Mock::given(method("POST"))
         .and(path("/fal-ai/kling-video"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"request_id": "test-id"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "request_id": "test-id",
+            "response_url": format!("{}/fal-ai/kling-video/requests/test-id", server.uri()),
+        })))
         .mount(server)
         .await;
     Mock::given(method("GET"))
@@ -272,4 +275,104 @@ async fn should_reject_video_options_outside_the_schema() {
         );
         assert!(cause.is_some(), "{fal}");
     }
+}
+
+/// fal-video-model.ts doStart: the queue answers with a `response_url` and
+/// the operation carries it; a queue answer without one fails.
+#[tokio::test]
+async fn should_require_a_response_url_from_the_queue() {
+    let server = MockServer::start().await;
+    let model = luma_dream_machine(&server).await;
+    let start = model
+        .do_start(&VideoCallOptions::new(LUMA_PROMPT))
+        .await
+        .unwrap();
+    assert_eq!(
+        start.operation,
+        json!({
+            "responseUrl": format!("{}/fal-ai/luma-dream-machine/requests/test-request-id-123", server.uri()),
+            "submitUrl": format!("{}/fal-ai/luma-dream-machine", server.uri()),
+        })
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/luma-dream-machine"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "request_id": "no-response-url" })),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let error = model
+        .do_start(&VideoCallOptions::new(LUMA_PROMPT))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::InvalidResponseData { message, .. } = &error else {
+        panic!("expected InvalidResponseData, got {error:?}");
+    };
+    assert_eq!(message, "No response URL returned from queue endpoint");
+}
+
+/// A status poll answered with `detail: "Request is still in progress"` is
+/// pending, whatever its status; any other error response ends the call
+/// (fal-video-model.ts fetchStatus).
+#[tokio::test]
+async fn should_poll_only_while_the_request_is_in_progress() {
+    let server = MockServer::start().await;
+    let model = luma_dream_machine(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/fal-ai/luma-dream-machine/requests/test-request-id-123",
+        ))
+        .respond_with(
+            ResponseTemplate::new(400)
+                .set_body_json(json!({ "detail": "Request is still in progress" })),
+        )
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/fal-ai/luma-dream-machine/requests/test-request-id-123",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "video": { "url": "https://fal.media/files/video-output.mp4" },
+        })))
+        .mount(&server)
+        .await;
+    let call = VideoCallOptions::new(LUMA_PROMPT);
+    let start = model.do_start(&call).await.unwrap();
+    let first = model.do_status(&start.operation, &call).await.unwrap();
+    assert!(matches!(first, VideoOperationStatus::Pending), "{first:?}");
+    let second = model.do_status(&start.operation, &call).await.unwrap();
+    assert!(
+        matches!(second, VideoOperationStatus::Completed(_)),
+        "{second:?}"
+    );
+
+    let failed = MockServer::start().await;
+    let model = luma_dream_machine(&failed).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/fal-ai/luma-dream-machine/requests/test-request-id-123",
+        ))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(json!({ "detail": "Invalid prompt" })),
+        )
+        .with_priority(1)
+        .mount(&failed)
+        .await;
+    let start = model
+        .do_start(&VideoCallOptions::new(LUMA_PROMPT))
+        .await
+        .unwrap();
+    let error = model
+        .do_status(&start.operation, &VideoCallOptions::new(LUMA_PROMPT))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected ApiCall, got {error:?}");
+    };
+    assert_eq!(detail.status_code, Some(400));
 }

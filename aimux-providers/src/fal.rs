@@ -263,6 +263,14 @@ struct FalJobResponse {
     request_id: String,
 }
 
+/// The video queue's answer (fal-video-model.ts `falJobResponseSchema`):
+/// both fields nullish, and only `response_url` is used.
+#[derive(Debug, Deserialize)]
+struct FalVideoJobResponse {
+    #[serde(default)]
+    response_url: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct FalChunk {
     text: String,
@@ -945,13 +953,6 @@ impl FalVideoModel {
     fn submit_path(&self) -> String {
         format!("/fal-ai/{}", self.normalized_model_id())
     }
-
-    fn poll_path(&self, request_id: &str) -> String {
-        format!(
-            "/fal-ai/{}/requests/{request_id}",
-            self.normalized_model_id()
-        )
-    }
 }
 
 /// `falVideoModelOptionsSchema` (fal-video-model-options.ts), checked only:
@@ -1066,8 +1067,9 @@ impl VideoModel for FalVideoModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit.
+        let submit_url = exchange.url(&self.submit_path());
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url(&self.submit_path()), options),
+            exchange.request(submit_url.clone(), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             fal_failed_response_handler(),
@@ -1075,10 +1077,13 @@ impl VideoModel for FalVideoModel {
         .await?;
 
         let response_headers = resp.response_headers;
-        let job: FalJobResponse = resp.value;
+        let job: FalVideoJobResponse = resp.value;
+        let response_url = job.response_url.ok_or_else(|| {
+            AiMuxError::invalid_response_data("No response URL returned from queue endpoint")
+        })?;
 
         Ok(VideoOperationStart {
-            operation: json!({ "request_id": job.request_id }),
+            operation: json!({ "responseUrl": response_url, "submitUrl": submit_url }),
             warnings,
             provider_metadata: None,
             response: VideoResponse {
@@ -1094,31 +1099,41 @@ impl VideoModel for FalVideoModel {
         operation: &Value,
         options: &VideoCallOptions,
     ) -> Result<VideoOperationStatus, AiMuxError> {
-        let request_id = operation
-            .get("request_id")
+        let response_url = operation
+            .get("responseUrl")
             .and_then(Value::as_str)
             .ok_or_else(|| {
                 AiMuxError::invalid_argument(
-                    "fal operation reference is missing request_id".to_string(),
+                    "fal operation reference is missing responseUrl".to_string(),
+                )
+            })?;
+        let submit_url = operation
+            .get("submitUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::invalid_argument(
+                    "fal operation reference is missing submitUrl".to_string(),
                 )
             })?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
+        // The status URL comes from the queue response body, so it goes
+        // through the SSRF guard; the credential only while it stays on the
+        // origin that was submitted to (fal-video-model.ts fetchStatus).
+        let mut request = exchange.request(response_url.to_string(), options);
+        request.validate_url = true;
+        request.trusted_origin = Some(submit_url.to_string());
         let resp = aimux_provider_utils::get_from_api(
-            exchange.request(exchange.url(&self.poll_path(request_id)), options),
+            request,
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),
         )
         .await;
 
-        // Fal returns 400/404 while a queued request is still registering or
-        // running; that is Pending, not a failure.
         let resp = match resp {
             Ok(response) => response,
-            Err(AiMuxError::ApiCall(detail)) if matches!(detail.status_code, Some(400 | 404)) => {
-                return Ok(VideoOperationStatus::Pending);
-            }
+            Err(error) if is_in_progress(&error) => return Ok(VideoOperationStatus::Pending),
             Err(error) => return Err(error),
         };
 
