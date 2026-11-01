@@ -3026,3 +3026,48 @@ mod older_realtime_ws_replay {
         );
     }
 }
+
+/// aimux's own: `providerOptions.openai` is parsed against
+/// `openAITranscriptionModelOptions`
+/// (transcription/openai-transcription-model.ts:173-177). A value outside the
+/// schema fails with the upstream message before anything is sent.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for openai in [
+            json!({ "include": [1] }),
+            json!({ "language": null }),
+            json!({ "temperature": 2 }),
+            json!({ "temperature": null }),
+            json!({ "timestampGranularities": ["sentence"] }),
+            json!({ "responseFormat": "text" }),
+            json!({ "chunkingStrategy": "manual" }),
+            json!({ "chunkingStrategy": { "type": "client_vad" } }),
+            json!({ "chunkingStrategy": { "type": "server_vad", "threshold": 2 } }),
+            json!({ "chunkingStrategy": { "type": "server_vad", "prefixPaddingMs": 1.5 } }),
+            json!({ "streaming": { "delay": "max" } }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let Err(error) = provider(&mock)
+                .transcription("whisper-1")
+                .do_generate(&options_with("audio/wav", json!({ "openai": openai })))
+                .await
+            else {
+                panic!("{openai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {openai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{openai}"
+            );
+            assert!(cause.is_some(), "{openai}");
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+}

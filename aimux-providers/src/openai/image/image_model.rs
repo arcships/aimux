@@ -15,7 +15,7 @@ use aimux_core::image_model::{
     ImageResult, ImageUsage,
 };
 use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
-use aimux_provider_utils::HttpBody;
+use aimux_provider_utils::{HttpBody, optional_field};
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -184,53 +184,140 @@ impl ImageModel for OpenAIImageModel {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Validate the fields accepted by the upstream generation/edit schemas.
-fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result<(), AiMuxError> {
-    let Some(options) = options.get("openai") else {
-        return Ok(());
-    };
-    let enums: &[(&str, &[&str])] = &[
-        (
-            "quality",
-            &[
-                "standard", "hd", "low", "medium", "high", "xhigh", "max", "auto",
-            ],
-        ),
-        ("background", &["transparent", "opaque", "auto"]),
-        ("outputFormat", &["png", "jpeg", "webp"]),
-    ];
-    let validate_enum = |name: &str, values: &[&str]| -> Result<(), AiMuxError> {
-        if let Some(value) = options.get(name)
-            && !value.as_str().is_some_and(|value| values.contains(&value))
-        {
-            return Err(AiMuxError::invalid_argument(format!(
-                "invalid openai image option: {name}"
-            )));
-        }
-        Ok(())
-    };
-    for (name, values) in enums {
-        validate_enum(name, values)?;
-    }
-    if edit {
-        validate_enum("inputFidelity", &["high", "low"])?;
+/// `baseImageModelOptionsObject` (openai-image-model-options.ts). Every key
+/// is `.optional()`: absent is `None`, `null` fails. Only checked: the
+/// request is built from the namespace as given.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct BaseImageOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    quality: Option<Quality>,
+    #[serde(default, deserialize_with = "optional_field")]
+    background: Option<Background>,
+    #[serde(default, deserialize_with = "optional_field")]
+    output_format: Option<OutputFormat>,
+    /// `z.number().int().min(0).max(100)`.
+    #[serde(default, deserialize_with = "output_compression")]
+    output_compression: Option<f64>,
+    #[serde(default, deserialize_with = "optional_field")]
+    user: Option<String>,
+}
+
+/// `openaiImageModelGenerationOptions`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct ImageGenerationOptions {
+    #[serde(flatten)]
+    base: BaseImageOptions,
+    #[serde(default, deserialize_with = "optional_field")]
+    style: Option<Style>,
+    #[serde(default, deserialize_with = "optional_field")]
+    moderation: Option<Moderation>,
+}
+
+/// `openaiImageModelEditOptions`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct ImageEditOptions {
+    #[serde(flatten)]
+    base: BaseImageOptions,
+    #[serde(default, deserialize_with = "optional_field")]
+    input_fidelity: Option<InputFidelity>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Quality {
+    Standard,
+    Hd,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+    Auto,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Background {
+    Transparent,
+    Opaque,
+    Auto,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum OutputFormat {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Style {
+    Vivid,
+    Natural,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Moderation {
+    Auto,
+    Low,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum InputFidelity {
+    High,
+    Low,
+}
+
+/// `outputCompression`: an integer from 0 to 100 (`null` fails).
+fn output_compression<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    use serde::Deserialize as _;
+    let value = f64::deserialize(deserializer)?;
+    if (0.0..=100.0).contains(&value) && value.fract() == 0.0 {
+        Ok(Some(value))
     } else {
-        validate_enum("style", &["vivid", "natural"])?;
-        validate_enum("moderation", &["auto", "low"])?;
+        Err(serde::de::Error::custom(
+            "expected an integer from 0 to 100",
+        ))
     }
-    if let Some(value) = options.get("outputCompression")
-        && !value
-            .as_f64()
-            .is_some_and(|value| (0.0..=100.0).contains(&value) && value.fract() == 0.0)
-    {
-        return Err(AiMuxError::invalid_argument(
-            "invalid openai image option: outputCompression",
-        ));
-    }
-    if options.get("user").is_some_and(|value| !value.is_string()) {
-        return Err(AiMuxError::invalid_argument(
-            "invalid openai image option: user",
-        ));
+}
+
+/// `parseProviderOptions` with `openaiImageModelEditOptions` (an edit) or
+/// `openaiImageModelGenerationOptions` (openai-image-model.ts:136-140,
+/// 226-230).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid openai provider options" when the `openai`
+/// namespace does not match the schema, with the serde error as its cause.
+fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result<(), AiMuxError> {
+    if edit {
+        aimux_provider_utils::parse_provider_options::<ImageEditOptions>("openai", Some(options))?;
+    } else {
+        aimux_provider_utils::parse_provider_options::<ImageGenerationOptions>(
+            "openai",
+            Some(options),
+        )?;
     }
     Ok(())
 }

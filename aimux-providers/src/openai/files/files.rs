@@ -38,7 +38,7 @@ impl Files for OpenAIFiles {
         &self,
         options: &UploadFileCallOptions,
     ) -> Result<UploadFileResult, AiMuxError> {
-        let openai_options = parse_openai_files_options(options.provider_options.as_ref());
+        let openai_options = parse_openai_files_options(options.provider_options.as_ref())?;
         let purpose = openai_options
             .purpose
             .unwrap_or_else(|| "assistants".to_string());

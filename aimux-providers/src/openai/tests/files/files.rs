@@ -328,3 +328,39 @@ mod openai_files_upload_file {
 // - OpenAI Files - getFileMetadata, downloadFile, deleteFile › all cases: the
 //   `Files` trait has only `upload_file` (no `get_file_metadata`,
 //   `download_file`, `delete_file`).
+
+/// aimux's own: `providerOptions.openai` is parsed against
+/// `openaiFilesOptionsSchema` (openai-files.ts:94-98). A value outside the
+/// schema fails with the upstream message before anything is sent.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for openai in [
+            json!({ "purpose": 1 }),
+            json!({ "purpose": null }),
+            json!({ "expiresAfter": "3600" }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let Err(error) = provider(&mock)
+                .files()
+                .upload_file(&upload_options(Some(json!({ "openai": openai }))))
+                .await
+            else {
+                panic!("{openai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {openai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{openai}"
+            );
+            assert!(cause.is_some(), "{openai}");
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+}
