@@ -480,15 +480,16 @@ impl ImageModel for LumaImageModel {
         // Download image; assets.image is a URL from the poll response body,
         // so it goes through the SSRF download guard.
         let ir = retry_download(options.abort_signal.as_ref(), poll_interval, || {
+            // luma-image-model.ts downloadImage: through the provider's
+            // `fetch`, like every other request of the call.
             aimux_provider_utils::get_from_api(
-                HttpRequest {
+                exchange.with_transport(HttpRequest {
                     url: image_url.clone(),
                     abort_signal: options.abort_signal.clone(),
                     validate_url: true,
                     trusted_origin: Some(exchange.base_url().to_string()),
-                    credentialed_origin: Some(exchange.base_url().to_string()),
                     ..Default::default()
-                },
+                }),
                 aimux_provider_utils::create_binary_response_handler(),
                 aimux_provider_utils::create_status_code_error_response_handler(),
             )
