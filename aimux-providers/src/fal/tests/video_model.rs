@@ -12,7 +12,7 @@
 //! builds the pair. Second, each status response is mounted per test instead
 //! of living in one shared route table. The `_internal.currentDate` hook has
 //! no Rust counterpart, so a test that pins the timestamp cannot be ported
-//! literally; the one case that did is ignored below.
+//! literally; no case here pins one.
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
@@ -568,7 +568,8 @@ mod fal_video_model {
         /// upstream: @ai-sdk/fal src/fal-video-model.test.ts › FalVideoModel › doStatus › should return completed status with video data
         ///
         /// The case also asserts `result.providerMetadata?.fal` is defined;
-        /// that half is the ignored provider-metadata case below.
+        /// that half has its own case, `should_include_provider_metadata_in_
+        /// completed_status`.
         #[tokio::test]
         async fn should_return_completed_status_with_video_data() {
             let server = default_server().await;
