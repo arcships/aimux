@@ -226,7 +226,13 @@ impl ImageModel for LumaImageModel {
             .and_then(|v| v.as_array())
             .cloned();
 
-        // Build editing options from files
+        // Build editing options from files (luma-image-model.ts
+        // getEditingOptions): the mask is refused first, files or not.
+        if options.mask.is_some() {
+            return Err(AiMuxError::invalid_argument(
+                "Luma AI does not support mask-based image editing. Use the prompt to describe the changes you want to make, along with `prompt.images` containing the source image URL.",
+            ));
+        }
         let mut editing_opts = Map::new();
         if let Some(ref files) = options.files
             && !files.is_empty()
@@ -235,7 +241,7 @@ impl ImageModel for LumaImageModel {
             for file in files {
                 if !matches!(file, ImageFile::Url { .. }) {
                     return Err(AiMuxError::invalid_argument(
-                        "Luma AI only supports URL-based images.",
+                        "Luma AI only supports URL-based images. Please provide image URLs using `prompt.images` with publicly accessible URLs. Base64 and Uint8Array data are not supported.",
                     ));
                 }
             }
@@ -303,9 +309,10 @@ impl ImageModel for LumaImageModel {
                 }
                 "modify_image" => {
                     if files.len() > 1 {
-                        return Err(AiMuxError::invalid_argument(
-                            "Luma AI modify_image only supports a single input image.",
-                        ));
+                        return Err(AiMuxError::invalid_argument(format!(
+                            "Luma AI modify_image only supports a single input image. You provided {} images.",
+                            files.len()
+                        )));
                     }
                     let url = if let ImageFile::Url { url } = &files[0] {
                         url.clone()
@@ -326,9 +333,10 @@ impl ImageModel for LumaImageModel {
                 _ => {
                     // image (default)
                     if files.len() > 4 {
-                        return Err(AiMuxError::invalid_argument(
-                            "Luma AI image supports up to 4 reference images.",
-                        ));
+                        return Err(AiMuxError::invalid_argument(format!(
+                            "Luma AI image supports up to 4 reference images. You provided {} images.",
+                            files.len()
+                        )));
                     }
                     let arr: Vec<Value> = files
                         .iter()
@@ -351,12 +359,6 @@ impl ImageModel for LumaImageModel {
                     editing_opts.insert("image".into(), json!(arr));
                 }
             }
-        }
-
-        if options.mask.is_some() {
-            return Err(AiMuxError::invalid_argument(
-                "Luma AI does not support mask-based image editing.",
-            ));
         }
 
         // Build request body

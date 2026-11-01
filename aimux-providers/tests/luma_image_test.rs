@@ -314,3 +314,67 @@ async fn should_fail_with_invalid_response_data_for_a_failed_or_imageless_genera
         );
     }
 }
+
+/// The mask is refused before the files are looked at, so a file Luma could
+/// not take either still fails as a mask (luma-image-model.ts
+/// getEditingOptions); the messages are upstream's.
+#[tokio::test]
+async fn should_refuse_a_mask_before_the_files() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(vec![ImageFile::File {
+        media_type: "image/png".into(),
+        data: aimux_core::image_model::ImageFileData::Binary(vec![137, 80, 78, 71]),
+    }]);
+    opts.mask = Some(url_file("https://example.com/mask.png"));
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI does not support mask-based image editing. Use the prompt to describe the changes you want to make, along with `prompt.images` containing the source image URL."
+        )
+        .to_string()
+    );
+
+    opts.mask = None;
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI only supports URL-based images. Please provide image URLs using `prompt.images` with publicly accessible URLs. Base64 and Uint8Array data are not supported."
+        )
+        .to_string()
+    );
+
+    opts.files = Some(
+        (1..=5)
+            .map(|i| url_file(&format!("https://example.com/{i}.jpg")))
+            .collect(),
+    );
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI image supports up to 4 reference images. You provided 5 images."
+        )
+        .to_string()
+    );
+
+    opts.files.as_mut().unwrap().truncate(2);
+    opts.provider_options =
+        serde_json::from_value(json!({ "luma": { "referenceType": "modify_image" } })).unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI modify_image only supports a single input image. You provided 2 images."
+        )
+        .to_string()
+    );
+}
