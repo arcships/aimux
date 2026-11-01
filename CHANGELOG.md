@@ -1488,6 +1488,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fal follows `@ai-sdk/fal` 3.0.54:
+  - Image, transcription and video calls parse `providerOptions.fal` against
+    the upstream schemas and fail with `invalid fal provider options` when a
+    value is outside them. Transcription fills the schema defaults
+    (`language: "en"`, `version: "3"`, `batch_size: 64`,
+    `chunk_level: "segment"`) once the namespace is set. Video calls send the
+    options at all: `loop`, `motion_strength`, `resolution`,
+    `negative_prompt`, `prompt_optimizer`, and every other key as given.
+  - Image options are rewritten like the upstream transform: a deprecated
+    snake_case key wins over its camelCase twin and adds one warning, and a
+    known key set to `null` is not sent. An unset `image_size` is not sent
+    either, nor a video `seed` or `duration` of 0.
+  - Transcription and video polls treat only
+    `{"detail": "Request is still in progress"}` as pending, whatever the
+    status; any other error response ends the call, where a 400 or 404 was
+    polled until the attempts ran out.
+  - A video is polled at the `response_url` the queue returns, through the
+    SSRF guard; the operation is `{responseUrl, submitUrl}`, and a queue
+    answer without the URL fails with `No response URL returned from queue
+    endpoint`.
+  - Errors read a validation error as one `loc: msg` line per entry instead
+    of the first `msg`. Image metadata carries each image's `nsfw` flag, the
+    multiple-files warning has the upstream wording, and image models report
+    `supports_file_inputs` / `supports_mask_inputs` by model id.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
