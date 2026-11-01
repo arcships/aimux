@@ -267,3 +267,37 @@ async fn should_include_api_key_header() {
     let h = &requests[0].headers;
     assert_eq!(h.get("xi-api-key").unwrap(), "test-api-key");
 }
+
+/// TS: "should include user-agent header" (elevenlabs-speech-model.test.ts),
+/// with the pinned version in place of upstream's mocked `0.0.0-test`; the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/elevenlabs@3.0.54` depends on.
+#[tokio::test]
+async fn should_include_user_agent_header() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut options = speech_options("Hello, world!");
+    options.voice = Some("test-voice-id".to_string());
+    provider
+        .speech("eleven_multilingual_v2")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(
+        user_agent.contains("ai-sdk-elevenlabs/3.0.54"),
+        "{user_agent}"
+    );
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}

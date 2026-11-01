@@ -137,8 +137,15 @@ pub fn create_deepgram(settings: DeepgramProviderSettings) -> Result<DeepgramPro
             AuthScheme::Scheme("Token"),
             Vec::new(),
             settings.headers,
+        )
+        .with_user_agent(
+            crate::shared::aisdk_pins::DEEPGRAM.name,
+            crate::shared::aisdk_pins::DEEPGRAM.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::DEEPGRAM,
+        )),
     })
 }
 

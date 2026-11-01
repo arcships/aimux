@@ -1488,6 +1488,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fal, Deepgram, ElevenLabs and Luma send the `ai-sdk-<package>/<version>` user-agent part of their `@ai-sdk/*` package (`withUserAgentSuffix` in each `createX`), and their `ai-sdk-provider-utils/<v>` part names the provider-utils that package depends on (5.0.53).
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
