@@ -1679,4 +1679,25 @@ mod provider_options_schema {
             assert!(mock.seen().is_empty(), "{openai}");
         }
     }
+
+    /// The request is built from the parsed options: `outputCompression`
+    /// written as `80.0` passes `int()` and is sent as the integer `80`, as
+    /// `JSON.stringify` writes it.
+    #[tokio::test]
+    async fn the_request_carries_the_parsed_options() {
+        let mock = MockFetch::new(vec![json_response(&fixture("openai-image"), &[])]);
+
+        provider(&mock)
+            .image("gpt-image-1")
+            .do_generate(&options(
+                size_1024(),
+                json!({ "openai": { "outputCompression": 80.0, "style": "natural" } }),
+            ))
+            .await
+            .unwrap();
+
+        let body = mock.seen()[0].json_body();
+        assert_eq!(body["output_compression"], json!(80));
+        assert_eq!(body["style"], json!("natural"));
+    }
 }

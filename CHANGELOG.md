@@ -2043,8 +2043,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcription and files dropped a value of the wrong type (transcription
   also the non-string entries of `include` and `timestampGranularities`)
   and forwarded an unknown `responseFormat`, `chunkingStrategy` or
-  `streaming.delay`. The requests for valid options are unchanged (RFC-0046
-  R1).
+  `streaming.delay`. The requests for valid options are unchanged but for
+  two: files used to leave out an `expiresAfter` that is not a non-negative
+  integer (fractional, negative, or written with a decimal point) and now
+  send it as written, as upstream's `String(value)` does; image sends an
+  `outputCompression` written as `80.0` as `80`, as `JSON.stringify` does
+  (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq

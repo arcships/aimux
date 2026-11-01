@@ -14,8 +14,8 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
-use aimux_provider_utils::{HttpBody, optional_field};
+use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_provider_utils::HttpBody;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -123,8 +123,7 @@ impl ImageModel for OpenAIImageModel {
 
         let (body_value, response_headers, _response_body) = if options.files.is_some() {
             // ── Edit path: multipart form data ──
-            validate_image_options(&options.provider_options, true)?;
-            let openai_options = parse_edit_provider_options(&options.provider_options);
+            let openai_options = parse_edit_provider_options(&options.provider_options)?;
             let (form_body, content_type) =
                 build_edit_multipart(&self.model_id, options, &openai_options).await?;
 
@@ -141,8 +140,7 @@ impl ImageModel for OpenAIImageModel {
             (val, resp.response_headers, None)
         } else {
             // ── Generation path: JSON body ──
-            validate_image_options(&options.provider_options, false)?;
-            let openai_options = parse_generation_provider_options(&options.provider_options);
+            let openai_options = parse_generation_provider_options(&options.provider_options)?;
             let body = self
                 .config
                 .transform_body(Value::Object(build_generation_body(
@@ -184,144 +182,6 @@ impl ImageModel for OpenAIImageModel {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// `baseImageModelOptionsObject` (openai-image-model-options.ts). Every key
-/// is `.optional()`: absent is `None`, `null` fails. Only checked: the
-/// request is built from the namespace as given.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(
-    dead_code,
-    reason = "validated only; the request is built from the raw namespace"
-)]
-struct BaseImageOptions {
-    #[serde(default, deserialize_with = "optional_field")]
-    quality: Option<Quality>,
-    #[serde(default, deserialize_with = "optional_field")]
-    background: Option<Background>,
-    #[serde(default, deserialize_with = "optional_field")]
-    output_format: Option<OutputFormat>,
-    /// `z.number().int().min(0).max(100)`.
-    #[serde(default, deserialize_with = "output_compression")]
-    output_compression: Option<f64>,
-    #[serde(default, deserialize_with = "optional_field")]
-    user: Option<String>,
-}
-
-/// `openaiImageModelGenerationOptions`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(
-    dead_code,
-    reason = "validated only; the request is built from the raw namespace"
-)]
-struct ImageGenerationOptions {
-    #[serde(flatten)]
-    base: BaseImageOptions,
-    #[serde(default, deserialize_with = "optional_field")]
-    style: Option<Style>,
-    #[serde(default, deserialize_with = "optional_field")]
-    moderation: Option<Moderation>,
-}
-
-/// `openaiImageModelEditOptions`.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(
-    dead_code,
-    reason = "validated only; the request is built from the raw namespace"
-)]
-struct ImageEditOptions {
-    #[serde(flatten)]
-    base: BaseImageOptions,
-    #[serde(default, deserialize_with = "optional_field")]
-    input_fidelity: Option<InputFidelity>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Quality {
-    Standard,
-    Hd,
-    Low,
-    Medium,
-    High,
-    Xhigh,
-    Max,
-    Auto,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Background {
-    Transparent,
-    Opaque,
-    Auto,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum OutputFormat {
-    Png,
-    Jpeg,
-    Webp,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Style {
-    Vivid,
-    Natural,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Moderation {
-    Auto,
-    Low,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum InputFidelity {
-    High,
-    Low,
-}
-
-/// `outputCompression`: an integer from 0 to 100 (`null` fails).
-fn output_compression<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error> {
-    use serde::Deserialize as _;
-    let value = f64::deserialize(deserializer)?;
-    if (0.0..=100.0).contains(&value) && value.fract() == 0.0 {
-        Ok(Some(value))
-    } else {
-        Err(serde::de::Error::custom(
-            "expected an integer from 0 to 100",
-        ))
-    }
-}
-
-/// `parseProviderOptions` with `openaiImageModelEditOptions` (an edit) or
-/// `openaiImageModelGenerationOptions` (openai-image-model.ts:136-140,
-/// 226-230).
-///
-/// # Errors
-///
-/// `InvalidArgument` "invalid openai provider options" when the `openai`
-/// namespace does not match the schema, with the serde error as its cause.
-fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result<(), AiMuxError> {
-    if edit {
-        aimux_provider_utils::parse_provider_options::<ImageEditOptions>("openai", Some(options))?;
-    } else {
-        aimux_provider_utils::parse_provider_options::<ImageGenerationOptions>(
-            "openai",
-            Some(options),
-        )?;
-    }
-    Ok(())
-}
-
 /// Build the JSON body for `/images/generations`.
 ///
 /// Fields with `None` values are omitted (matching TS behaviour where
@@ -340,26 +200,27 @@ fn build_generation_body(
     if let Some(size) = options.size {
         body.insert("size".to_string(), json!(size.to_string()));
     }
-    if let Some(ref v) = openai.quality {
-        body.insert("quality".to_string(), v.clone());
+    let base = &openai.base;
+    if let Some(quality) = base.quality {
+        body.insert("quality".to_string(), json!(quality.as_str()));
     }
-    if let Some(ref v) = openai.style {
-        body.insert("style".to_string(), v.clone());
+    if let Some(style) = openai.style {
+        body.insert("style".to_string(), json!(style.as_str()));
     }
-    if let Some(ref v) = openai.background {
-        body.insert("background".to_string(), v.clone());
+    if let Some(background) = base.background {
+        body.insert("background".to_string(), json!(background.as_str()));
     }
-    if let Some(ref v) = openai.moderation {
-        body.insert("moderation".to_string(), v.clone());
+    if let Some(moderation) = openai.moderation {
+        body.insert("moderation".to_string(), json!(moderation.as_str()));
     }
-    if let Some(ref v) = openai.output_format {
-        body.insert("output_format".to_string(), v.clone());
+    if let Some(output_format) = base.output_format {
+        body.insert("output_format".to_string(), json!(output_format.as_str()));
     }
-    if let Some(ref v) = openai.output_compression {
-        body.insert("output_compression".to_string(), v.clone());
+    if let Some(output_compression) = base.output_compression {
+        body.insert("output_compression".to_string(), json!(output_compression));
     }
-    if let Some(ref v) = openai.user {
-        body.insert("user".to_string(), v.clone());
+    if let Some(ref user) = base.user {
+        body.insert("user".to_string(), json!(user));
     }
     if !has_default_response_format(model_id) {
         body.insert("response_format".to_string(), json!("b64_json"));
@@ -426,33 +287,39 @@ async fn build_edit_multipart(
     if let Some(size) = options.size {
         write_text_field(&mut body, &boundary, "size", &size.to_string());
     }
-    if let Some(ref v) = openai.quality
-        && let Some(s) = v.as_str()
-    {
-        write_text_field(&mut body, &boundary, "quality", s);
+    let base = &openai.base;
+    if let Some(quality) = base.quality {
+        write_text_field(&mut body, &boundary, "quality", quality.as_str());
     }
-    if let Some(ref v) = openai.background
-        && let Some(s) = v.as_str()
-    {
-        write_text_field(&mut body, &boundary, "background", s);
+    if let Some(background) = base.background {
+        write_text_field(&mut body, &boundary, "background", background.as_str());
     }
-    if let Some(ref v) = openai.output_format
-        && let Some(s) = v.as_str()
-    {
-        write_text_field(&mut body, &boundary, "output_format", s);
+    if let Some(output_format) = base.output_format {
+        write_text_field(
+            &mut body,
+            &boundary,
+            "output_format",
+            output_format.as_str(),
+        );
     }
-    if let Some(ref v) = openai.output_compression {
-        write_text_field(&mut body, &boundary, "output_compression", &v.to_string());
+    if let Some(output_compression) = base.output_compression {
+        write_text_field(
+            &mut body,
+            &boundary,
+            "output_compression",
+            &output_compression.to_string(),
+        );
     }
-    if let Some(ref v) = openai.input_fidelity
-        && let Some(s) = v.as_str()
-    {
-        write_text_field(&mut body, &boundary, "input_fidelity", s);
+    if let Some(input_fidelity) = openai.input_fidelity {
+        write_text_field(
+            &mut body,
+            &boundary,
+            "input_fidelity",
+            input_fidelity.as_str(),
+        );
     }
-    if let Some(ref v) = openai.user
-        && let Some(s) = v.as_str()
-    {
-        write_text_field(&mut body, &boundary, "user", s);
+    if let Some(ref user) = base.user {
+        write_text_field(&mut body, &boundary, "user", user);
     }
 
     // Image file(s).
