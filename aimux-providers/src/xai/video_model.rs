@@ -129,13 +129,13 @@ struct VideoOptions {
     storage_options: Option<StorageOptions>,
     #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     user: Option<String>,
-    #[serde(default, deserialize_with = "options::de::nullish_positive")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
     #[allow(
         dead_code,
         reason = "validated only; the poll settings read the raw value"
     )]
     poll_interval_ms: Option<f64>,
-    #[serde(default, deserialize_with = "options::de::nullish_positive")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
     #[allow(
         dead_code,
         reason = "validated only; the poll settings read the raw value"

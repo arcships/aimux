@@ -147,16 +147,6 @@ pub(crate) mod de {
         }
     }
 
-    /// `z.number().positive().nullish()`.
-    pub(crate) fn nullish_positive<'de, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<Option<f64>, D::Error> {
-        match Option::<f64>::deserialize(d)? {
-            Some(value) if value <= 0.0 => Err(D::Error::custom("expected a number > 0")),
-            other => Ok(other),
-        }
-    }
-
     /// `z.string().min(1)`.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct NonEmpty(pub(crate) String);
