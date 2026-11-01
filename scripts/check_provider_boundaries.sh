@@ -310,7 +310,7 @@ violation 'single-modality vendor packages read builder-era config state' "$rule
 rule10b_hits="$(
     # Non-test, non-comment lines of every file but the options helpers.
     # shellcheck disable=SC2086
-    find $single_paths -name '*.rs' ! -name options.rs -print0 |
+    find $single_paths -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
