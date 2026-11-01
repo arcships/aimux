@@ -392,31 +392,47 @@ async fn query_with(deepgram: Value) -> Vec<(String, String)> {
 #[tokio::test]
 async fn should_send_every_schema_option_as_upstream_does() {
     let query = query_with(json!({
-        "keyterm": "galileo",
+        "language": "en",
+        "smartFormat": true,
+        "punctuate": true,
         "paragraphs": true,
+        "summarize": "v2",
+        "topics": true,
         "intents": true,
         "sentiment": true,
+        "detectEntities": true,
         "redact": ["pci", "numbers"],
         "replace": "[redacted]",
         "search": "jupiter",
-        "summarize": "v2",
-        "topics": true,
+        "keyterm": "galileo",
+        "diarize": true,
+        "utterances": true,
         "uttSplit": 0.8,
+        "fillerWords": true,
+        "detectLanguage": true,
     }))
     .await;
     assert_eq!(
         query,
         [
             ("model", "nova-3"),
+            ("detect_entities", "true"),
+            ("detect_language", "true"),
+            ("diarize", "true"),
+            ("filler_words", "true"),
             ("intents", "true"),
             ("keyterm", "galileo"),
+            ("language", "en"),
             ("paragraphs", "true"),
+            ("punctuate", "true"),
             ("redact", "pci,numbers"),
             ("replace", "[redacted]"),
             ("search", "jupiter"),
             ("sentiment", "true"),
+            ("smart_format", "true"),
             ("summarize", "v2"),
             ("topics", "true"),
+            ("utterances", "true"),
             ("utt_split", "0.8"),
         ]
         .map(|(key, value)| (key.to_string(), value.to_string()))
