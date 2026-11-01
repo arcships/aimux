@@ -409,11 +409,10 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
         let warnings: Vec<Warning> = Vec::new();
 
         let params = query_params(&self.model_id, &dg_options);
-        let query_string = params
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("&");
+        // `new URLSearchParams(...).toString()`: form-encoded.
+        let query_string = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(params.iter().map(|(key, value)| (*key, value.as_str())))
+            .finish();
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let url = exchange.url(&format!("/v1/listen?{query_string}"));

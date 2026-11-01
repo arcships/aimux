@@ -462,3 +462,34 @@ async fn should_reject_options_outside_the_schema() {
         assert!(cause.is_some(), "{deepgram}");
     }
 }
+
+/// The query is form-encoded like `URLSearchParams.toString()`
+/// (deepgram-transcription-model.ts): a space is `+`, `&` and `=` inside a
+/// value are escaped, so a value cannot add or split parameters.
+#[tokio::test]
+async fn should_form_encode_the_query() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response()).await;
+    let model = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .transcription("nova-3");
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(
+        serde_json::from_value(json!({ "deepgram": {
+            "keyterm": "space probe",
+            "replace": "a&model=other",
+        } }))
+        .unwrap(),
+    );
+    model.do_generate(&call).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests[0].url.query(),
+        Some("model=nova-3&keyterm=space+probe&replace=a%26model%3Dother")
+    );
+}
