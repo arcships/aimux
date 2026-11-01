@@ -69,9 +69,9 @@ fn convert_image(file: &VideoFile, warnings: &mut Vec<Warning>) -> Option<Value>
     reason = "validated only; the request is built from the raw namespace"
 )]
 struct VertexVideoOptions {
-    #[serde(default, deserialize_with = "nullish_positive")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
     poll_interval_ms: Option<f64>,
-    #[serde(default, deserialize_with = "nullish_positive")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
     poll_timeout_ms: Option<f64>,
     #[serde(default)]
     person_generation: Option<PersonGeneration>,
@@ -106,18 +106,6 @@ struct ReferenceImage {
     bytes_base64_encoded: Option<String>,
     #[serde(default)]
     gcs_uri: Option<String>,
-}
-
-/// `z.number().positive().nullish()`.
-fn nullish_positive<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error> {
-    use serde::Deserialize as _;
-    use serde::de::Error as _;
-    match Option::<f64>::deserialize(deserializer)? {
-        Some(value) if value <= 0.0 => Err(D::Error::custom("expected a number > 0")),
-        other => Ok(other),
-    }
 }
 
 /// `parseProviderOptions` with `googleVertexVideoModelOptionsSchema` under

@@ -50,3 +50,22 @@ where
 {
     T::deserialize(deserializer).map(Some)
 }
+
+/// `deserialize_with` for a zod `z.number().positive().nullish()` field:
+/// absent (with `#[serde(default)]`) or `null` is `None`, a number above 0
+/// is kept.
+///
+/// # Errors
+///
+/// The deserializer's error for a value that is not a number or not above 0.
+pub fn nullish_positive<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    use serde::de::Error as _;
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if value <= 0.0 => Err(D::Error::custom("expected a number > 0")),
+        other => Ok(other),
+    }
+}
