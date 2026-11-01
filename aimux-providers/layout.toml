@@ -3293,7 +3293,7 @@ status = "mapped"
 
 [[luma.files]]
 upstream = "src/luma-image-model-options.ts"
-rust = "luma/image_model_options.rs"
+rust = "luma/options.rs"
 status = "mapped"
 
 [luma.files.tests]

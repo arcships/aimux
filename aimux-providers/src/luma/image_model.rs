@@ -18,7 +18,7 @@ use crate::shared::{
     poll_until, retry_download,
 };
 
-use super::image_model_options as options;
+use super::options;
 
 fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {

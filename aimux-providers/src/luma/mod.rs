@@ -12,7 +12,7 @@
 //! [`luma()`] is the default instance; it reads nothing and cannot fail.
 
 mod image_model;
-pub(crate) mod image_model_options;
+pub(crate) mod options;
 mod provider;
 
 pub use image_model::LumaImageModel;
