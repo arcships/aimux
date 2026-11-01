@@ -684,8 +684,8 @@ impl FalImageModel {
         format!("/{}", self.model_id)
     }
 
-    fn convert_aspect_ratio_to_size(ar: &aimux_core::shared::AspectRatio) -> Value {
-        match (ar.width(), ar.height()) {
+    fn convert_aspect_ratio_to_size(ar: &aimux_core::shared::AspectRatio) -> Option<Value> {
+        Some(match (ar.width(), ar.height()) {
             (1, 1) => json!("square_hd"),
             (16, 9) => json!("landscape_16_9"),
             (9, 16) => json!("portrait_16_9"),
@@ -695,8 +695,8 @@ impl FalImageModel {
             (10, 16) => json!({ "width": 800, "height": 1280 }),
             (21, 9) => json!({ "width": 2560, "height": 1080 }),
             (9, 21) => json!({ "width": 1080, "height": 2560 }),
-            _ => json!(null),
-        }
+            _ => return None,
+        })
     }
 }
 
@@ -714,12 +714,14 @@ impl ImageModel for FalImageModel {
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();
+        // `image_size` is undefined, so not sent, without a size or for an
+        // aspect ratio `convertAspectRatioToSize` does not map.
         let image_size = if let Some(s) = options.size {
-            json!({ "width": s.width(), "height": s.height() })
-        } else if let Some(ar) = options.aspect_ratio {
-            Self::convert_aspect_ratio_to_size(&ar)
+            Some(json!({ "width": s.width(), "height": s.height() }))
         } else {
-            json!(null)
+            options
+                .aspect_ratio
+                .and_then(|ar| Self::convert_aspect_ratio_to_size(&ar))
         };
 
         let mut body = Map::new();
@@ -729,7 +731,9 @@ impl ImageModel for FalImageModel {
         if let Some(seed) = options.seed {
             body.insert("seed".into(), json!(seed));
         }
-        body.insert("image_size".into(), image_size);
+        if let Some(image_size) = image_size {
+            body.insert("image_size".into(), image_size);
+        }
         body.insert("num_images".into(), json!(options.n));
 
         // fal-image-model.ts doGenerate: parseProviderOptions with

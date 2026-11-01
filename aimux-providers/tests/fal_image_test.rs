@@ -260,3 +260,47 @@ async fn should_accept_image_options_inside_the_schema() {
     .unwrap();
     model.do_generate(&call).await.unwrap();
 }
+
+fn flux_schnell(base_url: &str) -> aimux_providers::FalImageModel {
+    create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(base_url.to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("fal-ai/flux/schnell")
+}
+
+async fn sent_body(server: &MockServer) -> Value {
+    let requests = server.received_requests().await.unwrap();
+    let post = requests
+        .iter()
+        .rev()
+        .find(|request| request.method.as_str() == "POST")
+        .unwrap();
+    serde_json::from_slice(&post.body).unwrap()
+}
+
+/// fal-image-model.ts getArgs: `image_size` is `undefined`, so not sent,
+/// without a size or with an aspect ratio `convertAspectRatioToSize` does
+/// not map.
+#[tokio::test]
+async fn should_not_send_an_unset_image_size() {
+    let server = MockServer::start().await;
+    mock_fal(&server, fal_response(&server.uri())).await;
+    let model = flux_schnell(&server.uri());
+
+    model.do_generate(&options(PROMPT)).await.unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({ "prompt": PROMPT, "num_images": 1 })
+    );
+
+    let mut call = options(PROMPT);
+    call.aspect_ratio = Some(serde_json::from_value(json!("2:1")).unwrap());
+    model.do_generate(&call).await.unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({ "prompt": PROMPT, "num_images": 1 })
+    );
+}
