@@ -591,7 +591,9 @@ pub struct RequestBodyResult {
 /// # Errors
 ///
 /// Propagates prompt-conversion errors from
-/// `convert_to_huggingface_responses_messages`.
+/// `convert_to_huggingface_responses_messages`, and `InvalidArgument`
+/// "invalid huggingface provider options" when `providerOptions.huggingface`
+/// does not match `huggingfaceLanguageModelResponsesOptions`.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -635,23 +637,11 @@ pub fn build_request_body_with_warnings(
     warnings.extend(message_warnings);
 
     // Parse provider options (providerOptions.huggingface.*).
-    let hf_options = options
-        .provider_options
-        .as_ref()
-        .and_then(|m| options::huggingface_options(Some(m)));
-    let metadata = hf_options.and_then(|o| o.get("metadata")).cloned();
-    let instructions = hf_options
-        .and_then(|o| o.get("instructions"))
-        .and_then(|v| v.as_str())
-        .map(std::string::ToString::to_string);
-    let strict_json_schema = hf_options
-        .and_then(|o| o.get("strictJsonSchema"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let reasoning_effort = hf_options
-        .and_then(|o| o.get("reasoningEffort"))
-        .and_then(|v| v.as_str())
-        .map(std::string::ToString::to_string);
+    let hf_options = options::huggingface_options(options.provider_options.as_ref())?;
+    let metadata = hf_options.metadata.map(|metadata| json!(metadata));
+    let instructions = hf_options.instructions;
+    let strict_json_schema = hf_options.strict_json_schema.unwrap_or(false);
+    let reasoning_effort = hf_options.reasoning_effort;
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
