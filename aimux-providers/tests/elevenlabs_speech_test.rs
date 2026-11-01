@@ -325,3 +325,30 @@ async fn should_not_send_an_empty_previous_or_next_text() {
     assert!(body.get("previous_text").is_none(), "{body}");
     assert!(body.get("next_text").is_none(), "{body}");
 }
+
+/// An empty `language` or `languageCode` is not sent, and an empty
+/// `language` leaves room for `languageCode` (upstream checks both for
+/// truthiness in elevenlabs-speech-model.ts getArgs).
+#[tokio::test]
+async fn should_not_send_an_empty_language() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let model = provider.speech("eleven_multilingual_v2");
+
+    let mut options = speech_options("Hello, world!");
+    options.language = Some(String::new());
+    options.provider_options =
+        Some(serde_json::from_value(json!({ "elevenlabs": { "languageCode": "" } })).unwrap());
+    model.do_generate(&options).await.unwrap();
+
+    options.provider_options =
+        Some(serde_json::from_value(json!({ "elevenlabs": { "languageCode": "fr" } })).unwrap());
+    model.do_generate(&options).await.unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(first.get("language_code").is_none(), "{first}");
+    let second: Value = serde_json::from_slice(&requests[1].body).unwrap();
+    assert_eq!(second["language_code"], "fr");
+}
