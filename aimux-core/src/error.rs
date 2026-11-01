@@ -140,8 +140,10 @@ pub struct ApiCallError {
 }
 
 /// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
-/// says what the underlying error was. More origins may be added, so a
-/// `match` outside this crate needs a wildcard arm.
+/// says what the underlying error was.
+// `#[non_exhaustive]`: more origins may be added, so a `match` outside this
+// crate needs a wildcard arm. (Kept out of the doc comment, which is part of
+// the bindings' manifest.)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
