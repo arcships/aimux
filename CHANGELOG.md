@@ -1488,6 +1488,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Deepgram transcription follows `@ai-sdk/deepgram` 3.1.24: `diarize` is
+  sent only when set (every request used to send `diarize=true`);
+  `providerOptions.deepgram` is parsed against
+  `deepgramTranscriptionModelOptionsSchema` (`invalid deepgram provider
+  options`) and all of its keys are sent, `keyterm`, `paragraphs`,
+  `intents`, `sentiment` and `replace` included, each as upstream's
+  `String(value)` (`redact` and `search` went out as quoted JSON, a `redact`
+  array as `["a","b"]` instead of `a,b`); and the query is form-encoded,
+  so a value with a space, `&` or `=` no longer breaks it.
+
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
