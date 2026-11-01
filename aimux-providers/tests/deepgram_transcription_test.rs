@@ -320,3 +320,36 @@ async fn should_return_none_language_when_not_detected() {
 
     assert_eq!(result.language, None);
 }
+
+/// `diarize` is sent only when the caller sets it
+/// (deepgram-transcription-model.ts getArgs).
+#[tokio::test]
+async fn should_send_diarize_only_when_set() {
+    for (deepgram, expected) in [
+        (None, None),
+        (Some(json!({ "diarize": true })), Some("true")),
+        (Some(json!({ "diarize": false })), Some("false")),
+    ] {
+        let server = MockServer::start().await;
+        mock_response(&server, &fixture_response()).await;
+        let model = create_deepgram(DeepgramProviderSettings {
+            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        })
+        .unwrap()
+        .transcription("nova-3");
+        let mut call = options(mock_audio(), "audio/wav");
+        call.provider_options = deepgram
+            .map(|deepgram| serde_json::from_value(json!({ "deepgram": deepgram })).unwrap());
+        model.do_generate(&call).await.unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let diarize = requests[0]
+            .url
+            .query_pairs()
+            .find(|(key, _)| key == "diarize")
+            .map(|(_, value)| value.into_owned());
+        assert_eq!(diarize.as_deref(), expected);
+    }
+}

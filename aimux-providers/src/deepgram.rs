@@ -320,9 +320,10 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
         // Build query parameters.
         let mut params = vec![("model".to_string(), self.model_id.clone())];
 
-        // diarize defaults to true.
-        let diarize = dg_options.diarize.unwrap_or(true);
-        params.push(("diarize".to_string(), diarize.to_string()));
+        // deepgram-transcription-model.ts getArgs: only when set.
+        if let Some(v) = dg_options.diarize {
+            params.push(("diarize".to_string(), v.to_string()));
+        }
 
         if let Some(v) = dg_options.detect_entities {
             params.push(("detect_entities".to_string(), v.to_string()));
