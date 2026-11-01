@@ -301,3 +301,27 @@ async fn should_reject_speech_options_outside_the_schema() {
         assert!(cause.is_some(), "{elevenlabs}");
     }
 }
+
+/// An empty `previousText` or `nextText` is not sent (upstream checks them
+/// for truthiness in elevenlabs-speech-model.ts getArgs).
+#[tokio::test]
+async fn should_not_send_an_empty_previous_or_next_text() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut options = speech_options("Hello, world!");
+    options.provider_options = Some(
+        serde_json::from_value(json!({ "elevenlabs": { "previousText": "", "nextText": "" } }))
+            .unwrap(),
+    );
+    provider
+        .speech("eleven_multilingual_v2")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("previous_text").is_none(), "{body}");
+    assert!(body.get("next_text").is_none(), "{body}");
+}

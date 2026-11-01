@@ -443,10 +443,12 @@ fn build_request(
         if let Some(ref seed) = opts.seed {
             body.insert("seed".to_string(), json!(seed));
         }
-        if let Some(ref pt) = opts.previous_text {
+        // `if (elevenLabsOptions.previousText)`: an empty string is not sent.
+        if let Some(pt) = opts.previous_text.as_ref().filter(|text| !text.is_empty()) {
             body.insert("previous_text".to_string(), json!(pt));
         }
-        if let Some(ref nt) = opts.next_text {
+        // `if (elevenLabsOptions.nextText)`: an empty string is not sent.
+        if let Some(nt) = opts.next_text.as_ref().filter(|text| !text.is_empty()) {
             body.insert("next_text".to_string(), json!(nt));
         }
         if let Some(ref prids) = opts.previous_request_ids {
