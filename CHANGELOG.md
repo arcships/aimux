@@ -1488,6 +1488,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Luma image generation follows `@ai-sdk/luma` 3.0.54: `referenceType:
+  'character'` sends `character: { <id>: { images } }` grouped by
+  `images[i].id` (it was sent as `image`); a `failed` generation, or a
+  `completed` one without an image, fails with `InvalidResponseData` and
+  upstream's message (it was an API call error); a mask is refused before
+  the files are checked and the editing errors carry upstream's messages;
+  `photon-1` and `photon-flash-1` report file support and no mask support;
+  `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
+  (`invalid luma provider options`); and the generation answers are parsed
+  against `lumaGenerationResponseSchema`, so an unknown `state` fails at
+  once instead of being polled until the attempts run out.
+
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
