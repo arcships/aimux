@@ -142,7 +142,8 @@ const DEFAULT_NAME: &str = "fal";
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct FalProviderSettings {
-    /// Base URL for the API calls. Default `https://queue.fal.run`; a
+    /// Base URL for the API calls. Default `https://fal.run` for images and
+    /// `https://queue.fal.run` for transcription and video, as upstream; a
     /// trailing slash is removed.
     pub base_url: Option<String>,
     /// The API key. `None` loads `FAL_KEY` when a request is made and
