@@ -1,6 +1,9 @@
 //! Rust translation of the Luma image model tests.
 //! Source: `reference/ai/packages/luma/src/luma-image-model.test.ts`
 
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -496,4 +499,48 @@ async fn should_fail_on_a_generation_state_outside_the_schema() {
         .filter(|request| request.method.as_str() == "GET")
         .count();
     assert_eq!(polls, 1);
+}
+
+/// The generated image is downloaded through the provider's `fetch`, like
+/// the submit and the polls (luma-image-model.ts downloadImage passes
+/// `fetch: this.config.fetch`); it used to go out on the process default
+/// transport.
+#[tokio::test]
+async fn should_download_the_image_through_the_provider_fetch() {
+    use mock_fetch::{Canned, RouteFetch};
+
+    let fetch = RouteFetch::new(|seen| {
+        if seen.url.ends_with("/dream-machine/v1/generations/image") {
+            Canned::json(&json!({ "id": "gen-123", "state": "queued" }))
+        } else if seen.url.ends_with("/dream-machine/v1/generations/gen-123") {
+            Canned::json(&json!({
+                "id": "gen-123",
+                "state": "completed",
+                "assets": { "image": "https://api.example.com/image.png" },
+            }))
+        } else {
+            Canned {
+                status: 200,
+                headers: Vec::new(),
+                body: b"fake-luma-image".to_vec(),
+            }
+        }
+    });
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("https://api.example.com".to_string()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let result = model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let ImageOutputs::Binary(images) = result.images else {
+        panic!("expected binary images");
+    };
+    assert_eq!(images, vec![b"fake-luma-image".to_vec()]);
+    let seen = fetch.seen();
+    assert_eq!(seen.len(), 3);
+    assert_eq!(seen[2].url, "https://api.example.com/image.png");
 }
