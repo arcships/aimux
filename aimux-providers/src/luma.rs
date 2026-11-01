@@ -76,8 +76,20 @@ struct LumaAssets {
 /// Milliseconds between two polls of a generation (`providerOptions.luma.pollIntervalMillis`
 /// overrides it for one call).
 const POLL_INTERVAL_MS: u64 = 500;
-/// How many times a generation is polled before the call gives up.
+/// How many times a generation is polled before the call gives up
+/// (`providerOptions.luma.maxPollAttempts` overrides it for one call).
 const MAX_POLL_ATTEMPTS: u32 = 120;
+
+/// The polls of upstream's `for (let i = 0; i < maxPollAttempts; i++)`:
+/// none for a count of 0 or less, else the count rounded up.
+fn poll_attempts(count: f64) -> u32 {
+    if count > 0.0 {
+        // `as` saturates a count above `u32::MAX`.
+        count.ceil() as u32
+    } else {
+        0
+    }
+}
 
 pub(crate) mod options;
 
@@ -253,6 +265,11 @@ impl ImageModel for LumaImageModel {
             POLL_INTERVAL_MILLIS_KEY,
             POLL_INTERVAL_MS,
         ));
+        // luma-image-model.ts:183-191: `maxPollAttempts` bounds the polls.
+        let max_poll_attempts = luma_opts
+            .and_then(|o| o.get("maxPollAttempts"))
+            .and_then(Value::as_f64)
+            .map_or(MAX_POLL_ATTEMPTS, poll_attempts);
         let reference_type = luma_opts
             .and_then(|o| o.get("referenceType"))
             .and_then(|v| v.as_str())
@@ -444,7 +461,7 @@ impl ImageModel for LumaImageModel {
             &format!("luma generation {generation_id}"),
             options.abort_signal.as_ref(),
             poll_interval,
-            MAX_POLL_ATTEMPTS,
+            max_poll_attempts,
             || async {
                 let pr = aimux_provider_utils::get_from_api(
                     exchange.request(poll_url.clone(), options),
