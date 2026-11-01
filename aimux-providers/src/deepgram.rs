@@ -188,48 +188,139 @@ crate::impl_single_modality_provider!(DeepgramProvider, transcription_model, |p,
 
 // ── Provider options ────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Default)]
+/// `deepgramTranscriptionModelOptionsSchema`
+/// (deepgram-transcription-model-options.ts). Every key is `.nullish()`:
+/// `null` reads as absent.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DeepgramOptions {
-    detect_entities: Option<bool>,
-    detect_language: Option<bool>,
-    filler_words: Option<bool>,
+    #[serde(default)]
     language: Option<String>,
-    punctuate: Option<bool>,
-    redact: Option<Value>,
-    search: Option<Value>,
+    #[serde(default)]
+    detect_language: Option<bool>,
+    #[serde(default)]
     smart_format: Option<bool>,
-    summarize: Option<bool>,
-    topics: Option<Value>,
-    utterances: Option<bool>,
-    utt_split: Option<f64>,
+    #[serde(default)]
+    punctuate: Option<bool>,
+    #[serde(default)]
+    paragraphs: Option<bool>,
+    #[serde(default)]
+    summarize: Option<Summarize>,
+    #[serde(default)]
+    topics: Option<bool>,
+    #[serde(default)]
+    intents: Option<bool>,
+    #[serde(default)]
+    sentiment: Option<bool>,
+    #[serde(default)]
+    detect_entities: Option<bool>,
+    #[serde(default)]
+    redact: Option<Redact>,
+    #[serde(default)]
+    replace: Option<String>,
+    #[serde(default)]
+    search: Option<String>,
+    #[serde(default)]
+    keyterm: Option<String>,
+    #[serde(default)]
     diarize: Option<bool>,
+    #[serde(default)]
+    utterances: Option<bool>,
+    #[serde(default)]
+    utt_split: Option<f64>,
+    #[serde(default)]
+    filler_words: Option<bool>,
 }
 
-fn parse_deepgram_options(provider_options: Option<&SharedProviderOptions>) -> DeepgramOptions {
-    let mut opts = DeepgramOptions::default();
-    if let Some(dg) = options::deepgram_options(provider_options) {
-        opts.detect_entities = dg
-            .get("detectEntities")
-            .and_then(serde_json::Value::as_bool);
-        opts.detect_language = dg
-            .get("detectLanguage")
-            .and_then(serde_json::Value::as_bool);
-        opts.filler_words = dg.get("fillerWords").and_then(serde_json::Value::as_bool);
-        opts.language = dg
-            .get("language")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string);
-        opts.punctuate = dg.get("punctuate").and_then(serde_json::Value::as_bool);
-        opts.redact = dg.get("redact").cloned();
-        opts.search = dg.get("search").cloned();
-        opts.smart_format = dg.get("smartFormat").and_then(serde_json::Value::as_bool);
-        opts.summarize = dg.get("summarize").and_then(serde_json::Value::as_bool);
-        opts.topics = dg.get("topics").cloned();
-        opts.utterances = dg.get("utterances").and_then(serde_json::Value::as_bool);
-        opts.utt_split = dg.get("uttSplit").and_then(serde_json::Value::as_f64);
-        opts.diarize = dg.get("diarize").and_then(serde_json::Value::as_bool);
+/// `summarize`: `z.union([z.literal('v2'), z.literal(false)])`.
+#[derive(Debug, Clone, Copy)]
+enum Summarize {
+    V2,
+    Off,
+}
+
+impl<'de> Deserialize<'de> for Summarize {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match Value::deserialize(deserializer)? {
+            Value::String(value) if value == "v2" => Ok(Self::V2),
+            Value::Bool(false) => Ok(Self::Off),
+            _ => Err(serde::de::Error::custom("expected 'v2' or false")),
+        }
     }
-    opts
+}
+
+impl Summarize {
+    /// `String(value)`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::V2 => "v2",
+            Self::Off => "false",
+        }
+    }
+}
+
+/// `redact`: `z.union([z.string(), z.array(z.string())])`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Redact {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Redact {
+    /// `String(value)`: an array joins its items with commas.
+    fn to_query_value(&self) -> String {
+        match self {
+            Self::One(value) => value.clone(),
+            Self::Many(values) => values.join(","),
+        }
+    }
+}
+
+/// `parseProviderOptions({ provider: 'deepgram', providerOptions, schema:
+/// deepgramTranscriptionModelOptionsSchema })` (deepgram-transcription-model.ts
+/// getArgs); all `None` without a `deepgram` namespace.
+fn parse_deepgram_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Result<DeepgramOptions, AiMuxError> {
+    Ok(
+        aimux_provider_utils::parse_provider_options(options::NAMESPACE, provider_options)?
+            .unwrap_or_default(),
+    )
+}
+
+/// The query parameters of a transcription, in the order upstream builds its
+/// body (deepgram-transcription-model.ts getArgs): `model`, then each option
+/// that is set, as `String(value)`.
+fn query_params(model_id: &str, dg: &DeepgramOptions) -> Vec<(&'static str, String)> {
+    let flag = |value: Option<bool>| value.map(|value| value.to_string());
+    [
+        ("model", Some(model_id.to_string())),
+        ("detect_entities", flag(dg.detect_entities)),
+        ("detect_language", flag(dg.detect_language)),
+        ("diarize", flag(dg.diarize)),
+        ("filler_words", flag(dg.filler_words)),
+        ("intents", flag(dg.intents)),
+        ("keyterm", dg.keyterm.clone()),
+        ("language", dg.language.clone()),
+        ("paragraphs", flag(dg.paragraphs)),
+        ("punctuate", flag(dg.punctuate)),
+        ("redact", dg.redact.as_ref().map(Redact::to_query_value)),
+        ("replace", dg.replace.clone()),
+        ("search", dg.search.clone()),
+        ("sentiment", flag(dg.sentiment)),
+        ("smart_format", flag(dg.smart_format)),
+        (
+            "summarize",
+            dg.summarize.map(|value| value.as_str().to_string()),
+        ),
+        ("topics", flag(dg.topics)),
+        ("utterances", flag(dg.utterances)),
+        ("utt_split", dg.utt_split.map(|value| value.to_string())),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| value.map(|value| (key, value)))
+    .collect()
 }
 
 // ── Response schema ─────────────────────────────────────────────────────────
@@ -314,54 +405,10 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
         &self,
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
-        let dg_options = parse_deepgram_options(options.provider_options.as_ref());
+        let dg_options = parse_deepgram_options(options.provider_options.as_ref())?;
         let warnings: Vec<Warning> = Vec::new();
 
-        // Build query parameters.
-        let mut params = vec![("model".to_string(), self.model_id.clone())];
-
-        // deepgram-transcription-model.ts getArgs: only when set.
-        if let Some(v) = dg_options.diarize {
-            params.push(("diarize".to_string(), v.to_string()));
-        }
-
-        if let Some(v) = dg_options.detect_entities {
-            params.push(("detect_entities".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.detect_language {
-            params.push(("detect_language".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.filler_words {
-            params.push(("filler_words".to_string(), v.to_string()));
-        }
-        if let Some(ref v) = dg_options.language {
-            params.push(("language".to_string(), v.clone()));
-        }
-        if let Some(v) = dg_options.punctuate {
-            params.push(("punctuate".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.smart_format {
-            params.push(("smart_format".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.summarize {
-            params.push(("summarize".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.utterances {
-            params.push(("utterances".to_string(), v.to_string()));
-        }
-        if let Some(v) = dg_options.utt_split {
-            params.push(("utt_split".to_string(), v.to_string()));
-        }
-        if let Some(ref v) = dg_options.redact {
-            params.push(("redact".to_string(), v.to_string()));
-        }
-        if let Some(ref v) = dg_options.search {
-            params.push(("search".to_string(), v.to_string()));
-        }
-        if let Some(ref v) = dg_options.topics {
-            params.push(("topics".to_string(), v.to_string()));
-        }
-
+        let params = query_params(&self.model_id, &dg_options);
         let query_string = params
             .iter()
             .map(|(k, v)| format!("{k}={v}"))
