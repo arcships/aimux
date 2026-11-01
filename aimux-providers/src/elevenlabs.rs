@@ -381,8 +381,13 @@ fn build_request(
     let mapped_format = map_output_format(output_format);
     query_params.push(("output_format".to_string(), mapped_format));
 
-    // Add language code if provided.
-    if let Some(ref language) = options.language {
+    // Add language code if provided (`if (language)`: an empty string is
+    // not sent).
+    if let Some(language) = options
+        .language
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         body.insert("language_code".to_string(), json!(language));
     }
 
@@ -411,8 +416,12 @@ fn build_request(
             }
         }
 
-        // Add language code from provider options if not already set.
-        if let Some(ref lc) = opts.language_code
+        // Add language code from provider options if not already set
+        // (`languageCode && !requestBody.language_code`).
+        if let Some(lc) = opts
+            .language_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
             && !body.contains_key("language_code")
         {
             body.insert("language_code".to_string(), json!(lc));
