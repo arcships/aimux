@@ -140,9 +140,11 @@ pub struct ApiCallError {
 }
 
 /// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
-/// says what the underlying error was.
+/// says what the underlying error was. More origins may be added, so a
+/// `match` outside this crate needs a wildcard arm.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ApiCallErrorOrigin {
     /// No complete response: connecting, sending, or reading the response
     /// body failed (connection refused or reset, DNS, TLS, a broken body
