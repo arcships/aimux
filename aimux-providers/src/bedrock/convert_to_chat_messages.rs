@@ -744,6 +744,13 @@ fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiM
                     if is_s3_url && !is_image_or_video(&media_type) {
                         return Err(unsupported());
                     }
+                    // A document reads `citations` against the file part
+                    // schema before its format is checked
+                    // (`shouldEnableCitations`); an image or a video reads
+                    // no options.
+                    if !is_image_or_video(&media_type) {
+                        validate_part_options::<FilePartOptions>(file.provider_options.as_ref())?;
+                    }
                     validate_media_type(&media_type)?;
                 }
                 ToolResultContent::Custom { .. } => {

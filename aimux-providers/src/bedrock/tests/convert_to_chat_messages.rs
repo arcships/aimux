@@ -3682,6 +3682,66 @@ mod part_options {
         .unwrap();
     }
 
+    fn tool_result_file(media_type: &str, options: Value) -> Result<Value, AiMuxError> {
+        convert(json!([{
+            "role": "tool",
+            "content": [{
+                "type": "tool-result",
+                "toolCallId": "call-123",
+                "toolName": "files",
+                "output": {
+                    "type": "content",
+                    "value": [{
+                        "type": "file",
+                        "data": { "type": "data", "data": "AAECAw==" },
+                        "mediaType": media_type,
+                        "providerOptions": options,
+                    }],
+                },
+            }],
+        }]))
+    }
+
+    /// A document in a tool result reads `citations` against the file part
+    /// schema (`shouldEnableCitations`); an image in a tool result reads no
+    /// options.
+    #[test]
+    fn checks_a_tool_result_document_against_the_file_part_schema() {
+        for (options, namespace) in [
+            (
+                json!({ "amazonBedrock": { "citations": { "enabled": "yes" } } }),
+                "amazonBedrock",
+            ),
+            (json!({ "bedrock": { "citations": true } }), "bedrock"),
+        ] {
+            let message =
+                invalid_argument(tool_result_file("application/pdf", options.clone()).unwrap_err());
+            assert_eq!(
+                message,
+                format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{options}"
+            );
+        }
+
+        let result = tool_result_file(
+            "application/pdf",
+            json!({ "amazonBedrock": { "citations": { "enabled": true } } }),
+        )
+        .unwrap();
+        assert_eq!(
+            result["messages"][0]["content"][0]["toolResult"]["content"][0]["document"]["citations"],
+            json!({ "enabled": true })
+        );
+
+        tool_result_file(
+            "image/png",
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        )
+        .unwrap();
+    }
+
     /// `signature`, `redactedData` and `redactedContent` are `.optional()`:
     /// `null` fails, as a number does.
     #[test]
