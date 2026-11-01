@@ -928,9 +928,18 @@ impl ImageModel for FalImageModel {
 
         let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut fm = Map::new();
+        // `nsfw` of image `index`: `has_nsfw_concepts?.[index] ??
+        // nsfw_content_detected?.[index]`, left out when neither has it.
+        let nsfw_flag = |key: &str, index: usize| {
+            rb.get(key)
+                .and_then(|flags| flags.get(index))
+                .filter(|flag| !flag.is_null())
+                .cloned()
+        };
         let im: Vec<Value> = target_images
             .iter()
-            .map(|img| {
+            .enumerate()
+            .map(|(index, img)| {
                 let mut e = Map::new();
                 if let Some(o) = img.as_object() {
                     for (k, v) in o {
@@ -953,6 +962,11 @@ impl ImageModel for FalImageModel {
                 }
                 if let Some(v) = img.get("file_size") {
                     e.insert("fileSize".into(), v.clone());
+                }
+                if let Some(nsfw) = nsfw_flag("has_nsfw_concepts", index)
+                    .or_else(|| nsfw_flag("nsfw_content_detected", index))
+                {
+                    e.insert("nsfw".into(), nsfw);
                 }
                 Value::Object(e)
             })

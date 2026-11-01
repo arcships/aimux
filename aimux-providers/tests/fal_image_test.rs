@@ -448,3 +448,103 @@ async fn should_report_a_validation_error_by_location() {
     };
     assert_eq!(detail.message, "Unknown fal error");
 }
+
+/// fal-image-model.ts doGenerate: `providerMetadata.fal.images` carries each
+/// image's metadata with `nsfw` taken from `has_nsfw_concepts[index]` or
+/// `nsfw_content_detected[index]`, and the top-level response metadata keeps
+/// every other property (upstream "providerMetaData for lora" / "for lcm").
+#[tokio::test]
+async fn should_merge_the_nsfw_flags_into_the_image_metadata() {
+    let server = MockServer::start().await;
+    let image = json!({
+        "url": format!("{}/image.png", server.uri()),
+        "width": 1024,
+        "height": 1024,
+        "content_type": "image/png",
+        "file_data": "<image file_data>",
+        "file_size": 123,
+        "file_name": "<image file_name>",
+    });
+    mock_fal(
+        &server,
+        json!({
+            "images": [image],
+            "prompt": "<prompt>",
+            "seed": 123,
+            "has_nsfw_concepts": [true],
+            "debug_latents": {
+                "url": "<debug_latents url>",
+                "content_type": "<debug_latents content_type>",
+                "file_name": "<debug_latents file_name>",
+                "file_data": "<debug_latents file_data>",
+                "file_size": 123,
+            },
+        }),
+    )
+    .await;
+    let result = flux_schnell(&server.uri())
+        .do_generate(&options(PROMPT))
+        .await
+        .unwrap();
+    let fal = Value::Object(result.provider_metadata.unwrap()["fal"].clone());
+    assert_eq!(
+        fal,
+        json!({
+            "images": [{
+                "width": 1024,
+                "height": 1024,
+                "contentType": "image/png",
+                "fileName": "<image file_name>",
+                "fileData": "<image file_data>",
+                "fileSize": 123,
+                "nsfw": true,
+            }],
+            "seed": 123,
+            "debug_latents": {
+                "url": "<debug_latents url>",
+                "content_type": "<debug_latents content_type>",
+                "file_name": "<debug_latents file_name>",
+                "file_data": "<debug_latents file_data>",
+                "file_size": 123,
+            },
+        })
+    );
+
+    // The other flag, without `has_nsfw_concepts`, and null metadata kept.
+    let server = MockServer::start().await;
+    mock_fal(
+        &server,
+        json!({
+            "images": [{
+                "url": format!("{}/image.png", server.uri()),
+                "width": 1024,
+                "height": 1024,
+                "file_name": null,
+                "file_size": null,
+            }],
+            "seed": 123,
+            "num_inference_steps": 456,
+            "nsfw_content_detected": [false],
+        }),
+    )
+    .await;
+    let result = flux_schnell(&server.uri())
+        .do_generate(&options(PROMPT))
+        .await
+        .unwrap();
+    let fal = Value::Object(result.provider_metadata.unwrap()["fal"].clone());
+    assert_eq!(
+        fal,
+        json!({
+            "images": [{
+                "width": 1024,
+                "height": 1024,
+                "fileName": null,
+                "fileSize": null,
+                "nsfw": false,
+            }],
+            "seed": 123,
+            "num_inference_steps": 456,
+        })
+    );
+}
