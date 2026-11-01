@@ -12,6 +12,9 @@
 //! - Consecutive same-role messages are merged into a single message (matching
 //!   the TS `groupIntoBlocks` behaviour).
 
+use super::chat_language_model_options::{
+    FilePartOptions, ImagePartOptions, ReasoningMetadata, TextPartOptions,
+};
 use super::normalize_tool_call_id::normalize_tool_call_id;
 use super::options;
 use aimux_core::language_model_message::{
@@ -617,9 +620,9 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
                 saw_non_system = true;
                 for part in content {
                     match part {
-                        UserPart::Text(part) => {
-                            validate_part_options(part.provider_options.as_ref(), false)?
-                        }
+                        UserPart::Text(part) => validate_part_options::<TextPartOptions>(
+                            part.provider_options.as_ref(),
+                        )?,
                         UserPart::File(file) => validate_file(file)?,
                     }
                 }
@@ -628,12 +631,13 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
                 saw_non_system = true;
                 for part in content {
                     match part {
-                        AssistantPart::Text(part) => {
-                            validate_part_options(part.provider_options.as_ref(), false)?
-                        }
+                        // Upstream reads no options off an assistant text part.
+                        AssistantPart::Text(_) => {}
                         AssistantPart::File(file) => validate_file(file)?,
                         AssistantPart::Reasoning(part) => {
-                            validate_part_options(part.provider_options.as_ref(), true)?
+                            validate_part_options::<ReasoningMetadata>(
+                                part.provider_options.as_ref(),
+                            )?
                         }
                         AssistantPart::ToolResult(part) => validate_tool_result(&part.output)?,
                         AssistantPart::ToolCall(_)
@@ -655,58 +659,28 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
     Ok(())
 }
 
-fn validate_part_options(
+/// Parse a part's `amazonBedrock` (or legacy `bedrock`) options against the
+/// schema of its part type (convert-to-amazon-bedrock-chat-messages.ts:
+/// `getTextPartGuardContentOptions`, `getImagePartGuardContentOptions`,
+/// `shouldEnableCitations`, and the reasoning metadata).
+fn validate_part_options<T: serde::de::DeserializeOwned>(
     provider_options: Option<&SharedProviderOptions>,
-    reasoning: bool,
 ) -> Result<(), aimux_core::AiMuxError> {
-    if let Some(options) = options::read(provider_options) {
-        if let Some(value) = options.get("guardContent")
-            && !value.is_boolean()
-        {
-            return Err(aimux_core::AiMuxError::invalid_argument(
-                "Invalid Bedrock guardContent",
-            ));
-        }
-        if let Some(value) = options.get("guardContentQualifiers")
-            && !value.as_array().is_some_and(|a| {
-                a.iter().all(|v| {
-                    matches!(
-                        v.as_str(),
-                        Some("grounding_source" | "query" | "guard_content")
-                    )
-                })
-            })
-        {
-            return Err(aimux_core::AiMuxError::invalid_argument(
-                "Invalid Bedrock guardContentQualifiers",
-            ));
-        }
-        if let Some(value) = options.get("citations")
-            && (!value.is_object() || value.get("enabled").is_some_and(|v| !v.is_boolean()))
-        {
-            return Err(aimux_core::AiMuxError::invalid_argument(
-                "Invalid Bedrock citations",
-            ));
-        }
-        if reasoning {
-            for key in ["signature", "redactedContent", "redactedData"] {
-                if let Some(value) = options.get(key)
-                    && !value.is_string()
-                    && !value.is_null()
-                {
-                    return Err(aimux_core::AiMuxError::invalid_argument(format!(
-                        "Invalid Bedrock {key}"
-                    )));
-                }
-            }
-        }
-    }
-    Ok(())
+    options::parse::<T>(provider_options).map(|_| ())
 }
 
 fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
-    if !matches!(file.data, FileData::Reference { .. }) {
-        validate_part_options(file.provider_options.as_ref(), false)?;
+    match &file.data {
+        FileData::Reference { .. } => {}
+        // A user image takes the image part schema, every other file the
+        // file part schema.
+        FileData::Data { .. } | FileData::Url { .. }
+            if aimux_provider_utils::resolve_full_media_type(file)
+                .is_ok_and(|media_type| media_type.starts_with("image/")) =>
+        {
+            validate_part_options::<ImagePartOptions>(file.provider_options.as_ref())?;
+        }
+        _ => validate_part_options::<FilePartOptions>(file.provider_options.as_ref())?,
     }
     match &file.data {
         FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(

@@ -118,3 +118,78 @@ pub(super) fn validate_options(
 ) -> Result<(), aimux_core::AiMuxError> {
     super::options::parse::<ChatOptions>(provider_options).map(|_| ())
 }
+
+/// `amazonBedrockFilePartProviderOptions`: the options of a document or
+/// text file part, and of a file in a tool result.
+#[derive(Debug, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "validated only; the converter reads the raw namespace"
+)]
+pub(super) struct FilePartOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    citations: Option<Citations>,
+}
+
+/// `citations`: `z.object({ enabled: z.boolean() })`.
+#[derive(Debug, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "validated only; the converter reads the raw namespace"
+)]
+struct Citations {
+    enabled: bool,
+}
+
+/// `amazonBedrockTextPartProviderOptions`: the options of a user text part.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the converter reads the raw namespace"
+)]
+pub(super) struct TextPartOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    guard_content: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    guard_content_qualifiers: Option<Vec<GuardContentQualifier>>,
+}
+
+/// `guardContentQualifiers` items.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GuardContentQualifier {
+    GroundingSource,
+    Query,
+    GuardContent,
+}
+
+/// `amazonBedrockImagePartProviderOptions`: the options of a user image part.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the converter reads the raw namespace"
+)]
+pub(super) struct ImagePartOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    guard_content: Option<bool>,
+}
+
+/// `amazonBedrockReasoningMetadataSchema`
+/// (amazon-bedrock-reasoning-metadata.ts): the options of an assistant
+/// reasoning part.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the converter reads the raw namespace"
+)]
+pub(super) struct ReasoningMetadata {
+    #[serde(default, deserialize_with = "optional_field")]
+    signature: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    redacted_data: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    redacted_content: Option<String>,
+}

@@ -3566,3 +3566,143 @@ mod bedrock_remaining {
         );
     }
 }
+
+/// Part options are parsed against the schema of the part type
+/// (convert-to-amazon-bedrock-chat-messages.ts): a user text part against
+/// `amazonBedrockTextPartProviderOptions`, a user image against
+/// `amazonBedrockImagePartProviderOptions`, any other file against
+/// `amazonBedrockFilePartProviderOptions`, an assistant reasoning part
+/// against `amazonBedrockReasoningMetadataSchema`; an assistant text part is
+/// not read. Not upstream cases.
+mod part_options {
+    use super::*;
+
+    fn invalid_argument(error: AiMuxError) -> String {
+        match error {
+            AiMuxError::InvalidArgument { message, cause } => {
+                assert!(cause.is_some(), "{message}");
+                message
+            }
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    fn user(part: Value) -> Result<Value, AiMuxError> {
+        convert(json!([{ "role": "user", "content": [part] }]))
+    }
+
+    fn text(options: Value) -> Value {
+        json!({ "type": "text", "text": "Hello", "providerOptions": options })
+    }
+
+    fn image(options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "image/png",
+            "providerOptions": options,
+        })
+    }
+
+    fn document(options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "application/pdf",
+            "providerOptions": options,
+        })
+    }
+
+    #[test]
+    fn rejects_options_outside_the_schema_of_the_part_type() {
+        for (part, namespace) in [
+            (
+                text(json!({ "amazonBedrock": { "guardContent": "yes" } })),
+                "amazonBedrock",
+            ),
+            (
+                text(json!({ "bedrock": { "guardContentQualifiers": ["other"] } })),
+                "bedrock",
+            ),
+            (
+                image(json!({ "amazonBedrock": { "guardContent": 1 } })),
+                "amazonBedrock",
+            ),
+            (
+                document(json!({ "amazonBedrock": { "citations": { "enabled": "yes" } } })),
+                "amazonBedrock",
+            ),
+            (
+                document(json!({ "bedrock": { "citations": true } })),
+                "bedrock",
+            ),
+        ] {
+            let message = invalid_argument(user(part.clone()).unwrap_err());
+            assert_eq!(
+                message,
+                format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{part}"
+            );
+        }
+    }
+
+    /// A key of another part type's schema is not read (`z.object` strips
+    /// unknown keys).
+    #[test]
+    fn ignores_keys_of_another_part_type() {
+        user(text(
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        ))
+        .unwrap();
+        user(image(
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        ))
+        .unwrap();
+        user(document(
+            json!({ "amazonBedrock": { "guardContent": "not read" } }),
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn reads_no_options_off_an_assistant_text_part() {
+        convert(json!([
+            { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+            {
+                "role": "assistant",
+                "content": [{
+                    "type": "text",
+                    "text": "Hello",
+                    "providerOptions": { "amazonBedrock": { "guardContent": "not read" } },
+                }],
+            },
+        ]))
+        .unwrap();
+    }
+
+    /// `signature`, `redactedData` and `redactedContent` are `.optional()`:
+    /// `null` fails, as a number does.
+    #[test]
+    fn rejects_reasoning_metadata_outside_the_schema() {
+        for options in [
+            json!({ "amazonBedrock": { "signature": null } }),
+            json!({ "bedrock": { "redactedData": 1 } }),
+        ] {
+            let error = convert(json!([
+                { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+                {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "reasoning",
+                        "text": "thinking",
+                        "providerOptions": options,
+                    }],
+                },
+            ]))
+            .unwrap_err();
+            invalid_argument(error);
+        }
+    }
+}
