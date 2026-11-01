@@ -637,6 +637,218 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
+/// `elevenLabsTranscriptionModelOptionsSchema`
+/// (elevenlabs-transcription-model-options.ts). Every key is `.nullish()`:
+/// `null` reads as absent, and a key left out takes the schema's default
+/// (`tagAudioEvents` true, `timestampsGranularity` `word`, `diarize` false,
+/// `fileFormat` `other`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ElevenLabsTranscriptionOptions {
+    #[serde(default)]
+    language_code: Option<String>,
+    #[serde(default = "some_true")]
+    tag_audio_events: Option<bool>,
+    /// An integer from 1 to 32.
+    #[serde(default, deserialize_with = "num_speakers")]
+    num_speakers: Option<u8>,
+    #[serde(default = "word_granularity")]
+    timestamps_granularity: Option<TimestampsGranularity>,
+    #[serde(default = "some_false")]
+    diarize: Option<bool>,
+    #[serde(default = "other_file_format")]
+    file_format: Option<FileFormat>,
+    /// The options of a realtime session; a batch call warns about them.
+    #[serde(default)]
+    streaming: Option<RealtimeOptions>,
+}
+
+fn some_true() -> Option<bool> {
+    Some(true)
+}
+
+fn some_false() -> Option<bool> {
+    Some(false)
+}
+
+fn word_granularity() -> Option<TimestampsGranularity> {
+    Some(TimestampsGranularity::Word)
+}
+
+fn other_file_format() -> Option<FileFormat> {
+    Some(FileFormat::Other)
+}
+
+/// `z.number().int().min(1).max(32).nullish()`.
+fn num_speakers<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u8>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(value) if value.fract() == 0.0 && (1.0..=32.0).contains(&value) => {
+            Ok(Some(value as u8))
+        }
+        Some(_) => Err(serde::de::Error::custom("expected an integer from 1 to 32")),
+    }
+}
+
+/// `z.enum(['none', 'word', 'character'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TimestampsGranularity {
+    None,
+    Word,
+    Character,
+}
+
+impl TimestampsGranularity {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Word => "word",
+            Self::Character => "character",
+        }
+    }
+}
+
+/// `z.enum(['pcm_s16le_16', 'other'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+enum FileFormat {
+    #[serde(rename = "pcm_s16le_16")]
+    PcmS16le16,
+    #[serde(rename = "other")]
+    Other,
+}
+
+impl FileFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PcmS16le16 => "pcm_s16le_16",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// The `streaming` object of the schema. Only checked here: aimux's realtime
+/// session reads its own two keys (RFC-0034 D5).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the realtime session reads its own keys"
+)]
+struct RealtimeOptions {
+    #[serde(default)]
+    commit_strategy: Option<CommitStrategy>,
+    #[serde(default)]
+    enable_logging: Option<bool>,
+    #[serde(default)]
+    filter_background_audio: Option<bool>,
+    #[serde(default)]
+    include_language_detection: Option<bool>,
+    #[serde(default)]
+    include_timestamps: Option<bool>,
+    /// At most 50, each at most 20 characters.
+    #[serde(default, deserialize_with = "keyterms")]
+    keyterms: Option<Vec<String>>,
+    /// An integer from 50 to 2000.
+    #[serde(default, deserialize_with = "duration_ms")]
+    min_silence_duration_ms: Option<f64>,
+    /// An integer from 50 to 2000.
+    #[serde(default, deserialize_with = "duration_ms")]
+    min_speech_duration_ms: Option<f64>,
+    #[serde(default)]
+    no_verbatim: Option<bool>,
+    #[serde(default)]
+    previous_text: Option<String>,
+    #[serde(default)]
+    secondary_languages: Option<Vec<String>>,
+    /// 0.3 to 3.
+    #[serde(default, deserialize_with = "vad_silence_threshold_secs")]
+    vad_silence_threshold_secs: Option<f64>,
+    /// 0.1 to 0.9.
+    #[serde(default, deserialize_with = "vad_threshold")]
+    vad_threshold: Option<f64>,
+}
+
+/// `z.enum(['manual', 'vad'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum CommitStrategy {
+    Manual,
+    Vad,
+}
+
+/// A `.nullish()` number in `range` (an integer when `integer`).
+fn nullish_number_in<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    range: std::ops::RangeInclusive<f64>,
+    integer: bool,
+    expected: &'static str,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if !range.contains(&value) || (integer && value.fract() != 0.0) => {
+            Err(serde::de::Error::custom(expected))
+        }
+        value => Ok(value),
+    }
+}
+
+fn duration_ms<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        50.0..=2000.0,
+        true,
+        "expected an integer from 50 to 2000",
+    )
+}
+
+fn vad_silence_threshold_secs<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        0.3..=3.0,
+        false,
+        "expected a number from 0.3 to 3",
+    )
+}
+
+fn vad_threshold<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        0.1..=0.9,
+        false,
+        "expected a number from 0.1 to 0.9",
+    )
+}
+
+/// `z.array(z.string().max(20)).max(50).nullish()`.
+fn keyterms<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    let keyterms = Option::<Vec<String>>::deserialize(deserializer)?;
+    if keyterms
+        .as_ref()
+        .is_some_and(|terms| terms.len() > 50 || terms.iter().any(|term| term.chars().count() > 20))
+    {
+        return Err(serde::de::Error::custom(
+            "expected at most 50 keyterms of at most 20 characters",
+        ));
+    }
+    Ok(keyterms)
+}
+
+/// `parseProviderOptions({ provider: 'elevenlabs', providerOptions, schema:
+/// elevenLabsTranscriptionModelOptionsSchema })`
+/// (elevenlabs-transcription-model.ts getArgs); `None` without an
+/// `elevenlabs` namespace.
+fn parse_transcription_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Result<Option<ElevenLabsTranscriptionOptions>, AiMuxError> {
+    aimux_provider_utils::parse_provider_options(options::NAMESPACE, provider_options)
+}
+
 /// ElevenLabs transcription response word.
 #[derive(Debug, Deserialize)]
 struct ElevenLabsTranscriptionWord {
@@ -740,28 +952,26 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         form.file("file", &filename, &options.media_type, &audio_bytes)?;
         form.text("diarize", "true")?;
 
-        // Parse provider options.
-        if let Some(el) = options::elevenlabs_options(options.provider_options.as_ref()) {
-            if let Some(v) = el.get("diarize").and_then(serde_json::Value::as_bool) {
+        // elevenlabs-transcription-model.ts getArgs: the schema's defaults
+        // apply when the namespace is present.
+        if let Some(el) = parse_transcription_options(options.provider_options.as_ref())? {
+            if let Some(v) = el.diarize {
                 form.text("diarize", &v.to_string())?;
             }
-            if let Some(v) = el.get("languageCode").and_then(|v| v.as_str()) {
+            if let Some(v) = &el.language_code {
                 form.text("language_code", v)?;
             }
-            if let Some(v) = el
-                .get("tagAudioEvents")
-                .and_then(serde_json::Value::as_bool)
-            {
+            if let Some(v) = el.tag_audio_events {
                 form.text("tag_audio_events", &v.to_string())?;
             }
-            if let Some(v) = el.get("numSpeakers").and_then(serde_json::Value::as_u64) {
+            if let Some(v) = el.num_speakers {
                 form.text("num_speakers", &v.to_string())?;
             }
-            if let Some(v) = el.get("timestampsGranularity").and_then(|v| v.as_str()) {
-                form.text("timestamps_granularity", v)?;
+            if let Some(v) = el.timestamps_granularity {
+                form.text("timestamps_granularity", v.as_str())?;
             }
-            if let Some(v) = el.get("fileFormat").and_then(|v| v.as_str()) {
-                form.text("file_format", v)?;
+            if let Some(v) = el.file_format {
+                form.text("file_format", v.as_str())?;
             }
         }
 
