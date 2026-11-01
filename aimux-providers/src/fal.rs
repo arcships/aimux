@@ -453,6 +453,145 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 
+/// `falImageModelOptionsSchema` (fal-image-model-options.ts), checked
+/// only: a loose object whose known keys, camelCase and their deprecated
+/// snake_case forms, are `.nullish()` with the ranges and enums below. The
+/// request is built from the raw namespace, as upstream's transform keeps
+/// every unknown key.
+#[derive(Debug, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "validated only; the body is built from the raw namespace"
+)]
+struct FalImageOptions {
+    #[serde(default, rename = "imageUrl")]
+    image_url: Option<String>,
+    #[serde(default, rename = "maskUrl")]
+    mask_url: Option<String>,
+    #[serde(default, rename = "guidanceScale", deserialize_with = "guidance_scale")]
+    guidance_scale: Option<f64>,
+    #[serde(
+        default,
+        rename = "numInferenceSteps",
+        deserialize_with = "num_inference_steps"
+    )]
+    num_inference_steps: Option<f64>,
+    #[serde(default, rename = "enableSafetyChecker")]
+    enable_safety_checker: Option<bool>,
+    #[serde(default, rename = "outputFormat")]
+    output_format: Option<FalOutputFormat>,
+    #[serde(default, rename = "syncMode")]
+    sync_mode: Option<bool>,
+    #[serde(default)]
+    strength: Option<f64>,
+    #[serde(default)]
+    acceleration: Option<FalAcceleration>,
+    #[serde(
+        default,
+        rename = "safetyTolerance",
+        deserialize_with = "safety_tolerance"
+    )]
+    safety_tolerance: Option<f64>,
+    #[serde(default, rename = "useMultipleImages")]
+    use_multiple_images: Option<bool>,
+    #[serde(default, rename = "image_url")]
+    image_url_snake: Option<String>,
+    #[serde(default, rename = "mask_url")]
+    mask_url_snake: Option<String>,
+    #[serde(
+        default,
+        rename = "guidance_scale",
+        deserialize_with = "guidance_scale"
+    )]
+    guidance_scale_snake: Option<f64>,
+    #[serde(
+        default,
+        rename = "num_inference_steps",
+        deserialize_with = "num_inference_steps"
+    )]
+    num_inference_steps_snake: Option<f64>,
+    #[serde(default, rename = "enable_safety_checker")]
+    enable_safety_checker_snake: Option<bool>,
+    #[serde(default, rename = "output_format")]
+    output_format_snake: Option<FalOutputFormat>,
+    #[serde(default, rename = "sync_mode")]
+    sync_mode_snake: Option<bool>,
+    #[serde(
+        default,
+        rename = "safety_tolerance",
+        deserialize_with = "safety_tolerance"
+    )]
+    safety_tolerance_snake: Option<f64>,
+}
+
+/// `outputFormat`: `z.enum(['jpeg', 'png'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FalOutputFormat {
+    Jpeg,
+    Png,
+}
+
+/// `acceleration`: `z.enum(['none', 'regular', 'high'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FalAcceleration {
+    #[serde(rename = "none")]
+    Off,
+    Regular,
+    High,
+}
+
+/// A nullish number within `min..=max`.
+fn number_in<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    min: f64,
+    max: f64,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if !(min..=max).contains(&value) => Err(serde::de::Error::custom(format!(
+            "expected a number from {min} to {max}"
+        ))),
+        value => Ok(value),
+    }
+}
+
+/// `guidanceScale`: `z.number().min(1).max(20)`.
+fn guidance_scale<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 1.0, 20.0)
+}
+
+/// `numInferenceSteps`: `z.number().min(1).max(50)`.
+fn num_inference_steps<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 1.0, 50.0)
+}
+
+/// `safetyTolerance`: `z.enum(['1', ..., '6']).or(z.number().min(1).max(6))`.
+fn safety_tolerance<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<Value>::deserialize(deserializer)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(level)) if ["1", "2", "3", "4", "5", "6"].contains(&level.as_str()) => {
+            Ok(level.parse().ok())
+        }
+        Some(Value::Number(level))
+            if level
+                .as_f64()
+                .is_some_and(|level| (1.0..=6.0).contains(&level)) =>
+        {
+            Ok(level.as_f64())
+        }
+        Some(_) => Err(serde::de::Error::custom(
+            "expected '1' to '6' or a number from 1 to 6",
+        )),
+    }
+}
+
 /// An fal.ai image generation model.
 pub struct FalImageModel {
     model_id: String,
@@ -516,6 +655,12 @@ impl ImageModel for FalImageModel {
         body.insert("image_size".into(), image_size);
         body.insert("num_images".into(), json!(options.n));
 
+        // fal-image-model.ts doGenerate: parseProviderOptions with
+        // falImageModelOptionsSchema before the body is built.
+        aimux_provider_utils::parse_provider_options::<FalImageOptions>(
+            options::NAMESPACE,
+            Some(&options.provider_options),
+        )?;
         let fal_opts = options::fal_options(Some(&options.provider_options));
 
         if let Some(ref files) = options.files

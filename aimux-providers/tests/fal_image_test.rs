@@ -196,3 +196,67 @@ async fn should_handle_single_image_response() {
         _ => panic!("expected Binary"),
     }
 }
+
+/// `providerOptions.fal` is parsed against `falImageModelOptionsSchema`
+/// (fal-image-model.ts doGenerate): a value outside the schema fails with
+/// the upstream message before anything is sent.
+#[tokio::test]
+async fn should_reject_image_options_outside_the_schema() {
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("fal-ai/flux/schnell");
+    for fal in [
+        json!({ "guidanceScale": 25 }),
+        json!({ "guidance_scale": 0.5 }),
+        json!({ "numInferenceSteps": 51 }),
+        json!({ "outputFormat": "webp" }),
+        json!({ "acceleration": "max" }),
+        json!({ "safetyTolerance": "7" }),
+        json!({ "safety_tolerance": 0 }),
+        json!({ "syncMode": "yes" }),
+        json!({ "imageUrl": 1 }),
+    ] {
+        let mut call = options(PROMPT);
+        call.provider_options = serde_json::from_value(json!({ "fal": fal })).unwrap();
+        let error = model.do_generate(&call).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {fal}, got {error:?}");
+        };
+        assert_eq!(
+            message, "Invalid argument for parameter providerOptions: invalid fal provider options",
+            "{fal}"
+        );
+        assert!(cause.is_some(), "{fal}");
+    }
+}
+
+/// Values inside the schema, `null`, and unknown keys pass (a loose object).
+#[tokio::test]
+async fn should_accept_image_options_inside_the_schema() {
+    let server = MockServer::start().await;
+    mock_fal(&server, fal_response(&server.uri())).await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("fal-ai/flux/schnell");
+    let mut call = options(PROMPT);
+    call.provider_options = serde_json::from_value(json!({ "fal": {
+        "guidanceScale": 7.5,
+        "numInferenceSteps": 50,
+        "outputFormat": "png",
+        "acceleration": "none",
+        "safetyTolerance": "2",
+        "safety_tolerance": 6,
+        "syncMode": null,
+        "custom_param": { "nested": true },
+    } }))
+    .unwrap();
+    model.do_generate(&call).await.unwrap();
+}
