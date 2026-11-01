@@ -24,10 +24,7 @@ def verify_contract(expected_digest=EXPECTED_MANIFEST_DIGEST):
     if description["abiVersion"] != ABI_VERSION or description["opsVersion"] != OPS_VERSION:
         raise ImportError("aimux manifest version differs from the native module")
     if expected_digest is not None and manifest_digest() != expected_digest:
-        raise ImportError(
-            "aimux manifest digest differs from the consumer's pinned contract: "
-            f"runtime {manifest_digest()}, pinned {expected_digest}"
-        )
+        raise ImportError("aimux manifest digest differs from the consumer's pinned contract")
     return description
 
 
