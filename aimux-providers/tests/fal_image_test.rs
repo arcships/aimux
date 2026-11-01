@@ -304,3 +304,100 @@ async fn should_not_send_an_unset_image_size() {
         json!({ "prompt": PROMPT, "num_images": 1 })
     );
 }
+
+fn with_fal(fal: Value) -> ImageCallOptions {
+    let mut call = options(PROMPT);
+    call.provider_options = serde_json::from_value(json!({ "fal": fal })).unwrap();
+    call
+}
+
+/// fal-image-model.ts getArgs: the schema's transform maps a snake_case key
+/// to its camelCase name, records it in `__deprecatedKeys` (one warning),
+/// and drops known keys that are null. Unknown keys pass through as given.
+#[tokio::test]
+async fn should_rewrite_the_options_like_the_upstream_transform() {
+    let server = MockServer::start().await;
+    mock_fal(&server, fal_response(&server.uri())).await;
+    let model = flux_schnell(&server.uri());
+
+    // "should convert camelCase provider options to snake_case for API"
+    let result = model
+        .do_generate(&with_fal(json!({
+            "imageUrl": "https://example.com/image.png",
+            "guidanceScale": 7.5,
+            "numInferenceSteps": 50,
+            "enableSafetyChecker": false,
+        })))
+        .await
+        .unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({
+            "prompt": PROMPT,
+            "num_images": 1,
+            "image_url": "https://example.com/image.png",
+            "guidance_scale": 7.5,
+            "num_inference_steps": 50,
+            "enable_safety_checker": false,
+        })
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+
+    // "should accept deprecated snake_case provider options with warning"
+    let result = model
+        .do_generate(&with_fal(json!({
+            "image_url": "https://example.com/image.png",
+            "guidance_scale": 7.5,
+            "num_inference_steps": 50,
+        })))
+        .await
+        .unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({
+            "prompt": PROMPT,
+            "num_images": 1,
+            "image_url": "https://example.com/image.png",
+            "guidance_scale": 7.5,
+            "num_inference_steps": 50,
+        })
+    );
+    let [aimux_core::shared::Warning::Other { message }] = result.warnings.as_slice() else {
+        panic!("expected one warning, got {:?}", result.warnings);
+    };
+    assert!(message.contains("deprecated snake_case"), "{message}");
+    assert!(
+        message.contains("'image_url' (use 'imageUrl')"),
+        "{message}"
+    );
+    assert!(
+        message.contains("'guidance_scale' (use 'guidanceScale')"),
+        "{message}"
+    );
+    assert!(
+        message.contains("'num_inference_steps' (use 'numInferenceSteps')"),
+        "{message}"
+    );
+
+    // A null known key is not sent; a null unknown key is.
+    model
+        .do_generate(&with_fal(json!({ "guidanceScale": null, "extra": null })))
+        .await
+        .unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({ "prompt": PROMPT, "num_images": 1, "extra": null })
+    );
+
+    // The snake_case value wins over its camelCase twin.
+    model
+        .do_generate(&with_fal(
+            json!({ "guidanceScale": 7.5, "guidance_scale": 12 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        sent_body(&server).await,
+        json!({ "prompt": PROMPT, "num_images": 1, "guidance_scale": 12 })
+    );
+}

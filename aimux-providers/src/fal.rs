@@ -669,6 +669,20 @@ fn safety_tolerance<'de, D: serde::Deserializer<'de>>(
     }
 }
 
+/// The image options with a deprecated snake_case form, in the order the
+/// schema's transform maps them: the camelCase key and the body key, which
+/// is the snake_case one.
+const FAL_IMAGE_RENAMED_KEYS: [(&str, &str); 8] = [
+    ("imageUrl", "image_url"),
+    ("maskUrl", "mask_url"),
+    ("guidanceScale", "guidance_scale"),
+    ("numInferenceSteps", "num_inference_steps"),
+    ("enableSafetyChecker", "enable_safety_checker"),
+    ("outputFormat", "output_format"),
+    ("syncMode", "sync_mode"),
+    ("safetyTolerance", "safety_tolerance"),
+];
+
 /// An fal.ai image generation model.
 pub struct FalImageModel {
     model_id: String,
@@ -783,29 +797,53 @@ impl ImageModel for FalImageModel {
         }
 
         if let Some(fal) = fal_opts {
-            let map: &[(&str, &str)] = &[
-                ("imageUrl", "image_url"),
-                ("maskUrl", "mask_url"),
-                ("guidanceScale", "guidance_scale"),
-                ("numInferenceSteps", "num_inference_steps"),
-                ("enableSafetyChecker", "enable_safety_checker"),
-                ("outputFormat", "output_format"),
-                ("syncMode", "sync_mode"),
-                ("safetyTolerance", "safety_tolerance"),
-            ];
-            for (key, value) in fal {
-                if key == "__deprecatedKeys"
-                    || key == "useMultipleImages"
-                    || is_poll_control_key(key)
-                {
-                    continue;
+            // The schema's transform (fal-image-model-options.ts): a
+            // non-null snake_case key wins over its camelCase twin and is
+            // reported as deprecated; a null known key is dropped. Every
+            // other key passes through, `useMultipleImages` excepted.
+            let set = |key: &str| fal.get(key).filter(|value| !value.is_null());
+            let mut deprecated_keys = Vec::new();
+            for (camel_key, snake_key) in FAL_IMAGE_RENAMED_KEYS {
+                if let Some(value) = set(snake_key) {
+                    deprecated_keys.push(snake_key);
+                    body.insert(snake_key.to_string(), value.clone());
+                } else if let Some(value) = set(camel_key) {
+                    body.insert(snake_key.to_string(), value.clone());
                 }
-                let ak = map
+            }
+            for key in ["strength", "acceleration"] {
+                if let Some(value) = set(key) {
+                    body.insert(key.to_string(), value.clone());
+                }
+            }
+            for (key, value) in fal {
+                let known = key == "strength"
+                    || key == "acceleration"
+                    || key == "useMultipleImages"
+                    || FAL_IMAGE_RENAMED_KEYS
+                        .iter()
+                        .any(|(camel_key, snake_key)| key == camel_key || key == snake_key);
+                if !known && key != "__deprecatedKeys" && !is_poll_control_key(key) {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
+            if !deprecated_keys.is_empty() {
+                let keys = deprecated_keys
                     .iter()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.to_string())
-                    .unwrap_or_else(|| key.clone());
-                body.insert(ak, value.clone());
+                    .map(|snake_key| {
+                        let camel_key = FAL_IMAGE_RENAMED_KEYS
+                            .iter()
+                            .find(|(_, snake)| snake == snake_key)
+                            .map_or(*snake_key, |(camel, _)| *camel);
+                        format!("'{snake_key}' (use '{camel_key}')")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "The following provider options use deprecated snake_case and will be removed in @ai-sdk/fal v2.0. Please use camelCase instead: {keys}"
+                    ),
+                });
             }
         }
 
