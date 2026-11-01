@@ -1,6 +1,9 @@
 //! Rust translation of the fal image model tests.
 //! Source: `reference/ai/packages/fal/src/fal-image-model.test.ts`
 
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -605,5 +608,68 @@ async fn should_warn_when_multiple_files_are_sent() {
         "Multiple input images provided but useMultipleImages is not enabled. \
          Only the first image will be used. Set providerOptions.fal.useMultipleImages \
          to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+    );
+}
+
+/// fal-provider.ts: `defaultBaseURL` is `https://fal.run`, which only the
+/// image model reads (`${baseURL}/${modelId}`); the transcription and video
+/// models hard-code `https://queue.fal.run` (upstream "should construct an
+/// image model with default configuration").
+#[tokio::test]
+async fn should_default_each_model_to_its_upstream_host() {
+    let fetch = mock_fetch::RouteFetch::new(|seen| {
+        let body = if seen.url.contains("/requests/") {
+            json!({ "text": "hi", "video": { "url": "https://fal.media/v.mp4" } })
+        } else if seen.url.starts_with("https://queue.fal.run/") {
+            json!({
+                "request_id": "id",
+                "response_url": "https://queue.fal.run/fal-ai/kling-video/requests/id",
+            })
+        } else {
+            json!({ "images": [] })
+        };
+        mock_fetch::Canned::json(&body)
+    });
+    let provider = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    provider
+        .image("fal-ai/flux/schnell")
+        .do_generate(&options(PROMPT))
+        .await
+        .unwrap();
+    aimux_core::transcription_model::TranscriptionModel::do_generate(
+        &provider.transcription("wizper"),
+        &aimux_core::transcription_model::TranscriptionCallOptions::new(
+            aimux_core::transcription_model::AudioInput::Binary(vec![1, 2, 3]),
+            "audio/wav",
+        ),
+    )
+    .await
+    .unwrap();
+    aimux_core::video_model::VideoModel::do_start(
+        &provider.video("fal-ai/kling-video"),
+        &aimux_core::video_model::VideoCallOptions::new(PROMPT),
+    )
+    .await
+    .unwrap();
+
+    let posts: Vec<String> = fetch
+        .seen()
+        .into_iter()
+        .filter(|seen| seen.method == "POST")
+        .map(|seen| seen.url)
+        .collect();
+    assert_eq!(
+        posts,
+        [
+            "https://fal.run/fal-ai/flux/schnell",
+            "https://queue.fal.run/fal-ai/wizper",
+            "https://queue.fal.run/fal-ai/kling-video",
+        ]
     );
 }

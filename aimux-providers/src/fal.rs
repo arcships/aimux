@@ -124,7 +124,14 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 pub(crate) mod options;
 
-pub(crate) const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
+/// The default `base_url` (`createFal`'s `defaultBaseURL`). Upstream uses it
+/// for the image model; the transcription and video models hard-code the
+/// queue host themselves (see [`DEFAULT_QUEUE_BASE_URL`]).
+pub(crate) const DEFAULT_BASE_URL: &str = "https://fal.run";
+/// The host the transcription and video models talk to, which upstream
+/// hard-codes in `fal-transcription-model.ts` and `fal-video-model.ts`
+/// rather than reading `baseURL`.
+pub(crate) const DEFAULT_QUEUE_BASE_URL: &str = "https://queue.fal.run";
 pub(crate) const API_KEY_ENV_VAR: &str = "FAL_KEY";
 const DEFAULT_NAME: &str = "fal";
 
@@ -179,13 +186,13 @@ impl std::fmt::Debug for FalProviderSettings {
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
+    let explicit_base_url = match settings.base_url.as_deref() {
+        Some(url) => Some(validate_base_url(url)?),
+        None => None,
     };
     Ok(FalProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
+        base_url: explicit_base_url,
         headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Fal"),
             AuthScheme::Scheme("Key"),
@@ -210,16 +217,24 @@ pub fn fal() -> &'static FalProvider {
 /// client.
 pub struct FalProvider {
     name: String,
-    base_url: String,
+    /// The caller's `base_url`; `None` leaves each model on its own default.
+    base_url: Option<String>,
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
 impl FalProvider {
+    /// The endpoint of one model method: the caller's `base_url`, or the
+    /// host that model defaults to (upstream reads `baseURL` for images
+    /// only and hard-codes the queue host in the other two).
     fn model_config(&self, method: &str) -> EndpointConfig {
+        let default = match method {
+            "image" => DEFAULT_BASE_URL,
+            _ => DEFAULT_QUEUE_BASE_URL,
+        };
         EndpointConfig::fixed(
             format!("{}.{method}", self.name),
-            self.base_url.clone(),
+            self.base_url.as_deref().unwrap_or(default).to_string(),
             self.headers.clone(),
             self.fetch.clone(),
             None,
