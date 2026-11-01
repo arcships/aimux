@@ -3333,7 +3333,7 @@ status = "mapped"
 
 [elevenlabs.files.tests]
 sub-feature = [
-  { case = "ElevenLabsSpeechModel › doGenerate › should include user-agent header", issue = 328, reason = "the ai-sdk-elevenlabs/<version> user-agent part is not sent yet; it lands with the shared user-agent work after #388" },
+  { case = "ElevenLabsSpeechModel › doGenerate › should include user-agent header", issue = 328, reason = "the ai-sdk-elevenlabs/<version> user-agent part is not sent on this branch; #444 adds it with its own test" },
 ]
 
 [[elevenlabs.files]]
