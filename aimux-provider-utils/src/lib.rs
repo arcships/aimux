@@ -62,8 +62,9 @@ pub use create_tool_name_mapping::{ToolNameMapping, create_tool_name_mapping};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
-    RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch,
+    ProcessDefaultFetch, ProxyConfig, RequestCredentials, ReqwestFetch, default_fetch,
+    set_default_transport,
 };
 pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;

@@ -7,7 +7,7 @@ use super::embedding_model_options::AmazonBedrockEmbeddingModelSettings;
 use super::error::bedrock_failed_response_handler;
 use super::image_model::BedrockImageModel;
 use super::reranking::BedrockRerankingModel;
-use super::sigv4_fetch::{Auth, BedrockAuthFetch, ProcessDefaultFetch};
+use super::sigv4_fetch::{Auth, BedrockAuthFetch};
 use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint, TransformRequestBody};
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -158,7 +158,7 @@ pub fn create_amazon_bedrock(
     let credentials_auth = auth.clone();
     let inner = settings
         .fetch
-        .unwrap_or_else(|| Arc::new(ProcessDefaultFetch));
+        .unwrap_or_else(|| Arc::new(aimux_provider_utils::ProcessDefaultFetch));
     let fetch: FetchFunction = Arc::new(BedrockAuthFetch {
         signing: SigV4Fetch::new(
             inner.clone(),

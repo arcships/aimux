@@ -9,8 +9,7 @@ use super::provider::{
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
-    SigV4Fetch, default_fetch, is_valid_hostname_part, load_optional_setting, load_setting,
-    validate_base_url,
+    SigV4Fetch, is_valid_hostname_part, load_optional_setting, load_setting, validate_base_url,
 };
 use async_trait::async_trait;
 
@@ -173,16 +172,5 @@ impl Fetch for BedrockAuthFetch {
         } else {
             self.signing.fetch(request).await
         }
-    }
-}
-
-/// The process default transport, looked up on every request, as upstream
-/// reads `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129).
-pub(super) struct ProcessDefaultFetch;
-
-#[async_trait]
-impl Fetch for ProcessDefaultFetch {
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        default_fetch().fetch(request).await
     }
 }
