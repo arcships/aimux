@@ -497,3 +497,52 @@ async fn should_fail_on_a_generation_state_outside_the_schema() {
         .count();
     assert_eq!(polls, 1);
 }
+
+/// `maxPollAttempts` bounds the polls (luma-image-model.ts:183-191): a
+/// generation still `dreaming` after them fails with a timeout, after
+/// exactly that many polls.
+#[tokio::test]
+async fn should_stop_polling_after_max_poll_attempts() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/dream-machine/v1/generations/image"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/dream-machine/v1/generations/gen-123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "id": "gen-123", "state": "dreaming" })),
+        )
+        .mount(&server)
+        .await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.provider_options = serde_json::from_value(json!({ "luma": {
+        "pollIntervalMillis": 0,
+        "maxPollAttempts": 2,
+    } }))
+    .unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert!(
+        matches!(error, aimux_core::error::AiMuxError::Timeout(_)),
+        "{error:?}"
+    );
+    let polls = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 2);
+}
