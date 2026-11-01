@@ -14351,6 +14351,18 @@ mod provider_options_schema {
             json!({ "contextManagement": [{ "type": "summary", "compactThreshold": 1000 }] }),
             json!({ "allowedTools": { "toolNames": [] } }),
             json!({ "allowedTools": { "toolNames": ["weather"], "mode": "none" } }),
+            json!({ "instructions": 1 }),
+            json!({ "parallelToolCalls": "true" }),
+            json!({ "previousResponseId": 1 }),
+            json!({ "promptCacheKey": 1 }),
+            json!({ "reasoningEffort": 1 }),
+            json!({ "reasoningSummary": 1 }),
+            json!({ "safetyIdentifier": 1 }),
+            json!({ "passThroughUnsupportedFiles": null }),
+            json!({ "strictJsonSchema": "true" }),
+            json!({ "user": 1 }),
+            json!({ "forceReasoning": null }),
+            json!({ "compactionTrigger": "yes" }),
         ] {
             let mock = MockFetch::new(vec![]);
             let model = generate_provider(&mock).responses("gpt-5");

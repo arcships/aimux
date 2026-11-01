@@ -70,6 +70,32 @@ impl ResponsesNamespace {
         }
         Ok(())
     }
+
+    /// `parseProviderOptions` with `openaiResponsesSystemMessageOptionsSchema`
+    /// on a system message's provider options, under the read keys in turn
+    /// (convert-to-openai-responses-input.ts:428-440): the
+    /// `reasoningEffortUpdate` of the first namespace present.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` "invalid <namespace> provider options" when that
+    /// namespace does not match the schema, with the serde error as its cause.
+    pub(crate) fn system_message_effort_update(
+        self,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Result<Option<&'static str>, aimux_core::AiMuxError> {
+        for key in self.read {
+            if let Some(options) = aimux_provider_utils::parse_provider_options::<
+                SystemMessageOptions,
+            >(key, provider_options)?
+            {
+                return Ok(options
+                    .reasoning_effort_update
+                    .map(ReasoningEffortUpdate::as_str));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// `openaiLanguageModelResponsesOptionsSchema`. `.optional()` keys fail on
@@ -189,7 +215,7 @@ enum PromptCacheRetention {
     Day,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum ReasoningEffortUpdate {
     None,
@@ -198,6 +224,28 @@ enum ReasoningEffortUpdate {
     High,
     Xhigh,
     Max,
+}
+
+impl ReasoningEffortUpdate {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+
+/// `openaiResponsesSystemMessageOptionsSchema`: a system message's
+/// `reasoningEffortUpdate`, `.optional()` (`null` fails).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemMessageOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    reasoning_effort_update: Option<ReasoningEffortUpdate>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -154,15 +154,10 @@ impl OpenAIResponsesModel {
                 content,
                 provider_options,
             } = message
-                && let Some(effort) = provider_options
-                    .as_ref()
-                    .and_then(|v| profile.namespace.find_in(v))
-                    .and_then(|v| v.get("reasoningEffortUpdate"))
-                    .and_then(Value::as_str)
+                && let Some(effort) = profile
+                    .namespace
+                    .system_message_effort_update(provider_options.as_ref())?
             {
-                if !matches!(effort, "none" | "low" | "medium" | "high" | "xhigh" | "max") {
-                    return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
-                }
                 if !content.is_empty()
                     || !caps.supports_configuration_update
                     || update_incompatible
@@ -229,7 +224,7 @@ impl OpenAIResponsesModel {
             }
         }
         let mut result =
-            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream)?;
+            build_validated_request_body(profile.namespace, &self.model_id, options, stream)?;
         apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
         if profile.explicit_message_item_type
             && let Some(input) = result.body["input"].as_array_mut()
@@ -896,6 +891,20 @@ pub fn build_responses_request_body_for(
     stream: bool,
 ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     ns.validate(options.provider_options.as_ref())?;
+    build_validated_request_body(ns, model_id, options, stream)
+}
+
+/// [`build_responses_request_body_for`] once
+/// [`ResponsesNamespace::validate`] has passed.
+///
+/// # Errors
+/// Rejects unsupported prompt parts and invalid tool arguments.
+fn build_validated_request_body(
+    ns: ResponsesNamespace,
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;
