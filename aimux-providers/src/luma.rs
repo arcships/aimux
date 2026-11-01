@@ -189,6 +189,15 @@ impl ImageModel for LumaImageModel {
     fn max_images_per_call(&self) -> Option<u32> {
         Some(1)
     }
+    /// `photon-1` and `photon-flash-1` take input files; other models are
+    /// unknown (luma-image-model.ts `supportsFileInputs`).
+    fn supports_file_inputs(&self) -> Option<bool> {
+        matches!(self.model_id.as_str(), "photon-1" | "photon-flash-1").then_some(true)
+    }
+    /// No mask on the models that take files; unknown on the others.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        (self.supports_file_inputs() == Some(true)).then_some(false)
+    }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();

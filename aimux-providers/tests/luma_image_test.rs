@@ -378,3 +378,18 @@ async fn should_refuse_a_mask_before_the_files() {
         .to_string()
     );
 }
+
+/// luma-image-model.ts `supportsFileInputs` / `supportsMaskInputs`.
+#[test]
+fn should_advertise_file_and_mask_support_per_model() {
+    let provider = create_luma(LumaProviderSettings::default()).unwrap();
+    for (model_id, files, mask) in [
+        ("photon-1", Some(true), Some(false)),
+        ("photon-flash-1", Some(true), Some(false)),
+        ("custom-image-model", None, None),
+    ] {
+        let model = provider.image(model_id);
+        assert_eq!(model.supports_file_inputs(), files, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask, "{model_id}");
+    }
+}
