@@ -1480,6 +1480,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aimux_provider_utils::{UserAgentFetch, transport_user_agent}`, the
   user-agent edits a transport makes (RFC-0046 R1). They move out of
   `aimux-providers`, whose providers build their headers with them unchanged.
+- `aimux_provider_utils::SigV4AuthFetch`, the transport of an AI SDK AWS
+  provider: the package's user-agent part, then `SigV4Fetch` unless the
+  request carries the provider's API-key header; and
+  `aimux_provider_utils::ProcessDefaultFetch`, a transport that uses the
+  process default current at each request (RFC-0046 R3). Amazon Bedrock
+  (`Authorization`) and Anthropic on AWS (`x-api-key`) each had their own
+  copy of both; they now configure these and send the same requests. Their
+  settings, environment variables and credential errors stay per provider.
 - `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
   5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
   `providerOptions` namespace deserialized into its options type, `None`
