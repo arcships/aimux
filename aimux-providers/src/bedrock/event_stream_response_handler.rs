@@ -15,6 +15,7 @@ pub(super) fn bedrock_event_stream_response_handler()
         let output_headers = headers.clone();
         let url = input.url;
         let signal = input.abort_signal;
+        let redacted_body = body_source.into_redacted_arc();
         let stream = input.response.bytes_stream().map(move |result| {
             result.map_err(|error| {
                 AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
@@ -24,7 +25,7 @@ pub(super) fn bedrock_event_stream_response_handler()
                     ..aimux_core::ApiCallError::new(
                         error.to_string(),
                         url.clone(),
-                        body_source.materialize(),
+                        (*redacted_body).clone(),
                     )
                 }))
             })

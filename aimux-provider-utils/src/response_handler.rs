@@ -40,6 +40,32 @@ impl RequestBodySource {
             Self::Redacted(value) => (**value).clone(),
         }
     }
+
+    /// Convert into a shared redacted `Arc<serde_json::Value>`, releasing any
+    /// underlying unredacted `HttpBody` (and redacting `HttpBody::Json` in
+    /// place when uniquely owned so large Base64/image strings are freed
+    /// immediately before a response stream is consumed).
+    #[must_use]
+    pub fn into_redacted_arc(self) -> std::sync::Arc<serde_json::Value> {
+        match self {
+            Self::HttpBody(arc_body) => {
+                let redacted = match std::sync::Arc::try_unwrap(arc_body) {
+                    Ok(HttpBody::Json(value)) => crate::logging::redact_error_context(value),
+                    Ok(other) => crate::logging::redact_request_values(&other),
+                    Err(shared) => crate::logging::redact_request_values(&shared),
+                };
+                std::sync::Arc::new(redacted)
+            }
+            Self::Redacted(value) => value,
+        }
+    }
+
+    /// Convert into [`Self::Redacted`] so streaming response handlers never
+    /// retain the raw unredacted [`HttpBody`] across the lifetime of the stream.
+    #[must_use]
+    pub fn into_stream_source(self) -> Self {
+        Self::Redacted(self.into_redacted_arc())
+    }
 }
 
 /// Input supplied to one response handler.
@@ -161,8 +187,14 @@ impl<T> ResponseHandler<T> {
         input: ResponseHandlerInput,
         source: Option<RequestBodySource>,
     ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+        let streaming = self.streaming;
         match source {
             Some(src) => {
+                let src = if streaming {
+                    src.into_stream_source()
+                } else {
+                    src
+                };
                 CURRENT_BODY_SOURCE
                     .scope(src.clone(), (self.handler)(input, Some(src)))
                     .await
@@ -414,8 +446,9 @@ where
         let output_headers = headers.clone();
         let url = input.url;
         let signal = input.abort_signal;
+        let redacted_body = body_source.into_redacted_arc();
         let body_url = url.clone();
-        let body_request_source = body_source.clone();
+        let body_request_values = redacted_body.clone();
         let body = input.response.bytes_stream().map(move |result| {
             result.map_err(|error| {
                 AiMuxError::ApiCall(Box::new(ApiCallError {
@@ -425,7 +458,7 @@ where
                     ..ApiCallError::new(
                         error.to_string(),
                         body_url.clone(),
-                        body_request_source.materialize(),
+                        (*body_request_values).clone(),
                     )
                 }))
             })
@@ -433,7 +466,7 @@ where
 
         let stream_headers = output_headers.clone();
         let stream_url = url.clone();
-        let stream_request_source = body_source;
+        let stream_request_values = redacted_body;
         let value: BoxStream<'static, Result<T, AiMuxError>> = Box::pin(async_stream::stream! {
             let events = aimux_stream::SseStream::new(body);
             futures::pin_mut!(events);
@@ -465,7 +498,7 @@ where
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
-                                stream_request_source.materialize(),
+                                (*stream_request_values).clone(),
                             )
                         })));
                         break;
@@ -481,7 +514,7 @@ where
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
-                                stream_request_source.materialize(),
+                                (*stream_request_values).clone(),
                             )
                         })));
                         break;

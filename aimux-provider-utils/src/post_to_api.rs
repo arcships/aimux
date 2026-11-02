@@ -196,6 +196,11 @@ async fn execute_exchange<T>(
     let status = response.status().as_u16();
     let response_headers =
         crate::extract_response_headers::extract_response_headers(response.headers());
+    let abort_signal = request.abort_signal.clone();
+    let max_json_response_bytes = request.max_json_response_bytes;
+    // Drop `request` immediately after the wire send so `request.body` (`Arc<HttpBody>`)
+    // and `request.wire_body` are released before response body handling / streaming.
+    drop(request);
 
     if !(200..300).contains(&status) {
         let failed_lazy = failed_response_handler.uses_lazy_request_body();
@@ -207,8 +212,8 @@ async fn execute_exchange<T>(
                 request_body_source.materialize()
             },
             response,
-            abort_signal: request.abort_signal.clone(),
-            max_json_response_bytes: request.max_json_response_bytes,
+            abort_signal,
+            max_json_response_bytes,
         };
         return match failed_response_handler
             .handle_with_source(input, Some(request_body_source.clone()))
@@ -235,6 +240,14 @@ async fn execute_exchange<T>(
         };
     }
 
+    // For streaming handlers, materialize/redact once up front while `request_body_source`
+    // is the sole remaining owner of `Arc<HttpBody>` (so `HttpBody::Json` is redacted
+    // in place and large Base64/image strings are freed before stream consumption).
+    let request_body_source = if successful_response_handler.is_streaming() {
+        request_body_source.into_stream_source()
+    } else {
+        request_body_source
+    };
     let lazy = successful_response_handler.uses_lazy_request_body();
     let input = ResponseHandlerInput {
         url: url.clone(),
@@ -244,8 +257,8 @@ async fn execute_exchange<T>(
             request_body_source.materialize()
         },
         response,
-        abort_signal: request.abort_signal.clone(),
-        max_json_response_bytes: request.max_json_response_bytes,
+        abort_signal,
+        max_json_response_bytes,
     };
 
     match successful_response_handler
@@ -370,5 +383,131 @@ mod tests {
         assert!(handler.is_streaming());
         let plain = create_json_response_handler::<serde_json::Value>();
         assert!(!plain.is_streaming());
+    }
+
+    /// Streaming responses must release the raw unredacted `Arc<HttpBody>` (and
+    /// any large >4 KiB Base64/image prompt strings inside it) at stream start
+    /// instead of retaining it across the lifetime of the SSE stream closures.
+    #[tokio::test]
+    async fn streaming_response_drops_raw_http_body_before_stream_consumption_and_truncates_large_strings()
+     {
+        use futures::StreamExt;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string("data: {\"chunk\":1}\n\ndata: [DONE]\n\n"),
+            )
+            .mount(&server)
+            .await;
+
+        let request = HttpRequest {
+            url: server.uri(),
+            ..Default::default()
+        };
+        let large_b64 = "A".repeat(64 * 1024);
+        let body = serde_json::json!({
+            "api_key": "sk-secret-must-not-leak",
+            "image_b64": large_b64,
+        });
+        let prepared = request.prepare(HttpMethod::Post, HttpBody::Json(body));
+        let weak_raw_body = std::sync::Arc::downgrade(&prepared.body);
+        let source = RequestBodySource::HttpBody(prepared.body.clone());
+
+        let mut output = call_to_api_source(
+            prepared,
+            source,
+            create_event_source_response_handler::<serde_json::Value>(),
+            create_status_code_error_response_handler(),
+        )
+        .await
+        .expect("200 SSE response should succeed");
+
+        assert!(
+            weak_raw_body.upgrade().is_none(),
+            "raw Arc<HttpBody> (and its 64 KiB Base64 string) must be dropped before polling SSE stream"
+        );
+
+        let first = output
+            .value
+            .next()
+            .await
+            .expect("one SSE event")
+            .expect("valid JSON event");
+        assert_eq!(first["chunk"], 1);
+        assert!(output.value.next().await.is_none());
+    }
+
+    /// Lazy (`ResponseHandler::new_with_source`) and eager (`ResponseHandler::new`)
+    /// error handlers must produce identical redacted `request_body_values`.
+    #[tokio::test]
+    async fn lazy_and_eager_error_handlers_produce_identical_redacted_request_body_values() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("bad request"))
+            .mount(&server)
+            .await;
+
+        let body = serde_json::json!({
+            "authorization": "Bearer secret-token",
+            "prompt": "B".repeat(8192),
+            "temperature": 0.5,
+        });
+
+        let req_lazy = HttpRequest {
+            url: server.uri(),
+            ..Default::default()
+        };
+        let err_lazy = post_json_to_api(
+            req_lazy,
+            body.clone(),
+            create_json_response_handler::<serde_json::Value>(),
+            create_status_code_error_response_handler(),
+        )
+        .await
+        .unwrap_err();
+
+        let req_eager = HttpRequest {
+            url: server.uri(),
+            ..Default::default()
+        };
+        let eager_failed_handler = ResponseHandler::new(|input| async move {
+            Ok(ResponseHandlerOutput {
+                value: AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(input.response.status().as_u16()),
+                    ..ApiCallError::new("bad request", input.url, input.request_body_values)
+                })),
+                raw_value: None,
+                response_headers: std::collections::HashMap::new(),
+            })
+        });
+        let err_eager = post_json_to_api(
+            req_eager,
+            body,
+            create_json_response_handler::<serde_json::Value>(),
+            eager_failed_handler,
+        )
+        .await
+        .unwrap_err();
+
+        let (AiMuxError::ApiCall(lazy_detail), AiMuxError::ApiCall(eager_detail)) =
+            (err_lazy, err_eager)
+        else {
+            panic!("expected ApiCall errors");
+        };
+        assert_eq!(
+            lazy_detail.request_body_values,
+            eager_detail.request_body_values
+        );
+        assert_eq!(
+            lazy_detail.request_body_values["authorization"],
+            serde_json::json!("[REDACTED]")
+        );
+        assert_eq!(
+            lazy_detail.request_body_values["prompt"],
+            serde_json::json!("[STRING 8192 bytes]")
+        );
     }
 }
