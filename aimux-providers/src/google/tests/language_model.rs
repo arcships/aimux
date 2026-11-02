@@ -20,8 +20,9 @@ use serde_json::{Value, json};
 use crate::google::api_types::Candidate;
 use crate::google::options::Namespace;
 use crate::google::{GoogleModel, GoogleProvider, GoogleProviderSettings, create_google};
-use crate::shared::{AuthScheme, Credential, EndpointConfig, EndpointHeaders, ProviderHeaders};
+use crate::shared::{EndpointConfig, EndpointHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 // ── doGenerate helpers ───────────────────────────────────────────────────────
 

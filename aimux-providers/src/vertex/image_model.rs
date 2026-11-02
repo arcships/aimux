@@ -8,9 +8,10 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use crate::google::convert::{build_vertex_request_body, validate_call_options_for_namespace};
-use crate::google::google_failed_response_handler;
-use crate::google::options::Namespace;
+use crate::google::internal::{
+    Namespace, build_vertex_request_body, google_failed_response_handler,
+    validate_call_options_for_namespace,
+};
 use crate::shared::EndpointConfig;
 use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPart, UserPart};
 use aimux_core::options::CallOptions;
