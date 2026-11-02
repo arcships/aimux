@@ -1,9 +1,9 @@
 //! The Vertex AI xAI provider (xai/google-vertex-xai-provider.ts and its
 //! `-node` wrapper).
 
-use crate::openai_compatible::{
+use crate::openai_compatible::internal::{
     CompatibleBodyRewrite, OpenAICompatibleChatModel, OpenAICompatibleProvider,
-    OpenAICompatibleProviderSettings,
+    OpenAICompatibleProviderSettings, build,
 };
 use crate::vertex::partner_provider::{VertexXaiProviderSettings, partner_parts};
 use aimux_core::embedding_model::EmbeddingModel;
@@ -62,7 +62,7 @@ pub fn create_google_vertex_xai(
 ) -> Result<VertexXaiProvider, AiMuxError> {
     let (base_url, fetch_headers) = partner_parts(&settings, false)?;
     let http = Regex::new(r"^https?://.*$").expect("valid URL pattern");
-    let provider = crate::openai_compatible::build(
+    let provider = build(
         OpenAICompatibleProviderSettings {
             name: "googleVertex.xai".into(),
             fetch: settings.fetch,
