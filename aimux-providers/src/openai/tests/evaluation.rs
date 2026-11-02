@@ -285,7 +285,8 @@ mod older_decision {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use crate::{OpenAIProvider, OpenAIProviderSettings, PresetSettings, create_openai};
+    use crate::PresetSettings;
+    use crate::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
     use aimux_core::decision_model::*;
     use aimux_core::recording::{self, RingRecorder};
     use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
@@ -960,7 +961,7 @@ mod older_decision {
 fn native_decision_url_passes_endpoint_to_url_callback() {
     use crate::decision_support::DecisionEndpoint;
     use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
-    use crate::shared::{Credential, ProviderHeaders};
+    use aimux_provider_utils::{Credential, ProviderHeaders};
 
     let mut config = OpenAIModelConfig::fixed(
         "openai".into(),

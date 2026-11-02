@@ -49,7 +49,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 use crate::xai::options::NAMESPACE;
-use crate::{XAIProviderSettings, XaiTranscriptionModel, create_xai};
+use crate::xai::{XAIProviderSettings, XaiTranscriptionModel, create_xai};
 
 /// `createXai({ apiKey: 'test-api-key', headers }).transcription()`, sending
 /// through `fetch`.
