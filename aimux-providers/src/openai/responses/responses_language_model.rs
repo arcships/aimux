@@ -2861,7 +2861,7 @@ impl Transformer for OpenAIResponsesStream {
                             {
                                 *final_reasoning_context = Some(ctx.clone());
                             }
-                            // `response.error` is `string | null`: only a
+                            // `response.error` is `object | null`: only a
                             // non-null one is an error (upstream's `!= null`).
                             if !*stream_errored
                                 && resp_obj.get("error").is_some_and(|error| !error.is_null())
