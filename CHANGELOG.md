@@ -2021,11 +2021,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Open Responses warns when it maps a top-level `reasoning` level to a
   different effort (`minimal` is sent as `low`), as the AI SDK's
   `mapReasoningToProviderEffort` does.
-- OpenAI Responses (and Azure, which shares its stream) no longer adds an
-  error part for a `response.failed` event whose `response.error` is
-  `null`; the call still finishes with `error`. The Responses API types the
-  field `string | null` and `@ai-sdk/openai` checks `!= null`; aimux only
-  checked that the key was there.
 
 ### Removed
 
