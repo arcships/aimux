@@ -1563,47 +1563,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
   does; it was checked but the 120 attempts always applied.
 
-- fal follows `@ai-sdk/fal` 3.0.54:
-  - An image call goes to `https://fal.run` by default, as `createFal`'s
-    `defaultBaseURL`; transcription and video stay on
-    `https://queue.fal.run`, which upstream hard-codes for them. An explicit
-    `base_url` still applies to all three (upstream ignores it for
-    transcription and video). Every model used the queue host before.
-  - Image, transcription and video calls parse `providerOptions.fal` against
-    the upstream schemas and fail with `invalid fal provider options` when a
-    value is outside them. Transcription fills the schema defaults
-    (`language: "en"`, `version: "3"`, `batch_size: 64`,
-    `chunk_level: "segment"`) once the namespace is set. Video calls send the
-    options at all: `loop`, `motion_strength`, `resolution`,
-    `negative_prompt`, `prompt_optimizer`, and every other key as given.
-  - Image options are rewritten like the upstream transform: a deprecated
-    snake_case key wins over its camelCase twin and adds one warning, and a
-    known key set to `null` is not sent. An unset `image_size` is not sent
-    either, nor a video `seed` or `duration` of 0.
-  - Transcription and video polls treat only
-    `{"detail": "Request is still in progress"}` as pending, whatever the
-    status; any other error response ends the call, where a 400 or 404 was
-    polled until the attempts ran out.
-  - A video is polled at the `response_url` the queue returns, through the
-    SSRF guard, and the API key goes with the poll only while that URL is on
-    the origin the request was submitted to. A queue answer without the URL,
-    or with an empty one, fails with `No response URL returned from queue
-    endpoint`.
-  - The video operation is now `{responseUrl, submitUrl}` instead of
-    `{request_id}`. An operation saved by an earlier version cannot be
-    resumed: its status call fails with `fal operation reference is missing
-    responseUrl`, and the video has to be started again.
-  - A completed video takes its media type from the response's
-    `content_type` (else `video/mp4`), reads `video.url` only (an empty one
-    is an error, with the upstream `No video URL in response`), reports no
-    headers from the queue submission, and carries the upstream
-    `providerMetadata.fal` block: the video's url, width, height, duration,
-    fps and content type under `videos`, then `seed`, `timings`,
-    `has_nsfw_concepts` and a truthy `prompt`.
-  - Errors read a validation error as one `loc: msg` line per entry instead
-    of the first `msg`. Image metadata carries each image's `nsfw` flag, the
-    multiple-files warning has the upstream wording, and image models report
-    `supports_file_inputs` / `supports_mask_inputs` by model id.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
