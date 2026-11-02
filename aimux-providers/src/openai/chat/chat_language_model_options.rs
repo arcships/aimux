@@ -4,7 +4,7 @@
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{JsonObject, SharedProviderOptions};
-use aimux_provider_utils::{optional_field, parse_option_fields};
+use aimux_provider_utils::optional_field;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -196,43 +196,51 @@ pub(crate) fn parse_chat_options(options: &JsonObject) -> Result<JsonObject, AiM
             cause: Some(ErrorCause::source(&error)),
         },
     )?;
-    parse_option_fields(options, NAMESPACE, |key, value| match key {
-        // The schema check above has already proven every key coerces.
-        "logitBias" => Some(value.as_object().ok_or(()).and_then(|object| {
-            let mut parsed = JsonObject::new();
-            for (key, value) in object {
-                parsed.insert(coerce_logit_bias_key(key).ok_or(())?, value.clone());
-            }
-            Ok(Value::Object(parsed))
-        })),
-        "logprobs"
-        | "maxCompletionTokens"
-        | "metadata"
-        | "prediction"
-        | "reasoningEffort"
-        | "serviceTier"
-        | "textVerbosity"
-        | "promptCacheRetention"
-        | "systemMessageMode"
-        | "user"
-        | "promptCacheKey"
-        | "safetyIdentifier"
-        | "parallelToolCalls"
-        | "store"
-        | "strictJsonSchema"
-        | "forceReasoning" => Some(Ok(value.clone())),
-        // A nested `z.object`: only its declared keys are kept.
-        "promptCacheOptions" => Some(Ok(Value::Object(
-            value
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter(|(key, _)| matches!(key.as_str(), "mode" | "ttl"))
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        ))),
-        _ => None,
-    })
+    let mut parsed = JsonObject::new();
+    for (key, value) in options {
+        let value = match key.as_str() {
+            // The schema check above has already proven every key coerces.
+            "logitBias" => Value::Object(
+                value
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(key, value)| {
+                        coerce_logit_bias_key(key).map(|key| (key, value.clone()))
+                    })
+                    .collect(),
+            ),
+            "logprobs"
+            | "maxCompletionTokens"
+            | "metadata"
+            | "prediction"
+            | "reasoningEffort"
+            | "serviceTier"
+            | "textVerbosity"
+            | "promptCacheRetention"
+            | "systemMessageMode"
+            | "user"
+            | "promptCacheKey"
+            | "safetyIdentifier"
+            | "parallelToolCalls"
+            | "store"
+            | "strictJsonSchema"
+            | "forceReasoning" => value.clone(),
+            // A nested `z.object`: only its declared keys are kept.
+            "promptCacheOptions" => Value::Object(
+                value
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(key, _)| matches!(key.as_str(), "mode" | "ttl"))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            ),
+            _ => continue,
+        };
+        parsed.insert(key.clone(), value);
+    }
+    Ok(parsed)
 }
 
 /// `z.coerce.number<string>()` on a `logitBias` key: `Number(key)` as

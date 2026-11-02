@@ -42,7 +42,7 @@ use super::api::{
 use super::config::AnthropicConfig;
 use super::convert_to_prompt::{convert_prompt_with_validator, field};
 use super::get_cache_control::CacheControlValidator;
-use super::language_model_options::{CANONICAL, anthropic_options_in, parse_anthropic_options};
+use super::language_model_options::{CANONICAL, anthropic_options_in, parse_anthropic_namespaces};
 use super::map_stop_reason::parse_stop_reason;
 use super::prepare_tools::{AnthropicTool, prepare_tools_with_validator};
 use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
@@ -3037,10 +3037,9 @@ pub(crate) fn build_request_body_for(
     profile: &RequestProfile,
 ) -> Result<RequestBodyResult, AiMuxError> {
     let mut parsed_options = options.clone();
-    if let Some(raw) =
-        anthropic_options_in(options.provider_options.as_ref(), &profile.options_name)
+    if let Some(parsed) =
+        parse_anthropic_namespaces(options.provider_options.as_ref(), &profile.options_name)?
     {
-        let parsed = parse_anthropic_options(&raw)?;
         let namespaces = parsed_options
             .provider_options
             .get_or_insert_with(Default::default);

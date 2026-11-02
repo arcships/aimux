@@ -1,5 +1,6 @@
 //! `anthropicLanguageModelOptions` (anthropic-language-model-options.ts) as
-//! `parse_anthropic_options` reads the merged namespace. Not upstream cases:
+//! `parse_anthropic_options` reads one namespace and
+//! `parse_anthropic_namespaces` merges them. Not upstream cases:
 //! upstream checks the schema through zod, which has no test file of its
 //! own. What is kept, stripped and rejected is pinned here so the schema can
 //! change form without changing what reaches the request.
@@ -7,11 +8,14 @@
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::shared::SharedProviderOptions;
 
-use crate::anthropic::language_model_options::parse_anthropic_options;
+use crate::anthropic::language_model_options::{
+    parse_anthropic_namespaces, parse_anthropic_options,
+};
 
 fn parse(options: Value) -> Result<Value, AiMuxError> {
-    parse_anthropic_options(options.as_object().unwrap()).map(Value::Object)
+    parse_anthropic_options("anthropic", options.as_object().unwrap()).map(Value::Object)
 }
 
 fn parsed(options: Value) -> Value {
@@ -323,9 +327,79 @@ fn values_outside_the_schema_are_rejected() {
             "keep": { "type": "thinking_turns", "value": "2" },
         }] } }),
     ] {
-        assert!(
-            parse(options.clone()).is_err(),
-            "{options} should be rejected"
+        let error = parse(options.clone()).unwrap_err();
+        let AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {options}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid anthropic provider options",
+            "{options}"
         );
+        assert!(cause.is_some(), "{options}");
+    }
+}
+
+fn namespaces(options: Value) -> SharedProviderOptions {
+    serde_json::from_value(options).unwrap()
+}
+
+/// anthropic-language-model.ts:376-398: `anthropic` and the custom name's
+/// namespace are parsed each on its own, then merged with the custom one
+/// winning.
+#[test]
+fn each_namespace_is_parsed_on_its_own_and_the_custom_one_wins() {
+    let options = namespaces(json!({
+        "anthropic": { "effort": "low", "speed": "fast", "notAnOption": 1 },
+        "proxy": { "effort": "high", "extra": true },
+        "other": { "effort": "not read" },
+    }));
+    assert_eq!(
+        parse_anthropic_namespaces(Some(&options), "proxy").unwrap(),
+        json!({ "effort": "high", "speed": "fast" })
+            .as_object()
+            .cloned()
+    );
+    // Under the canonical name only `anthropic` is read.
+    assert_eq!(
+        parse_anthropic_namespaces(Some(&options), "anthropic").unwrap(),
+        json!({ "effort": "low", "speed": "fast" })
+            .as_object()
+            .cloned()
+    );
+    assert_eq!(
+        parse_anthropic_namespaces(Some(&namespaces(json!({ "other": {} }))), "proxy").unwrap(),
+        None
+    );
+    assert_eq!(parse_anthropic_namespaces(None, "proxy").unwrap(), None);
+}
+
+#[test]
+fn an_invalid_namespace_fails_by_its_own_name() {
+    // The custom namespace setting the same key does not save an invalid
+    // `anthropic` value: both are parsed before they are merged.
+    for (options, name) in [
+        (
+            json!({ "anthropic": { "effort": "extreme" }, "proxy": { "effort": "high" } }),
+            "anthropic",
+        ),
+        (
+            json!({ "anthropic": { "effort": "high" }, "proxy": { "effort": "extreme" } }),
+            "proxy",
+        ),
+    ] {
+        let error =
+            parse_anthropic_namespaces(Some(&namespaces(options.clone())), "proxy").unwrap_err();
+        let AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {options}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            &format!(
+                "Invalid argument for parameter providerOptions: invalid {name} provider options"
+            ),
+            "{options}"
+        );
+        assert!(cause.is_some(), "{options}");
     }
 }

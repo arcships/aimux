@@ -8,17 +8,19 @@
 //! name the caller chose. This module is the one place that knows the
 //! canonical key and how the two are merged.
 
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{JsonObject, SharedProviderOptions};
+use aimux_provider_utils::optional_field;
 
 /// The canonical providerOptions key, read for every model of the protocol
 /// whatever its name.
 pub(crate) const CANONICAL: &str = "anthropic";
-
-/// The type discriminator for provider-managed container skills.
-pub(crate) const PROVIDER_SKILL_TYPE: &str = CANONICAL;
 
 /// The providerOptions key of a provider name: its first dot-separated
 /// segment, trimmed (`"proxy.messages"` -> `"proxy"`, `"proxy"` -> `"proxy"`).
@@ -66,237 +68,565 @@ pub(crate) fn anthropic_options_in(
     anthropic_options(provider_options, name)
 }
 
-/// Parse the merged Anthropic namespace against
-/// `anthropicLanguageModelOptions` (anthropic-language-model-options.ts):
-/// the declared keys are kept, in the order given, and the rest stripped, as
-/// a `z.object` strips them.
+/// The Anthropic options of a call: `anthropic` and, for a custom name, the
+/// `name` namespace, each parsed against `anthropicLanguageModelOptions` and
+/// then merged shallowly with the custom one winning, as
+/// anthropic-language-model.ts:376-398 does. `None` when neither is set.
 ///
 /// # Errors
 ///
-/// `InvalidArgument` "invalid anthropic provider options" when the namespace
-/// does not match the schema.
-pub(super) fn parse_anthropic_options(options: &JsonObject) -> Result<JsonObject, AiMuxError> {
-    match parse_anthropic_option_object("options", &Value::Object(options.clone())) {
-        Ok(Value::Object(parsed)) => Ok(parsed),
-        _ => Err(AiMuxError::invalid_argument(
-            "invalid anthropic provider options",
-        )),
+/// [`parse_anthropic_options`]'s, for the first namespace that fails.
+pub(super) fn parse_anthropic_namespaces(
+    provider_options: Option<&SharedProviderOptions>,
+    name: &str,
+) -> Result<Option<JsonObject>, AiMuxError> {
+    let parse = |key: &str| {
+        provider_options
+            .and_then(|options| options.get(key))
+            .map(|options| parse_anthropic_options(key, options))
+            .transpose()
+    };
+    let canonical = parse(CANONICAL)?;
+    let custom = if name == CANONICAL {
+        None
+    } else {
+        parse(name)?
+    };
+    Ok(merge(canonical.as_ref(), custom.as_ref()))
+}
+
+/// Parse one namespace against [`AnthropicOptions`]: the declared keys are
+/// kept, in the order given, and the rest stripped, as a `z.object` strips
+/// them.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid {provider} provider options", with the serde
+/// error as its cause, when the namespace does not match the schema.
+pub(super) fn parse_anthropic_options(
+    provider: &str,
+    options: &JsonObject,
+) -> Result<JsonObject, AiMuxError> {
+    let invalid = |cause: serde_json::Error| AiMuxError::InvalidArgument {
+        message: format!(
+            "Invalid argument for parameter providerOptions: invalid {provider} provider options"
+        ),
+        cause: Some(ErrorCause::source(&cause)),
+    };
+    let input = Value::Object(options.clone());
+    let parsed = AnthropicOptions::deserialize(&input).map_err(invalid)?;
+    let declared = JsonObject::deserialize(serde_json::to_value(&parsed).map_err(invalid)?)
+        .map_err(invalid)?;
+    Ok(retain_declared(options, &declared))
+}
+
+/// `input` with, at every level, only the keys `declared` has, in `input`'s
+/// order and with `input`'s values. `declared` is the schema's own
+/// serialization of `input`: a key the schema strips is not in it (a key it
+/// declares but `input` lacks is, as `null`, and is never looked up).
+fn retain_declared(input: &JsonObject, declared: &JsonObject) -> JsonObject {
+    input
+        .iter()
+        .filter_map(|(key, value)| {
+            declared
+                .get(key)
+                .map(|declared| (key.clone(), retain_declared_value(value, declared)))
+        })
+        .collect()
+}
+
+fn retain_declared_value(input: &Value, declared: &Value) -> Value {
+    match (input, declared) {
+        (Value::Object(input), Value::Object(declared)) => {
+            Value::Object(retain_declared(input, declared))
+        }
+        (Value::Array(input), Value::Array(declared)) => Value::Array(
+            input
+                .iter()
+                .zip(declared)
+                .map(|(value, declared)| retain_declared_value(value, declared))
+                .collect(),
+        ),
+        _ => input.clone(),
     }
 }
 
-fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
-    let object = value.as_object().ok_or(())?;
-    let parsed = aimux_provider_utils::parse_option_fields(object, CANONICAL, |key, value| {
-        let kind = match (shape, key) {
-            ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
-            ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",
-            ("options", "thinking") => "thinking",
-            ("options", "cacheControl") => "cache",
-            ("options", "metadata") => "metadata",
-            ("options", "mcpServers") => "[]mcp",
-            ("options", "container") => "container",
-            ("options", "effort") => "low|medium|high|xhigh|max",
-            ("options", "taskBudget") => "taskBudget",
-            ("options", "speed") | ("fallback", "speed") => "fast|standard",
-            ("options", "serviceTier") => "auto|standard_only",
-            ("options", "inferenceGeo") => "us|global",
-            ("options", "fallbacks") => "fallbacks",
-            ("options", "anthropicBeta") => "[]string",
-            ("options", "safeguards") => "[]safeguard",
-            ("options", "compaction") => "compaction",
-            ("options", "contextManagement") => "context",
-            ("thinking", "type") => "adaptive|enabled|disabled|between_tools",
-            ("thinking", "display")
-                if object.get("type").and_then(Value::as_str) == Some("adaptive") =>
-            {
-                "omitted|summarized|updates"
-            }
-            ("thinking", "budgetTokens")
-                if object.get("type").and_then(Value::as_str) == Some("enabled") =>
-            {
-                "number"
-            }
-            ("thinking", "blockBinding")
-                if object
-                    .get("type")
-                    .is_none_or(|t| t.as_str() == Some("adaptive")) =>
-            {
-                "binding"
-            }
-            ("binding", "prefixMismatchBehavior") => "error|drop_block",
-            ("cache", "type") => "ephemeral",
-            ("cache", "ttl") => "5m|1h",
-            ("metadata", "userId") => "string",
-            ("mcp", "type") => "url",
-            ("mcp", "name" | "url") => "string",
-            ("mcp", "authorizationToken") => "?string",
-            ("mcp", "toolConfiguration") => "?toolConfiguration",
-            ("toolConfiguration", "enabled") => "?bool",
-            ("toolConfiguration", "allowedTools") => "?[]string",
-            ("container", "id") | ("skill", "version") => "string",
-            ("container", "skills") => "[]skill",
-            ("skill", "type") => "anthropic|custom",
-            ("skill", "skillId")
-                if object.get("type").and_then(Value::as_str) == Some(PROVIDER_SKILL_TYPE) =>
-            {
-                "string"
-            }
-            ("skill", "providerReference")
-                if object.get("type").and_then(Value::as_str) == Some("custom") =>
-            {
-                "stringRecord"
-            }
-            ("taskBudget", "type") => "tokens",
-            ("taskBudget", "total") => "total",
-            ("taskBudget", "remaining") => "remaining",
-            ("fallback", "model") => "string",
-            ("fallback", "max_tokens") => "integer",
-            ("fallback", "thinking" | "output_config") | ("safeguard", "classifierContext") => {
-                "record"
-            }
-            ("safeguard", "type") => "dangerous_tool_use",
-            ("compaction", "type") => "summarize",
-            ("compaction", "instructions") => "string",
-            ("edit", "instructions")
-                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
-            {
-                "string"
-            }
-            ("context", "edits") => "[]edit",
-            ("edit", "type") => "clear_tool_uses_20250919|clear_thinking_20251015|compact_20260112",
-            ("edit", "trigger")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_tool_uses_20250919") =>
-            {
-                "trigger"
-            }
-            ("edit", "trigger")
-                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
-            {
-                "inputTokens"
-            }
-            ("edit", "clearAtLeast")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_tool_uses_20250919") =>
-            {
-                "inputTokens"
-            }
-            ("edit", "keep")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_tool_uses_20250919") =>
-            {
-                "toolUses"
-            }
-            ("edit", "keep")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_thinking_20251015") =>
-            {
-                "keepThinking"
-            }
-            ("edit", "clearToolInputs")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_tool_uses_20250919") =>
-            {
-                "bool"
-            }
-            ("edit", "excludeTools")
-                if object.get("type").and_then(Value::as_str)
-                    == Some("clear_tool_uses_20250919") =>
-            {
-                "[]string"
-            }
-            ("edit", "pauseAfterCompaction")
-                if object.get("type").and_then(Value::as_str) == Some("compact_20260112") =>
-            {
-                "bool"
-            }
-            ("trigger", "type") => "input_tokens|tool_uses",
-            ("inputTokens", "type") => "input_tokens",
-            ("toolUses", "type") => "tool_uses",
-            ("thinkingTurns", "type") => "thinking_turns",
-            ("trigger" | "inputTokens" | "toolUses" | "thinkingTurns", "value") => "number",
-            _ => return None,
-        };
-        Some(parse_anthropic_option_value(kind, value))
-    })
-    .map_err(|_| ())?;
-    let required: &[&str] = match shape {
-        "thinking" if !object.contains_key("type") => &["blockBinding"],
-        "thinking" | "cache" | "compaction" | "safeguard" | "edit" => &["type"],
-        "binding" => &["prefixMismatchBehavior"],
-        "mcp" => &["type", "name", "url"],
-        "skill" if object.get("type").and_then(Value::as_str) == Some("custom") => {
-            &["type", "providerReference"]
-        }
-        "skill" => &["type", "skillId"],
-        "taskBudget" => &["type", "total"],
-        "fallback" => &["model"],
-        "context" => &["edits"],
-        "trigger" | "inputTokens" | "toolUses" | "thinkingTurns" => &["type", "value"],
-        _ => &[],
-    };
-    if required.iter().any(|key| !parsed.contains_key(*key)) {
-        return Err(());
-    }
-    Ok(Value::Object(parsed))
+/// A `.nullish()` field: absent is `None`, `null` is `Some(None)` and is
+/// written back as `null`.
+fn nullish<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
-fn parse_anthropic_option_value(kind: &str, value: &Value) -> Result<Value, ()> {
-    if let Some(kind) = kind.strip_prefix('?') {
-        return if value.is_null() {
-            Ok(Value::Null)
-        } else {
-            parse_anthropic_option_value(kind, value)
-        };
+/// `Number.MAX_SAFE_INTEGER`, the bound of `z.number().int()`.
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// `z.number().int().min(min)`: a safe integer of at least `min`.
+fn safe_integer<E: serde::de::Error>(number: f64, min: f64) -> Result<f64, E> {
+    if number.fract() == 0.0 && (min..=MAX_SAFE_INTEGER).contains(&number) {
+        Ok(number)
+    } else {
+        Err(E::custom(format!(
+            "expected an integer from {min} to {MAX_SAFE_INTEGER}, got {number}"
+        )))
     }
-    if let Some(kind) = kind.strip_prefix("[]") {
-        return value
-            .as_array()
-            .ok_or(())?
-            .iter()
-            .map(|v| parse_anthropic_option_value(kind, v))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Value::Array);
-    }
-    let valid = match kind {
-        "bool" => value.is_boolean(),
-        "string" => value.is_string(),
-        "number" => value.is_number(),
-        "integer" => value
-            .as_f64()
-            .is_some_and(|n| n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0),
-        "total" => value
-            .as_f64()
-            .is_some_and(|n| n.fract() == 0.0 && (20000.0..=9_007_199_254_740_991.0).contains(&n)),
-        "remaining" => value
-            .as_f64()
-            .is_some_and(|n| n.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(&n)),
-        "record" => value.is_object(),
-        "stringRecord" => value
-            .as_object()
-            .is_some_and(|o| o.values().all(Value::is_string)),
-        "fallbacks" => {
-            return if value.as_str() == Some("default") {
-                Ok(value.clone())
-            } else {
-                parse_anthropic_option_value("[]fallback", value)
-            };
-        }
-        "keepThinking" => {
-            return if value.as_str() == Some("all") {
-                Ok(value.clone())
-            } else {
-                parse_anthropic_option_object("thinkingTurns", value)
-            };
-        }
-        "thinking" | "binding" | "cache" | "metadata" | "mcp" | "toolConfiguration"
-        | "container" | "skill" | "taskBudget" | "fallback" | "safeguard" | "compaction"
-        | "context" | "edit" | "trigger" | "inputTokens" | "toolUses" | "thinkingTurns" => {
-            return parse_anthropic_option_object(kind, value);
-        }
-        _ => value
-            .as_str()
-            .is_some_and(|s| kind.split('|').any(|allowed| allowed == s)),
-    };
-    if valid { Ok(value.clone()) } else { Err(()) }
+}
+
+/// `taskBudget.total`: `z.number().int().min(20000)`.
+fn task_budget_total<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    safe_integer(f64::deserialize(deserializer)?, 20_000.0)
+}
+
+/// `taskBudget.remaining`: `z.number().int().min(0).optional()`.
+fn task_budget_remaining<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    safe_integer(f64::deserialize(deserializer)?, 0.0).map(Some)
+}
+
+/// `fallbacks[].max_tokens`: `z.number().int().optional()`.
+fn fallback_max_tokens<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    safe_integer(f64::deserialize(deserializer)?, -MAX_SAFE_INTEGER).map(Some)
+}
+
+/// `anthropicLanguageModelOptions` (anthropic-language-model-options.ts,
+/// `@ai-sdk/anthropic` 4.0.71). Every key is `.optional()`: `null` fails as
+/// a wrong type does. The parsed namespace is the input with the keys this
+/// schema keeps ([`parse_anthropic_options`]), so the values reach the
+/// request as the caller wrote them.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AnthropicOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    send_reasoning: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    structured_output_mode: Option<StructuredOutputMode>,
+    #[serde(default, deserialize_with = "optional_field")]
+    thinking: Option<Thinking>,
+    #[serde(default, deserialize_with = "optional_field")]
+    disable_parallel_tool_use: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    cache_control: Option<CacheControl>,
+    #[serde(default, deserialize_with = "optional_field")]
+    metadata: Option<Metadata>,
+    #[serde(default, deserialize_with = "optional_field")]
+    mcp_servers: Option<Vec<McpServer>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    container: Option<Container>,
+    #[serde(default, deserialize_with = "optional_field")]
+    tool_streaming: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    effort: Option<Effort>,
+    #[serde(default, deserialize_with = "optional_field")]
+    task_budget: Option<TaskBudget>,
+    #[serde(default, deserialize_with = "optional_field")]
+    speed: Option<Speed>,
+    #[serde(default, deserialize_with = "optional_field")]
+    service_tier: Option<ServiceTier>,
+    #[serde(default, deserialize_with = "optional_field")]
+    inference_geo: Option<InferenceGeo>,
+    #[serde(default, deserialize_with = "optional_field")]
+    fallbacks: Option<Fallbacks>,
+    #[serde(default, deserialize_with = "optional_field")]
+    anthropic_beta: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    safeguards: Option<Vec<Safeguard>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    compaction: Option<Compaction>,
+    #[serde(default, deserialize_with = "optional_field")]
+    context_management: Option<ContextManagement>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum StructuredOutputMode {
+    OutputFormat,
+    JsonTool,
+    Auto,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Effort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Speed {
+    Fast,
+    Standard,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ServiceTier {
+    Auto,
+    StandardOnly,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum InferenceGeo {
+    Us,
+    Global,
+}
+
+/// `thinking`: the variants of a `type` discriminated union, or, with no
+/// `type` (`z.never().optional()`), `blockBinding` alone.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum Thinking {
+    Typed(TypedThinking),
+    Untyped(UntypedThinking),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum TypedThinking {
+    Adaptive(AdaptiveThinking),
+    Enabled(EnabledThinking),
+    Disabled,
+    BetweenTools,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdaptiveThinking {
+    #[serde(default, deserialize_with = "optional_field")]
+    display: Option<ThinkingDisplay>,
+    #[serde(default, deserialize_with = "optional_field")]
+    block_binding: Option<BlockBinding>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnabledThinking {
+    #[serde(default, deserialize_with = "optional_field")]
+    budget_tokens: Option<f64>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UntypedThinking {
+    /// `type: z.never().optional()`: any `type`, `null` included, fails.
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "optional_field",
+        skip_serializing
+    )]
+    #[allow(dead_code, reason = "a present `type` fails to deserialize")]
+    no_type: Option<Never>,
+    block_binding: BlockBinding,
+}
+
+/// A value no input deserializes to.
+#[derive(Deserialize)]
+enum Never {}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ThinkingDisplay {
+    Omitted,
+    Summarized,
+    Updates,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BlockBinding {
+    prefix_mismatch_behavior: PrefixMismatchBehavior,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PrefixMismatchBehavior {
+    Error,
+    DropBlock,
+}
+
+#[derive(Deserialize, Serialize)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    kind: EphemeralType,
+    #[serde(default, deserialize_with = "optional_field")]
+    ttl: Option<CacheTtl>,
+}
+
+#[derive(Deserialize, Serialize)]
+enum EphemeralType {
+    #[serde(rename = "ephemeral")]
+    Ephemeral,
+}
+
+#[derive(Deserialize, Serialize)]
+enum CacheTtl {
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Metadata {
+    #[serde(default, deserialize_with = "optional_field")]
+    user_id: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServer {
+    #[serde(rename = "type")]
+    kind: UrlType,
+    name: String,
+    url: String,
+    #[serde(default, deserialize_with = "nullish")]
+    authorization_token: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullish")]
+    tool_configuration: Option<Option<ToolConfiguration>>,
+}
+
+#[derive(Deserialize, Serialize)]
+enum UrlType {
+    #[serde(rename = "url")]
+    Url,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolConfiguration {
+    #[serde(default, deserialize_with = "nullish")]
+    enabled: Option<Option<bool>>,
+    #[serde(default, deserialize_with = "nullish")]
+    allowed_tools: Option<Option<Vec<String>>>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Container {
+    #[serde(default, deserialize_with = "optional_field")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    skills: Option<Vec<Skill>>,
+}
+
+/// A container skill, discriminated by `type`: a provider-managed
+/// (`"anthropic"`) or a custom one.
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum Skill {
+    Anthropic(ProviderSkill),
+    Custom(CustomSkill),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderSkill {
+    skill_id: String,
+    #[serde(default, deserialize_with = "optional_field")]
+    version: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomSkill {
+    provider_reference: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    version: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct TaskBudget {
+    #[serde(rename = "type")]
+    kind: TokensType,
+    #[serde(deserialize_with = "task_budget_total")]
+    total: f64,
+    #[serde(default, deserialize_with = "task_budget_remaining")]
+    remaining: Option<f64>,
+}
+
+#[derive(Deserialize, Serialize)]
+enum TokensType {
+    #[serde(rename = "tokens")]
+    Tokens,
+}
+
+/// `fallbacks`: `"default"`, or the fallback models in order.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum Fallbacks {
+    Default(DefaultFallbacks),
+    Models(Vec<Fallback>),
+}
+
+#[derive(Deserialize, Serialize)]
+enum DefaultFallbacks {
+    #[serde(rename = "default")]
+    Default,
+}
+
+/// A fallback model. Its keys are the wire's, snake_case.
+#[derive(Deserialize, Serialize)]
+struct Fallback {
+    model: String,
+    #[serde(default, deserialize_with = "fallback_max_tokens")]
+    max_tokens: Option<f64>,
+    #[serde(default, deserialize_with = "optional_field")]
+    thinking: Option<JsonObject>,
+    #[serde(default, deserialize_with = "optional_field")]
+    output_config: Option<JsonObject>,
+    #[serde(default, deserialize_with = "optional_field")]
+    speed: Option<Speed>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Safeguard {
+    #[serde(rename = "type")]
+    kind: DangerousToolUseType,
+    #[serde(default, deserialize_with = "optional_field")]
+    classifier_context: Option<JsonObject>,
+}
+
+#[derive(Deserialize, Serialize)]
+enum DangerousToolUseType {
+    #[serde(rename = "dangerous_tool_use")]
+    DangerousToolUse,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Compaction {
+    #[serde(rename = "type")]
+    kind: SummarizeType,
+    #[serde(default, deserialize_with = "optional_field")]
+    instructions: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+enum SummarizeType {
+    #[serde(rename = "summarize")]
+    Summarize,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ContextManagement {
+    edits: Vec<ContextEdit>,
+}
+
+/// A context-management edit, discriminated by its strategy `type`.
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum ContextEdit {
+    #[serde(rename = "clear_tool_uses_20250919")]
+    ClearToolUses(ClearToolUses),
+    #[serde(rename = "clear_thinking_20251015")]
+    ClearThinking(ClearThinking),
+    #[serde(rename = "compact_20260112")]
+    Compact(Compact),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClearToolUses {
+    #[serde(default, deserialize_with = "optional_field")]
+    trigger: Option<ClearToolUsesTrigger>,
+    #[serde(default, deserialize_with = "optional_field")]
+    keep: Option<ToolUses>,
+    #[serde(default, deserialize_with = "optional_field")]
+    clear_at_least: Option<InputTokens>,
+    #[serde(default, deserialize_with = "optional_field")]
+    clear_tool_inputs: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    exclude_tools: Option<Vec<String>>,
+}
+
+/// `clear_tool_uses_20250919.trigger`, discriminated by `type`.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum ClearToolUsesTrigger {
+    InputTokens(InputTokens),
+    ToolUses(ToolUses),
+}
+
+#[derive(Deserialize, Serialize)]
+struct ClearThinking {
+    #[serde(default, deserialize_with = "optional_field")]
+    keep: Option<KeepThinking>,
+}
+
+/// `clear_thinking_20251015.keep`: `"all"`, or a number of thinking turns.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum KeepThinking {
+    All(AllType),
+    Turns(ThinkingTurns),
+}
+
+#[derive(Deserialize, Serialize)]
+enum AllType {
+    #[serde(rename = "all")]
+    All,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Compact {
+    #[serde(default, deserialize_with = "optional_field")]
+    trigger: Option<InputTokens>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pause_after_compaction: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    instructions: Option<String>,
+}
+
+/// `{ type: 'input_tokens', value: number }`.
+#[derive(Deserialize, Serialize)]
+struct InputTokens {
+    #[serde(rename = "type")]
+    kind: InputTokensType,
+    value: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+enum InputTokensType {
+    #[serde(rename = "input_tokens")]
+    InputTokens,
+}
+
+/// `{ type: 'tool_uses', value: number }`.
+#[derive(Deserialize, Serialize)]
+struct ToolUses {
+    #[serde(rename = "type")]
+    kind: ToolUsesType,
+    value: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+enum ToolUsesType {
+    #[serde(rename = "tool_uses")]
+    ToolUses,
+}
+
+/// `{ type: 'thinking_turns', value: number }`.
+#[derive(Deserialize, Serialize)]
+struct ThinkingTurns {
+    #[serde(rename = "type")]
+    kind: ThinkingTurnsType,
+    value: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+enum ThinkingTurnsType {
+    #[serde(rename = "thinking_turns")]
+    ThinkingTurns,
 }
