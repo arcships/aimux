@@ -27,7 +27,8 @@ use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
 ///
