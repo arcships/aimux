@@ -31,7 +31,8 @@ use aimux_core::transcription_model::{
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Deepgram errors: `{"err_code": "...", "err_msg": "...", "request_id": ...}`
 /// on most endpoints; some return `{"category": "...", "message": "...",
