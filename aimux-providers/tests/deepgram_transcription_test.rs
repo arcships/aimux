@@ -88,6 +88,43 @@ async fn should_pass_model_in_query() {
     assert!(requests[0].url.as_str().contains("model=nova-3"));
 }
 
+/// `createDeepgram` adds `ai-sdk-deepgram/<version>` to the user-agent
+/// (deepgram-provider.ts getHeaders, withUserAgentSuffix), and the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/deepgram@3.1.24` depends on.
+#[tokio::test]
+async fn should_include_the_package_user_agent() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response()).await;
+    let provider = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    provider
+        .transcription("nova-3")
+        .do_generate(&options(mock_audio(), "audio/wav"))
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(
+        user_agent.contains("ai-sdk-deepgram/3.1.24"),
+        "{user_agent}"
+    );
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}
+
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;

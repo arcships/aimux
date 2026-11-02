@@ -546,3 +546,34 @@ async fn should_stop_polling_after_max_poll_attempts() {
         .count();
     assert_eq!(polls, 2);
 }
+
+/// `createLuma` adds `ai-sdk-luma/<version>` to the user-agent
+/// (luma-provider.ts getHeaders, withUserAgentSuffix), and the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/luma@3.0.54` depends on.
+#[tokio::test]
+async fn should_include_the_package_user_agent() {
+    let server = MockServer::start().await;
+    mock_luma(&server).await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("ray2");
+    model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(user_agent.contains("ai-sdk-luma/3.0.54"), "{user_agent}");
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}
