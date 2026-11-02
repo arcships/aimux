@@ -26,7 +26,8 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Fixed model id for the You.com search model.
 /// Failed-response handler of the You.com endpoint: `message`, and `type`

@@ -1242,7 +1242,7 @@ pub fn build_request_body_checked(
         if !output_config.is_object() {
             *output_config = json!({});
         }
-        output_config["format"] = json!({"type":"json_schema", "schema":crate::anthropic::sanitize_json_schema::sanitize_json_schema(schema.unwrap())});
+        output_config["format"] = json!({"type":"json_schema", "schema":crate::anthropic::internal::sanitize_json_schema(schema.unwrap())});
     }
     let mut all_tools = call.tools.clone().unwrap_or_default();
     if uses_json_tool {

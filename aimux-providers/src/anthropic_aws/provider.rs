@@ -12,14 +12,15 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
+    AwsCredentials, Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable,
+    validate_base_url,
 };
 
-use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicConfig, AnthropicEndpoint};
-use crate::anthropic::options::{CANONICAL, options_name_of};
-use crate::anthropic::request_rewrite::AnthropicRequestUrl;
-use crate::shared::{Credential, Endpoint, ProviderHeaders, ResolveEndpoint, TransformRequestBody};
+use crate::anthropic::internal::{
+    AnthropicConfig, AnthropicEndpoint, AnthropicMessagesModel, AnthropicRequestUrl, CANONICAL,
+    anthropic_failed_response_handler, list_models_once, options_name_of, supported_urls,
+};
+use crate::shared::{Endpoint, ResolveEndpoint, TransformRequestBody};
 
 use super::fetch::{self, AwsHeaders};
 
@@ -194,7 +195,7 @@ impl AnthropicAwsProvider {
             fetch: Some(self.fetch.clone()),
             // The Messages API fetches http(s) images and PDFs itself
             // (anthropic-aws-provider.ts:251-254).
-            supported_urls: crate::anthropic::supported_urls(),
+            supported_urls: supported_urls(),
             transform_request_body: self.transform_request_body.clone(),
             base_url: self.base_url.clone().unwrap_or_default(),
             provider_options_name: self.provider_options_name.clone(),
@@ -202,7 +203,7 @@ impl AnthropicAwsProvider {
             body_rewrite: None,
             supports_native_structured_output: true,
             supports_strict_tools: true,
-            failed_response_handler: crate::anthropic::anthropic_failed_response_handler,
+            failed_response_handler: anthropic_failed_response_handler,
             endpoint: AnthropicEndpoint::Resolved(Arc::new(AwsEndpoint {
                 auth: self.auth.clone(),
                 base_url: self.base_url.clone(),
@@ -248,7 +249,7 @@ impl ProviderDiscovery for AnthropicAwsProvider {
     /// request when the provider uses SigV4.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config();
-        Box::pin(async move { crate::anthropic::list_models_once(&config).await })
+        Box::pin(async move { list_models_once(&config).await })
     }
 }
 
