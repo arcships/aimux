@@ -14,12 +14,13 @@
 
 mod chat;
 pub mod completion;
-pub(crate) mod config;
+mod config;
 pub mod decision;
 pub mod embedding;
 mod error;
 pub mod files;
 pub mod image;
+pub(crate) mod internal;
 mod language_model_capabilities;
 mod normalize_json_schema;
 mod provider;
@@ -42,29 +43,14 @@ pub use speech::OpenAISpeechModel;
 pub use tools::{OpenAIComputerAction, OpenAIComputerSafetyCheck};
 pub use transcription::OpenAITranscriptionModel;
 
-// Paths the other vendors (Azure, the OpenAI-compatible wrappers, the default
-// registry) import.
-pub(crate) use error::openai_failed_response_handler;
+use error::openai_failed_response_handler;
 pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
-pub(crate) use stream_error::openai_stream_error;
+use stream_error::openai_stream_error;
 
-/// The chat helpers the other vendors' converters reuse.
-pub(crate) mod convert {
-    pub(crate) use super::chat::chat_language_model_options::parse_option_fields;
-}
-
-/// The model listing and the chat stream test driver the other vendors reuse.
+/// The chat stream test driver `stream/chat_tool_calls_tests.rs` reuses.
+#[cfg(test)]
 pub(crate) mod model {
-    #[cfg(test)]
     pub(crate) use super::chat::chat_language_model::chat_test_stream;
-    pub(crate) use super::provider::list_models_once;
-}
-
-/// The chat options parser Azure reuses.
-pub(crate) mod options {
-    pub(crate) use super::chat::chat_language_model_options::{
-        ChatOptionsParser, parse_chat_options,
-    };
 }
 
 #[cfg(test)]
