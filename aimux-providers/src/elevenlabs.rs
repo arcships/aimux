@@ -16,6 +16,7 @@
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::ErrorCause;
@@ -29,7 +30,9 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HttpBody, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HttpBody, Resolvable, optional_field, validate_base_url,
+};
 
 use crate::shared::{EndpointConfig, TransformRequestBody};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
@@ -38,7 +41,9 @@ pub(crate) mod options;
 
 /// ElevenLabs errors: `{"detail": {"status": "invalid_api_key", "message": ...}}`
 /// where `detail.status` is the machine code. FastAPI validation errors carry
-/// `detail` as a plain string or a `[{loc, msg, type}]` list instead.
+/// `detail` as a plain string or a `[{loc, msg, type}]` list instead. The
+/// `{"error": {"message", "code"}}` shape of `elevenlabsErrorDataSchema` gives
+/// the code as `error.code`, a number or a string.
 fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
     let detail = data.get("detail");
     let message = detail
@@ -66,7 +71,14 @@ fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorPa
         provider_code: detail
             .and_then(|value| value.get("status"))
             .and_then(Value::as_str)
-            .map(str::to_owned),
+            .map(str::to_owned)
+            .or_else(
+                || match data.get("error").and_then(|error| error.get("code"))? {
+                    Value::String(code) => Some(code.clone()),
+                    Value::Number(code) => Some(code.to_string()),
+                    _ => None,
+                },
+            ),
     }
 }
 
@@ -377,8 +389,13 @@ fn build_request(
     let mapped_format = map_output_format(output_format);
     query_params.push(("output_format".to_string(), mapped_format));
 
-    // Add language code if provided.
-    if let Some(ref language) = options.language {
+    // Add language code if provided (`if (language)`: an empty string is
+    // not sent).
+    if let Some(language) = options
+        .language
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
         body.insert("language_code".to_string(), json!(language));
     }
 
@@ -389,7 +406,7 @@ fn build_request(
     }
 
     // Parse and apply provider-specific options.
-    let elevenlabs_options = parse_elevenlabs_provider_options(options.provider_options.as_ref());
+    let elevenlabs_options = parse_elevenlabs_provider_options(options.provider_options.as_ref())?;
     if let Some(ref opts) = elevenlabs_options {
         // Voice settings from provider options.
         if let Some(ref vs) = opts.voice_settings {
@@ -407,8 +424,12 @@ fn build_request(
             }
         }
 
-        // Add language code from provider options if not already set.
-        if let Some(ref lc) = opts.language_code
+        // Add language code from provider options if not already set
+        // (`languageCode && !requestBody.language_code`).
+        if let Some(lc) = opts
+            .language_code
+            .as_deref()
+            .filter(|value| !value.is_empty())
             && !body.contains_key("language_code")
         {
             body.insert("language_code".to_string(), json!(lc));
@@ -436,13 +457,15 @@ fn build_request(
             );
         }
 
-        if let Some(seed) = opts.seed {
+        if let Some(ref seed) = opts.seed {
             body.insert("seed".to_string(), json!(seed));
         }
-        if let Some(ref pt) = opts.previous_text {
+        // `if (elevenLabsOptions.previousText)`: an empty string is not sent.
+        if let Some(pt) = opts.previous_text.as_ref().filter(|text| !text.is_empty()) {
             body.insert("previous_text".to_string(), json!(pt));
         }
-        if let Some(ref nt) = opts.next_text {
+        // `if (elevenLabsOptions.nextText)`: an empty string is not sent.
+        if let Some(nt) = opts.next_text.as_ref().filter(|text| !text.is_empty()) {
             body.insert("next_text".to_string(), json!(nt));
         }
         if let Some(ref prids) = opts.previous_request_ids {
@@ -506,121 +529,121 @@ fn map_output_format(format: &str) -> String {
 
 // ── Provider options parsing ─────────────────────────────────────────────────
 
-/// Parsed `elevenlabs` speech provider options.
-#[derive(Debug, Default)]
+/// `elevenLabsSpeechModelOptionsSchema` (elevenlabs-speech-model-options.ts).
+/// Every key is `.optional()`: absent is `None`, `null` fails.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsSpeechProviderOptions {
+    #[serde(default, deserialize_with = "optional_field")]
     language_code: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
     voice_settings: Option<ElevenLabsVoiceSettings>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     pronunciation_dictionary_locators: Option<Vec<ElevenLabsPronunciationLocator>>,
-    seed: Option<u64>,
+    /// `z.number().min(0).max(4294967295)`, sent as written.
+    #[serde(default, deserialize_with = "seed")]
+    seed: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
     previous_text: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
     next_text: Option<String>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     previous_request_ids: Option<Vec<String>>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     next_request_ids: Option<Vec<String>>,
-    apply_text_normalization: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    apply_text_normalization: Option<TextNormalization>,
+    #[serde(default, deserialize_with = "optional_field")]
     apply_language_text_normalization: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
     enable_logging: Option<bool>,
 }
 
-#[derive(Debug, Default)]
+/// `z.enum(['auto', 'on', 'off'])`, sent as written.
+#[derive(Debug, Clone, Copy, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum TextNormalization {
+    Auto,
+    On,
+    Off,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsVoiceSettings {
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     stability: Option<f64>,
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     similarity_boost: Option<f64>,
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     style: Option<f64>,
+    #[serde(default, deserialize_with = "optional_field")]
     use_speaker_boost: Option<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsPronunciationLocator {
     pronunciation_dictionary_id: String,
+    #[serde(default, deserialize_with = "optional_field")]
     version_id: Option<String>,
 }
 
-/// Extract ElevenLabs-specific speech options from the shared provider options.
+/// `.max(3)` on an `.optional()` array.
+fn at_most_three<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let items = Vec::<T>::deserialize(deserializer)?;
+    if items.len() > 3 {
+        return Err(serde::de::Error::custom("expected at most 3 items"));
+    }
+    Ok(Some(items))
+}
+
+/// `z.number().min(0).max(1)` on an `.optional()` key.
+fn unit_interval<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    let value = f64::deserialize(deserializer)?;
+    if (0.0..=1.0).contains(&value) {
+        Ok(Some(value))
+    } else {
+        Err(serde::de::Error::custom("expected a number from 0 to 1"))
+    }
+}
+
+/// `seed`: `z.number().min(0).max(4294967295)` on an `.optional()` key.
+fn seed<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Number>, D::Error> {
+    let number = serde_json::Number::deserialize(deserializer)?;
+    if number
+        .as_f64()
+        .is_some_and(|value| (0.0..=4_294_967_295.0).contains(&value))
+    {
+        Ok(Some(number))
+    } else {
+        Err(serde::de::Error::custom(
+            "expected a number from 0 to 4294967295",
+        ))
+    }
+}
+
+/// `parseProviderOptions({ provider: 'elevenlabs', providerOptions, schema:
+/// elevenLabsSpeechModelOptionsSchema })` (elevenlabs-speech-model.ts
+/// getArgs).
 fn parse_elevenlabs_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> Option<ElevenLabsSpeechProviderOptions> {
-    let opts = options::elevenlabs_options(options)?;
-
-    let voice_settings = opts
-        .get("voiceSettings")
-        .and_then(|vs| vs.as_object())
-        .map(|vs| ElevenLabsVoiceSettings {
-            stability: vs.get("stability").and_then(serde_json::Value::as_f64),
-            similarity_boost: vs
-                .get("similarityBoost")
-                .and_then(serde_json::Value::as_f64),
-            style: vs.get("style").and_then(serde_json::Value::as_f64),
-            use_speaker_boost: vs
-                .get("useSpeakerBoost")
-                .and_then(serde_json::Value::as_bool),
-        });
-
-    let pronunciation_dictionary_locators = opts
-        .get("pronunciationDictionaryLocators")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|loc| loc.as_object())
-                .map(|loc| ElevenLabsPronunciationLocator {
-                    pronunciation_dictionary_id: loc
-                        .get("pronunciationDictionaryId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    version_id: loc
-                        .get("versionId")
-                        .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string),
-                })
-                .collect()
-        });
-
-    Some(ElevenLabsSpeechProviderOptions {
-        language_code: opts
-            .get("languageCode")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        voice_settings,
-        pronunciation_dictionary_locators,
-        seed: opts.get("seed").and_then(serde_json::Value::as_u64),
-        previous_text: opts
-            .get("previousText")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        next_text: opts
-            .get("nextText")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        previous_request_ids: opts
-            .get("previousRequestIds")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .collect()
-            }),
-        next_request_ids: opts
-            .get("nextRequestIds")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .collect()
-            }),
-        apply_text_normalization: opts
-            .get("applyTextNormalization")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        apply_language_text_normalization: opts
-            .get("applyLanguageTextNormalization")
-            .and_then(serde_json::Value::as_bool),
-        enable_logging: opts
-            .get("enableLogging")
-            .and_then(serde_json::Value::as_bool),
-    })
+) -> Result<Option<ElevenLabsSpeechProviderOptions>, AiMuxError> {
+    aimux_provider_utils::parse_provider_options(options::NAMESPACE, options)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -632,7 +655,218 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
-use serde::Deserialize;
+
+/// `elevenLabsTranscriptionModelOptionsSchema`
+/// (elevenlabs-transcription-model-options.ts). Every key is `.nullish()`:
+/// `null` reads as absent, and a key left out takes the schema's default
+/// (`tagAudioEvents` true, `timestampsGranularity` `word`, `diarize` false,
+/// `fileFormat` `other`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ElevenLabsTranscriptionOptions {
+    #[serde(default)]
+    language_code: Option<String>,
+    #[serde(default = "some_true")]
+    tag_audio_events: Option<bool>,
+    /// An integer from 1 to 32.
+    #[serde(default, deserialize_with = "num_speakers")]
+    num_speakers: Option<u8>,
+    #[serde(default = "word_granularity")]
+    timestamps_granularity: Option<TimestampsGranularity>,
+    #[serde(default = "some_false")]
+    diarize: Option<bool>,
+    #[serde(default = "other_file_format")]
+    file_format: Option<FileFormat>,
+    /// The options of a realtime session; a batch call warns about them.
+    #[serde(default)]
+    streaming: Option<RealtimeOptions>,
+}
+
+fn some_true() -> Option<bool> {
+    Some(true)
+}
+
+fn some_false() -> Option<bool> {
+    Some(false)
+}
+
+fn word_granularity() -> Option<TimestampsGranularity> {
+    Some(TimestampsGranularity::Word)
+}
+
+fn other_file_format() -> Option<FileFormat> {
+    Some(FileFormat::Other)
+}
+
+/// `z.number().int().min(1).max(32).nullish()`.
+fn num_speakers<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u8>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(value) if value.fract() == 0.0 && (1.0..=32.0).contains(&value) => {
+            Ok(Some(value as u8))
+        }
+        Some(_) => Err(serde::de::Error::custom("expected an integer from 1 to 32")),
+    }
+}
+
+/// `z.enum(['none', 'word', 'character'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TimestampsGranularity {
+    None,
+    Word,
+    Character,
+}
+
+impl TimestampsGranularity {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Word => "word",
+            Self::Character => "character",
+        }
+    }
+}
+
+/// `z.enum(['pcm_s16le_16', 'other'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+enum FileFormat {
+    #[serde(rename = "pcm_s16le_16")]
+    PcmS16le16,
+    #[serde(rename = "other")]
+    Other,
+}
+
+impl FileFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PcmS16le16 => "pcm_s16le_16",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// The `streaming` object of the schema. Only checked here: aimux's realtime
+/// session reads its own two keys (RFC-0034 D5).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the realtime session reads its own keys"
+)]
+struct RealtimeOptions {
+    #[serde(default)]
+    commit_strategy: Option<CommitStrategy>,
+    #[serde(default)]
+    enable_logging: Option<bool>,
+    #[serde(default)]
+    filter_background_audio: Option<bool>,
+    #[serde(default)]
+    include_language_detection: Option<bool>,
+    #[serde(default)]
+    include_timestamps: Option<bool>,
+    /// At most 50, each at most 20 characters.
+    #[serde(default, deserialize_with = "keyterms")]
+    keyterms: Option<Vec<String>>,
+    /// An integer from 50 to 2000.
+    #[serde(default, deserialize_with = "duration_ms")]
+    min_silence_duration_ms: Option<f64>,
+    /// An integer from 50 to 2000.
+    #[serde(default, deserialize_with = "duration_ms")]
+    min_speech_duration_ms: Option<f64>,
+    #[serde(default)]
+    no_verbatim: Option<bool>,
+    #[serde(default)]
+    previous_text: Option<String>,
+    #[serde(default)]
+    secondary_languages: Option<Vec<String>>,
+    /// 0.3 to 3.
+    #[serde(default, deserialize_with = "vad_silence_threshold_secs")]
+    vad_silence_threshold_secs: Option<f64>,
+    /// 0.1 to 0.9.
+    #[serde(default, deserialize_with = "vad_threshold")]
+    vad_threshold: Option<f64>,
+}
+
+/// `z.enum(['manual', 'vad'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum CommitStrategy {
+    Manual,
+    Vad,
+}
+
+/// A `.nullish()` number in `range` (an integer when `integer`).
+fn nullish_number_in<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    range: std::ops::RangeInclusive<f64>,
+    integer: bool,
+    expected: &'static str,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if !range.contains(&value) || (integer && value.fract() != 0.0) => {
+            Err(serde::de::Error::custom(expected))
+        }
+        value => Ok(value),
+    }
+}
+
+fn duration_ms<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        50.0..=2000.0,
+        true,
+        "expected an integer from 50 to 2000",
+    )
+}
+
+fn vad_silence_threshold_secs<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        0.3..=3.0,
+        false,
+        "expected a number from 0.3 to 3",
+    )
+}
+
+fn vad_threshold<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    nullish_number_in(
+        deserializer,
+        0.1..=0.9,
+        false,
+        "expected a number from 0.1 to 0.9",
+    )
+}
+
+/// `z.array(z.string().max(20)).max(50).nullish()`.
+fn keyterms<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    let keyterms = Option::<Vec<String>>::deserialize(deserializer)?;
+    if keyterms
+        .as_ref()
+        .is_some_and(|terms| terms.len() > 50 || terms.iter().any(|term| term.chars().count() > 20))
+    {
+        return Err(serde::de::Error::custom(
+            "expected at most 50 keyterms of at most 20 characters",
+        ));
+    }
+    Ok(keyterms)
+}
+
+/// `parseProviderOptions({ provider: 'elevenlabs', providerOptions, schema:
+/// elevenLabsTranscriptionModelOptionsSchema })`
+/// (elevenlabs-transcription-model.ts getArgs); `None` without an
+/// `elevenlabs` namespace.
+fn parse_transcription_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Result<Option<ElevenLabsTranscriptionOptions>, AiMuxError> {
+    aimux_provider_utils::parse_provider_options(options::NAMESPACE, provider_options)
+}
 
 /// ElevenLabs transcription response word.
 #[derive(Debug, Deserialize)]
@@ -726,7 +960,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             )));
         }
 
-        let warnings: Vec<Warning> = Vec::new();
+        let mut warnings: Vec<Warning> = Vec::new();
 
         let audio_bytes = audio_input_to_bytes_stt(&options.audio)?;
         let file_extension = media_type_to_extension(&options.media_type);
@@ -737,28 +971,35 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         form.file("file", &filename, &options.media_type, &audio_bytes)?;
         form.text("diarize", "true")?;
 
-        // Parse provider options.
-        if let Some(el) = options::elevenlabs_options(options.provider_options.as_ref()) {
-            if let Some(v) = el.get("diarize").and_then(serde_json::Value::as_bool) {
+        // elevenlabs-transcription-model.ts getArgs: the schema's defaults
+        // apply when the namespace is present.
+        if let Some(el) = parse_transcription_options(options.provider_options.as_ref())? {
+            if el.streaming.is_some() {
+                warnings.push(Warning::Unsupported {
+                    feature: "providerOptions.elevenlabs.streaming".to_string(),
+                    details: Some(
+                        "ElevenLabs batch transcription does not support streaming options."
+                            .to_string(),
+                    ),
+                });
+            }
+            if let Some(v) = el.diarize {
                 form.text("diarize", &v.to_string())?;
             }
-            if let Some(v) = el.get("languageCode").and_then(|v| v.as_str()) {
+            if let Some(v) = &el.language_code {
                 form.text("language_code", v)?;
             }
-            if let Some(v) = el
-                .get("tagAudioEvents")
-                .and_then(serde_json::Value::as_bool)
-            {
+            if let Some(v) = el.tag_audio_events {
                 form.text("tag_audio_events", &v.to_string())?;
             }
-            if let Some(v) = el.get("numSpeakers").and_then(serde_json::Value::as_u64) {
+            if let Some(v) = el.num_speakers {
                 form.text("num_speakers", &v.to_string())?;
             }
-            if let Some(v) = el.get("timestampsGranularity").and_then(|v| v.as_str()) {
-                form.text("timestamps_granularity", v)?;
+            if let Some(v) = el.timestamps_granularity {
+                form.text("timestamps_granularity", v.as_str())?;
             }
-            if let Some(v) = el.get("fileFormat").and_then(|v| v.as_str()) {
-                form.text("file_format", v)?;
+            if let Some(v) = el.file_format {
+                form.text("file_format", v.as_str())?;
             }
         }
 
