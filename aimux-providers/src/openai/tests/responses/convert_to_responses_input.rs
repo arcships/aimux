@@ -9,8 +9,8 @@ use aimux_provider_utils::Resolvable;
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::{OpenAIResponsesModel, ResponsesNamespace, ResponsesProfile};
-use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// What upstream's `convertToOpenAIResponsesInput` returns.
 #[derive(Debug)]

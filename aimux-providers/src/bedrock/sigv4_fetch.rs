@@ -163,7 +163,7 @@ impl Fetch for BedrockAuthFetch {
         // and before signing, like amazon-bedrock-sigv4-fetch.ts:42-46
         // (SigV4) and :126-130 (API key).
         let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
-        crate::shared::transport_user_agent(
+        aimux_provider_utils::transport_user_agent(
             &mut request.headers,
             Some(package.provider_utils),
             Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
