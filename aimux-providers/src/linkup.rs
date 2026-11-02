@@ -26,7 +26,8 @@ use aimux_core::search_model::{
 use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Fixed model ID for the Linkup search model.
 /// Failed-response handler of the Linkup endpoint: `message`, and `type`
