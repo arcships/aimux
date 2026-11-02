@@ -41,7 +41,9 @@ pub(crate) mod options;
 
 /// ElevenLabs errors: `{"detail": {"status": "invalid_api_key", "message": ...}}`
 /// where `detail.status` is the machine code. FastAPI validation errors carry
-/// `detail` as a plain string or a `[{loc, msg, type}]` list instead.
+/// `detail` as a plain string or a `[{loc, msg, type}]` list instead. The
+/// `{"error": {"message", "code"}}` shape of `elevenlabsErrorDataSchema` gives
+/// the code as `error.code`, a number or a string.
 fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
     let detail = data.get("detail");
     let message = detail
@@ -69,7 +71,14 @@ fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorPa
         provider_code: detail
             .and_then(|value| value.get("status"))
             .and_then(Value::as_str)
-            .map(str::to_owned),
+            .map(str::to_owned)
+            .or_else(
+                || match data.get("error").and_then(|error| error.get("code"))? {
+                    Value::String(code) => Some(code.clone()),
+                    Value::Number(code) => Some(code.to_string()),
+                    _ => None,
+                },
+            ),
     }
 }
 
