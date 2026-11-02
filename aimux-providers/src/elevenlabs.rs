@@ -1047,7 +1047,8 @@ impl ElevenLabsTranscriptionModel {
                                         "realtime transcription socket closed before the committed transcript",
                                         error_url.clone(),
                                         serde_json::json!({}),
-                                    ),
+                                    )
+                                    .with_origin(aimux_core::ApiCallErrorOrigin::Transport),
                                 )));
                                 break;
                             }
@@ -1169,6 +1170,7 @@ impl ElevenLabsTranscriptionModel {
                                             aimux_core::error::ApiCallError {
                                                 is_retryable,
                                                 response_body: Some(value.to_string()),
+                                                origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
                                                 ..aimux_core::error::ApiCallError::new(
                                                     format!("elevenlabs realtime: {message}"),
                                                     error_url.clone(),
