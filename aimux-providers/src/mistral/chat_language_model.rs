@@ -302,7 +302,7 @@ impl MistralChatStream {
     fn transform_chunk(&mut self, parsed: Value, controller: &mut Controller) {
         self.ctx.raw(&parsed, controller);
 
-        if let Some(err_obj) = parsed.get("error") {
+        if let Some(err_obj) = parsed.get("error").filter(|error| !error.is_null()) {
             controller.enqueue(StreamPart::Error {
                 error: super::error::mistral_stream_error(
                     err_obj,
