@@ -2045,16 +2045,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The options on an Amazon Bedrock message part are parsed against the
   schema of its part type, as convert-to-amazon-bedrock-chat-messages.ts
   does: a user text part against `amazonBedrockTextPartProviderOptions`
-  (`guardContent`, `guardContentQualifiers`), a user image against
-  `amazonBedrockImagePartProviderOptions` (`guardContent`), any other file,
-  in a message or in a tool result, against
+  (`guardContent`, `guardContentQualifiers`), an inline (`data`) user image
+  against `amazonBedrockImagePartProviderOptions` (`guardContent`), an
+  inline or text document, in a message or in a tool result, against
   `amazonBedrockFilePartProviderOptions` (`citations`), and assistant
-  reasoning against `amazonBedrockReasoningMetadataSchema`. A key of another
-  part type's schema is no longer rejected, an assistant text part's
-  options are not read, and a `null` reasoning `signature`, `redactedData`
-  or `redactedContent` fails. A value outside the schema fails with the
-  wording above instead of `Invalid Bedrock <key>`. The requests are
-  unchanged (RFC-0046 R1).
+  reasoning against `amazonBedrockReasoningMetadataSchema`. No options are
+  read off a URL file part (an `s3:` image or video), an inline video, or an
+  assistant text or file part. A key of another part type's schema is no
+  longer rejected, and a `null` reasoning `signature`, `redactedData` or
+  `redactedContent` fails. A value outside the schema fails with the
+  wording above instead of `Invalid Bedrock <key>`. The one request change:
+  an `s3:` image with `guardContent: true` is sent as a plain image, not
+  wrapped in `guardContent` (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq

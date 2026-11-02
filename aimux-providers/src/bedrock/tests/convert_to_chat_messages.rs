@@ -3569,10 +3569,11 @@ mod bedrock_remaining {
 
 /// Part options are parsed against the schema of the part type
 /// (convert-to-amazon-bedrock-chat-messages.ts): a user text part against
-/// `amazonBedrockTextPartProviderOptions`, a user image against
-/// `amazonBedrockImagePartProviderOptions`, any other file against
-/// `amazonBedrockFilePartProviderOptions`, an assistant reasoning part
-/// against `amazonBedrockReasoningMetadataSchema`; an assistant text part is
+/// `amazonBedrockTextPartProviderOptions`, an inline user image against
+/// `amazonBedrockImagePartProviderOptions`, an inline or text document
+/// against `amazonBedrockFilePartProviderOptions`, an assistant reasoning
+/// part against `amazonBedrockReasoningMetadataSchema`. A URL file (an `s3:`
+/// image or video), an inline video, and an assistant text or file part are
 /// not read. Not upstream cases.
 mod part_options {
     use super::*;
@@ -3663,6 +3664,79 @@ mod part_options {
         user(document(
             json!({ "amazonBedrock": { "guardContent": "not read" } }),
         ))
+        .unwrap();
+    }
+
+    fn s3_file(media_type: &str, options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "url", "url": "s3://bucket/file" },
+            "mediaType": media_type,
+            "providerOptions": options,
+        })
+    }
+
+    /// Upstream reads no options off a URL part (an `s3:` image or video) or
+    /// an inline video, so values its schemas would reject pass, and an `s3:`
+    /// image with `guardContent` is sent as a plain image.
+    #[test]
+    fn reads_no_options_off_url_files_or_inline_video() {
+        let inline_video = json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "video/mp4",
+            "providerOptions": { "bedrock": { "citations": true } },
+        });
+        for part in [
+            s3_file(
+                "image/png",
+                json!({ "amazonBedrock": { "guardContent": 1 } }),
+            ),
+            s3_file(
+                "video/mp4",
+                json!({ "amazonBedrock": { "citations": "yes" } }),
+            ),
+            inline_video,
+        ] {
+            if let Err(error) = user(part.clone()) {
+                panic!("{part}: {error:?}");
+            }
+        }
+
+        let result = user(s3_file(
+            "image/png",
+            json!({ "amazonBedrock": { "guardContent": true } }),
+        ))
+        .unwrap();
+        assert_eq!(
+            result["messages"][0]["content"][0],
+            json!({
+                "image": {
+                    "format": "png",
+                    "source": { "s3Location": { "uri": "s3://bucket/file" } },
+                },
+            })
+        );
+    }
+
+    /// Upstream drops an assistant file part without reading its options.
+    #[test]
+    fn reads_no_options_off_an_assistant_file_part() {
+        convert(json!([
+            { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+            {
+                "role": "assistant",
+                "content": [
+                    { "type": "text", "text": "Here" },
+                    {
+                        "type": "file",
+                        "data": { "type": "data", "data": "AAECAw==" },
+                        "mediaType": "image/png",
+                        "providerOptions": { "amazonBedrock": { "guardContent": 1 } },
+                    },
+                ],
+            },
+        ]))
         .unwrap();
     }
 

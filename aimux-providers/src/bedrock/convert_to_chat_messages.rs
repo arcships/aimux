@@ -319,28 +319,29 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
         } else {
             resolved_media_type.as_deref().unwrap_or(&file.media_type)
         };
+    // Upstream reads no options off a URL part: an `s3:` image is never
+    // wrapped in `guardContent`.
+    let provider_options = match file.data {
+        FileData::Url { .. } => None,
+        _ => file.provider_options.clone(),
+    };
     push_file_block(
         &b64,
         media_type,
         file.filename.as_deref(),
-        &file.provider_options,
+        &provider_options,
         content,
         doc_counter,
     );
     if let FileData::Url { url, .. } = &file.data
         && let Some(block) = content.last_mut()
     {
-        let inner = if block.get("guardContent").is_some() {
-            &mut block["guardContent"]
-        } else {
-            block
-        };
         let key = if media_type.starts_with("video/") {
             "video"
         } else {
             "image"
         };
-        inner[key]["source"] = json!({"s3Location":{"uri":url}});
+        block[key]["source"] = json!({"s3Location":{"uri":url}});
     }
 }
 
@@ -623,7 +624,7 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
                         UserPart::Text(part) => validate_part_options::<TextPartOptions>(
                             part.provider_options.as_ref(),
                         )?,
-                        UserPart::File(file) => validate_file(file)?,
+                        UserPart::File(file) => validate_file(file, true)?,
                     }
                 }
             }
@@ -633,7 +634,9 @@ pub fn validate_prompt(prompt: &LanguageModelPrompt) -> Result<(), aimux_core::A
                     match part {
                         // Upstream reads no options off an assistant text part.
                         AssistantPart::Text(_) => {}
-                        AssistantPart::File(file) => validate_file(file)?,
+                        // Upstream drops an assistant file part without reading
+                        // its options.
+                        AssistantPart::File(file) => validate_file(file, false)?,
                         AssistantPart::Reasoning(part) => {
                             validate_part_options::<ReasoningMetadata>(
                                 part.provider_options.as_ref(),
@@ -669,19 +672,14 @@ fn validate_part_options<T: serde::de::DeserializeOwned>(
     options::parse::<T>(provider_options).map(|_| ())
 }
 
-fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
-    match &file.data {
-        FileData::Reference { .. } => {}
-        // A user image takes the image part schema, every other file the
-        // file part schema.
-        FileData::Data { .. } | FileData::Url { .. }
-            if aimux_provider_utils::resolve_full_media_type(file)
-                .is_ok_and(|media_type| media_type.starts_with("image/")) =>
-        {
-            validate_part_options::<ImagePartOptions>(file.provider_options.as_ref())?;
-        }
-        _ => validate_part_options::<FilePartOptions>(file.provider_options.as_ref())?,
-    }
+/// Check a file part as convert-to-amazon-bedrock-chat-messages.ts does,
+/// options first where it reads them: an inline (`data`) image against the
+/// image part schema, an inline or text document against the file part
+/// schema (`shouldEnableCitations`). It reads none off a URL part (an `s3:`
+/// image or video) or an inline video, and none off an assistant file part,
+/// which it drops (`read_options` false).
+fn validate_file(file: &FilePart, read_options: bool) -> Result<(), aimux_core::AiMuxError> {
+    let provider_options = file.provider_options.as_ref().filter(|_| read_options);
     match &file.data {
         FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(
             "file parts with provider references".into(),
@@ -699,6 +697,7 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
             validate_media_type(&media_type)
         }
         FileData::Text { .. } => {
+            validate_part_options::<FilePartOptions>(provider_options)?;
             let media_type = if is_full_media_type(&file.media_type) {
                 &file.media_type
             } else {
@@ -713,6 +712,11 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
         }
         FileData::Data { .. } => {
             let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
+            if media_type.starts_with("image/") {
+                validate_part_options::<ImagePartOptions>(provider_options)?;
+            } else if !media_type.starts_with("video/") {
+                validate_part_options::<FilePartOptions>(provider_options)?;
+            }
             validate_media_type(&media_type)
         }
     }
