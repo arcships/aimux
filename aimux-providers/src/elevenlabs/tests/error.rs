@@ -2,7 +2,8 @@
 //!
 //! Upstream parses the error body against `elevenlabsErrorDataSchema`
 //! (`{ error: { message, code } }`); aimux reads it in
-//! `elevenlabs_error_parts`, which keeps `error.message` as the message.
+//! `elevenlabs_error_parts`, which keeps `error.message` as the message and
+//! `error.code` as the provider code.
 
 use serde_json::Value;
 
@@ -27,6 +28,6 @@ mod elevenlabs_error_data_schema {
             parts.message,
             "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Resource has been exhausted (e.g. check quota).\",\n    \"status\": \"RESOURCE_EXHAUSTED\"\n  }\n}\n"
         );
-        assert_eq!(parts.provider_code, None);
+        assert_eq!(parts.provider_code.as_deref(), Some("429"));
     }
 }

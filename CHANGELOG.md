@@ -1526,7 +1526,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`diarize=false`, `tag_audio_events=true`, `timestamps_granularity=word`,
   `file_format=other`); `streaming` options on a batch transcription are
   reported as unsupported; and an empty `language`, `languageCode`,
-  `previousText` or `nextText` is left out of speech.
+  `previousText` or `nextText` is left out of speech. An error body of the
+  `{"error": {"message", "code"}}` shape (`elevenlabsErrorDataSchema`) now
+  reports `error.code` as the provider code, where only `detail.status` was
+  read.
 
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the

@@ -216,11 +216,7 @@ mod do_generate {
             assert_eq!(form.fields["model_id"], "scribe_v1");
         }
 
-        /// upstream: @ai-sdk/elevenlabs src/elevenlabs-transcription-model.test.ts › doGenerate › transcription › should pass headers
-        ///
-        /// The user-agent part (`ai-sdk-elevenlabs/<version>`) is not sent on
-        /// this branch; #444 adds it with its own test. Only the headers are
-        /// compared here, the boundary being aimux's rather than undici's.
+        /// partial: `doGenerate › transcription › should pass headers`; upstream also asserts that `requestUserAgent` contains `ai-sdk-elevenlabs/0.0.0-test`; that user-agent part is not sent on this branch (#444 adds it with its own test). Only the headers are compared here, the boundary being aimux's rather than undici's.
         #[tokio::test]
         async fn should_pass_headers() {
             let fetch = fixture_fetch();
