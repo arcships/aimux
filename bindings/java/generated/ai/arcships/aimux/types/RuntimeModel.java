@@ -30,6 +30,15 @@ public final class RuntimeModel {
     @JsonProperty("id")
     private final String id;
     /**
+     * The token limits the provider declared for the model in the same list
+     * response (OpenRouter's `context_length` and
+     * `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+     * when the provider declared none; never filled from the community
+     * catalogue or inferred.
+     */
+    @JsonProperty("limits")
+    private final ModelLimits limits;
+    /**
      * `owned_by` field from OpenAI-compatible `/models` responses.
      */
     @JsonProperty("ownedBy")
@@ -39,20 +48,24 @@ public final class RuntimeModel {
     public RuntimeModel(
         @JsonProperty(value = "created") Long created,
         @JsonProperty(value = "id", required = true) String id,
+        @JsonProperty(value = "limits") ModelLimits limits,
         @JsonProperty(value = "ownedBy") String ownedBy) {
         this.created = created;
         this.id = id;
+        this.limits = limits;
         this.ownedBy = ownedBy;
     }
 
     public static Builder builder() { return new Builder(); }
     public Long getCreated() { return created; }
     public String getId() { return id; }
+    public ModelLimits getLimits() { return limits; }
     public String getOwnedBy() { return ownedBy; }
 
     public static final class Builder {
         private Long created;
         private String id;
+        private ModelLimits limits;
         private String ownedBy;
 
         public Builder created(Long value) {
@@ -65,11 +78,16 @@ public final class RuntimeModel {
             return this;
         }
 
+        public Builder limits(ModelLimits value) {
+            this.limits = value;
+            return this;
+        }
+
         public Builder ownedBy(String value) {
             this.ownedBy = value;
             return this;
         }
 
-        public RuntimeModel build() { return new RuntimeModel(created, id, ownedBy); }
+        public RuntimeModel build() { return new RuntimeModel(created, id, limits, ownedBy); }
     }
 }
