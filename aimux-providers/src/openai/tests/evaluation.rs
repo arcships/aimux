@@ -285,7 +285,8 @@ mod older_decision {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use crate::{OpenAIProvider, OpenAIProviderSettings, PresetSettings, create_openai};
+    use crate::PresetSettings;
+    use crate::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
     use aimux_core::decision_model::*;
     use aimux_core::recording::{self, RingRecorder};
     use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
