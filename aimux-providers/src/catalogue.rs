@@ -167,12 +167,69 @@ impl Catalogue {
 /// JSON does not deserialize into a [`Catalogue`].
 pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMuxError> {
     let url = source_url.unwrap_or(DEFAULT_ANYA2A_URL);
-    let body = fetch_text(url).await?;
-    let raw: Value = serde_json::from_str(&body).map_err(|e| AiMuxError::JsonParse {
+    let body = fetch_bytes(url).await?;
+    let raw: Value = serde_json::from_slice(&body).map_err(|e| AiMuxError::JsonParse {
         message: format!("get_model_specs: invalid source JSON: {e}"),
         cause: Some(ErrorCause::source(&e)),
     })?;
-    parse_anya2a_all(&raw)
+    drop(body);
+    parse_anya2a_all_owned(raw)
+}
+
+/// Parse anya2a `dist/all.json` into a [`Catalogue`], consuming `json` in place
+/// so each model's `raw` `Value` is moved without cloning the JSON AST.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::json_parse` when the JSON lacks the expected
+/// `providers` object.
+pub fn parse_anya2a_all_owned(mut json: Value) -> Result<Catalogue, AiMuxError> {
+    let updated_at = json
+        .get("updated_at")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    let Some(Value::Object(providers)) = json.as_object_mut().and_then(|o| o.remove("providers"))
+    else {
+        return Err(AiMuxError::json_parse(
+            "anya2a all.json missing 'providers' object",
+        ));
+    };
+
+    let mut catalogue = Catalogue {
+        updated_at,
+        ..Catalogue::default()
+    };
+    let listed: std::collections::HashSet<&'static str> = providers
+        .keys()
+        .filter_map(|id| crate::default_providers::provider_name(id))
+        .collect();
+    for (anya2a_id, mut provider_val) in providers {
+        let aimux_name = normalize_provider_name(&anya2a_id)
+            .filter(|name| *name == anya2a_id || !listed.contains(name));
+        let Some(Value::Array(models)) = provider_val
+            .as_object_mut()
+            .and_then(|o| o.remove("models"))
+        else {
+            continue;
+        };
+        let bucket = match aimux_name {
+            Some(name) => catalogue.specs.entry(name.to_string()),
+            None => catalogue.unmapped.entry(anya2a_id),
+        }
+        .or_default();
+        bucket.reserve(models.len());
+        for m in models {
+            let Some(id) = m.get("id").and_then(|v| v.as_str()).map(str::to_string) else {
+                continue;
+            };
+            let mut spec = convert_anya2a_model_without_raw(&m);
+            spec.provider = aimux_name.map(str::to_string);
+            spec.raw = Some(m);
+            bucket.insert(id, spec);
+        }
+    }
+    Ok(catalogue)
 }
 
 /// Parse anya2a `dist/all.json` into a [`Catalogue`].
@@ -231,6 +288,12 @@ pub fn parse_anya2a_all(json: &Value) -> Result<Catalogue, AiMuxError> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn convert_anya2a_model(m: &Value) -> ModelSpec {
+    let mut spec = convert_anya2a_model_without_raw(m);
+    spec.raw = Some(m.clone());
+    spec
+}
+
+fn convert_anya2a_model_without_raw(m: &Value) -> ModelSpec {
     let display_name = m
         .get("display_name")
         .and_then(|v| v.as_str())
@@ -272,7 +335,7 @@ fn convert_anya2a_model(m: &Value) -> ModelSpec {
         cost,
         source: CatalogueSource::Anya2a,
         provider: None,
-        raw: Some(m.clone()),
+        raw: None,
     }
 }
 
@@ -461,7 +524,7 @@ fn build_cost(m: &Value) -> Option<ModelCost> {
 /// few MiB; the helper default is tuned for API calls).
 const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
-async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
+async fn fetch_bytes(url: &str) -> Result<bytes::Bytes, AiMuxError> {
     let output = aimux_provider_utils::get_from_api(
         aimux_provider_utils::HttpRequest {
             url: url.to_string(),
@@ -472,7 +535,7 @@ async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
         aimux_provider_utils::create_status_code_error_response_handler(),
     )
     .await?;
-    Ok(String::from_utf8_lossy(&output.value).into_owned())
+    Ok(output.value)
 }
 
 #[cfg(test)]
