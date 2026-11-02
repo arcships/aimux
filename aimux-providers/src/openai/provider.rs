@@ -29,7 +29,7 @@ use crate::openai::image::image_model::OpenAIImageModel;
 use crate::openai::responses::responses_language_model::OpenAIResponsesModel;
 use crate::openai::speech::speech_model::OpenAISpeechModel;
 use crate::openai::transcription::transcription_model::OpenAITranscriptionModel;
-use crate::shared::{Credential, ProviderHeaders};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
@@ -370,6 +370,7 @@ pub(crate) async fn list_models_once(
             id: m.id,
             owned_by: m.owned_by,
             created: m.created,
+            limits: None,
         })
         .collect())
 }
