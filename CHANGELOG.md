@@ -1562,19 +1562,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once instead of being polled until the attempts run out.
   `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
   does; it was checked but the 120 attempts always applied.
-- ElevenLabs speech and batch transcription follow `@ai-sdk/elevenlabs`
-  3.0.54: `providerOptions.elevenlabs` is parsed against
-  `elevenLabsSpeechModelOptionsSchema` and
-  `elevenLabsTranscriptionModelOptionsSchema` (`invalid elevenlabs provider
-  options`; it was read key by key, unchecked); with the namespace present,
-  batch transcription sends the schema's defaults for the keys left out
-  (`diarize=false`, `tag_audio_events=true`, `timestamps_granularity=word`,
-  `file_format=other`); `streaming` options on a batch transcription are
-  reported as unsupported; and an empty `language`, `languageCode`,
-  `previousText` or `nextText` is left out of speech. An error body of the
-  `{"error": {"message", "code"}}` shape (`elevenlabsErrorDataSchema`) now
-  reports `error.code` as the provider code, where only `detail.status` was
-  read.
 
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
