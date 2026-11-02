@@ -13,7 +13,7 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use super::responses::HuggingFaceResponsesModel;
-use crate::openai::config::OpenAIModelConfig;
+use crate::openai::internal::{OpenAIModelConfig, list_models_once};
 use crate::shared::EndpointConfig;
 use crate::shared::TransformRequestBody;
 use aimux_provider_utils::{Credential, ProviderHeaders};
@@ -191,6 +191,6 @@ impl ProviderDiscovery for HuggingFaceProvider {
     /// `GET {base_url}/models`: one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.openai_config("models");
-        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
+        Box::pin(async move { list_models_once(&config).await })
     }
 }

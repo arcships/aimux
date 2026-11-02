@@ -500,7 +500,7 @@ mod older_embedding {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{GoogleProviderSettings, create_google};
+    use crate::google::{GoogleProviderSettings, create_google};
     use aimux_core::embedding_model::EmbeddingCallOptions;
     use aimux_core::provider::Provider;
 
