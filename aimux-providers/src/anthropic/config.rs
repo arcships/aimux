@@ -15,9 +15,9 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::shared::{Credential, ProviderHeaders};
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, ResponseHandler, combine_headers,
     normalize_headers,
