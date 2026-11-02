@@ -23,7 +23,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {

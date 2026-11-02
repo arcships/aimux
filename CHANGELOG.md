@@ -1391,6 +1391,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RuntimeModel.limits` (`ModelLimits`): the token limits a provider
+  declares for a model in its own `/models` list, read where the list has
+  them: OpenRouter's `context_length`, or `top_provider.context_length`
+  when the top level has none (`context`), and
+  `top_provider.max_completion_tokens` (`output`), vLLM's `max_model_len`
+  (`context`). Every OpenAI-compatible preset and the packages on the
+  OpenAI-shaped list (Groq, DeepSeek, Mistral, xAI) read these keys; a value
+  that is not an integer is ignored instead of failing the list. `None` when
+  the provider declared none; nothing is inferred and the community
+  catalogue (`ModelSpec`) is not merged in. Every binding's generated
+  `RuntimeModel` carries it. Source changes for callers: a Rust struct
+  literal of `RuntimeModel` must add the field, and the generated Java,
+  Kotlin and Swift `RuntimeModel` constructors take `limits` as a new
+  positional argument (#402).
 - `ApiCallError.origin` (`ApiCallErrorOrigin`): the boundary an API call
   error was built at — `transport` (no complete response: connect, DNS,
   TLS, a broken body), `httpResponse` (a non-2xx status, a 2xx body that is
@@ -1478,6 +1492,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out of `aimux-providers`; the Azure, Amazon Bedrock, Anthropic AWS and
   Google Vertex host checks and the OpenAI and Anthropic base URLs use them
   unchanged.
+- `aimux_provider_utils::{Credential, AuthScheme, ProviderHeaders}`, the
+  provider-level request headers as data (credential, fixed headers, user
+  headers, `ai-sdk-<package>/<version>` user-agent suffix), and
+  `aimux_provider_utils::{UserAgentFetch, transport_user_agent}`, the
+  user-agent edits a transport makes (RFC-0046 R1). They move out of
+  `aimux-providers`, whose providers build their headers with them unchanged.
 - `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
   5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
   `providerOptions` namespace deserialized into its options type, `None`
@@ -1507,6 +1527,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Amazon Bedrock event-stream decoder rejects a frame that declares more
+  than 24 MiB (`MAX_EVENT_STREAM_FRAME_LEN`, the service-side maximum of
+  AWS's `aws-c-event-stream`) as soon as its length is read. It used to
+  buffer the stream until the declared length arrived, so a broken or
+  hostile server could grow the buffer without bound (#399). The prelude
+  checksum is now checked once its 12 bytes arrive, before the rest of the
+  frame, and the buffer gives back the capacity a large frame left behind.
+  The AI SDK's decoder has no such limit.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request

@@ -27,9 +27,10 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
+    poll_until, retry_download,
 };
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
