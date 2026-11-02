@@ -1534,6 +1534,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   body, while aimux stops there. Anything a server sends after `[DONE]`
   (such as a gateway's trailing usage chunk) is not read, and the body is
   not drained, so that connection is not reused.
+- A stream chunk whose `error` member is `null` is a normal chunk, not an
+  error frame: OpenAI Chat and Completion (Azure and Codex included), the
+  OpenAI-compatible chat and completion models (every preset), Groq,
+  DeepSeek, Mistral, and the first event of Open Responses. A gateway that
+  sends `"error": null` on healthy chunks failed the whole call with a 500
+  when the first chunk carried it, and ended the stream with an error part
+  when a later one did. As in the AI SDK, where a chunk with `choices`
+  matches the chunk schema and the unknown key is dropped (#397).
 - fal follows `@ai-sdk/fal` 3.0.54:
   - An image call goes to `https://fal.run` by default, as `createFal`'s
     `defaultBaseURL`; transcription and video stay on
