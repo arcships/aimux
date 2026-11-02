@@ -36,31 +36,57 @@ use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 /// fal errors are FastAPI-style: `{"detail": "..."}` or
 /// `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` where `type`
 /// is the machine code (https://fal.ai/docs/model-apis/errors).
+///
+/// fal-image-model.ts reads a validation error as one `loc.join('.'): msg`
+/// line per entry, and any other error as its `message` (fal-error.ts); the
+/// two are handled the same way here, so a validation error keeps every
+/// entry instead of the first.
 fn fal_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
     let detail = data.get("detail");
-    let first_detail = detail
-        .and_then(Value::as_array)
-        .and_then(|items| items.first());
-    let message = detail
-        .and_then(Value::as_str)
-        .or_else(|| {
-            first_detail
-                .and_then(|item| item.get("msg"))
-                .and_then(Value::as_str)
+    let entries = detail.and_then(Value::as_array);
+    let message = entries
+        .filter(|entries| !entries.is_empty())
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    let loc = entry
+                        .get("loc")
+                        .and_then(Value::as_array)
+                        .map(|loc| {
+                            loc.iter()
+                                .map(|part| match part {
+                                    Value::String(part) => part.clone(),
+                                    other => other.to_string(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(".")
+                        })
+                        .unwrap_or_default();
+                    let msg = entry.get("msg").and_then(Value::as_str).unwrap_or_default();
+                    format!("{loc}: {msg}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         })
+        .or_else(|| detail.and_then(Value::as_str).map(str::to_owned))
         .or_else(|| {
             data.get("error")
                 .and_then(|value| value.get("message"))
                 .and_then(Value::as_str)
+                .map(str::to_owned)
         })
-        .or_else(|| data.get("error").and_then(Value::as_str))
-        .or_else(|| data.get("message").and_then(Value::as_str))
-        .unwrap_or("Fal request failed")
-        .to_string();
+        .or_else(|| {
+            data.get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "Unknown fal error".to_string());
     aimux_provider_utils::ProviderErrorParts {
         message,
-        provider_code: first_detail
-            .and_then(|item| item.get("type"))
+        provider_code: entries
+            .and_then(|entries| entries.first())
+            .and_then(|entry| entry.get("type"))
             .and_then(Value::as_str)
             .map(str::to_owned),
     }
@@ -68,6 +94,21 @@ fn fal_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
 
 fn fal_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(fal_error_parts)
+}
+
+/// Whether a failed status poll only says the job has not finished: its body
+/// is `{"detail": "Request is still in progress"}`, whatever the status code
+/// (the status `failedResponseHandler` of fal-transcription-model.ts and
+/// fal-video-model.ts).
+fn is_in_progress(error: &AiMuxError) -> bool {
+    let AiMuxError::ApiCall(detail) = error else {
+        return false;
+    };
+    detail
+        .response_body
+        .as_deref()
+        .and_then(|body| serde_json::from_str::<Value>(body).ok())
+        .is_some_and(|body| body["detail"] == "Request is still in progress")
 }
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -84,7 +125,14 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 pub(crate) mod options;
 
-pub(crate) const DEFAULT_BASE_URL: &str = "https://queue.fal.run";
+/// The default `base_url` (`createFal`'s `defaultBaseURL`). Upstream uses it
+/// for the image model; the transcription and video models hard-code the
+/// queue host themselves (see [`DEFAULT_QUEUE_BASE_URL`]).
+pub(crate) const DEFAULT_BASE_URL: &str = "https://fal.run";
+/// The host the transcription and video models talk to, which upstream
+/// hard-codes in `fal-transcription-model.ts` and `fal-video-model.ts`
+/// rather than reading `baseURL`.
+pub(crate) const DEFAULT_QUEUE_BASE_URL: &str = "https://queue.fal.run";
 pub(crate) const API_KEY_ENV_VAR: &str = "FAL_KEY";
 const DEFAULT_NAME: &str = "fal";
 
@@ -95,7 +143,8 @@ const DEFAULT_NAME: &str = "fal";
 /// evaluated on every request.
 #[derive(Clone, Default)]
 pub struct FalProviderSettings {
-    /// Base URL for the API calls. Default `https://queue.fal.run`; a
+    /// Base URL for the API calls. Default `https://fal.run` for images and
+    /// `https://queue.fal.run` for transcription and video, as upstream; a
     /// trailing slash is removed.
     pub base_url: Option<String>,
     /// The API key. `None` loads `FAL_KEY` when a request is made and
@@ -139,13 +188,13 @@ impl std::fmt::Debug for FalProviderSettings {
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
+    let explicit_base_url = match settings.base_url.as_deref() {
+        Some(url) => Some(validate_base_url(url)?),
+        None => None,
     };
     Ok(FalProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
+        base_url: explicit_base_url,
         headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Fal"),
             AuthScheme::Scheme("Key"),
@@ -177,16 +226,24 @@ pub fn fal() -> &'static FalProvider {
 /// client.
 pub struct FalProvider {
     name: String,
-    base_url: String,
+    /// The caller's `base_url`; `None` leaves each model on its own default.
+    base_url: Option<String>,
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 
 impl FalProvider {
+    /// The endpoint of one model method: the caller's `base_url`, or the
+    /// host that model defaults to (upstream reads `baseURL` for images
+    /// only and hard-codes the queue host in the other two).
     fn model_config(&self, method: &str) -> EndpointConfig {
+        let default = match method {
+            "image" => DEFAULT_BASE_URL,
+            _ => DEFAULT_QUEUE_BASE_URL,
+        };
         EndpointConfig::fixed(
             format!("{}.{method}", self.name),
-            self.base_url.clone(),
+            self.base_url.as_deref().unwrap_or(default).to_string(),
             self.headers.clone(),
             self.fetch.clone(),
             None,
@@ -256,6 +313,26 @@ struct FalJobResponse {
     request_id: String,
 }
 
+/// The video queue's answer (fal-video-model.ts `falJobResponseSchema`):
+/// both fields nullish, and only `response_url` is used.
+#[derive(Debug, Deserialize)]
+struct FalVideoJobResponse {
+    #[serde(default)]
+    response_url: Option<String>,
+}
+
+/// The status poll of a video (fal-video-model.ts fetchStatus). Its URL comes
+/// from the queue response body, so it goes through the SSRF guard, and the
+/// caller headers (the `Key` credential among them) are sent only while it
+/// stays on the origin that was submitted to: `credentialedOrigin` and
+/// `trustedOrigin` are both the submit URL.
+fn status_request(mut request: HttpRequest, submit_url: &str) -> HttpRequest {
+    request.validate_url = true;
+    request.credentialed_origin = Some(submit_url.to_string());
+    request.trusted_origin = Some(submit_url.to_string());
+    request
+}
+
 #[derive(Debug, Deserialize)]
 struct FalChunk {
     text: String,
@@ -270,6 +347,64 @@ struct FalTranscriptionResponse {
     chunks: Option<Vec<FalChunk>>,
     #[serde(default, rename = "inferred_languages")]
     inferred_languages: Option<Vec<String>>,
+}
+
+/// `falTranscriptionModelOptionsSchema` (fal-transcription-model-options.ts),
+/// a plain `z.object`: unknown keys are dropped. Every key is `.nullish()`;
+/// a `.default()` fills a missing key and keeps an explicit `null`, as
+/// `#[serde(default = ...)]` on an `Option` does.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FalTranscriptionOptions {
+    #[serde(default = "FalTranscriptionOptions::default_language")]
+    language: Option<String>,
+    #[serde(default = "FalTranscriptionOptions::default_diarize")]
+    diarize: Option<bool>,
+    #[serde(default = "FalTranscriptionOptions::default_chunk_level")]
+    chunk_level: Option<FalChunkLevel>,
+    #[serde(default = "FalTranscriptionOptions::default_version")]
+    version: Option<FalWhisperVersion>,
+    #[serde(default = "FalTranscriptionOptions::default_batch_size")]
+    batch_size: Option<serde_json::Number>,
+    #[serde(default)]
+    num_speakers: Option<serde_json::Number>,
+}
+
+impl FalTranscriptionOptions {
+    fn default_language() -> Option<String> {
+        Some("en".to_string())
+    }
+
+    fn default_diarize() -> Option<bool> {
+        Some(true)
+    }
+
+    fn default_chunk_level() -> Option<FalChunkLevel> {
+        Some(FalChunkLevel::Segment)
+    }
+
+    fn default_version() -> Option<FalWhisperVersion> {
+        Some(FalWhisperVersion::Three)
+    }
+
+    fn default_batch_size() -> Option<serde_json::Number> {
+        Some(64.into())
+    }
+}
+
+/// `chunkLevel`: `z.enum(['segment', 'word'])`.
+#[derive(Debug, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum FalChunkLevel {
+    Segment,
+    Word,
+}
+
+/// `version`: `z.enum(['3'])`.
+#[derive(Debug, Deserialize, serde::Serialize)]
+enum FalWhisperVersion {
+    #[serde(rename = "3")]
+    Three,
 }
 
 // ── Model ───────────────────────────────────────────────────────────────────
@@ -326,28 +461,30 @@ impl TranscriptionModel for FalTranscriptionModel {
         body.insert("chunk_level".to_string(), json!("word"));
         body.insert("audio_url".to_string(), json!(audio_url));
 
-        // Parse provider options.
-        let fal_options = options::fal_options(options.provider_options.as_ref());
-        if let Some(fal) = fal_options {
-            if let Some(v) = fal.get("language") {
-                body.insert("language".to_string(), v.clone());
+        // fal-transcription-model.ts getArgs: the parsed options, defaults
+        // included, go into the body only when `providerOptions.fal` is set.
+        if let Some(fal) = aimux_provider_utils::parse_provider_options::<FalTranscriptionOptions>(
+            options::NAMESPACE,
+            options.provider_options.as_ref(),
+        )? {
+            body.insert("language".to_string(), json!(fal.language));
+            if let Some(version) = fal.version {
+                body.insert("version".to_string(), json!(version));
             }
-            if let Some(v) = fal.get("version") {
-                body.insert("version".to_string(), v.clone());
+            if let Some(batch_size) = fal.batch_size {
+                body.insert("batch_size".to_string(), json!(batch_size));
             }
-            if let Some(v) = fal.get("batchSize") {
-                body.insert("batch_size".to_string(), v.clone());
+            if let Some(num_speakers) = fal.num_speakers {
+                body.insert("num_speakers".to_string(), json!(num_speakers));
             }
-            if let Some(v) = fal.get("numSpeakers") {
-                body.insert("num_speakers".to_string(), v.clone());
+            if let Some(diarize) = fal.diarize {
+                body.insert("diarize".to_string(), json!(diarize));
             }
-            if let Some(v) = fal.get("diarize").and_then(serde_json::Value::as_bool) {
-                body.insert("diarize".to_string(), json!(v));
-            }
-            if let Some(v) = fal.get("chunkLevel") {
-                body.insert("chunk_level".to_string(), v.clone());
+            if let Some(chunk_level) = fal.chunk_level {
+                body.insert("chunk_level".to_string(), json!(chunk_level));
             }
         }
+        let fal_options = options::fal_options(options.provider_options.as_ref());
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
@@ -375,8 +512,6 @@ impl TranscriptionModel for FalTranscriptionModel {
             )),
             MAX_POLL_ATTEMPTS,
             || async {
-                // Fal returns 400/404 while a queued request is still
-                // registering; that is pending, not a failure.
                 match aimux_provider_utils::get_from_api(
                     exchange.request(poll_url.clone(), options),
                     aimux_provider_utils::create_json_response_handler::<FalTranscriptionResponse>(
@@ -386,11 +521,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                 .await
                 {
                     Ok(response) => Ok(PollStep::Ready(response)),
-                    Err(AiMuxError::ApiCall(detail))
-                        if matches!(detail.status_code, Some(400 | 404)) =>
-                    {
-                        Ok(PollStep::Pending)
-                    }
+                    Err(error) if is_in_progress(&error) => Ok(PollStep::Pending),
                     Err(error) => Err(error),
                 }
             },
@@ -461,6 +592,195 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 
+/// `falImageModelOptionsSchema` (fal-image-model-options.ts), checked
+/// only: a loose object whose known keys, camelCase and their deprecated
+/// snake_case forms, are `.nullish()` with the ranges and enums below. The
+/// request is built from the raw namespace, as upstream's transform keeps
+/// every unknown key.
+#[derive(Debug, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "validated only; the body is built from the raw namespace"
+)]
+struct FalImageOptions {
+    #[serde(default, rename = "imageUrl")]
+    image_url: Option<String>,
+    #[serde(default, rename = "maskUrl")]
+    mask_url: Option<String>,
+    #[serde(default, rename = "guidanceScale", deserialize_with = "guidance_scale")]
+    guidance_scale: Option<f64>,
+    #[serde(
+        default,
+        rename = "numInferenceSteps",
+        deserialize_with = "num_inference_steps"
+    )]
+    num_inference_steps: Option<f64>,
+    #[serde(default, rename = "enableSafetyChecker")]
+    enable_safety_checker: Option<bool>,
+    #[serde(default, rename = "outputFormat")]
+    output_format: Option<FalOutputFormat>,
+    #[serde(default, rename = "syncMode")]
+    sync_mode: Option<bool>,
+    #[serde(default)]
+    strength: Option<f64>,
+    #[serde(default)]
+    acceleration: Option<FalAcceleration>,
+    #[serde(
+        default,
+        rename = "safetyTolerance",
+        deserialize_with = "safety_tolerance"
+    )]
+    safety_tolerance: Option<f64>,
+    #[serde(default, rename = "useMultipleImages")]
+    use_multiple_images: Option<bool>,
+    #[serde(default, rename = "image_url")]
+    image_url_snake: Option<String>,
+    #[serde(default, rename = "mask_url")]
+    mask_url_snake: Option<String>,
+    #[serde(
+        default,
+        rename = "guidance_scale",
+        deserialize_with = "guidance_scale"
+    )]
+    guidance_scale_snake: Option<f64>,
+    #[serde(
+        default,
+        rename = "num_inference_steps",
+        deserialize_with = "num_inference_steps"
+    )]
+    num_inference_steps_snake: Option<f64>,
+    #[serde(default, rename = "enable_safety_checker")]
+    enable_safety_checker_snake: Option<bool>,
+    #[serde(default, rename = "output_format")]
+    output_format_snake: Option<FalOutputFormat>,
+    #[serde(default, rename = "sync_mode")]
+    sync_mode_snake: Option<bool>,
+    #[serde(
+        default,
+        rename = "safety_tolerance",
+        deserialize_with = "safety_tolerance"
+    )]
+    safety_tolerance_snake: Option<f64>,
+}
+
+/// `outputFormat`: `z.enum(['jpeg', 'png'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FalOutputFormat {
+    Jpeg,
+    Png,
+}
+
+/// `acceleration`: `z.enum(['none', 'regular', 'high'])`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum FalAcceleration {
+    #[serde(rename = "none")]
+    Off,
+    Regular,
+    High,
+}
+
+/// A nullish number within `min..=max`.
+fn number_in<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    min: f64,
+    max: f64,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if !(min..=max).contains(&value) => Err(serde::de::Error::custom(format!(
+            "expected a number from {min} to {max}"
+        ))),
+        value => Ok(value),
+    }
+}
+
+/// `guidanceScale`: `z.number().min(1).max(20)`.
+fn guidance_scale<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 1.0, 20.0)
+}
+
+/// `numInferenceSteps`: `z.number().min(1).max(50)`.
+fn num_inference_steps<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 1.0, 50.0)
+}
+
+/// `safetyTolerance`: `z.enum(['1', ..., '6']).or(z.number().min(1).max(6))`.
+fn safety_tolerance<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<Value>::deserialize(deserializer)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(level)) if ["1", "2", "3", "4", "5", "6"].contains(&level.as_str()) => {
+            Ok(level.parse().ok())
+        }
+        Some(Value::Number(level))
+            if level
+                .as_f64()
+                .is_some_and(|level| (1.0..=6.0).contains(&level)) =>
+        {
+            Ok(level.as_f64())
+        }
+        Some(_) => Err(serde::de::Error::custom(
+            "expected '1' to '6' or a number from 1 to 6",
+        )),
+    }
+}
+
+/// The image options with a deprecated snake_case form, in the order the
+/// schema's transform maps them: the camelCase key and the body key, which
+/// is the snake_case one.
+const FAL_IMAGE_RENAMED_KEYS: [(&str, &str); 8] = [
+    ("imageUrl", "image_url"),
+    ("maskUrl", "mask_url"),
+    ("guidanceScale", "guidance_scale"),
+    ("numInferenceSteps", "num_inference_steps"),
+    ("enableSafetyChecker", "enable_safety_checker"),
+    ("outputFormat", "output_format"),
+    ("syncMode", "sync_mode"),
+    ("safetyTolerance", "safety_tolerance"),
+];
+
+/// Models with an inpainting endpoint, which take a mask
+/// (fal-image-model.ts `supportsMaskInputs`).
+const FAL_MASK_MODELS: [&str; 2] = [
+    "fal-ai/flux-general/inpainting",
+    "fal-ai/flux-lora/inpainting",
+];
+
+/// Image-to-image models, which take an input file (fal-image-model.ts
+/// `supportsFileInputs`).
+const FAL_FILE_MODELS: [&str; 10] = [
+    "fal-ai/flux-2/edit",
+    "fal-ai/flux-pro/kontext",
+    "fal-ai/flux-pro/kontext/max",
+    "fal-ai/flux-general/image-to-image",
+    "fal-ai/flux-general/inpainting",
+    "fal-ai/flux-lora/image-to-image",
+    "fal-ai/flux-lora/inpainting",
+    "fal-ai/flux/dev/image-to-image",
+    "fal-ai/flux/krea/image-to-image",
+    "fal-ai/recraft/v3/image-to-image",
+];
+
+/// Text-to-image models that do not take an input file
+/// (fal-image-model.ts `supportsFileInputs`).
+const FAL_TEXT_ONLY_MODELS: [&str; 9] = [
+    "bria/text-to-image/3.2",
+    "fal-ai/bria/text-to-image/base",
+    "fal-ai/bria/text-to-image/fast",
+    "fal-ai/bria/text-to-image/hd",
+    "fal-ai/bytedance/dreamina/v3.1/text-to-image",
+    "fal-ai/flux-kontext-lora/text-to-image",
+    "fal-ai/recraft/v3/text-to-image",
+    "fal-ai/wan/v2.2-5b/text-to-image",
+    "fal-ai/wan/v2.2-a14b/text-to-image",
+];
+
 /// An fal.ai image generation model.
 pub struct FalImageModel {
     model_id: String,
@@ -476,8 +796,8 @@ impl FalImageModel {
         format!("/{}", self.model_id)
     }
 
-    fn convert_aspect_ratio_to_size(ar: &aimux_core::shared::AspectRatio) -> Value {
-        match (ar.width(), ar.height()) {
+    fn convert_aspect_ratio_to_size(ar: &aimux_core::shared::AspectRatio) -> Option<Value> {
+        Some(match (ar.width(), ar.height()) {
             (1, 1) => json!("square_hd"),
             (16, 9) => json!("landscape_16_9"),
             (9, 16) => json!("portrait_16_9"),
@@ -487,8 +807,8 @@ impl FalImageModel {
             (10, 16) => json!({ "width": 800, "height": 1280 }),
             (21, 9) => json!({ "width": 2560, "height": 1080 }),
             (9, 21) => json!({ "width": 1080, "height": 2560 }),
-            _ => json!(null),
-        }
+            _ => return None,
+        })
     }
 }
 
@@ -504,14 +824,39 @@ impl ImageModel for FalImageModel {
         Some(1)
     }
 
+    /// Whether the model takes an input file; `None` for an unknown model.
+    fn supports_file_inputs(&self) -> Option<bool> {
+        if FAL_FILE_MODELS.contains(&self.model_id.as_str()) {
+            Some(true)
+        } else if FAL_TEXT_ONLY_MODELS.contains(&self.model_id.as_str()) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the model takes a mask: the inpainting models do, a model
+    /// known not to take files does not, an unknown one says nothing.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        if FAL_MASK_MODELS.contains(&self.model_id.as_str()) {
+            Some(true)
+        } else if self.supports_file_inputs().is_none() {
+            None
+        } else {
+            Some(false)
+        }
+    }
+
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();
+        // `image_size` is undefined, so not sent, without a size or for an
+        // aspect ratio `convertAspectRatioToSize` does not map.
         let image_size = if let Some(s) = options.size {
-            json!({ "width": s.width(), "height": s.height() })
-        } else if let Some(ar) = options.aspect_ratio {
-            Self::convert_aspect_ratio_to_size(&ar)
+            Some(json!({ "width": s.width(), "height": s.height() }))
         } else {
-            json!(null)
+            options
+                .aspect_ratio
+                .and_then(|ar| Self::convert_aspect_ratio_to_size(&ar))
         };
 
         let mut body = Map::new();
@@ -521,9 +866,17 @@ impl ImageModel for FalImageModel {
         if let Some(seed) = options.seed {
             body.insert("seed".into(), json!(seed));
         }
-        body.insert("image_size".into(), image_size);
+        if let Some(image_size) = image_size {
+            body.insert("image_size".into(), image_size);
+        }
         body.insert("num_images".into(), json!(options.n));
 
+        // fal-image-model.ts doGenerate: parseProviderOptions with
+        // falImageModelOptionsSchema before the body is built.
+        aimux_provider_utils::parse_provider_options::<FalImageOptions>(
+            options::NAMESPACE,
+            Some(&options.provider_options),
+        )?;
         let fal_opts = options::fal_options(Some(&options.provider_options));
 
         if let Some(ref files) = options.files
@@ -548,9 +901,8 @@ impl ImageModel for FalImageModel {
                 );
                 if files.len() > 1 {
                     warnings.push(Warning::Other {
-                        message:
-                            "Multiple input images provided but useMultipleImages is not enabled."
-                                .into(),
+                        message: "Multiple input images provided but useMultipleImages is not enabled. Only the first image will be used. Set providerOptions.fal.useMultipleImages to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+                            .into(),
                     });
                 }
             }
@@ -565,29 +917,53 @@ impl ImageModel for FalImageModel {
         }
 
         if let Some(fal) = fal_opts {
-            let map: &[(&str, &str)] = &[
-                ("imageUrl", "image_url"),
-                ("maskUrl", "mask_url"),
-                ("guidanceScale", "guidance_scale"),
-                ("numInferenceSteps", "num_inference_steps"),
-                ("enableSafetyChecker", "enable_safety_checker"),
-                ("outputFormat", "output_format"),
-                ("syncMode", "sync_mode"),
-                ("safetyTolerance", "safety_tolerance"),
-            ];
-            for (key, value) in fal {
-                if key == "__deprecatedKeys"
-                    || key == "useMultipleImages"
-                    || is_poll_control_key(key)
-                {
-                    continue;
+            // The schema's transform (fal-image-model-options.ts): a
+            // non-null snake_case key wins over its camelCase twin and is
+            // reported as deprecated; a null known key is dropped. Every
+            // other key passes through, `useMultipleImages` excepted.
+            let set = |key: &str| fal.get(key).filter(|value| !value.is_null());
+            let mut deprecated_keys = Vec::new();
+            for (camel_key, snake_key) in FAL_IMAGE_RENAMED_KEYS {
+                if let Some(value) = set(snake_key) {
+                    deprecated_keys.push(snake_key);
+                    body.insert(snake_key.to_string(), value.clone());
+                } else if let Some(value) = set(camel_key) {
+                    body.insert(snake_key.to_string(), value.clone());
                 }
-                let ak = map
+            }
+            for key in ["strength", "acceleration"] {
+                if let Some(value) = set(key) {
+                    body.insert(key.to_string(), value.clone());
+                }
+            }
+            for (key, value) in fal {
+                let known = key == "strength"
+                    || key == "acceleration"
+                    || key == "useMultipleImages"
+                    || FAL_IMAGE_RENAMED_KEYS
+                        .iter()
+                        .any(|(camel_key, snake_key)| key == camel_key || key == snake_key);
+                if !known && key != "__deprecatedKeys" && !is_poll_control_key(key) {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
+            if !deprecated_keys.is_empty() {
+                let keys = deprecated_keys
                     .iter()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.to_string())
-                    .unwrap_or_else(|| key.clone());
-                body.insert(ak, value.clone());
+                    .map(|snake_key| {
+                        let camel_key = FAL_IMAGE_RENAMED_KEYS
+                            .iter()
+                            .find(|(_, snake)| snake == snake_key)
+                            .map_or(*snake_key, |(camel, _)| *camel);
+                        format!("'{snake_key}' (use '{camel_key}')")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "The following provider options use deprecated snake_case and will be removed in @ai-sdk/fal v2.0. Please use camelCase instead: {keys}"
+                    ),
+                });
             }
         }
 
@@ -646,9 +1022,18 @@ impl ImageModel for FalImageModel {
 
         let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut fm = Map::new();
+        // `nsfw` of image `index`: `has_nsfw_concepts?.[index] ??
+        // nsfw_content_detected?.[index]`, left out when neither has it.
+        let nsfw_flag = |key: &str, index: usize| {
+            rb.get(key)
+                .and_then(|flags| flags.get(index))
+                .filter(|flag| !flag.is_null())
+                .cloned()
+        };
         let im: Vec<Value> = target_images
             .iter()
-            .map(|img| {
+            .enumerate()
+            .map(|(index, img)| {
                 let mut e = Map::new();
                 if let Some(o) = img.as_object() {
                     for (k, v) in o {
@@ -672,6 +1057,11 @@ impl ImageModel for FalImageModel {
                 if let Some(v) = img.get("file_size") {
                     e.insert("fileSize".into(), v.clone());
                 }
+                if let Some(nsfw) = nsfw_flag("has_nsfw_concepts", index)
+                    .or_else(|| nsfw_flag("nsfw_content_detected", index))
+                {
+                    e.insert("nsfw".into(), nsfw);
+                }
                 Value::Object(e)
             })
             .collect();
@@ -680,7 +1070,7 @@ impl ImageModel for FalImageModel {
             for (k, v) in o {
                 if !matches!(
                     k.as_str(),
-                    "images" | "image" | "prompt" | "has_nsfw_concepts" | "nsfw_content_detected"
+                    "images" | "prompt" | "has_nsfw_concepts" | "nsfw_content_detected"
                 ) {
                     fm.insert(k.clone(), v.clone());
                 }
@@ -739,14 +1129,46 @@ impl FalVideoModel {
     fn submit_path(&self) -> String {
         format!("/fal-ai/{}", self.normalized_model_id())
     }
-
-    fn poll_path(&self, request_id: &str) -> String {
-        format!(
-            "/fal-ai/{}/requests/{request_id}",
-            self.normalized_model_id()
-        )
-    }
 }
+
+/// `falVideoModelOptionsSchema` (fal-video-model-options.ts), checked only:
+/// a loose object whose five known keys are `.nullish()`. The body is built
+/// from the raw namespace, which keeps every unknown key.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the body is built from the raw namespace"
+)]
+struct FalVideoOptions {
+    #[serde(default, rename = "loop")]
+    loop_video: Option<bool>,
+    #[serde(default, deserialize_with = "motion_strength")]
+    motion_strength: Option<f64>,
+    #[serde(default)]
+    resolution: Option<String>,
+    #[serde(default)]
+    negative_prompt: Option<String>,
+    #[serde(default)]
+    prompt_optimizer: Option<bool>,
+}
+
+/// `motionStrength`: `z.number().min(0).max(1)`.
+fn motion_strength<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 0.0, 1.0)
+}
+
+/// The schema keys of [`FalVideoOptions`] and the body keys they are sent
+/// as (fal-video-model.ts buildRequestBody).
+const FAL_VIDEO_OPTION_KEYS: [(&str, &str); 5] = [
+    ("loop", "loop"),
+    ("motionStrength", "motion_strength"),
+    ("resolution", "resolution"),
+    ("negativePrompt", "negative_prompt"),
+    ("promptOptimizer", "prompt_optimizer"),
+];
 
 fn video_file_to_data_uri(file: &VideoFile) -> Result<String, AiMuxError> {
     match file {
@@ -775,6 +1197,10 @@ impl VideoModel for FalVideoModel {
         options: &VideoCallOptions,
     ) -> Result<VideoOperationStart, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
+        aimux_provider_utils::parse_provider_options::<FalVideoOptions>(
+            options::NAMESPACE,
+            Some(&options.provider_options),
+        )?;
         let mut body = Map::new();
 
         if let Some(ref prompt) = options.prompt {
@@ -789,35 +1215,63 @@ impl VideoModel for FalVideoModel {
         if let Some(ar) = options.aspect_ratio {
             body.insert("aspect_ratio".to_string(), json!(ar.to_string()));
         }
-        if let Some(duration) = options.duration {
-            body.insert("duration".to_string(), json!(format!("{}s", duration)));
+        // Upstream tests `if (options.duration)` and `if (options.seed)`: a 0
+        // is not sent.
+        if let Some(duration) = options.duration.filter(|&duration| duration != 0) {
+            body.insert("duration".to_string(), json!(format!("{duration}s")));
         }
-        if let Some(seed) = options.seed {
+        if let Some(seed) = options.seed.filter(|&seed| seed != 0) {
             body.insert("seed".to_string(), json!(seed));
+        }
+
+        if let Some(fal) = options::fal_options(Some(&options.provider_options)) {
+            // The schema keys first, a non-null value renamed; then every
+            // other key as given, so an unknown key wins over a renamed one.
+            for (key, wire_key) in FAL_VIDEO_OPTION_KEYS {
+                if let Some(value) = fal.get(key).filter(|value| !value.is_null()) {
+                    body.insert(wire_key.to_string(), value.clone());
+                }
+            }
+            for (key, value) in fal {
+                let known = FAL_VIDEO_OPTION_KEYS.iter().any(|(k, _)| k == key);
+                if !known && !is_poll_control_key(key) {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
         }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // Submit.
+        let submit_url = exchange.url(&self.submit_path());
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url(&self.submit_path()), options),
+            exchange.request(submit_url.clone(), options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             fal_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.response_headers;
-        let job: FalJobResponse = resp.value;
+        // fal-video-model.ts submitToQueue: `if (!responseUrl)`, so an empty
+        // URL fails like a missing one.
+        let job: FalVideoJobResponse = resp.value;
+        let response_url = job
+            .response_url
+            .filter(|url| !url.is_empty())
+            .ok_or_else(|| {
+                AiMuxError::invalid_response_data("No response URL returned from queue endpoint")
+            })?;
 
         Ok(VideoOperationStart {
-            operation: json!({ "request_id": job.request_id }),
+            operation: json!({ "responseUrl": response_url, "submitUrl": submit_url }),
             warnings,
             provider_metadata: None,
             response: VideoResponse {
                 timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
+                // fal-video-model.ts doStart reports `headers: undefined`:
+                // the submission's headers are not carried.
+                headers: None,
             },
         })
     }
@@ -827,67 +1281,149 @@ impl VideoModel for FalVideoModel {
         operation: &Value,
         options: &VideoCallOptions,
     ) -> Result<VideoOperationStatus, AiMuxError> {
-        let request_id = operation
-            .get("request_id")
+        let response_url = operation
+            .get("responseUrl")
             .and_then(Value::as_str)
             .ok_or_else(|| {
                 AiMuxError::invalid_argument(
-                    "fal operation reference is missing request_id".to_string(),
+                    "fal operation reference is missing responseUrl".to_string(),
+                )
+            })?;
+        let submit_url = operation
+            .get("submitUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::invalid_argument(
+                    "fal operation reference is missing submitUrl".to_string(),
                 )
             })?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::get_from_api(
-            exchange.request(exchange.url(&self.poll_path(request_id)), options),
+            status_request(
+                exchange.request(response_url.to_string(), options),
+                submit_url,
+            ),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),
         )
         .await;
 
-        // Fal returns 400/404 while a queued request is still registering or
-        // running; that is Pending, not a failure.
         let resp = match resp {
             Ok(response) => response,
-            Err(AiMuxError::ApiCall(detail)) if matches!(detail.status_code, Some(400 | 404)) => {
-                return Ok(VideoOperationStatus::Pending);
-            }
+            Err(error) if is_in_progress(&error) => return Ok(VideoOperationStatus::Pending),
             Err(error) => return Err(error),
         };
 
         let response_headers = resp.response_headers;
         let raw_body = resp.value;
 
-        // Extract video URL from response.
-        let videos: Vec<VideoData> = if let Some(video) = raw_body
+        // fal-video-model.ts buildResult reads `response.video.url` only: an
+        // empty string counts as missing, and there is no top-level fallback.
+        let video_url = raw_body
             .get("video")
-            .and_then(|v| v.get("url"))
-            .and_then(|v| v.as_str())
-        {
-            vec![VideoData::Url {
-                url: video.to_string(),
-                media_type: "video/mp4".to_string(),
-            }]
-        } else if let Some(url) = raw_body.get("url").and_then(|v| v.as_str()) {
-            vec![VideoData::Url {
-                url: url.to_string(),
-                media_type: "video/mp4".to_string(),
-            }]
-        } else {
+            .and_then(|video| video.get("url"))
+            .and_then(Value::as_str)
+            .filter(|url| !url.is_empty());
+        let (Some(video), Some(video_url)) = (raw_body.get("video"), video_url) else {
             return Err(AiMuxError::invalid_response_data(
-                "Fal video result missing video URL".to_string(),
+                "No video URL in response".to_string(),
             ));
         };
 
+        // `mediaType` is the response's `content_type`, else `video/mp4`.
+        let media_type = video
+            .get("content_type")
+            .and_then(Value::as_str)
+            .filter(|content_type| !content_type.is_empty())
+            .unwrap_or("video/mp4")
+            .to_string();
+
         Ok(VideoOperationStatus::Completed(VideoResult {
-            videos,
+            videos: vec![VideoData::Url {
+                url: video_url.to_string(),
+                media_type,
+            }],
             warnings: Vec::new(),
-            provider_metadata: None,
+            provider_metadata: Some(fal_video_metadata(&raw_body, video, video_url)),
             response: VideoResponse {
                 timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
         }))
+    }
+}
+
+/// `providerMetadata.fal` of a completed video (`fal-video-model.ts`
+/// buildResult): the video's fields under `videos`, then the job's `seed`,
+/// `timings`, `has_nsfw_concepts` when present, and `prompt` when truthy.
+fn fal_video_metadata(
+    raw_body: &Value,
+    video: &Value,
+    video_url: &str,
+) -> aimux_core::shared::SharedProviderMetadata {
+    let field = |key: &str| video.get(key).cloned().unwrap_or(Value::Null);
+    let mut fal = Map::new();
+    fal.insert(
+        "videos".into(),
+        json!([{
+            "url": video_url,
+            "width": field("width"),
+            "height": field("height"),
+            "duration": field("duration"),
+            "fps": field("fps"),
+            "contentType": field("content_type"),
+        }]),
+    );
+    if let Some(seed) = raw_body.get("seed").filter(|seed| !seed.is_null()) {
+        fal.insert("seed".into(), seed.clone());
+    }
+    if let Some(timings) = raw_body.get("timings").filter(|timings| !timings.is_null()) {
+        fal.insert("timings".into(), timings.clone());
+    }
+    if let Some(nsfw) = raw_body
+        .get("has_nsfw_concepts")
+        .filter(|nsfw| !nsfw.is_null())
+    {
+        fal.insert("has_nsfw_concepts".into(), nsfw.clone());
+    }
+    if let Some(prompt) = raw_body
+        .get("prompt")
+        .and_then(Value::as_str)
+        .filter(|prompt| !prompt.is_empty())
+    {
+        fal.insert("prompt".into(), json!(prompt));
+    }
+
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
+    metadata.insert(options::NAMESPACE.into(), fal);
+    metadata
+}
+
+#[cfg(test)]
+mod status_request_tests {
+    use aimux_provider_utils::HttpRequest;
+
+    /// The `Key` credential is gated on the submit origin, so a
+    /// `response_url` on another origin is polled without it (#441). The
+    /// gate itself is `HttpRequest::credentialed_origin`; that it drops the
+    /// caller headers is tested in `aimux-provider-utils` (`http.rs`).
+    #[test]
+    fn a_status_poll_is_credentialed_and_trusted_only_on_the_submit_origin() {
+        let submit_url = "https://queue.fal.run/fal-ai/luma-dream-machine";
+        let request = super::status_request(
+            HttpRequest {
+                url: "https://elsewhere.example/requests/1/status".into(),
+                headers: vec![("authorization".into(), "Key test-api-key".into())],
+                ..HttpRequest::default()
+            },
+            submit_url,
+        );
+
+        assert!(request.validate_url);
+        assert_eq!(request.credentialed_origin.as_deref(), Some(submit_url));
+        assert_eq!(request.trusted_origin.as_deref(), Some(submit_url));
     }
 }
