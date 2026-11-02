@@ -14,7 +14,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, without_trailing_slash};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 use super::error::cohere_failed_response_handler;
 use super::{CohereEmbeddingModel, CohereModel, CohereRerankingModel};
@@ -231,6 +232,7 @@ impl ProviderDiscovery for CohereProvider {
                     id: entry.name,
                     owned_by: Some(super::chat_language_model_options::NAMESPACE.to_string()),
                     created: None,
+                    limits: None,
                 })
                 .collect())
         })
