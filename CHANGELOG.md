@@ -1542,6 +1542,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the first chunk carried it, and ended the stream with an error part
   when a later one did. As in the AI SDK, where a chunk with `choices`
   matches the chunk schema and the unknown key is dropped (#397).
+- A raw byte request body (`HttpBody::Bytes`: audio uploads, Bedrock, file
+  uploads) no longer replaces a `content-type` the caller set in
+  `HttpRequest.headers`, `ProviderSettings.headers` or `CallOptions.headers`;
+  the body's media type is sent only when the caller set none, as for JSON
+  bodies and in the AI SDK's `postToApi`. A multipart body still sends its
+  own `multipart/...; boundary=...` type, since the boundary is generated
+  with the body (#398).
 - fal, Deepgram, ElevenLabs and Luma send the `ai-sdk-<package>/<version>` user-agent part of their `@ai-sdk/*` package (`withUserAgentSuffix` in each `createX`), and their `ai-sdk-provider-utils/<v>` part names the provider-utils that package depends on (5.0.53).
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
