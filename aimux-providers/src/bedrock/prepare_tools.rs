@@ -2,7 +2,7 @@
 //! provider-defined tool input schemas of the pinned upstream factories.
 
 use super::anthropic_model_support::supports_strict_tools;
-use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
+use crate::anthropic::internal::{AnthropicTool, prepare_tools_with_provider};
 use aimux_core::AiMuxError;
 use aimux_core::options::LanguageModelV4ToolChoice;
 use aimux_core::tool::{FunctionTool, Tool};

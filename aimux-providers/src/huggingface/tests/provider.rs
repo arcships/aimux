@@ -10,7 +10,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{HuggingFaceProviderSettings, HuggingFaceResponsesModel, create_huggingface};
+use crate::huggingface::{
+    HuggingFaceProviderSettings, HuggingFaceResponsesModel, create_huggingface,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 

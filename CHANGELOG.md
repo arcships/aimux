@@ -1377,6 +1377,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `with_user_agent_suffix`, and map an optional URL with
   `url.map(without_trailing_slash)`.
 
+- `aimux_providers::openai::tools::AzureOpenAITools` moved to
+  `aimux_providers::azure::AzureOpenAITools` (also re-exported at
+  `aimux_providers::AzureOpenAITools`), as `@ai-sdk/azure`'s
+  `src/azure-openai-tools.ts` (RFC-0046 R2).
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
@@ -1507,6 +1512,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aimux_provider_utils::optional_field` is the `deserialize_with` for a zod
   `.optional()` field (absent is `None`, an explicit `null` fails the
   schema); it replaces the copies in the DeepSeek, Google and Groq options.
+  `aimux_provider_utils::parse_option_fields` validates a per-field options
+  object from `providerOptions` (returning `InvalidArgument` on invalid type
+  or field error), shared by the OpenAI chat and Anthropic option parsers.
 - `aimux_provider_utils::create_provider_stream_error` and
   `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
   `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
@@ -1535,6 +1543,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checksum is now checked once its 12 bytes arrive, before the rest of the
   frame, and the buffer gives back the capacity a large frame left behind.
   The AI SDK's decoder has no such limit.
+- SSE streams end at `data: [DONE]` (`create_event_source_response_handler`,
+  so OpenAI Chat, OpenAI-compatible presets and every other SSE provider).
+  The frame was skipped and the stream went on reading the response body,
+  so a server that wrote `[DONE]` and kept the connection open held the
+  caller's last `next()` until the connection closed (#396). This departs
+  from the AI SDK on purpose: it skips `[DONE]` and reads to the end of the
+  body, while aimux stops there. Anything a server sends after `[DONE]`
+  (such as a gateway's trailing usage chunk) is not read, and the body is
+  not drained, so that connection is not reused.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
