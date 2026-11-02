@@ -108,6 +108,99 @@ mod create_amazon_bedrock_event_stream_decoder {
     }
 }
 
+// ── Frame length limit (#399; not upstream: the AI SDK decoder has no limit) ──
+
+mod frame_length_limit {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::bedrock::event_stream_decoder::crc32;
+
+    /// `AWS_EVENT_STREAM_MAX_MESSAGE_SIZE` in `aws-c-event-stream`.
+    const AWS_MAX_FRAME: usize = 24 * 1024 * 1024;
+
+    /// The 12-byte prelude of a frame that declares `total_length` bytes and
+    /// no headers, with a valid prelude checksum.
+    fn prelude(total_length: usize) -> Vec<u8> {
+        let mut bytes = u32::try_from(total_length)
+            .expect("the length fits the 4-byte field")
+            .to_be_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        let checksum = crc32(&bytes);
+        bytes.extend_from_slice(&checksum.to_be_bytes());
+        bytes
+    }
+
+    /// The first item decoded from `head` on a body that then stays open, or
+    /// `None` when the decoder is still waiting for bytes after a second.
+    async fn first_item_on_an_open_body(
+        head: Vec<u8>,
+    ) -> Option<Result<EventStreamMessage, AiMuxError>> {
+        let body = futures::stream::iter(vec![Ok::<_, AiMuxError>(Bytes::from(head))])
+            .chain(futures::stream::pending())
+            .boxed();
+        tokio::time::timeout(Duration::from_secs(1), decode_stream(body).next())
+            .await
+            .ok()
+            .flatten()
+    }
+
+    fn assert_frame_length_error(item: Option<Result<EventStreamMessage, AiMuxError>>) {
+        let error = item
+            .expect("the decoder answers without waiting for the frame")
+            .expect_err("the declared length is rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid Amazon Bedrock event-stream frame length"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// The reproduction in #399: a 64 MiB length and then nothing.
+    #[tokio::test]
+    async fn rejects_a_64_mib_length_before_buffering_the_frame() {
+        let declared = 64u32 * 1024 * 1024;
+
+        let item = first_item_on_an_open_body(declared.to_be_bytes().to_vec()).await;
+
+        assert_frame_length_error(item);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_length_one_byte_past_the_aws_maximum() {
+        let item = first_item_on_an_open_body(prelude(AWS_MAX_FRAME + 1)).await;
+
+        assert_frame_length_error(item);
+    }
+
+    /// Lengths up to the AWS maximum, those past 16 MiB included, are valid:
+    /// the decoder waits for the rest of the frame, so a body that ends after
+    /// the prelude fails as an incomplete frame, not on its length.
+    #[tokio::test]
+    async fn waits_for_the_rest_of_a_frame_up_to_the_aws_maximum() {
+        for length in [16 * 1024 * 1024 + 1, AWS_MAX_FRAME] {
+            let prelude = prelude(length);
+            let buffered = prelude.len();
+
+            let items = decode_all(vec![prelude]).await;
+
+            let error = items
+                .into_iter()
+                .find_map(Result::err)
+                .expect("the stream rejects");
+            let expected = format!(
+                "Incomplete Amazon Bedrock event-stream frame: {buffered} buffered bytes remain at end of stream."
+            );
+            assert!(
+                error.to_string().contains(&expected),
+                "length {length}: unexpected error: {error}"
+            );
+        }
+    }
+}
+
 // ── Older aimux tests (previously the unit tests of `bedrock/event_stream.rs`) ──
 
 mod frame_round_trip_and_crc {

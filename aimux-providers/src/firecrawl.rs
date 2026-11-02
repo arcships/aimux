@@ -21,7 +21,8 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 const MODEL_ID: &str = "firecrawl-search";
 

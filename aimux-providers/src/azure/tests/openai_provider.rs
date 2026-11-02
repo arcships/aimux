@@ -11,7 +11,7 @@
 //! renumbers them in order before comparing with the upstream `id-N` values.
 
 use crate::azure::{AzureOpenAIProvider, AzureOpenAIProviderSettings, create_azure};
-use crate::openai::tools::{
+use crate::openai::internal::{
     CodeInterpreterArgs, ComparisonOperator, FileSearchArgs, FileSearchFilter,
     FileSearchFilterValue, FileSearchRanking, ImageGenerationArgs, ImageOutputFormat, ImageQuality,
     WebSearchPreviewArgs,

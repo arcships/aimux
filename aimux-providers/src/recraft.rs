@@ -28,10 +28,8 @@ use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, ProviderHeaders, poll_interval_ms,
-    retry_download,
-};
+use crate::shared::{EndpointConfig, POLL_INTERVAL_MS_KEY, poll_interval_ms, retry_download};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
