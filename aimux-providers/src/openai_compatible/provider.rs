@@ -606,15 +606,7 @@ pub(crate) async fn list_models_once(
     #[derive(serde::Deserialize)]
     struct ModelsList {
         #[serde(default)]
-        data: Vec<ModelEntry>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelEntry {
-        id: String,
-        #[serde(default)]
-        owned_by: Option<String>,
-        #[serde(default)]
-        created: Option<u64>,
+        data: Vec<crate::shared::ModelListEntry>,
     }
 
     let headers = config.request_headers(None).await?;
@@ -637,10 +629,6 @@ pub(crate) async fn list_models_once(
         .value
         .data
         .into_iter()
-        .map(|m| aimux_core::model_catalogue::RuntimeModel {
-            id: m.id,
-            owned_by: m.owned_by,
-            created: m.created,
-        })
+        .map(aimux_core::model_catalogue::RuntimeModel::from)
         .collect())
 }
