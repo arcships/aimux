@@ -18,11 +18,12 @@
 //!
 //! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
-use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicConfig, AnthropicEndpoint, TransformRequestBody};
-use crate::anthropic::options::options_name_of;
-use crate::anthropic::request_rewrite::{AnthropicBodyRewrite, AnthropicRequestUrl};
-use crate::shared::{Credential, Endpoint, ProviderHeaders, ResolveEndpoint};
+use crate::anthropic::internal::{
+    AnthropicBodyRewrite, AnthropicConfig, AnthropicEndpoint, AnthropicMessagesModel,
+    AnthropicRequestUrl, TransformRequestBody, options_name_of,
+};
+use crate::google::internal::google_failed_response_handler;
+use crate::shared::{Endpoint, ResolveEndpoint};
 use crate::vertex::auth_google_auth_library::GoogleAuth;
 use crate::vertex::provider_base::{Publisher, Resolver};
 use crate::vertex::{
@@ -33,6 +34,7 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::provider::Provider;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
 use std::sync::{Arc, OnceLock};
 
@@ -165,7 +167,7 @@ pub(super) fn model(
         body_rewrite: Some(AnthropicBodyRewrite::VertexRawPredict),
         supports_native_structured_output: false,
         supports_strict_tools: false,
-        failed_response_handler: crate::google::google_failed_response_handler,
+        failed_response_handler: google_failed_response_handler,
         endpoint: AnthropicEndpoint::Resolved(Arc::new(ClaudeEndpoint { resolver })),
     };
     AnthropicMessagesModel::with_config(model_id.to_string(), config)

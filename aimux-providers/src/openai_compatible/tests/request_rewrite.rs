@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
+
 use crate::openai_compatible::request_rewrite::CompatibleBodyRewrite;
 use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
-use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 
 fn config(
     body_rewrite: Option<CompatibleBodyRewrite>,

@@ -519,7 +519,7 @@ mod older_image {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{GoogleImageSettings, GoogleProviderSettings, create_google};
+    use crate::google::{GoogleImageSettings, GoogleProviderSettings, create_google};
     use aimux_core::image_model::{
         ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs,
     };
