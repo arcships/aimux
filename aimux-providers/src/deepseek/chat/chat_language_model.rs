@@ -566,7 +566,7 @@ impl Transformer for DeepSeekChatStream {
         self.ctx.raw(&parsed, controller);
 
         // handle error chunks:
-        if parsed.get("error").is_some() {
+        if parsed.get("error").is_some_and(|error| !error.is_null()) {
             self.finish_reason = Some(FINISH_ERROR);
             controller.enqueue(StreamPart::Error {
                 error: deepseek_stream_error(

@@ -737,7 +737,7 @@ impl Transformer for OpenAICompatibleChatStream {
         if let Some(extractor) = self.metadata_extractor.as_mut() {
             extractor.process_chunk(&parsed);
         }
-        if let Some(error) = parsed.get("error") {
+        if let Some(error) = parsed.get("error").filter(|error| !error.is_null()) {
             controller.enqueue(StreamPart::Error {
                 error: stream_error(
                     &self.metadata_key,
