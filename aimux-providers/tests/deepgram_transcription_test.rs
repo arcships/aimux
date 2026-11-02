@@ -88,6 +88,43 @@ async fn should_pass_model_in_query() {
     assert!(requests[0].url.as_str().contains("model=nova-3"));
 }
 
+/// `createDeepgram` adds `ai-sdk-deepgram/<version>` to the user-agent
+/// (deepgram-provider.ts getHeaders, withUserAgentSuffix), and the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/deepgram@3.1.24` depends on.
+#[tokio::test]
+async fn should_include_the_package_user_agent() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response()).await;
+    let provider = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    provider
+        .transcription("nova-3")
+        .do_generate(&options(mock_audio(), "audio/wav"))
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(
+        user_agent.contains("ai-sdk-deepgram/3.1.24"),
+        "{user_agent}"
+    );
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}
+
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -319,4 +356,193 @@ async fn should_return_none_language_when_not_detected() {
         .unwrap();
 
     assert_eq!(result.language, None);
+}
+
+/// `diarize` is sent only when the caller sets it
+/// (deepgram-transcription-model.ts getArgs).
+#[tokio::test]
+async fn should_send_diarize_only_when_set() {
+    for (deepgram, expected) in [
+        (None, None),
+        (Some(json!({ "diarize": true })), Some("true")),
+        (Some(json!({ "diarize": false })), Some("false")),
+    ] {
+        let server = MockServer::start().await;
+        mock_response(&server, &fixture_response()).await;
+        let model = create_deepgram(DeepgramProviderSettings {
+            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        })
+        .unwrap()
+        .transcription("nova-3");
+        let mut call = options(mock_audio(), "audio/wav");
+        call.provider_options = deepgram
+            .map(|deepgram| serde_json::from_value(json!({ "deepgram": deepgram })).unwrap());
+        model.do_generate(&call).await.unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let diarize = requests[0]
+            .url
+            .query_pairs()
+            .find(|(key, _)| key == "diarize")
+            .map(|(_, value)| value.into_owned());
+        assert_eq!(diarize.as_deref(), expected);
+    }
+}
+
+/// The query parameters a transcription sends with `deepgram` options.
+async fn query_with(deepgram: Value) -> Vec<(String, String)> {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response()).await;
+    let model = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .transcription("nova-3");
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(serde_json::from_value(json!({ "deepgram": deepgram })).unwrap());
+    model.do_generate(&call).await.unwrap();
+    let requests = server.received_requests().await.unwrap();
+    requests[0]
+        .url
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect()
+}
+
+/// `providerOptions.deepgram` is parsed against
+/// `deepgramTranscriptionModelOptionsSchema` and every key of it is sent, as
+/// `String(value)`, in the order upstream builds its body
+/// (deepgram-transcription-model.ts getArgs).
+#[tokio::test]
+async fn should_send_every_schema_option_as_upstream_does() {
+    let query = query_with(json!({
+        "language": "en",
+        "smartFormat": true,
+        "punctuate": true,
+        "paragraphs": true,
+        "summarize": "v2",
+        "topics": true,
+        "intents": true,
+        "sentiment": true,
+        "detectEntities": true,
+        "redact": ["pci", "numbers"],
+        "replace": "[redacted]",
+        "search": "jupiter",
+        "keyterm": "galileo",
+        "diarize": true,
+        "utterances": true,
+        "uttSplit": 0.8,
+        "fillerWords": true,
+        "detectLanguage": true,
+    }))
+    .await;
+    assert_eq!(
+        query,
+        [
+            ("model", "nova-3"),
+            ("detect_entities", "true"),
+            ("detect_language", "true"),
+            ("diarize", "true"),
+            ("filler_words", "true"),
+            ("intents", "true"),
+            ("keyterm", "galileo"),
+            ("language", "en"),
+            ("paragraphs", "true"),
+            ("punctuate", "true"),
+            ("redact", "pci,numbers"),
+            ("replace", "[redacted]"),
+            ("search", "jupiter"),
+            ("sentiment", "true"),
+            ("smart_format", "true"),
+            ("summarize", "v2"),
+            ("topics", "true"),
+            ("utterances", "true"),
+            ("utt_split", "0.8"),
+        ]
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .to_vec()
+    );
+
+    let query =
+        query_with(json!({ "redact": "numbers", "summarize": false, "language": null })).await;
+    assert_eq!(
+        query,
+        [
+            ("model", "nova-3"),
+            ("redact", "numbers"),
+            ("summarize", "false")
+        ]
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .to_vec()
+    );
+}
+
+/// A value outside the schema fails with the upstream message before
+/// anything is sent.
+#[tokio::test]
+async fn should_reject_options_outside_the_schema() {
+    let model = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .transcription("nova-3");
+    for deepgram in [
+        json!({ "summarize": true }),
+        json!({ "summarize": "v1" }),
+        json!({ "topics": ["space"] }),
+        json!({ "redact": 1 }),
+        json!({ "search": ["jupiter"] }),
+        json!({ "uttSplit": "0.8" }),
+    ] {
+        let mut call = options(mock_audio(), "audio/wav");
+        call.provider_options =
+            Some(serde_json::from_value(json!({ "deepgram": deepgram })).unwrap());
+        let error = model.do_generate(&call).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {deepgram}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid deepgram provider options",
+            "{deepgram}"
+        );
+        assert!(cause.is_some(), "{deepgram}");
+    }
+}
+
+/// The query is form-encoded like `URLSearchParams.toString()`
+/// (deepgram-transcription-model.ts): a space is `+`, `&` and `=` inside a
+/// value are escaped, so a value cannot add or split parameters.
+#[tokio::test]
+async fn should_form_encode_the_query() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response()).await;
+    let model = create_deepgram(DeepgramProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .transcription("nova-3");
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(
+        serde_json::from_value(json!({ "deepgram": {
+            "keyterm": "space probe",
+            "replace": "a&model=other",
+        } }))
+        .unwrap(),
+    );
+    model.do_generate(&call).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests[0].url.query(),
+        Some("model=nova-3&keyterm=space+probe&replace=a%26model%3Dother")
+    );
 }

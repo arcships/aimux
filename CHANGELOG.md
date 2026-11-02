@@ -1534,6 +1534,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   body, while aimux stops there. Anything a server sends after `[DONE]`
   (such as a gateway's trailing usage chunk) is not read, and the body is
   not drained, so that connection is not reused.
+- A stream chunk whose `error` member is `null` is a normal chunk, not an
+  error frame: OpenAI Chat and Completion (Azure and Codex included), the
+  OpenAI-compatible chat and completion models (every preset), Groq,
+  DeepSeek, Mistral, and the first event of Open Responses. A gateway that
+  sends `"error": null` on healthy chunks failed the whole call with a 500
+  when the first chunk carried it, and ended the stream with an error part
+  when a later one did. As in the AI SDK, where a chunk with `choices`
+  matches the chunk schema and the unknown key is dropped (#397).
+- A raw byte request body (`HttpBody::Bytes`: audio uploads, Bedrock, file
+  uploads) no longer replaces a `content-type` the caller set in
+  `HttpRequest.headers`, `ProviderSettings.headers` or `CallOptions.headers`;
+  the body's media type is sent only when the caller set none, as for JSON
+  bodies and in the AI SDK's `postToApi`. A multipart body still sends its
+  own `multipart/...; boundary=...` type, since the boundary is generated
+  with the body (#398).
+- Luma image generation follows `@ai-sdk/luma` 3.0.54: `referenceType:
+  'character'` sends `character: { <id>: { images } }` grouped by
+  `images[i].id` (it was sent as `image`); a `failed` generation, or a
+  `completed` one without an image, fails with `InvalidResponseData` and
+  upstream's message (it was an API call error); a mask is refused before
+  the files are checked and the editing errors carry upstream's messages;
+  `photon-1` and `photon-flash-1` report file support and no mask support;
+  `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
+  (`invalid luma provider options`); and the generation answers are parsed
+  against `lumaGenerationResponseSchema`, so an unknown `state` fails at
+  once instead of being polled until the attempts run out.
+  `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
+  does; it was checked but the 120 attempts always applied.
+
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request

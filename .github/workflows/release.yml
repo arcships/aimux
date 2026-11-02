@@ -644,11 +644,17 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: List assets
-        run: ls -la release-assets/
+      # The download holds every artifact of the run, the Node binaries too
+      # when the Node build finished first. Only the assets on the list in
+      # scripts/stage_release_assets.py go up, under the names it gives them
+      # (one library per Android ABI, the xcframework as one zip), and a
+      # missing one fails the job before the release is created (#273).
+      - name: Stage the release assets by their list
+        run: python3 scripts/stage_release_assets.py release-assets release-upload
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          files: release-assets/**
+          files: release-upload/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

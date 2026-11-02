@@ -654,13 +654,16 @@ impl LanguageModel for OpenAICompatibleChatModel {
         };
         let stream = pipe_through(sse_stream, transformer);
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(RequestInfo { body: Some(body) }),
-            response: Some(StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(RequestInfo { body: Some(body) }),
+                response: Some(StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -737,7 +740,7 @@ impl Transformer for OpenAICompatibleChatStream {
         if let Some(extractor) = self.metadata_extractor.as_mut() {
             extractor.process_chunk(&parsed);
         }
-        if let Some(error) = parsed.get("error") {
+        if let Some(error) = parsed.get("error").filter(|error| !error.is_null()) {
             controller.enqueue(StreamPart::Error {
                 error: stream_error(
                     &self.metadata_key,
@@ -913,6 +916,13 @@ impl Transformer for OpenAICompatibleChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         if self.reasoning_started {
             controller.reasoning_end(REASONING_ID);
         }

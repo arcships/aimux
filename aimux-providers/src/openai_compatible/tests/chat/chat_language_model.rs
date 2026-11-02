@@ -3641,6 +3641,39 @@ mod do_stream {
         );
     }
 
+    /// A chunk with `"error": null` is a normal chunk (#397). Upstream's
+    /// chunk schema is a union of the chunk object and the error schema; a
+    /// chunk with `choices` takes the first branch, which drops the unknown
+    /// `error` key. Gateways send the null member on healthy chunks.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let fetch = stream_mock(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"error":null}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"id":"x","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"error":null}"#,
+        ]);
+
+        let result = model(&fetch)
+            .do_stream(&stream_options(json!({})))
+            .await
+            .unwrap();
+        let parts = stream_parts(result).await;
+
+        assert!(
+            parts.iter().all(|part| part["type"] != "error"),
+            "{parts:?}"
+        );
+        assert!(
+            parts.contains(&json!({ "delta": "hello", "id": "txt-0", "type": "text-delta" })),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
+    }
+
     /// upstream: @ai-sdk/openai-compatible src/chat/openai-compatible-chat-language-model.test.ts › doStream › should preserve structured error stream parts
     #[tokio::test]
     async fn should_preserve_structured_error_stream_parts() {
