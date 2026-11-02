@@ -122,6 +122,7 @@ impl ProviderDiscovery for MockDiscovery {
                 id: self.0.to_owned(),
                 owned_by: None,
                 created: None,
+                limits: None,
             }])
         })
     }

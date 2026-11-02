@@ -12,14 +12,15 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
+    AwsCredentials, Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable,
+    validate_base_url,
 };
 
 use crate::anthropic::internal::{
     AnthropicConfig, AnthropicEndpoint, AnthropicMessagesModel, AnthropicRequestUrl, CANONICAL,
     anthropic_failed_response_handler, list_models_once, options_name_of, supported_urls,
 };
-use crate::shared::{Credential, Endpoint, ProviderHeaders, ResolveEndpoint, TransformRequestBody};
+use crate::shared::{Endpoint, ResolveEndpoint, TransformRequestBody};
 
 use super::fetch::{self, AwsHeaders};
 

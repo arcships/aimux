@@ -317,12 +317,12 @@ mod older_speech {
 
     use crate::google::options::Namespace;
     use crate::google::{GoogleProviderSettings, GoogleSpeechModel, create_google};
-    use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+    use crate::shared::EndpointConfig;
     use aimux_core::error::AiMuxError;
     use aimux_core::provider::Provider;
     use aimux_core::shared::{SharedProviderOptions, Warning};
     use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel, SpeechResult};
-    use aimux_provider_utils::Resolvable;
+    use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders, Resolvable};
 
     // 8 bytes of raw PCM ([1..8]) base64-encoded.
     const PCM_BASE64: &str = "AQIDBAUGBwg=";

@@ -28,9 +28,9 @@ pub fn create_google_vertex_maas(
             ..Default::default()
         },
         base_url,
-        crate::shared::ProviderHeaders::new(
-            crate::shared::Credential::None,
-            crate::shared::AuthScheme::Bearer,
+        aimux_provider_utils::ProviderHeaders::new(
+            aimux_provider_utils::Credential::None,
+            aimux_provider_utils::AuthScheme::Bearer,
             Vec::new(),
             None,
         ),
