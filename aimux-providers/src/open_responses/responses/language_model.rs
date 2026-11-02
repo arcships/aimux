@@ -313,7 +313,7 @@ impl LanguageModel for OpenResponsesModel {
             first_event => first_event,
         };
         if let Some(Ok(ref event)) = first_event
-            && let Some(err_obj) = event.get("error")
+            && let Some(err_obj) = event.get("error").filter(|error| !error.is_null())
         {
             let message = err_obj
                 .get("message")
