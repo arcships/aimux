@@ -207,6 +207,118 @@ async fn event_source_handler_deserializes_each_data_event() {
     );
 }
 
+/// `data: [DONE]` ends the stream even when the server keeps the response
+/// body open after it (#396): the stream must not wait for the connection to
+/// close, and events written after `[DONE]` are not read.
+#[tokio::test]
+async fn event_source_handler_ends_at_done_while_the_body_stays_open() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = vec![0u8; 8192];
+        let _ = socket.read(&mut buffer).await;
+        // Chunked, no Content-Length: only the server closing ends the body.
+        let events = "data: {\"value\":\"one\"}\n\ndata: [DONE]\n\ndata: {\"value\":\"after\"}\n\n";
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+        let chunk = format!("{head}{:x}\r\n{events}\r\n", events.len());
+        socket.write_all(chunk.as_bytes()).await.unwrap();
+        socket.flush().await.unwrap();
+        // Hold the connection open until the test is done.
+        let _ = released.await;
+    });
+
+    let output = post_to_api(
+        request(format!("http://{address}")),
+        HttpBody::Json(json!({})),
+        create_event_source_response_handler::<Reply>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+    let mut stream = output.value;
+
+    assert_eq!(
+        stream.next().await.unwrap().unwrap(),
+        Reply {
+            value: "one".into()
+        }
+    );
+    let end = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+        .await
+        .expect("the stream did not end at [DONE]: the still-open body kept the caller waiting");
+    assert!(end.is_none(), "{end:?}");
+    let _ = release.send(());
+}
+
+/// The `content-type` a raw-body request goes out with: the caller's
+/// header against the body's own media type.
+async fn sent_content_type(caller: Option<&str>, body_type: &str) -> String {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"value": "ok"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut call = request(format!("{}/upload", server.uri()));
+    if let Some(caller) = caller {
+        call.headers.push(("Content-Type".into(), caller.into()));
+    }
+
+    post_to_api(
+        call,
+        HttpBody::Bytes(b"raw".to_vec(), body_type.into()),
+        create_json_response_handler::<Reply>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+
+    let received = server.received_requests().await.unwrap();
+    received[0].headers["content-type"]
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// A caller's `content-type` wins over a byte body's media type, as it does
+/// for JSON bodies and in the AI SDK's `postToApi` (#398); without one the
+/// body's media type is sent.
+#[tokio::test]
+async fn byte_body_keeps_the_callers_content_type() {
+    assert_eq!(
+        sent_content_type(
+            Some("application/x-caller-type"),
+            "application/octet-stream"
+        )
+        .await,
+        "application/x-caller-type"
+    );
+    assert_eq!(
+        sent_content_type(None, "application/octet-stream").await,
+        "application/octet-stream"
+    );
+}
+
+/// A multipart body's boundary is generated with the body, so its own media
+/// type is sent whatever the caller's headers say: a caller's value could not
+/// name the boundary.
+#[tokio::test]
+async fn multipart_byte_body_keeps_its_boundary() {
+    assert_eq!(
+        sent_content_type(
+            Some("application/json"),
+            "multipart/form-data; boundary=aimux-boundary"
+        )
+        .await,
+        "multipart/form-data; boundary=aimux-boundary"
+    );
+}
+
 /// An event that is not JSON yields the AI SDK's `JSONParseError` message
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`), and the
 /// stream goes on with the next event.

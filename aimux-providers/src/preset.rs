@@ -36,12 +36,11 @@ use aimux_core::error::AiMuxError;
 use aimux_core::types::Usage;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::openai_compatible::chat::usage_from_raw;
-use crate::openai_compatible::{
+use crate::openai_compatible::internal::{
     Assembly, BaseUrl, ChatSettings, ConvertUsage, OpenAICompatibleProvider, ResolveBaseUrl,
-    TransformRequestBody,
+    TransformRequestBody, usage_from_raw,
 };
-use crate::shared::Credential;
+use aimux_provider_utils::Credential;
 
 /// How a preset authenticates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -459,7 +458,7 @@ fn assemble(
     let (package, fetch) = match descriptor.user_agent.0 {
         "amazon-bedrock" => {
             let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
-            let fetch: FetchFunction = Arc::new(crate::shared::UserAgentFetch {
+            let fetch: FetchFunction = Arc::new(aimux_provider_utils::UserAgentFetch {
                 inner: settings.fetch,
                 provider_utils: None,
                 suffix: Some(format!("ai-sdk-{}/{}", package.name, package.version)),

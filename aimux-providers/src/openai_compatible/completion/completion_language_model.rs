@@ -305,7 +305,7 @@ impl Transformer for OpenAICompatibleCompletionStream {
             Err(error) => return self.report_error(error, controller),
         };
         self.ctx.raw(&event, controller);
-        if let Some(error) = event.get("error") {
+        if let Some(error) = event.get("error").filter(|error| !error.is_null()) {
             // Passed on as it is
             // (openai-compatible-completion-language-model.ts:320-325).
             let error = crate::openai_compatible::chat::stream_error(

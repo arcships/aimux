@@ -31,9 +31,10 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, poll_until,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
+    poll_until,
 };
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn gladia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {

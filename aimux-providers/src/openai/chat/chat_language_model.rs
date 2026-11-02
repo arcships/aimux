@@ -354,7 +354,7 @@ pub(crate) async fn execute_stream(
         first_event => first_event,
     };
     if let Some(Ok(ref event)) = first_event
-        && let Some(err_obj) = event.get("error")
+        && let Some(err_obj) = event.get("error").filter(|error| !error.is_null())
     {
         return Err(crate::openai::stream_error::openai_stream_error(
             err_obj,
@@ -450,7 +450,7 @@ impl Transformer for OpenAIChatStream {
         self.ctx.raw(&parsed, controller);
 
         // Check for mid-stream error.
-        if let Some(err_obj) = parsed.get("error") {
+        if let Some(err_obj) = parsed.get("error").filter(|error| !error.is_null()) {
             controller.enqueue(StreamPart::Error {
                 error: crate::openai::stream_error::openai_stream_error(
                     err_obj,

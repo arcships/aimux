@@ -27,7 +27,8 @@ use aimux_core::video_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 const PROVIDER_NAME: &str = "runwayml";
 const RUNWAY_VERSION: &str = "2024-11-06";

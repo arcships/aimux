@@ -19,8 +19,8 @@ use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
 use crate::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
-use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// The user agent aimux pins (upstream mocks `0.0.0-test`); compared apart
 /// from the other request headers, which upstream's test server lists
@@ -613,6 +613,40 @@ mod do_stream {
             ],
             headers,
         )])
+    }
+
+    /// A chunk with `"error": null` is a normal chunk (#397): upstream's
+    /// chunk schema is a union with the error schema, and a chunk with
+    /// `choices` takes the first branch, which drops the unknown key.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let mock = MockFetch::new(vec![stream_response(
+            &[
+                "data: {\"id\":\"cmpl-x\",\"object\":\"text_completion\",\"created\":1711363440,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\"hello\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}],\"error\":null}\n\n",
+                "data: {\"id\":\"cmpl-x\",\"object\":\"text_completion\",\"created\":1711363440,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n",
+                "data: {\"id\":\"cmpl-x\",\"object\":\"text_completion\",\"created\":1711363440,\"model\":\"gpt-3.5-turbo-instruct\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2},\"choices\":[],\"error\":null}\n\n",
+                "data: [DONE]\n\n",
+            ],
+            &[],
+        )]);
+
+        let result = model(&mock).do_stream(&stream_options()).await.unwrap();
+        let parts = stream_parts(result).await;
+
+        assert!(
+            parts.iter().all(|part| part["type"] != "error"),
+            "{parts:?}"
+        );
+        assert!(
+            parts
+                .iter()
+                .any(|part| part["type"] == "text-delta" && part["delta"] == "hello"),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
     }
 
     /// upstream: @ai-sdk/openai-compatible src/completion/openai-compatible-completion-language-model.test.ts › doStream › should stream text deltas
