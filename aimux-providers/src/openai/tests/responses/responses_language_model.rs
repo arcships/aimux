@@ -10620,6 +10620,40 @@ mod openai_responses_language_model {
                     ],
                 );
             }
+
+            /// Not an upstream case. The Responses API types `response.error`
+            /// as `string | null`, and upstream adds the error part only when
+            /// `value.response.error != null`
+            /// (openai-responses-language-model.ts:2815): a late
+            /// `response.failed` whose `error` is `null` finishes with `error`
+            /// and adds no error part.
+            #[tokio::test]
+            async fn a_late_response_failed_with_a_null_error_adds_no_error_part() {
+                let mock = sse_mock(vec![
+                "data:{\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_failed_null_error\",\"created_at\":1741269019,\"model\":\"gpt-4o-2024-07-18\",\"service_tier\":null}}\n\n".to_string(),
+                "data:{\"type\":\"response.output_item.added\",\"sequence_number\":1,\"output_index\":0,\"item\":{\"id\":\"msg_failed_null_error\",\"type\":\"message\"}}\n\n".to_string(),
+                "data:{\"type\":\"response.failed\",\"sequence_number\":2,\"response\":{\"error\":null,\"incomplete_details\":null,\"usage\":null,\"service_tier\":null}}\n\n".to_string(),
+            ]);
+                let stream = stream_do(
+                    &mock,
+                    "gpt-4o-mini",
+                    json!({"prompt": stream_test_prompt(), "includeRawChunks": false}),
+                )
+                .await
+                .unwrap();
+                let events = stream_collect(stream).await;
+                assert!(
+                    events.iter().all(|event| event["type"] != "error"),
+                    "{events:?}"
+                );
+                let finish = events.last().expect("a finish part");
+                assert_eq!(finish["type"], "finish", "{events:?}");
+                assert_eq!(
+                    finish["finishReason"],
+                    json!({ "raw": "error", "unified": "error" }),
+                    "{events:?}"
+                );
+            }
         }
 
         mod reasoning {

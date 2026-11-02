@@ -1883,7 +1883,8 @@ fn generate_source_id() -> String {
 ///
 /// # Errors
 ///
-/// An early `error` / `response.failed` event returns an `ApiCall` setup error;
+/// An early `error`, or `response.failed` with a non-null error, returns an
+/// `ApiCall` setup error, as [`read_until_output`] does;
 /// malformed events yield parse-error items and do not end the stream.
 // This reducer is shared by OpenAI, Azure, and Codex. Keeping the wire inputs
 // explicit is clearer than introducing a second context object used nowhere
@@ -1966,7 +1967,7 @@ where
     // Peek at the first SSE event to detect early errors (before any output).
     if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if etype == "error" || etype == "response.failed" {
+        if etype == "error" || (etype == "response.failed" && !val["response"]["error"].is_null()) {
             return Err(crate::openai::stream_error::openai_stream_error(
                 val,
                 &request_url,
@@ -2860,7 +2861,11 @@ impl Transformer for OpenAIResponsesStream {
                             {
                                 *final_reasoning_context = Some(ctx.clone());
                             }
-                            if !*stream_errored && resp_obj.get("error").is_some() {
+                            // `response.error` is `string | null`: only a
+                            // non-null one is an error (upstream's `!= null`).
+                            if !*stream_errored
+                                && resp_obj.get("error").is_some_and(|error| !error.is_null())
+                            {
                                 *stream_errored = true;
                                 controller.enqueue(StreamPart::Error {
                                     error: crate::openai::stream_error::openai_stream_error(
