@@ -14363,6 +14363,10 @@ mod provider_options_schema {
             json!({ "user": 1 }),
             json!({ "forceReasoning": null }),
             json!({ "compactionTrigger": "yes" }),
+            // `.optional()` (not `.nullish()`): an explicit `null` fails.
+            json!({ "logprobs": null }),
+            json!({ "allowedTools": null }),
+            json!({ "allowedTools": { "toolNames": ["weather"], "mode": null } }),
         ] {
             let mock = MockFetch::new(vec![]);
             let model = generate_provider(&mock).responses("gpt-5");
@@ -14404,6 +14408,29 @@ mod provider_options_schema {
         }));
         build_responses_request_body_for(ResponsesNamespace::OPENAI, "gpt-5", &options, false)
             .expect("null passes a .nullish() key");
+    }
+
+    /// zod's default object mode strips a key the schema does not declare:
+    /// the call goes through, the key is not sent, and the declared keys
+    /// beside it are still read.
+    #[test]
+    fn an_unknown_key_is_stripped() {
+        let options = generate_call_options(json!({
+            "prompt": test_prompt(),
+            "providerOptions": {
+                "openai": { "notAnOption": 1, "serviceTier": "flex" },
+            },
+        }));
+        let body =
+            build_responses_request_body_for(ResponsesNamespace::OPENAI, "gpt-5", &options, false)
+                .expect("an unknown key is stripped, not rejected")
+                .body;
+        assert_eq!(body["service_tier"], json!("flex"), "{body}");
+        let wire = body.to_string();
+        assert!(
+            !wire.contains("notAnOption") && !wire.contains("not_an_option"),
+            "{body}"
+        );
     }
 
     /// The Azure namespace is read before `openai`, and the error names the
