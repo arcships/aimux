@@ -11,7 +11,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use crate::google::google_failed_response_handler;
+use crate::google::internal::google_failed_response_handler;
 use crate::shared::EndpointConfig;
 
 use aimux_core::embedding_model::{
@@ -197,7 +197,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
             exchange.request(url, options),
             exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
-            crate::google::google_failed_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
 

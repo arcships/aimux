@@ -19,8 +19,8 @@ use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
 use crate::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
-use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// The user agent aimux pins (upstream mocks `0.0.0-test`); compared apart
 /// from the other request headers, which upstream's test server lists
