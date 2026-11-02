@@ -1410,24 +1410,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal of `RuntimeModel` must add the field, and the generated Java,
   Kotlin and Swift `RuntimeModel` constructors take `limits` as a new
   positional argument (#402).
-- `ApiCallError.origin` (`ApiCallErrorOrigin`): the boundary an API call
-  error was built at — `transport` (no complete response: connect, DNS,
-  TLS, a broken body), `httpResponse` (a non-2xx status, a 2xx body that is
-  too large or does not parse, a failure the provider reported in a 2xx
-  body such as a failed polling job, a redirect that could not be
-  followed), `streamEvent` (an error frame inside an accepted SSE, AWS event
-  stream or WebSocket stream, or a frame that could not be decoded) or
-  `local` (the exchange response timeout). An HTTP 429 and a 429 frame in a
-  stream that already produced output now differ by more than a guess from
-  `status_code` and `response_body`. The field is omitted from the JSON
-  while `unknown`, and errors serialized without it (recordings, envelopes
-  from older builds) read back as `unknown`; nothing is inferred. Every
-  binding's generated types carry it. Source changes for callers: a Rust
-  struct literal of `ApiCallError` without `..ApiCallError::new(..)` must
-  add the field; `ApiCallErrorOrigin` is `#[non_exhaustive]`, so a Rust
-  `match` on it needs a wildcard arm; the generated Java, Kotlin and Swift
-  `ApiCallError` constructors take `origin` as a new positional argument
-  (#400).
 
 - `aimux_provider_utils` base64 and inline-file helpers, as
   `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1): `convert_base64_to_uint8_array`,
