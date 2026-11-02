@@ -621,6 +621,10 @@
     "file": "RuntimeModel/001.json"
   },
   {
+    "type": "RuntimeModel",
+    "file": "RuntimeModel/002.json"
+  },
+  {
     "type": "SearchResponse",
     "file": "SearchResponse/001.json"
   },

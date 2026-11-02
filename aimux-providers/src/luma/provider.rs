@@ -3,9 +3,11 @@
 use std::sync::OnceLock;
 
 use aimux_core::error::AiMuxError;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable, validate_base_url,
+};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
 
 use super::image_model::LumaImageModel;
 
