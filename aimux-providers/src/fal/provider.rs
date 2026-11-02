@@ -3,9 +3,12 @@
 use std::sync::OnceLock;
 
 use aimux_core::error::AiMuxError;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    AuthScheme, Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable,
+    validate_base_url,
+};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
 
 use super::image_model::FalImageModel;
 use super::transcription_model::FalTranscriptionModel;
