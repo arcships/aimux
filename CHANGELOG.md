@@ -1488,6 +1488,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Amazon Bedrock event-stream decoder rejects a frame that declares more
+  than 24 MiB (`MAX_EVENT_STREAM_FRAME_LEN`, the service-side maximum of
+  AWS's `aws-c-event-stream`) as soon as its length is read. It used to
+  buffer the stream until the declared length arrived, so a broken or
+  hostile server could grow the buffer without bound (#399). The prelude
+  checksum is now checked once its 12 bytes arrive, before the rest of the
+  frame, and the buffer gives back the capacity a large frame left behind.
+  The AI SDK's decoder has no such limit.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request

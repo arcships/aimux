@@ -32,7 +32,7 @@ const CRC32_TABLE: [u32; 256] = {
     table
 };
 
-fn crc32(data: &[u8]) -> u32 {
+pub(crate) fn crc32(data: &[u8]) -> u32 {
     let mut crc = 0xFFFFFFFFu32;
     for &byte in data {
         crc = (crc >> 8) ^ CRC32_TABLE[((crc ^ byte as u32) & 0xFF) as usize];
@@ -276,9 +276,13 @@ fn checksum_error(frame: &[u8]) -> Option<String> {
     })
 }
 
-/// Maximum valid AWS EventStream frame length (16 MiB per AWS EventStream spec).
-/// Prevents unbounded memory allocation on malformed or malicious length headers (#399).
-pub const MAX_EVENT_STREAM_FRAME_LEN: usize = 16 * 1024 * 1024;
+/// The longest event-stream frame the decoder accepts: 24 MiB, the
+/// service-side maximum that AWS's own C implementation enforces
+/// (`AWS_EVENT_STREAM_MAX_MESSAGE_SIZE` in `aws-c-event-stream`'s
+/// `include/aws/event-stream/event_stream.h`). A frame that declares a longer
+/// length is rejected as soon as its 4-byte length is read, before any of it
+/// is buffered (#399).
+pub const MAX_EVENT_STREAM_FRAME_LEN: usize = 24 * 1024 * 1024;
 
 /// Decode frames incrementally, surfacing transport, framing, and checksum errors.
 pub fn decode_stream(
