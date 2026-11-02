@@ -72,6 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a Python `PanicException`. `npx napi build --release` and
   `maturin build --release` pick the profile up; no command changes.
 
+- The GitHub Release ships exactly the assets on the list in
+  `scripts/stage_release_assets.py`, and the release job fails if one is
+  missing. It used to upload every file of every artifact under its base
+  name, so v0.5.0 shipped one `libaimux_ffi.so` for whichever Android ABI was
+  uploaded last, the iOS xcframework as two loose files (`aimux_ffi`,
+  `Info.plist`), and no `aimux.h`, which the Go binding's `go generate`
+  downloads. Each Android ABI now ships as `libaimux_ffi-android-<abi>.so`,
+  the xcframework as `aimux_ffi.xcframework.zip`, and `aimux.h` is always
+  there. The Node `.node` binaries are no longer attached (they went up only
+  when the Node build finished before the release job's download); they ship
+  in the npm packages. The job summary lists every asset's byte size.
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
