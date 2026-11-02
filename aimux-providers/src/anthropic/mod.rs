@@ -13,19 +13,20 @@
 //! only in what it holds.
 
 mod api;
-pub(crate) mod config;
+mod config;
 mod convert_to_prompt;
 mod convert_usage;
 mod error;
 pub mod files;
 mod get_cache_control;
+pub(crate) mod internal;
 mod language_model;
-pub(crate) mod language_model_options;
+mod language_model_options;
 mod map_stop_reason;
 mod message_metadata;
 pub mod prepare_tools;
 mod provider;
-pub(crate) mod request_rewrite;
+mod request_rewrite;
 pub mod sanitize_json_schema;
 pub mod skills;
 
@@ -34,12 +35,7 @@ pub use language_model::AnthropicMessagesModel;
 pub use provider::{AnthropicProvider, AnthropicProviderSettings, anthropic, create_anthropic};
 pub use skills::AnthropicSkills;
 
-pub(crate) use error::anthropic_failed_response_handler;
-pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL, list_models_once, supported_urls};
-
-/// The options module under the path Anthropic AWS and Anthropic on Vertex
-/// import it from.
-pub(crate) use language_model_options as options;
+pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 
 #[cfg(test)]
 mod tests;
