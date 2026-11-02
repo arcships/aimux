@@ -207,6 +207,53 @@ async fn event_source_handler_deserializes_each_data_event() {
     );
 }
 
+/// `data: [DONE]` ends the stream even when the server keeps the response
+/// body open after it (#396): the stream must not wait for the connection to
+/// close, and events written after `[DONE]` are not read.
+#[tokio::test]
+async fn event_source_handler_ends_at_done_while_the_body_stays_open() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = vec![0u8; 8192];
+        let _ = socket.read(&mut buffer).await;
+        // Chunked, no Content-Length: only the server closing ends the body.
+        let events = "data: {\"value\":\"one\"}\n\ndata: [DONE]\n\ndata: {\"value\":\"after\"}\n\n";
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
+        let chunk = format!("{head}{:x}\r\n{events}\r\n", events.len());
+        socket.write_all(chunk.as_bytes()).await.unwrap();
+        socket.flush().await.unwrap();
+        // Hold the connection open until the test is done.
+        let _ = released.await;
+    });
+
+    let output = post_to_api(
+        request(format!("http://{address}")),
+        HttpBody::Json(json!({})),
+        create_event_source_response_handler::<Reply>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+    let mut stream = output.value;
+
+    assert_eq!(
+        stream.next().await.unwrap().unwrap(),
+        Reply {
+            value: "one".into()
+        }
+    );
+    let end = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+        .await
+        .expect("the stream did not end at [DONE]: the still-open body kept the caller waiting");
+    assert!(end.is_none(), "{end:?}");
+    let _ = release.send(());
+}
+
 /// An event that is not JSON yields the AI SDK's `JSONParseError` message
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`), and the
 /// stream goes on with the next event.
