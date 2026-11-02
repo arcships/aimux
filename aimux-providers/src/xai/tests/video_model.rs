@@ -2012,6 +2012,10 @@ mod provider_options_schema {
             json!({ "storageOptions": { "filename": "" } }),
             json!({ "storageOptions": { "filename": "a.mp4", "publicUrl": { "expiresAfter": 60 } } }),
             json!({ "pollIntervalMs": -1 }),
+            // `storageOptionsSchema.optional()` and `publicUrl:
+            // z.union([...]).optional()` reject an explicit `null`.
+            json!({ "storageOptions": null }),
+            json!({ "storageOptions": { "filename": "a.mp4", "publicUrl": null } }),
         ] {
             let options = with_xai(default_options(), xai.clone());
             let (result, seen) =
