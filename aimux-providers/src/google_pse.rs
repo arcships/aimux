@@ -28,7 +28,8 @@ use aimux_core::search_model::{
 use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Fixed model ID for the Google PSE search model.
 const MODEL_ID: &str = "google-pse-search";
