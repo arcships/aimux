@@ -491,15 +491,13 @@ mod luma_image_model {
         use super::*;
 
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › constructor › should expose correct provider and model information
-        ///
-        /// `specificationVersion` has no Rust counterpart (the trait is the
-        /// version).
         #[tokio::test]
         async fn should_expose_correct_provider_and_model_information() {
             let model = Server::new().await.model(None);
 
             assert_eq!(model.provider(), "luma");
             assert_eq!(model.model_id(), "test-model");
+            assert_eq!(model.specification_version(), "v4");
             assert_eq!(model.max_images_per_call(), Some(1));
         }
     }
