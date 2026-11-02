@@ -244,11 +244,9 @@ async fn should_pass_provider_specific_options() {
     );
 }
 
-/// TS: "should include user-agent header"
-///
-/// The TS test checks for `ai-sdk/elevenlabs/0.0.0-test` in the User-Agent.
-/// The Rust provider does not set a User-Agent header, so this test verifies
-/// the `xi-api-key` header is present instead.
+/// The `xi-api-key` header carries the API key. This test used to stand in
+/// for upstream's "should include user-agent header" while the provider sent
+/// no user-agent part; that case is `should_include_user_agent_header` below.
 #[tokio::test]
 async fn should_include_api_key_header() {
     let server = MockServer::start().await;
