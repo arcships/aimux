@@ -1563,12 +1563,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
   does; it was checked but the 120 attempts always applied.
 
-- The `moonshotai`, `kimi` and `zenmux` presets send `max_output_tokens` as
-  `max_completion_tokens` instead of `max_tokens` (`profile.max_tokens_key`
-  in `provider_registry.json`). Moonshot's chat API, on both
-  platform.moonshot.cn and the international platform behind `kimi`,
-  documents `max_tokens` as deprecated in favor of `max_completion_tokens`;
-  ZenMux documents `max_tokens` as not supported (#401).
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
