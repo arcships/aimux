@@ -23,6 +23,16 @@ fn rejects_values_outside_the_schema_with_the_serde_cause() {
         json!({ "promptCacheOptions": { "ttl": "1h" } }),
         json!({ "promptCacheRetention": "forever" }),
         json!({ "store": "true" }),
+        // `z.record(z.coerce.number<string>(), z.number())`: a value that is
+        // not a number, a key `Number()` reads as `NaN` or `Infinity`, and
+        // `null` (`.optional()`) all fail in the schema, with its cause.
+        json!({ "logitBias": { "50256": "-100" } }),
+        json!({ "logitBias": { "50256": null } }),
+        json!({ "logitBias": { "token": -100 } }),
+        json!({ "logitBias": { "0x": -100 } }),
+        json!({ "logitBias": { "1e999": -100 } }),
+        json!({ "logitBias": null }),
+        json!({ "logitBias": [1] }),
     ] {
         let error = parse(options.clone()).unwrap_err();
         let AiMuxError::InvalidArgument { message, cause } = &error else {

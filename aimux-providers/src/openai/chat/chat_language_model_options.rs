@@ -19,7 +19,7 @@ pub(crate) type ChatOptionsParser = fn(&JsonObject) -> Result<JsonObject, AiMuxE
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code, reason = "validated only; the namespace is read as JSON")]
 struct OpenAIChatOptions {
-    #[serde(default, deserialize_with = "optional_field")]
+    #[serde(default, deserialize_with = "logit_bias")]
     logit_bias: Option<serde_json::Map<String, Value>>,
     #[serde(default, deserialize_with = "optional_field")]
     logprobs: Option<Logprobs>,
@@ -137,6 +137,28 @@ enum SystemMessageMode {
     Remove,
 }
 
+/// `logitBias`: `z.record(z.coerce.number<string>(), z.number())`. Every
+/// value is a number and every key coerces to one
+/// ([`coerce_logit_bias_key`]); `.optional()`, so `null` fails.
+fn logit_bias<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Map<String, Value>>, D::Error> {
+    let object = serde_json::Map::<String, Value>::deserialize(deserializer)?;
+    for (key, value) in &object {
+        if !value.is_number() {
+            return Err(serde::de::Error::custom(format!(
+                "logitBias[{key:?}]: expected a number"
+            )));
+        }
+        if coerce_logit_bias_key(key).is_none() {
+            return Err(serde::de::Error::custom(format!(
+                "logitBias key {key:?} is not a number"
+            )));
+        }
+    }
+    Ok(Some(object))
+}
+
 /// `metadata`: `z.record(z.string().max(64), z.string().max(512))`, lengths
 /// in UTF-16 code units as JavaScript counts them.
 fn metadata<'de, D: serde::Deserializer<'de>>(
@@ -175,91 +197,11 @@ pub(crate) fn parse_chat_options(options: &JsonObject) -> Result<JsonObject, AiM
         },
     )?;
     parse_option_fields(options, NAMESPACE, |key, value| match key {
+        // The schema check above has already proven every key coerces.
         "logitBias" => Some(value.as_object().ok_or(()).and_then(|object| {
             let mut parsed = JsonObject::new();
             for (key, value) in object {
-                if !value.is_number() {
-                    return Err(());
-                }
-                let key = key.trim_matches(|c| {
-                    matches!(c,
-                        '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}'
-                        | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
-                        | '\u{205f}' | '\u{3000}' | '\u{feff}'
-                    )
-                });
-                let number = if key.is_empty() {
-                    0.0
-                } else if let Some((digits, radix)) = key
-                    .strip_prefix("0x")
-                    .or_else(|| key.strip_prefix("0X"))
-                    .map(|s| (s, 16))
-                    .or_else(|| {
-                        key.strip_prefix("0o")
-                            .or_else(|| key.strip_prefix("0O"))
-                            .map(|s| (s, 8))
-                    })
-                    .or_else(|| {
-                        key.strip_prefix("0b")
-                            .or_else(|| key.strip_prefix("0B"))
-                            .map(|s| (s, 2))
-                    })
-                {
-                    if digits.is_empty() {
-                        return Err(());
-                    }
-                    let bits_per_digit = match radix {
-                        16 => 4,
-                        8 => 3,
-                        _ => 1,
-                    };
-                    let mut significant_bits = 0usize;
-                    let mut mantissa = 0u64;
-                    let mut guard = false;
-                    let mut sticky = false;
-                    for digit in digits.chars() {
-                        let digit = digit.to_digit(radix).ok_or(())?;
-                        for shift in (0..bits_per_digit).rev() {
-                            let bit = (digit >> shift) & 1;
-                            if significant_bits == 0 && bit == 0 {
-                                continue;
-                            }
-                            if significant_bits < 53 {
-                                mantissa = (mantissa << 1) | u64::from(bit);
-                            } else if significant_bits == 53 {
-                                guard = bit != 0;
-                            } else {
-                                sticky |= bit != 0;
-                            }
-                            significant_bits += 1;
-                        }
-                    }
-                    if guard && (sticky || mantissa & 1 != 0) {
-                        mantissa += 1;
-                    }
-                    let exponent = significant_bits.saturating_sub(53);
-                    if exponent > 1023 {
-                        f64::INFINITY
-                    } else {
-                        mantissa as f64 * 2.0f64.powi(exponent as i32)
-                    }
-                } else {
-                    key.parse::<f64>().map_err(|_| ())?
-                };
-                if !number.is_finite() {
-                    return Err(());
-                }
-                let key = if number == 0.0 {
-                    "0".to_string()
-                } else if number.abs() >= 1e21 || number.abs() < 1e-6 {
-                    let scientific = format!("{number:e}");
-                    let (mantissa, exponent) = scientific.split_once('e').ok_or(())?;
-                    let exponent = exponent.parse::<i32>().map_err(|_| ())?;
-                    format!("{mantissa}e{exponent:+}")
-                } else {
-                    number.to_string()
-                };
-                parsed.insert(key, value.clone());
+                parsed.insert(coerce_logit_bias_key(key).ok_or(())?, value.clone());
             }
             Ok(Value::Object(parsed))
         })),
@@ -291,6 +233,92 @@ pub(crate) fn parse_chat_options(options: &JsonObject) -> Result<JsonObject, AiM
         ))),
         _ => None,
     })
+}
+
+/// `z.coerce.number<string>()` on a `logitBias` key: `Number(key)` as
+/// JavaScript reads it (whitespace trimmed, `""` is 0, `0x`/`0o`/`0b`
+/// prefixes), written back as `String(number)`. `None` when the result is
+/// `NaN` or infinite, which `z.number()` rejects.
+fn coerce_logit_bias_key(key: &str) -> Option<String> {
+    let key = key.trim_matches(|c| {
+        matches!(c,
+            '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}'
+            | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
+            | '\u{205f}' | '\u{3000}' | '\u{feff}'
+        )
+    });
+    let number = if key.is_empty() {
+        0.0
+    } else if let Some((digits, radix)) = key
+        .strip_prefix("0x")
+        .or_else(|| key.strip_prefix("0X"))
+        .map(|s| (s, 16))
+        .or_else(|| {
+            key.strip_prefix("0o")
+                .or_else(|| key.strip_prefix("0O"))
+                .map(|s| (s, 8))
+        })
+        .or_else(|| {
+            key.strip_prefix("0b")
+                .or_else(|| key.strip_prefix("0B"))
+                .map(|s| (s, 2))
+        })
+    {
+        if digits.is_empty() {
+            return None;
+        }
+        let bits_per_digit = match radix {
+            16 => 4,
+            8 => 3,
+            _ => 1,
+        };
+        let mut significant_bits = 0usize;
+        let mut mantissa = 0u64;
+        let mut guard = false;
+        let mut sticky = false;
+        for digit in digits.chars() {
+            let digit = digit.to_digit(radix)?;
+            for shift in (0..bits_per_digit).rev() {
+                let bit = (digit >> shift) & 1;
+                if significant_bits == 0 && bit == 0 {
+                    continue;
+                }
+                if significant_bits < 53 {
+                    mantissa = (mantissa << 1) | u64::from(bit);
+                } else if significant_bits == 53 {
+                    guard = bit != 0;
+                } else {
+                    sticky |= bit != 0;
+                }
+                significant_bits += 1;
+            }
+        }
+        if guard && (sticky || mantissa & 1 != 0) {
+            mantissa += 1;
+        }
+        let exponent = significant_bits.saturating_sub(53);
+        if exponent > 1023 {
+            f64::INFINITY
+        } else {
+            mantissa as f64 * 2.0f64.powi(exponent as i32)
+        }
+    } else {
+        key.parse::<f64>().ok()?
+    };
+    if !number.is_finite() {
+        return None;
+    }
+    let key = if number == 0.0 {
+        "0".to_string()
+    } else if number.abs() >= 1e21 || number.abs() < 1e-6 {
+        let scientific = format!("{number:e}");
+        let (mantissa, exponent) = scientific.split_once('e')?;
+        let exponent = exponent.parse::<i32>().ok()?;
+        format!("{mantissa}e{exponent:+}")
+    } else {
+        number.to_string()
+    };
+    Some(key)
 }
 
 /// Parse a namespace with the option schema supplied by its package.
