@@ -239,14 +239,15 @@ fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
         )
         .await
         .map_err(OpsError::AiMux)?;
-        let raw = serde_json::from_str(&String::from_utf8_lossy(&response.value)).map_err(|e| {
+        let raw = serde_json::from_slice(&response.value).map_err(|e| {
             OpsError::AiMux(AiMuxError::JsonParse {
                 message: format!("get_model_specs: invalid source JSON: {e}"),
                 cause: Some(ErrorCause::source(&e)),
             })
         })?;
+        drop(response);
         let catalogue =
-            aimux_providers::catalogue::parse_anya2a_all(&raw).map_err(OpsError::AiMux)?;
+            aimux_providers::catalogue::parse_anya2a_all_owned(raw).map_err(OpsError::AiMux)?;
         output(&catalogue)
     })
 }

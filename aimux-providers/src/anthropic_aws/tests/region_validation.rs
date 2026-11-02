@@ -14,8 +14,8 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use serial_test::serial;
 
+use crate::anthropic_aws::{AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws};
 use crate::test_support::mock_fetch::{EnvVar, MockFetch};
-use crate::{AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws};
 use aimux_core::AiMuxError;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
