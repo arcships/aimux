@@ -409,7 +409,7 @@ impl LanguageModel for OpenAICompletionModel {
         let mut buffered = Vec::new();
         while let Some(event) = events.next().await {
             if let Ok(parsed_event) = &event {
-                if let Some(error) = parsed_event.get("error") {
+                if let Some(error) = parsed_event.get("error").filter(|error| !error.is_null()) {
                     return Err(openai_stream_error(
                         error,
                         &error_url,
@@ -486,7 +486,7 @@ impl Transformer for OpenAICompletionStream {
             Err(error) => return self.report_error(error, controller),
         };
         self.ctx.raw(&event, controller);
-        if let Some(error) = event.get("error") {
+        if let Some(error) = event.get("error").filter(|error| !error.is_null()) {
             // The frame maps to a status (openai-completion-language-model.ts:305-313).
             let error = openai_stream_error(
                 error,
