@@ -1901,6 +1901,56 @@ async fn stream_rejects_a_usage_count_that_is_not_a_number() {
     );
 }
 
+/// A chunk with `"error": null` is a normal chunk (#397): upstream's chunk
+/// schema is a union with the error schema, and a chunk with `choices` takes
+/// the first branch, which drops the unknown key.
+#[tokio::test]
+async fn a_null_error_member_is_not_an_error_frame() {
+    let chunks = vec![
+        data_event(&json!({
+            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
+            "model": "deepseek-chat",
+            "choices": [{ "index": 0, "delta": { "role": "assistant", "content": "Hello" }, "finish_reason": null }],
+            "error": null
+        })),
+        data_event(&json!({
+            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
+            "model": "deepseek-chat",
+            "choices": [{ "index": 0, "delta": { "content": "" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+            "error": null
+        })),
+    ];
+    let server = sse_server(chunks).await;
+    let parts = collect(
+        chat(&server, "deepseek-chat")
+            .do_stream(&options())
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+    assert!(
+        parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::TextDelta { delta, .. } if delta == "Hello")),
+        "{parts:?}"
+    );
+    assert!(
+        matches!(
+            parts.last(),
+            Some(StreamPart::Finish { finish_reason, .. })
+                if finish_reason.unified == FinishReasonUnified::Stop
+        ),
+        "{parts:?}"
+    );
+}
+
 /// aimux's own: an option of the wrong type fails as `parseProviderOptions`
 /// fails.
 #[tokio::test]
