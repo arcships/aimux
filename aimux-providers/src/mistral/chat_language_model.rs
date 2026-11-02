@@ -278,6 +278,9 @@ struct MistralChatStream {
     final_usage: Usage,
     final_finish_reason: Option<FinishReason>,
     response_metadata_emitted: bool,
+    /// An error part was enqueued: strict stream mode does not add a second
+    /// error for the missing finish_reason.
+    stream_errored: bool,
 }
 
 /// A chat stream with an empty request context and tool-call ids from
@@ -306,6 +309,7 @@ impl MistralChatStream {
         self.ctx.raw(&parsed, controller);
 
         if let Some(err_obj) = parsed.get("error") {
+            self.stream_errored = true;
             controller.enqueue(StreamPart::Error {
                 error: super::error::mistral_stream_error(
                     err_obj,
@@ -320,6 +324,7 @@ impl MistralChatStream {
         let chunk: StreamChunk = match serde_json::from_value(parsed) {
             Ok(c) => c,
             Err(e) => {
+                self.stream_errored = true;
                 controller.enqueue(StreamPart::Error { error: e.into() });
                 return;
             }
@@ -424,6 +429,7 @@ impl Transformer for MistralChatStream {
         match event {
             Ok(parsed) => self.transform_chunk(parsed, controller),
             Err(error) => {
+                self.stream_errored = true;
                 self.ctx.raw(&Value::Null, controller);
                 controller.enqueue(StreamPart::Error { error });
             }
@@ -432,7 +438,7 @@ impl Transformer for MistralChatStream {
 
     fn flush(mut self, controller: &mut Controller) {
         if self.ctx.fail_without_terminal(
-            self.final_finish_reason.is_some(),
+            self.final_finish_reason.is_some() || self.stream_errored,
             "a finish_reason",
             controller,
         ) {

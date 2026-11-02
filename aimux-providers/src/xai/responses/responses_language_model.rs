@@ -564,6 +564,9 @@ struct XaiResponsesStream {
     /// A `response.completed`, `response.incomplete`, `response.failed` or
     /// `error` event arrived (strict stream mode).
     terminal_seen: bool,
+    /// A malformed event was reported as an error part: strict stream mode
+    /// does not add a second error for the missing terminal event.
+    stream_errored: bool,
     ctx: StreamContext,
     provider_tool_names: HashMap<String, String>,
     final_usage: Option<Usage>,
@@ -616,7 +619,7 @@ impl Transformer for XaiResponsesStream {
 
     fn flush(mut self, controller: &mut Controller) {
         if self.ctx.fail_without_terminal(
-            self.terminal_seen,
+            self.terminal_seen || self.stream_errored,
             "a response.completed, response.incomplete or response.failed event",
             controller,
         ) {
@@ -652,6 +655,7 @@ impl XaiResponsesStream {
             ref mut active_reasoning,
             ref mut ongoing_tool_calls,
             ref mut finished,
+            ref mut stream_errored,
             ..
         } = *self;
         match event {
@@ -1205,6 +1209,7 @@ impl XaiResponsesStream {
             }
             Err(error) => {
                 if error.is_recoverable_stream_error() {
+                    *stream_errored = true;
                     if include_raw_chunks {
                         controller.enqueue(StreamPart::Raw {
                             raw_value: Value::Null,

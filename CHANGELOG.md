@@ -1406,7 +1406,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool-input block that was not started, or a block is started while it is
   open. A client tool call is held back until `Finish` and delivered right
   before it; a stream that fails or finishes with an error never delivers
-  it. With the option off every stream behaves as before, as the AI SDK
+  it. A stream that has already reported an error (an error chunk or a
+  malformed event) gets no second, strict error for the missing terminal
+  event. With the option off every stream behaves as before, as the AI SDK
   does. Every binding's generated options carry it (#403).
 
 - `aimux_provider_utils` base64 and inline-file helpers, as
