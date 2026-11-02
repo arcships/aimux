@@ -9,11 +9,12 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
-
-use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, ProviderHeaders, TransformRequestBody,
+use aimux_provider_utils::{
+    AuthScheme, Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable,
+    validate_base_url,
 };
+
+use crate::shared::{EndpointConfig, TransformRequestBody};
 
 use super::speech_model::ElevenLabsSpeechModel;
 use super::transcription_model::ElevenLabsTranscriptionModel;

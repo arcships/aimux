@@ -32,7 +32,8 @@ use aimux_core::speech_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
 /// (https://dev.hume.ai/docs/resources/errors); the nested `{error:
