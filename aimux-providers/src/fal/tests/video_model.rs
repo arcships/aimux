@@ -690,3 +690,27 @@ mod fal_video_model {
         }
     }
 }
+
+// ── Status poll origins (#441; not upstream: no fetchStatus test checks them) ──
+
+/// The `Key` credential is gated on the submit origin, so a `response_url` on
+/// another origin is polled without it. The mock server cannot show this: the
+/// SSRF guard rejects an untrusted loopback target before it connects. The
+/// gate is `HttpRequest::credentialed_origin`, and that it drops the caller
+/// headers is tested in `aimux-provider-utils` (`http.rs`).
+#[test]
+fn a_status_poll_is_credentialed_and_trusted_only_on_the_submit_origin() {
+    let submit_url = "https://queue.fal.run/fal-ai/luma-dream-machine";
+    let request = crate::fal::status_request(
+        aimux_provider_utils::HttpRequest {
+            url: "https://elsewhere.example/requests/1/status".into(),
+            headers: vec![("authorization".into(), "Key test-api-key".into())],
+            ..aimux_provider_utils::HttpRequest::default()
+        },
+        submit_url,
+    );
+
+    assert!(request.validate_url);
+    assert_eq!(request.credentialed_origin.as_deref(), Some(submit_url));
+    assert_eq!(request.trusted_origin.as_deref(), Some(submit_url));
+}

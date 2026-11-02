@@ -991,7 +991,41 @@ pub(crate) fn sanitized_request_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitized_request_url;
+    use super::{HttpBody, HttpMethod, HttpRequest, RequestCredentials, sanitized_request_url};
+
+    /// AI SDK `credentialedOrigin`: the caller headers go only to that
+    /// origin. Anywhere else only the `user-agent` is sent, with the
+    /// credentials omitted, from the first request on (fal's video status
+    /// poll, #441).
+    #[test]
+    fn prepare_sends_caller_headers_only_to_the_credentialed_origin() {
+        let origin = "https://queue.fal.run/fal-ai/luma-dream-machine";
+        let prepare = |url: &str| {
+            HttpRequest {
+                url: url.into(),
+                headers: vec![
+                    ("authorization".into(), "Key test-api-key".into()),
+                    ("user-agent".into(), "ai-sdk/fal/3.0.54".into()),
+                ],
+                validate_url: true,
+                trusted_origin: Some(origin.into()),
+                credentialed_origin: Some(origin.into()),
+                ..HttpRequest::default()
+            }
+            .prepare(HttpMethod::Get, HttpBody::Empty)
+        };
+
+        let same_origin = prepare("https://queue.fal.run/fal-ai/luma-dream-machine/requests/1");
+        assert_eq!(same_origin.headers.len(), 2);
+        assert_eq!(same_origin.credentials, RequestCredentials::Include);
+
+        let other_origin = prepare("https://elsewhere.example/requests/1");
+        assert_eq!(
+            other_origin.headers,
+            vec![("user-agent".to_string(), "ai-sdk/fal/3.0.54".to_string())]
+        );
+        assert_eq!(other_origin.credentials, RequestCredentials::Omit);
+    }
 
     #[test]
     fn sanitized_request_url_drops_userinfo_and_query() {

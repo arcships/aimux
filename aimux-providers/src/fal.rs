@@ -314,6 +314,18 @@ struct FalVideoJobResponse {
     response_url: Option<String>,
 }
 
+/// The status poll of a video (fal-video-model.ts fetchStatus). Its URL comes
+/// from the queue response body, so it goes through the SSRF guard, and the
+/// caller headers (the `Key` credential among them) are sent only while it
+/// stays on the origin that was submitted to: `credentialedOrigin` and
+/// `trustedOrigin` are both the submit URL.
+fn status_request(mut request: HttpRequest, submit_url: &str) -> HttpRequest {
+    request.validate_url = true;
+    request.credentialed_origin = Some(submit_url.to_string());
+    request.trusted_origin = Some(submit_url.to_string());
+    request
+}
+
 #[derive(Debug, Deserialize)]
 struct FalChunk {
     text: String,
@@ -1233,10 +1245,15 @@ impl VideoModel for FalVideoModel {
         )
         .await?;
 
+        // fal-video-model.ts submitToQueue: `if (!responseUrl)`, so an empty
+        // URL fails like a missing one.
         let job: FalVideoJobResponse = resp.value;
-        let response_url = job.response_url.ok_or_else(|| {
-            AiMuxError::invalid_response_data("No response URL returned from queue endpoint")
-        })?;
+        let response_url = job
+            .response_url
+            .filter(|url| !url.is_empty())
+            .ok_or_else(|| {
+                AiMuxError::invalid_response_data("No response URL returned from queue endpoint")
+            })?;
 
         Ok(VideoOperationStart {
             operation: json!({ "responseUrl": response_url, "submitUrl": submit_url }),
@@ -1276,14 +1293,11 @@ impl VideoModel for FalVideoModel {
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        // The status URL comes from the queue response body, so it goes
-        // through the SSRF guard; the credential only while it stays on the
-        // origin that was submitted to (fal-video-model.ts fetchStatus).
-        let mut request = exchange.request(response_url.to_string(), options);
-        request.validate_url = true;
-        request.trusted_origin = Some(submit_url.to_string());
         let resp = aimux_provider_utils::get_from_api(
-            request,
+            status_request(
+                exchange.request(response_url.to_string(), options),
+                submit_url,
+            ),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             fal_failed_response_handler(),
         )
