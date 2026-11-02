@@ -216,7 +216,7 @@ mod older_embedding {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{OpenAIProviderSettings, create_openai};
+    use crate::openai::{OpenAIProviderSettings, create_openai};
     use aimux_core::embedding_model::EmbeddingCallOptions;
     use aimux_core::provider::Provider;
 
