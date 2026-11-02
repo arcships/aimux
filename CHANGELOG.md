@@ -1517,6 +1517,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checksum is now checked once its 12 bytes arrive, before the rest of the
   frame, and the buffer gives back the capacity a large frame left behind.
   The AI SDK's decoder has no such limit.
+- SSE streams end at `data: [DONE]` (`create_event_source_response_handler`,
+  so OpenAI Chat, OpenAI-compatible presets and every other SSE provider).
+  The frame was skipped and the stream went on reading the response body,
+  so a server that wrote `[DONE]` and kept the connection open held the
+  caller's last `next()` until the connection closed (#396). This departs
+  from the AI SDK on purpose: it skips `[DONE]` and reads to the end of the
+  body, while aimux stops there. Anything a server sends after `[DONE]`
+  (such as a gateway's trailing usage chunk) is not read, and the body is
+  not drained, so that connection is not reused.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
