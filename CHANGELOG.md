@@ -1549,6 +1549,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bodies and in the AI SDK's `postToApi`. A multipart body still sends its
   own `multipart/...; boundary=...` type, since the boundary is generated
   with the body (#398).
+- Luma image generation follows `@ai-sdk/luma` 3.0.54: `referenceType:
+  'character'` sends `character: { <id>: { images } }` grouped by
+  `images[i].id` (it was sent as `image`); a `failed` generation, or a
+  `completed` one without an image, fails with `InvalidResponseData` and
+  upstream's message (it was an API call error); a mask is refused before
+  the files are checked and the editing errors carry upstream's messages;
+  `photon-1` and `photon-flash-1` report file support and no mask support;
+  `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
+  (`invalid luma provider options`); and the generation answers are parsed
+  against `lumaGenerationResponseSchema`, so an unknown `state` fails at
+  once instead of being polled until the attempts run out.
+  `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
+  does; it was checked but the 120 attempts always applied.
+
 - fal follows `@ai-sdk/fal` 3.0.54:
   - An image call goes to `https://fal.run` by default, as `createFal`'s
     `defaultBaseURL`; transcription and video stay on
