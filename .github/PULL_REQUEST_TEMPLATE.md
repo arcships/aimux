@@ -19,6 +19,8 @@ Brief description of what this PR changes and why.
 - [ ] Added or updated cassette tests / contract fixtures for behavior changes
 - [ ] Updated relevant docs (`README.md`, `docs/`, `rfc/`, `bindings/README.md`)
 - [ ] Commit messages follow Conventional Commits
+- [ ] `CHANGELOG.md` left alone: it is written when a release is cut (from a
+      `release/*` branch); the summary above is the release-note material
 
 ## Notes for reviewers
 

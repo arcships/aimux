@@ -82,6 +82,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+      # CHANGELOG.md is written when a release is cut, by a pull request from
+      # a release/* branch. Every other pull request leaves it alone: entries
+      # added by open pull requests at the same spot conflict with each other
+      # after every merge.
+      - name: CHANGELOG is written at release time
+        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')
+        run: |
+          if ! git diff --quiet HEAD^1 HEAD -- CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md is written when a release is cut, by a pull request from a release/* branch. Drop the CHANGELOG.md change from this pull request; its description is the material for the release notes."
+            exit 1
+          fi
       - id: diff
         env:
           BEFORE: ${{ github.event.before }}
