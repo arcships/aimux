@@ -83,10 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` goes out
   as `5`, as the AI SDK sends it, not `5.0`. Code that set it from an `f64`
   passes an integer now.
-- Deepgram transcription sends `diarize` only when
-  `providerOptions.deepgram.diarize` is set, as `@ai-sdk/deepgram` 3.1.24
-  does; every request used to send `diarize=true`. A caller that relies on
-  speaker labels sets `providerOptions.deepgram.diarize = true`.
 
 - Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
   `cause` (`.caused_by(..)`): the transport error with its whole source chain
@@ -1567,14 +1563,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `providerOptions.luma.maxPollAttempts` now bounds the polls as upstream's
   does; it was checked but the 120 attempts always applied.
 
-- Deepgram transcription follows `@ai-sdk/deepgram` 3.1.24 (see Breaking
-  for `diarize`): `providerOptions.deepgram` is parsed against
-  `deepgramTranscriptionModelOptionsSchema` (`invalid deepgram provider
-  options`) and all of its keys are sent, `keyterm`, `paragraphs`,
-  `intents`, `sentiment` and `replace` included, each as upstream's
-  `String(value)` (`redact` and `search` went out as quoted JSON, a `redact`
-  array as `["a","b"]` instead of `a,b`); and the query is form-encoded,
-  so a value with a space, `&` or `=` no longer breaks it.
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
