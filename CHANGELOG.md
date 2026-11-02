@@ -1542,6 +1542,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the first chunk carried it, and ended the stream with an error part
   when a later one did. As in the AI SDK, where a chunk with `choices`
   matches the chunk schema and the unknown key is dropped (#397).
+- A raw byte request body (`HttpBody::Bytes`: audio uploads, Bedrock, file
+  uploads) no longer replaces a `content-type` the caller set in
+  `HttpRequest.headers`, `ProviderSettings.headers` or `CallOptions.headers`;
+  the body's media type is sent only when the caller set none, as for JSON
+  bodies and in the AI SDK's `postToApi`. A multipart body still sends its
+  own `multipart/...; boundary=...` type, since the boundary is generated
+  with the body (#398).
 - Luma image generation follows `@ai-sdk/luma` 3.0.54: `referenceType:
   'character'` sends `character: { <id>: { images } }` grouped by
   `images[i].id` (it was sent as `image`); a `failed` generation, or a
