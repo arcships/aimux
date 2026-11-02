@@ -315,6 +315,25 @@ async fn should_require_a_response_url_from_the_queue() {
         panic!("expected InvalidResponseData, got {error:?}");
     };
     assert_eq!(message, "No response URL returned from queue endpoint");
+
+    // An empty `response_url` fails the same way (`if (!responseUrl)`).
+    server.reset().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/luma-dream-machine"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "request_id": "empty-response-url",
+            "response_url": "",
+        })))
+        .mount(&server)
+        .await;
+    let error = model
+        .do_start(&VideoCallOptions::new(LUMA_PROMPT))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::InvalidResponseData { message, .. } = &error else {
+        panic!("expected InvalidResponseData, got {error:?}");
+    };
+    assert_eq!(message, "No response URL returned from queue endpoint");
 }
 
 /// A status poll answered with `detail: "Request is still in progress"` is

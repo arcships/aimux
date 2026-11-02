@@ -1539,9 +1539,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     status; any other error response ends the call, where a 400 or 404 was
     polled until the attempts ran out.
   - A video is polled at the `response_url` the queue returns, through the
-    SSRF guard; the operation is `{responseUrl, submitUrl}`, and a queue
-    answer without the URL fails with `No response URL returned from queue
+    SSRF guard, and the API key goes with the poll only while that URL is on
+    the origin the request was submitted to. A queue answer without the URL,
+    or with an empty one, fails with `No response URL returned from queue
     endpoint`.
+  - The video operation is now `{responseUrl, submitUrl}` instead of
+    `{request_id}`. An operation saved by an earlier version cannot be
+    resumed: its status call fails with `fal operation reference is missing
+    responseUrl`, and the video has to be started again.
   - A completed video takes its media type from the response's
     `content_type` (else `video/mp4`), reads `video.url` only (an empty one
     is an error, with the upstream `No video URL in response`), reports no
