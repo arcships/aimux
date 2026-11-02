@@ -10,6 +10,7 @@
 
 use serde_json::Value;
 
+use aimux_core::error::AiMuxError;
 use aimux_core::shared::{JsonObject, SharedProviderOptions};
 
 /// The canonical providerOptions key, read for every model of the protocol
@@ -65,7 +66,25 @@ pub(crate) fn anthropic_options_in(
     anthropic_options(provider_options, name)
 }
 
-pub(super) fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
+/// Parse the merged Anthropic namespace against
+/// `anthropicLanguageModelOptions` (anthropic-language-model-options.ts):
+/// the declared keys are kept, in the order given, and the rest stripped, as
+/// a `z.object` strips them.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid anthropic provider options" when the namespace
+/// does not match the schema.
+pub(super) fn parse_anthropic_options(options: &JsonObject) -> Result<JsonObject, AiMuxError> {
+    match parse_anthropic_option_object("options", &Value::Object(options.clone())) {
+        Ok(Value::Object(parsed)) => Ok(parsed),
+        _ => Err(AiMuxError::invalid_argument(
+            "invalid anthropic provider options",
+        )),
+    }
+}
+
+fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
     let object = value.as_object().ok_or(())?;
     let parsed = aimux_provider_utils::parse_option_fields(object, CANONICAL, |key, value| {
         let kind = match (shape, key) {
