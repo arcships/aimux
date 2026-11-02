@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use super::options::NAMESPACE;
 use super::speech_transcription_model_options::Timestamps;
 use super::transcription_model_options::{AzureOptions, is_default_speech};
-use crate::openai::config::OpenAIModelConfig;
+use crate::openai::internal::OpenAIModelConfig;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
