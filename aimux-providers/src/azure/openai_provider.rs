@@ -27,7 +27,7 @@ use crate::openai::internal::{
     OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, OpenAIUrl, ResponsesProfile,
     UrlRules, openai_failed_response_handler, set_query_param, supported_urls,
 };
-use crate::shared::{AuthScheme, Credential, ProviderHeaders};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 use super::AzureOpenAITools;
 use super::options;
@@ -497,6 +497,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
                     id: entry.id,
                     owned_by: entry.model_name.or(entry.model),
                     created: None,
+                    limits: None,
                 })
                 .collect())
         })

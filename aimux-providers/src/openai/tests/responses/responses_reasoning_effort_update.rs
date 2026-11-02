@@ -3,13 +3,13 @@ use std::sync::Arc;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::{OpenAIResponsesModel, ResponsesNamespace};
 use crate::openai::{OpenAIProviderSettings, create_openai};
-use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const METHODS: [&str; 2] = ["generate", "stream"];

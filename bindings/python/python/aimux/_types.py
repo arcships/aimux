@@ -3140,9 +3140,15 @@ class RuntimeModel(_Wire):
     created: Optional[U64] = Field(default=None, alias="created")
     #: Model identifier, e.g. `"gpt-4o"`.
     id: str = Field(alias="id")
+    #: The token limits the provider declared for the model in the same list
+    #: response (OpenRouter's `context_length` and
+    #: `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+    #: when the provider declared none; never filled from the community
+    #: catalogue or inferred.
+    limits: Optional["_dto.ModelLimits"] = Field(default=None, alias="limits")
     #: `owned_by` field from OpenAI-compatible `/models` responses.
     owned_by: Optional[str] = Field(default=None, alias="ownedBy")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["created", "owned_by"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["created", "limits", "owned_by"])
 
 
 #: Options passed to [`SearchModel::do_search`].
