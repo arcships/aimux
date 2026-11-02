@@ -370,6 +370,7 @@ pub(crate) async fn list_models_once(
             id: m.id,
             owned_by: m.owned_by,
             created: m.created,
+            limits: None,
         })
         .collect())
 }
