@@ -28,7 +28,8 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{BaseUrl, Credential, EndpointConfig, HttpEndpoint, ProviderHeaders};
+use crate::shared::{BaseUrl, EndpointConfig, HttpEndpoint};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
