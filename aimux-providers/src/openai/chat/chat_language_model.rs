@@ -372,13 +372,16 @@ pub(crate) async fn execute_stream(
     let events = futures::stream::iter(first_event).chain(sse_stream);
     let stream = pipe_through(events, transformer);
 
-    Ok(StreamResult {
-        stream: Box::pin(stream),
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::shared::StreamResponseInfo {
-            headers: Some(response_headers),
-        }),
-    })
+    Ok(crate::stream::strict_guard(
+        StreamResult {
+            stream: Box::pin(stream),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
+        },
+        options,
+    ))
 }
 
 const TEXT_ID: &str = "0";
@@ -593,6 +596,13 @@ impl Transformer for OpenAIChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some() || self.stream_errored,
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         // Close any remaining open reasoning and text segments.
         self.end_reasoning(controller);
         if self.text_started {

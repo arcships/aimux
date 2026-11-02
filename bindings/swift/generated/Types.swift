@@ -2904,6 +2904,12 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
     /// may be inferred from prompt-prefix continuation.
     public var sessionId: String?
     public var stopSequences: [String]?
+    /// Strict stream mode: end the stream with a terminal error when
+    /// the protocol's evidence of a complete reply is missing (the stream
+    /// ends without its terminal event, a block delta arrives outside a
+    /// started block, a block starts twice). Client tool calls are delivered
+    /// only right before the finish. Off by default, as in the AI SDK.
+    public var strictStream: Bool?
     public var temperature: Double?
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     public var timeout: TimeoutConfiguration?
@@ -2912,7 +2918,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
     public var topK: Double?
     public var topP: Double?
 
-    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
+    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
         self.frequencyPenalty = frequencyPenalty
         self.headers = headers
         self.includeRawChunks = includeRawChunks
@@ -2926,6 +2932,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
         self.seed = seed
         self.sessionId = sessionId
         self.stopSequences = stopSequences
+        self.strictStream = strictStream
         self.temperature = temperature
         self.timeout = timeout
         self.toolChoice = toolChoice
@@ -4293,6 +4300,12 @@ public struct Options: Codable, Equatable, Sendable {
     /// may be inferred from prompt-prefix continuation.
     public var sessionId: String?
     public var stopSequences: [String]?
+    /// Strict stream mode: end the stream with a terminal error when
+    /// the protocol's evidence of a complete reply is missing (the stream
+    /// ends without its terminal event, a block delta arrives outside a
+    /// started block, a block starts twice). Client tool calls are delivered
+    /// only right before the finish. Off by default, as in the AI SDK.
+    public var strictStream: Bool?
     public var temperature: Double?
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     public var timeout: TimeoutConfiguration?
@@ -4301,7 +4314,7 @@ public struct Options: Codable, Equatable, Sendable {
     public var topK: Double?
     public var topP: Double?
 
-    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
+    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
         self.frequencyPenalty = frequencyPenalty
         self.headers = headers
         self.includeRawChunks = includeRawChunks
@@ -4315,6 +4328,7 @@ public struct Options: Codable, Equatable, Sendable {
         self.seed = seed
         self.sessionId = sessionId
         self.stopSequences = stopSequences
+        self.strictStream = strictStream
         self.temperature = temperature
         self.timeout = timeout
         self.toolChoice = toolChoice

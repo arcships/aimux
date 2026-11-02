@@ -1770,6 +1770,12 @@ class GenerateTextOptions(_Wire):
     #: may be inferred from prompt-prefix continuation.
     session_id: Optional[str] = Field(default=None, alias="sessionId")
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    #: Strict stream mode: end the stream with a terminal error when
+    #: the protocol's evidence of a complete reply is missing (the stream
+    #: ends without its terminal event, a block delta arrives outside a
+    #: started block, a block starts twice). Client tool calls are delivered
+    #: only right before the finish. Off by default, as in the AI SDK.
+    strict_stream: Optional[bool] = Field(default=None, alias="strictStream")
     temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
@@ -1777,7 +1783,7 @@ class GenerateTextOptions(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 #: Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -2546,6 +2552,12 @@ class Options(_Wire):
     #: may be inferred from prompt-prefix continuation.
     session_id: Optional[str] = Field(default=None, alias="sessionId")
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    #: Strict stream mode: end the stream with a terminal error when
+    #: the protocol's evidence of a complete reply is missing (the stream
+    #: ends without its terminal event, a block delta arrives outside a
+    #: started block, a block starts twice). Client tool calls are delivered
+    #: only right before the finish. Off by default, as in the AI SDK.
+    strict_stream: Optional[bool] = Field(default=None, alias="strictStream")
     temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
@@ -2553,7 +2565,7 @@ class Options(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 Outcome = TypeAliasType("Outcome", Literal["success", "error", "cancelled"])

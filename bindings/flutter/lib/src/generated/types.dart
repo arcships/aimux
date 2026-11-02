@@ -5711,6 +5711,13 @@ final class GenerateTextOptions {
   /// may be inferred from prompt-prefix continuation.
   final String? sessionId;
   final List<String>? stopSequences;
+
+  /// Strict stream mode: end the stream with a terminal error when
+  /// the protocol's evidence of a complete reply is missing (the stream
+  /// ends without its terminal event, a block delta arrives outside a
+  /// started block, a block starts twice). Client tool calls are delivered
+  /// only right before the finish. Off by default, as in the AI SDK.
+  final bool? strictStream;
   final double? temperature;
 
   /// Per-call timeout configuration (total / first-chunk / chunk idle).
@@ -5733,6 +5740,7 @@ final class GenerateTextOptions {
     this.seed,
     this.sessionId,
     this.stopSequences,
+    this.strictStream,
     this.temperature,
     this.timeout,
     this.toolChoice,
@@ -5770,6 +5778,7 @@ final class GenerateTextOptions {
       stopSequences: json['stopSequences'] == null
           ? null
           : (json['stopSequences'] as List).cast<String>(),
+      strictStream: json['strictStream'] as bool?,
       temperature: json['temperature'] == null
           ? null
           : (json['temperature'] as num).toDouble(),
@@ -5804,6 +5813,7 @@ final class GenerateTextOptions {
         if (seed != null) 'seed': seed,
         if (sessionId != null) 'sessionId': sessionId,
         if (stopSequences != null) 'stopSequences': stopSequences,
+        if (strictStream != null) 'strictStream': strictStream,
         if (temperature != null) 'temperature': temperature,
         if (timeout != null) 'timeout': timeout!.toJson(),
         if (toolChoice != null) 'toolChoice': toolChoice!.toJson(),
@@ -8340,6 +8350,13 @@ final class Options {
   /// may be inferred from prompt-prefix continuation.
   final String? sessionId;
   final List<String>? stopSequences;
+
+  /// Strict stream mode: end the stream with a terminal error when
+  /// the protocol's evidence of a complete reply is missing (the stream
+  /// ends without its terminal event, a block delta arrives outside a
+  /// started block, a block starts twice). Client tool calls are delivered
+  /// only right before the finish. Off by default, as in the AI SDK.
+  final bool? strictStream;
   final double? temperature;
 
   /// Per-call timeout configuration (total / first-chunk / chunk idle).
@@ -8362,6 +8379,7 @@ final class Options {
     this.seed,
     this.sessionId,
     this.stopSequences,
+    this.strictStream,
     this.temperature,
     this.timeout,
     this.toolChoice,
@@ -8399,6 +8417,7 @@ final class Options {
       stopSequences: json['stopSequences'] == null
           ? null
           : (json['stopSequences'] as List).cast<String>(),
+      strictStream: json['strictStream'] as bool?,
       temperature: json['temperature'] == null
           ? null
           : (json['temperature'] as num).toDouble(),
@@ -8433,6 +8452,7 @@ final class Options {
         if (seed != null) 'seed': seed,
         if (sessionId != null) 'sessionId': sessionId,
         if (stopSequences != null) 'stopSequences': stopSequences,
+        if (strictStream != null) 'strictStream': strictStream,
         if (temperature != null) 'temperature': temperature,
         if (timeout != null) 'timeout': timeout!.toJson(),
         if (toolChoice != null) 'toolChoice': toolChoice!.toJson(),
