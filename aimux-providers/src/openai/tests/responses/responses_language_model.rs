@@ -10620,6 +10620,86 @@ mod openai_responses_language_model {
                     ],
                 );
             }
+
+            /// Not an upstream case. The Responses API types `response.error`
+            /// as `object | null`, and upstream adds the error part only when
+            /// `value.response.error != null`
+            /// (openai-responses-language-model.ts:2815): a late
+            /// `response.failed` whose `error` is `null` finishes with `error`
+            /// and adds no error part.
+            #[tokio::test]
+            async fn a_late_response_failed_with_a_null_error_adds_no_error_part() {
+                let mock = sse_mock(vec![
+                "data:{\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_failed_null_error\",\"created_at\":1741269019,\"model\":\"gpt-4o-2024-07-18\",\"service_tier\":null}}\n\n".to_string(),
+                "data:{\"type\":\"response.output_item.added\",\"sequence_number\":1,\"output_index\":0,\"item\":{\"id\":\"msg_failed_null_error\",\"type\":\"message\"}}\n\n".to_string(),
+                "data:{\"type\":\"response.failed\",\"sequence_number\":2,\"response\":{\"error\":null,\"incomplete_details\":null,\"usage\":null,\"service_tier\":null}}\n\n".to_string(),
+            ]);
+                let stream = stream_do(
+                    &mock,
+                    "gpt-4o-mini",
+                    json!({"prompt": stream_test_prompt(), "includeRawChunks": false}),
+                )
+                .await
+                .unwrap();
+                let events = stream_collect(stream).await;
+                assert!(
+                    events.iter().all(|event| event["type"] != "error"),
+                    "{events:?}"
+                );
+                let finish = events.last().expect("a finish part");
+                assert_eq!(finish["type"], "finish", "{events:?}");
+                assert_eq!(
+                    finish["finishReason"],
+                    json!({ "raw": "error", "unified": "error" }),
+                    "{events:?}"
+                );
+            }
+
+            /// Not an upstream case. The reducer's first-event check follows
+            /// the same rule: a first `response.failed` whose `error` is
+            /// `null` does not fail the call, and the stream finishes with
+            /// `error` and no error part.
+            #[tokio::test]
+            async fn a_first_response_failed_with_a_null_error_does_not_fail_the_call() {
+                use crate::openai::responses::responses_language_model::build_responses_event_stream;
+
+                let first = json!({
+                    "type": "response.failed",
+                    "sequence_number": 0,
+                    "response": {
+                        "id": "resp_first_failed_null_error",
+                        "error": null,
+                        "incomplete_details": null,
+                        "usage": null,
+                    },
+                });
+                let stream = build_responses_event_stream(
+                    Some(Ok(first)),
+                    futures::stream::iter(Vec::<Result<serde_json::Value, AiMuxError>>::new()),
+                    "openai".into(),
+                    Vec::new(),
+                    false,
+                    "https://api.openai.com/v1/responses".into(),
+                    json!({}),
+                    std::collections::HashMap::new(),
+                )
+                .expect("a null error is not an early error");
+                let parts: Vec<serde_json::Value> = stream
+                    .map(|part| serde_json::to_value(part.expect("a stream part")).unwrap())
+                    .collect()
+                    .await;
+                assert!(
+                    parts.iter().all(|part| part["type"] != "error"),
+                    "{parts:?}"
+                );
+                let finish = parts.last().expect("a finish part");
+                assert_eq!(finish["type"], "finish", "{parts:?}");
+                assert_eq!(
+                    finish["finishReason"],
+                    json!({ "raw": "error", "unified": "error" }),
+                    "{parts:?}"
+                );
+            }
         }
 
         mod reasoning {

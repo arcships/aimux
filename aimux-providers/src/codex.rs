@@ -46,7 +46,7 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
-use aimux_core::types::Warning;
+use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 
 use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::{
@@ -342,7 +342,10 @@ impl CodexModel {
     /// Subscription `do_generate`: the endpoint only accepts streaming, so
     /// request with `stream: true` and assemble the final result from the
     /// terminal `response.completed` / `response.incomplete` event (the
-    /// official client always streams; non-streaming requests error).
+    /// official client always streams; non-streaming requests error). A
+    /// `response.failed` event is terminal too: an error when its
+    /// `response.error` is not null, otherwise a result finishing as the
+    /// stream does.
     async fn subscription_generate(
         &self,
         options: &CallOptions,
@@ -367,6 +370,8 @@ impl CodexModel {
         // (parsed response object, raw event payload) of the terminal event.
         let mut completed: Option<(Value, String)> = None;
         let mut failure: Option<AiMuxError> = None;
+        // The terminal event was a `response.failed` with a null error.
+        let mut failed_without_error = false;
 
         while let Some(event) = sse.next().await {
             match event {
@@ -382,6 +387,17 @@ impl CodexModel {
                             let raw = data.to_string();
                             let obj = data.get("response").cloned().unwrap_or(data);
                             completed = Some((obj, raw));
+                            break;
+                        }
+                        // A `response.failed` whose `response.error` is
+                        // null is not an error (upstream's `!= null`, which
+                        // the shared stream reducer follows): its response
+                        // object is the terminal one.
+                        "response.failed" if data["response"]["error"].is_null() => {
+                            let raw = data.to_string();
+                            let obj = data.get("response").cloned().unwrap_or(data);
+                            completed = Some((obj, raw));
+                            failed_without_error = true;
                             break;
                         }
                         "response.failed" | "error" => {
@@ -430,15 +446,27 @@ impl CodexModel {
         }
 
         match completed {
-            Some((data, raw)) => build_responses_generate_result(
-                &data,
-                &raw,
-                warnings,
-                ResponsesNamespace::OPENAI.write_key().to_string(),
-                endpoint,
-                body,
-                response_headers,
-            ),
+            Some((data, raw)) => {
+                let mut result = build_responses_generate_result(
+                    &data,
+                    &raw,
+                    warnings,
+                    ResponsesNamespace::OPENAI.write_key().to_string(),
+                    endpoint,
+                    body,
+                    response_headers,
+                )?;
+                // As the stream reducer's `response.failed` arm: without an
+                // `incomplete_details` reason, a failed response finishes
+                // with `error`.
+                if failed_without_error && data["incomplete_details"]["reason"].as_str().is_none() {
+                    result.finish_reason = FinishReason {
+                        unified: FinishReasonUnified::Error,
+                        raw: Some("error".to_string()),
+                    };
+                }
+                Ok(result)
+            }
             None => Err(failure.unwrap_or_else(|| {
                 AiMuxError::invalid_response_data(
                     "subscription stream ended without response.completed".to_string(),
@@ -695,5 +723,57 @@ mod tests {
         assert!(!error.is_retryable);
         assert_eq!(error.data, Some(event.clone()));
         assert_eq!(error.response_body, Some(event.to_string()));
+    }
+
+    // A subscription `response.failed` event whose `response.error` is null
+    // is not an error, as in the stream: the result finishes with `error`.
+    #[tokio::test]
+    async fn subscription_response_failed_with_a_null_error_finishes_with_error() {
+        use aimux_core::language_model::LanguageModel;
+        use aimux_core::language_model_message::LanguageModelMessage;
+        use aimux_core::options::CallOptions;
+        use aimux_core::types::FinishReasonUnified;
+        use aimux_provider_utils::Resolvable;
+        use serde_json::json;
+
+        use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+        let event = json!({
+            "type": "response.failed",
+            "response": {
+                "id": "resp_failed_null_error",
+                "created_at": 1_741_269_019,
+                "model": "gpt-5",
+                "output": [],
+                "error": null,
+                "incomplete_details": null,
+            },
+        });
+        let mock = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: format!("data: {event}\n\n").into_bytes(),
+        }]);
+        let provider = super::create_codex(super::CodexProviderSettings {
+            mode: super::CodexMode::ChatGptAccount {
+                token: Resolvable::Value("token".into()),
+                account_id: None,
+            },
+            fetch: Some(mock.transport()),
+            ..Default::default()
+        })
+        .expect("valid settings");
+
+        let result = provider
+            .responses("gpt-5")
+            .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+                "Hello",
+            )]))
+            .await
+            .expect("a null error is not an error");
+
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Error);
+        assert_eq!(result.finish_reason.raw.as_deref(), Some("error"));
+        assert!(result.content.is_empty());
     }
 }
