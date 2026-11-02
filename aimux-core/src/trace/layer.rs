@@ -67,10 +67,17 @@ struct SessionTracker {
     prev_body_len: u64,
 }
 
+/// Bounded FIFO tracker for per-session diagnostic stats (`same_session_rounds`
+/// and `prefix_stable` fed to rule `R-2.2`). Capped at [`MAX_TRACKED_SESSIONS`]
+/// (256): when full, the oldest tracked session is evicted so high-cardinality
+/// session IDs cannot grow heap memory without bound. Eviction only resets
+/// diagnostic round/stability counters for an evicted session if it later
+/// reappears; stored `TraceRecord` entries in `RingTraceStore` are unaffected.
 #[derive(Default)]
 struct BoundedSessionTracker {
     map: HashMap<String, SessionTracker>,
     order: VecDeque<String>,
+    evicted_sessions: u64,
 }
 
 impl BoundedSessionTracker {
@@ -90,7 +97,9 @@ impl BoundedSessionTracker {
             let Some(oldest) = self.order.pop_front() else {
                 break;
             };
-            self.map.remove(&oldest);
+            if self.map.remove(&oldest).is_some() {
+                self.evicted_sessions += 1;
+            }
         }
         let owned = sid.to_string();
         self.order.push_back(owned.clone());
@@ -333,11 +342,12 @@ impl RecordCtx {
         (input, lcp.lcp_bytes, upper, lcp.candidate_expired)
     }
 
-    /// Build and record the trace for a completed call.
-    fn record(&self, usage: &Usage, error: Option<String>, request_id: Option<String>) {
+    /// Build and record the trace for a completed call, moving `precomputed_fp`
+    /// rather than cloning `Fingerprint` and `Chain`.
+    fn record(mut self, usage: &Usage, error: Option<String>, request_id: Option<String>) {
         let spec = verdict_matrix::for_provider(&self.provider, &self.model);
-        let (fingerprint, chain) = match &self.precomputed_fp {
-            Some((fp, c)) => (fp.clone(), c.clone()),
+        let (fingerprint, chain) = match self.precomputed_fp.take() {
+            Some((fp, c)) => (fp, c),
             None => (
                 Fingerprint {
                     body_hash: String::new(),
@@ -446,26 +456,27 @@ impl RecordCtx {
             None
         };
 
+        let call_id = self.call_id.unwrap_or_else(|| {
+            format!(
+                "trace-{}-{}-{}",
+                std::process::id(),
+                self.ctx.monotonic_ms,
+                TRACE_SEQ.fetch_add(1, Ordering::Relaxed)
+            )
+        });
         let rec = TraceRecord {
-            provider: self.provider.clone(),
-            model: self.model.clone(),
+            provider: self.provider,
+            model: self.model,
             request_id,
-            session_id: self.ctx.session_id.clone(),
-            call_id: self.call_id.clone().unwrap_or_else(|| {
-                format!(
-                    "trace-{}-{}-{}",
-                    std::process::id(),
-                    self.ctx.monotonic_ms,
-                    TRACE_SEQ.fetch_add(1, Ordering::Relaxed)
-                )
-            }),
+            session_id: self.ctx.session_id,
+            call_id,
             sent_at_unix_ms: self.ctx.sent_at_unix_ms,
             monotonic_sent_ms: self.ctx.monotonic_ms,
             lcp_token_upper,
             ttft_ms,
             fingerprint,
             usage: Self::usage_snapshot(usage),
-            response_cache_headers: self.response_headers.clone(),
+            response_cache_headers: self.response_headers,
             request_cache_hints: None,
             verdict,
             error,
@@ -486,7 +497,7 @@ impl RecordCtx {
 /// mid-flight.
 struct TraceRecordingStream<S> {
     inner: S,
-    rec_ctx: Option<Arc<RecordCtx>>,
+    rec_ctx: Option<RecordCtx>,
     /// The first error (`Error` part / transport `Err`) observed so far.
     error: Option<String>,
     /// Whether the terminal record has been emitted (idempotent guard).
@@ -621,14 +632,14 @@ impl LanguageModel for TraceLayer {
                 .as_ref()
                 .and_then(|request| request.body.as_ref()),
         );
-        let rec_ctx = Arc::new(RecordCtx {
+        let rec_ctx = RecordCtx {
             precomputed_fp,
             response_headers: result
                 .response
                 .as_ref()
                 .and_then(|response| response.headers.clone()),
             ..ctx
-        });
+        };
         let ttft_obs = ttft.clone();
         let started = Instant::now();
 
@@ -722,5 +733,38 @@ mod tests {
 
         let ctx = named.make_record_ctx(None, None, Arc::new(AtomicU64::new(0)));
         assert_eq!(ctx.provider, "openai.chat");
+    }
+
+    #[test]
+    fn bounded_session_tracker_evicts_oldest_at_257_sessions() {
+        let mut tracker = BoundedSessionTracker::default();
+        for i in 0..MAX_TRACKED_SESSIONS {
+            let sid = format!("session-{i}");
+            let stats = tracker.update(&sid, 0, 1_000);
+            assert_eq!(stats.same_session_rounds, 1);
+            assert!(!stats.prefix_stable);
+        }
+        assert_eq!(tracker.map.len(), MAX_TRACKED_SESSIONS);
+        assert_eq!(tracker.evicted_sessions, 0);
+
+        // Inserting the 257th distinct session evicts session-0 (FIFO).
+        let stats_256 = tracker.update("session-256", 0, 1_000);
+        assert_eq!(stats_256.same_session_rounds, 1);
+        assert_eq!(tracker.map.len(), MAX_TRACKED_SESSIONS);
+        assert_eq!(tracker.evicted_sessions, 1);
+        assert!(!tracker.map.contains_key("session-0"));
+        assert!(tracker.map.contains_key("session-1"));
+
+        // session-1 is still tracked and advances to round 2 with prefix_stable=true.
+        let stats_1 = tracker.update("session-1", 960, 1_200);
+        assert_eq!(stats_1.same_session_rounds, 2);
+        assert!(stats_1.prefix_stable);
+
+        // Re-visiting evicted session-0 starts fresh at round 1 (diagnostic reset only).
+        let stats_0 = tracker.update("session-0", 960, 1_200);
+        assert_eq!(stats_0.same_session_rounds, 1);
+        assert!(!stats_0.prefix_stable);
+        assert_eq!(tracker.map.len(), MAX_TRACKED_SESSIONS);
+        assert_eq!(tracker.evicted_sessions, 2);
     }
 }

@@ -288,4 +288,50 @@ mod tests {
         let json = serde_json::to_string(&f).unwrap();
         assert!(json.contains("\"bodyHash\":\""));
     }
+
+    #[test]
+    fn denoised_to_vec_matches_denoise_at_bytes_and_values() {
+        let cases = [
+            serde_json::json!({
+                "model": "gpt-4o",
+                "request_id": "top-req-1",
+                "requestId": "top-req-2",
+                "timestamp": 1_700_000_000,
+                "nonce": "top-nonce",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "hello",
+                        "request_id": "nested-req-1",
+                        "requestId": "nested-req-2",
+                        "timestamp": 42,
+                        "nonce": "keep-nested-nonce"
+                    }
+                ],
+                "nested": {
+                    "request_id": "drop-me",
+                    "requestId": "drop-me-too",
+                    "timestamp": "keep-me",
+                    "nonce": "keep-me-too",
+                    "deep": [{"request_id": "gone", "value": [1, true, null, "ok"]}]
+                }
+            }),
+            serde_json::json!([
+                {"request_id": "in-array-depth-1", "timestamp": 99, "keep": "yes"},
+                "scalar",
+                123
+            ]),
+            serde_json::json!("plain-string"),
+        ];
+
+        for v in &cases {
+            let streamed = denoised_to_vec(v).expect("streamed denoise should serialize");
+            let eager_val = denoise(v);
+            let eager_bytes =
+                serde_json::to_vec(&eager_val).expect("eager denoise should serialize");
+            assert_eq!(streamed, eager_bytes);
+            let parsed_streamed: Value = serde_json::from_slice(&streamed).unwrap();
+            assert_eq!(parsed_streamed, eager_val);
+        }
+    }
 }

@@ -974,4 +974,47 @@ mod tests {
         assert_eq!(store.session_cache_trajectory("s2").len(), 1);
         assert_eq!(store.session_cache_trajectory("s2")[0].call_id, "c-x");
     }
+
+    #[test]
+    fn ring_wrap_and_scope_eviction_clean_up_index_and_scope_count() {
+        // cap = 4, per_scope_cap = 2
+        let mut st = TraceStore::new(4, 2);
+
+        // Insert 3 records in scope 10 with distinct first-block hashes ->
+        // 3rd insert triggers `evict_oldest_in_scope(10)` on slot 0.
+        insert_hashes(&mut st, 10, 1, "s1", &[101, 201]);
+        insert_hashes(&mut st, 10, 2, "s1", &[102, 202]);
+        assert_eq!(st.records_in_scope(10), 2);
+        assert_eq!(st.index.len(), 2);
+
+        insert_hashes(&mut st, 10, 3, "s1", &[103, 203]);
+        assert_eq!(st.records_in_scope(10), 2, "per_scope_cap enforced");
+        assert!(
+            !st.index.contains_key(&(10, hash::low64(101))),
+            "evicted slot's block-0 bucket must be removed from index"
+        );
+        assert_eq!(st.index.len(), 2);
+
+        // Now insert 4 records across scopes 20 and 30 to wrap the 4-slot ring
+        // and completely overwrite all scope-10 slots.
+        insert_hashes(&mut st, 20, 4, "s2", &[301]);
+        insert_hashes(&mut st, 20, 5, "s2", &[302]);
+        insert_hashes(&mut st, 30, 6, "s3", &[401]);
+        insert_hashes(&mut st, 30, 7, "s3", &[402]);
+
+        assert_eq!(st.records_in_scope(10), 0);
+        assert!(
+            !st.scope_count.contains_key(&10),
+            "zeroed scope must be removed from scope_count map"
+        );
+        assert!(
+            st.index.keys().all(|(scope, _)| *scope != 10),
+            "all scope-10 buckets must be removed after ring wrap"
+        );
+        let live_refs: usize = st.index.values().map(Vec::len).sum();
+        assert_eq!(
+            live_refs, 4,
+            "index holds exactly 1 ref per live ring record"
+        );
+    }
 }
