@@ -5473,3 +5473,34 @@ async fn responses_support_http_image_pdf_and_text_urls() {
         assert!(!patterns[0].is_match("ftp://example.com/file"));
     }
 }
+
+/// Strict stream mode (#403): a chunk that is not JSON is the only error.
+/// The body then ends without a terminal event, and the strict check does
+/// not add a second error after the one already reported.
+#[tokio::test]
+async fn strict_stream_reports_a_malformed_chunk_as_the_only_error() {
+    let fetch = sse_fetch(&[
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "output": []}}).to_string(),
+        "invalid json}".to_string(),
+    ]);
+    let mut options = options();
+    options.strict_stream = Some(true);
+
+    let items: Vec<Result<StreamPart, AiMuxError>> = model(&fetch)
+        .do_stream(&options)
+        .await
+        .expect("should succeed")
+        .stream
+        .collect()
+        .await;
+
+    let errors: Vec<_> = items
+        .iter()
+        .filter(|item| matches!(item, Err(_) | Ok(StreamPart::Error { .. })))
+        .collect();
+    assert_eq!(errors.len(), 1, "{items:?}");
+    assert!(
+        matches!(errors[0], Ok(StreamPart::Error { error }) if error.is_recoverable_stream_error()),
+        "{items:?}"
+    );
+}

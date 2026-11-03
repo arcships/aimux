@@ -1,5 +1,9 @@
 # Java binding — ABI 1 / ops 1.0
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The unversioned 0.5 binding and
+> its provider constructors are removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 Java 8 is supported. Wire DTOs are generated from the Rust schemas in
 `ai.arcships.aimux.types`, with immutable classes, builders and getters. `AimuxFFI` declares the 14 C
 primitives once. `size_t` uses the native pointer size, including Windows LLP64.

@@ -19,9 +19,21 @@
     "version": "4.0.52",
     "integrity": "sha512-JVIjabzIuaebEX4lFx6CsSJFjH/PCaZfhnIHHBscXbs+MktqoqJPJIa/6tHFgK2JOdkORE7Ktlx7PmlDtGRfpw=="
   },
+  "@ai-sdk/deepgram": {
+    "version": "3.1.24",
+    "integrity": "sha512-IXLbfLD69uGr6wKBvuc7eR4M1gpqm/OTIfYM6dVmV8jypHnNt3JIWjhH2wpBGaqPcpJpjQ0swiJOIlMjbOsjyA=="
+  },
   "@ai-sdk/deepseek": {
     "version": "3.0.56",
     "integrity": "sha512-ZBmtMofJqRzJK1JoPhz7EwcboJgsA7CCZDQ4Ld6SyHoONN29Sb3Pvnrq6YsK4gE3InnTx/cjjE+GJhL0Z/G+lw=="
+  },
+  "@ai-sdk/elevenlabs": {
+    "version": "3.0.54",
+    "integrity": "sha512-f2riLaRgLRAPq8OZzxkHj7M3YtQpm64sUpTQGtAXnPfCXKchx+Ev+St+zX7t2XZJ272ENGmeYBV2OnaT7TdOng=="
+  },
+  "@ai-sdk/fal": {
+    "version": "3.0.54",
+    "integrity": "sha512-hEyQBnG5UDUX0VFAhP6nvAj+6E49mnBegCEdZP7cNV9xL+p4tOVtTywV7jK6GSxI5LfIqUS5sPeXcupgD7+pfA=="
   },
   "@ai-sdk/google": {
     "version": "4.0.87",
@@ -38,6 +50,10 @@
   "@ai-sdk/huggingface": {
     "version": "2.0.62",
     "integrity": "sha512-FCjGyrLhnV2nh6euHleq4/d6ZD/7d5g+2XnxUjjJx7SVp/PT1ICLG2kJ3zBiveMG6i5FfUN+7sj5377o8w/jFw=="
+  },
+  "@ai-sdk/luma": {
+    "version": "3.0.54",
+    "integrity": "sha512-ZdBncHjP07kMf4eNSFKVMHOjAKNfHjQ821zpvI5l51lVrXjrlHmz4efoBF8T/oQBhhQQ7u9Eb5ANCwNmcyZ9vw=="
   },
   "@ai-sdk/mistral": {
     "version": "4.0.55",

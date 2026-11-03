@@ -1,541 +1,104 @@
 # aimux · Java API
 
-> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
-> which V4 removed: errors are now the shared `ErrorEnvelope`
-> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
-> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
-> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
-> AI SDK. The current API is in [bindings/java/README.md](../../bindings/java/README.md).
-> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The unversioned 0.5 binding and
+> its provider constructors are removed. See the
+> [0.6 upgrade guide](../upgrading-to-0.6.md).
 
-> Unified LLM service access layer — one API to access AI providers
-
-The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
-toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.3.0`,
-Java 8+ (compiled with `--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md)
-for the design.
+Java uses the C ABI through JNA. Java 8 bytecode is supported; no native
+toolchain is needed at build time. Wire DTOs are generated in
+`ai.arcships.aimux.types`, and the generated operation constants are in
+`AimuxOps`.
 
 ## Install
 
-Maven Central (publishing):
+Maven Central:
 
 ```groovy
-implementation("ai.arcships:aimux-java:0.3.0")
+implementation("ai.arcships:aimux-java:0.6.0")
 ```
 
-JNA loads `aimux_ffi` by name — provide the native library
-(`libaimux_ffi.so` / `libaimux_ffi.dylib` / `aimux_ffi.dll`) from
-[GitHub Releases](https://github.com/arcships/aimux/releases) on the JNA search
-path (`-Djava.library.path=...` or `LD_LIBRARY_PATH`).
+JNA loads `aimux_ffi` by name. Provide `libaimux_ffi.so` / `.dylib` /
+`aimux_ffi.dll` from the matching GitHub Release on the JNA search path
+(`-Djava.library.path=...` or `LD_LIBRARY_PATH`).
 
-Shared reference — parameter tables, result shapes, factory functions, and the
-feature coverage matrix — lives in the [API overview](../API.md).
-
-## Quick Start
+## Quick start
 
 ```java
-try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:3000")) {
-    String result = model.generateText("\"What is Rust?\"");
+Aimux aimux = Aimux.load();
+String providerJson = "{\"package\":\"openai\",\"settings\":{\"apiKey\":\"your-key\"}}";
+String requestJson = "{\"prompt\":\"Hello\",\"options\":{\"maxRetries\":0}}";
+
+try (ProviderHandle provider = aimux.createProvider(providerJson);
+     Model model = provider.languageModel("gpt-4.1-mini")) {
+    System.out.println(model.generate(requestJson));
+    model.stream(requestJson, frame -> {
+        if (frame instanceof ai.arcships.aimux.types.StreamFrame.Event) {
+            System.out.println(((ai.arcships.aimux.types.StreamFrame.Event) frame).getEvent());
+        }
+    });
 }
 ```
 
-## Providers
+`Aimux.load()` (or `Aimux.load(path)`) validates the ABI, ops version and
+manifest before the client becomes usable. Provider settings are plain data;
+provider-specific constructors no longer exist.
 
-The vendor packages and 282 registry-backed OpenAI-compatible providers are reachable by string name:
+## Resources and operations
 
-> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
-> typed factories remain available. Custom endpoints use the base-URL variant.
-> Full list: [providers.md](providers.md).
+- `ProviderHandle` exposes Language, Embedding, Image, Speech, Transcription,
+  Reranking, Video, Search, Decision and Files.
+- `decisionModel(id)` selects the native `decision` method; support depends on
+  the provider.
+- Every resource supports `call`, `stream` and `create` with the operations
+  accepted by its native handle kind.
+- `Aimux.call` uses global handle 0. `Aimux.create` creates registries,
+  recorders, transports, middleware, trace stores and replay sessions.
+- `own(id)` transfers ownership; wrap each returned handle exactly once.
+- `TypedModel` owns a supplied `Model` and decodes generated result classes.
 
-```java
-import ai.arcships.aimux.Model;
+Use try-with-resources. `close()` is idempotent and stops new calls
+immediately; admitted calls retain the resource until they return. Closing a
+model does not signal cancellation.
 
-try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
-    String result = model.generateText("\"Hello\"");
-}
+## Async and streams
 
-// Optional config JSON ({"baseUrl": "..."}); an unknown key is InvalidArgumentError:
-try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
-    String result = model.generateText("\"Hello\"");
-}
-```
+Every asynchronous method requires an explicit `Executor`. The internal
+`Cancellation` helper forwards `Future.cancel(false/true)` to native Abort;
+running native work retains its resources until it returns. For synchronous
+cancellation, use `createAbort()` and the `call`/`stream` overloads that
+accept it.
 
-`deepseek(apiKey, modelId)` remains as a by-name shortcut to the vendor package.
-Unknown names throw `NoSuchProviderError` naming the requested provider.
-There is no provider-registration API: the provider set is the built-in
-registry, and a custom endpoint is a `baseUrl` in the `configJson` above (or a
-`...WithBase` factory).
+Consumers receive copied `StreamFrame` values, including the unique End frame.
+An error End is delivered before its typed exception is thrown. A slow
+Consumer applies synchronous backpressure. Callback exceptions are latched,
+trigger Abort and become `BindingException.CallbackFailure` after native
+return; no exception crosses the C callback.
 
 ## Errors
 
-`AiMuxError` values throw an **`AimuxException` subclass hierarchy**
-(OpenAI Java / Vercel AI SDK style — `instanceof`, not stringly `code` checks):
-
-```text
-RuntimeException
- └── AimuxException
-      ├── JSONParseError / InvalidResponseDataError
-      ├── InvalidArgumentError / InvalidPromptError
-      ├── TokenExpiredError          // 401, refresh and retry
-      ├── UnsupportedFunctionalityError
-      ├── NoSuchModelError / NoSuchProviderError
-      ├── APICallError               // every HTTP-shaped failure; classify on getStatusCode()
-      ├── RetryError                 // reason, errors, lastError
-      ├── TimeoutError / RequestAbortedError
-      ├── NoSuchToolError            // code 15: the tool the model called is not in the tool set
-      ├── InvalidToolInputError      // code 16: the tool arguments failed to parse or validate
-      ├── ToolCallRepairError        // code 17: tool-call repair itself failed
-      ├── NoOutputGeneratedError     // code 18: no output was generated
-      ├── LoadAPIKeyError            // code 19: no API key, fallback env var unset (getEnvVar())
-      ├── LoadSettingError           // code 20: a required setting is missing (getEnvVar())
-      └── OtherError
-```
-
-Every instance has:
-
-| Field | Meaning |
-|-------|---------|
-| `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–20 (4 retired, 14 = `Retry`; matches `aimux-error.h`) |
-| `getStatusCode()` | HTTP status, or `-1` |
-| `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
-| `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
-
-A code outside the enum is a header/library mismatch and fails with
-`IllegalStateException`, not an error type.
-
-Four subclasses carry the C payload of their variant (`null` when
-unavailable): `APICallError` — `getProviderCode()`, `getProviderMessage()`,
-`getResponseBody()`, `getUrl()`, `getRequestBodyValues()`,
-`getResponseHeaders()`, `getData()`; `RetryError` — `getReason()`
-(`RetryErrorReason.MAX_RETRIES_EXCEEDED` — every permitted attempt failed
-with a retryable error — or `ERROR_NOT_RETRYABLE` — a later attempt failed
-non-retryably), `getErrors()` (the per-attempt history, oldest first, each
-itself an `AimuxException` — typically `APICallError` with its full detail),
-`getLastError()`; `NoSuchModelError` — `getModelId()`, `getModelType()`;
-`NoSuchProviderError` — `getProviderId()`.
-Six subclasses carry the C payload of their variant (`null` when unavailable):
-`APICallError` —
-`getProviderCode()`, `getProviderMessage()`, `getRequestId()`, `getResponseBody()`;
-`NoSuchModelError` — `getModelId()`, `getModelType()`;
-`NoSuchProviderError` — `getProviderId()`;
-`NoSuchToolError` — `getToolName()`, `getAvailableTools()` (a `List<String>`,
-`null` when no tool set was supplied);
-`InvalidToolInputError` — `getToolName()`, `getToolInput()` (the raw argument
-text the model produced);
-`ToolCallRepairError` — `getOriginalError()` (the original lookup/parse/validation
-error as a Jackson `JsonNode`, the same wire encoding as `ToolCall.error`).
-
-Recording failures are a **separate type**, mirroring the two unrelated
-Rust error types: `Aimux.initRecording(dir)` and `Aimux.recordingTryFlush()`
-throw `RecordingException` (a plain `RuntimeException`, *not* an
-`AimuxException`) whose `getCode()` is a `RecordingErrorCode` — `INIT`,
-`OPEN_FILE`, `SPAWN`, `WRITER_GONE`, `FLUSH_TIMEOUT`, `WRITE` (C
-`aimux_error_code_t` 100–105). `initRecording` reports `INIT` / `OPEN_FILE` /
-`SPAWN` (the previous recorder, if any, stays in place); a flush reports the
-last three. The legacy `recordingFlush()` never reports.
-
-**C ABI failures** are codes 200–206, not an aimux type. The binding catches what a
-caller can trigger *before* the C call and throws the native Java exception;
-anything in that C code range is a binding/library invariant:
-
-| Situation | Java |
-| --- | --- |
-| `null` for a required `String` (`apiKey`, `modelId`, `promptJson`, `configJson`, `valuesJson`, `dir` …) | `NullPointerException("<param>")`, thrown before the C call |
-| Malformed raw JSON (`promptJson`, `optsJson`, `configJson`, `valuesJson`, `recordingsJsonl` …), including trailing garbage or `""` for a required param | `IllegalArgumentException("<param>: invalid JSON: …")`, thrown before the C call |
-| Use-after-close of any handle (`Model`, `EmbeddingModel`, `TranscriptionSession`, …) | `IllegalStateException("<Type> is closed")`, thrown before the C call |
-| C code 200–206 (null pointer, invalid UTF-8, malformed wire JSON, dead handle, re-entrant call, result serialization, callback failure) | `IllegalStateException("aimux ffi: …")` — a binding/library invariant, never a caller error |
-
-`TypedModel` failing to decode what the library returned is likewise a
-binding/library invariant: `IllegalStateException("aimux: failed to decode
-<Type>: …")`.
-
-Known and accepted: the multimodal classes (`EmbeddingModel`, `SpeechModel`, …)
-guard `close()` with an `AtomicLong` rather than a lock, so a `close()` racing an
-in-flight call can surface as `IllegalStateException("aimux ffi: invalid or
-expired … handle")` instead of `"<Type> is closed"` — still an
-`IllegalStateException`.
-
-`AimuxException` and `RecordingException` mirror the two unrelated Rust error
-types and share no base beyond `RuntimeException`.
-
-Transport: every fallible C call returns an opaque `aimux_error_t *`
-(JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
-(`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
-`AimuxResult` reads one unified code: 1–20 restores the matching
-`AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
-becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
-under their owning AiMuxError code; a `RetryError`'s attempt errors are new
-owned errors, decoded recursively and freed by the binding. Every returned
-string is freed and the returned error is released with
-`aimux_error_free` exactly once (errors are never handles). No JSON error
-envelopes on the main path. Subclasses are nested under `AimuxException` (e.g.
-`AimuxException.APICallError`).
-
-```java
-import ai.arcships.aimux.AimuxException;
-import ai.arcships.aimux.AimuxException.APICallError;
-import ai.arcships.aimux.AimuxException.TokenExpiredError;
-import ai.arcships.aimux.Model;
-
-try (Model model = Model.openai("sk-...", "gpt-4o")) {
-    model.generateText("\"hi\"");
-} catch (TokenExpiredError e) {
-    // 401 — refresh the token and retry
-} catch (APICallError e) {
-    // Classify on status: 429 → rate limited (e.getRetryMs()),
-    // 401 → auth, 404 → model; -1 → no HTTP response observed
-} catch (AimuxException e) {
-    // any AiMuxError failure
-}
-```
-
-Stream terminal failures also throw (there is no C `on_error` callback). The
-raw `streamText` has no `onError` parameter; only `TypedModel.streamText` takes
-one, and it reports local decode failures only, never C-level failures.
-
-## Architecture
-
-Two layers, mirroring the Kotlin binding:
-
-- **Raw layer** (`Model`, `EmbeddingModel`, `SpeechModel`, …) — JNA → C ABI,
-  JSON strings in and out. `AiMuxError` values throw typed `AimuxException`
-  subclasses, decoded from the `aimux_error_t *` a failed call returns;
-  C ABI misuse throws plain `IllegalArgumentException` /
-  `IllegalStateException` (see Errors).
-- **Typed layer** (`TypedModel` and the generated DTO package `ai.arcships.aimux.types`) — Jackson POJOs
-  with the same wire format as all other bindings. `TypedModel` decodes results
-  into typed objects; `AiMuxError` values propagate as `AimuxException`.
-
-Serialization uses `JsonInclude.Include.NON_NULL` (null fields omitted on
-encode; zero values and empty collections are retained).
-
-## Text Generation
-
-```java
-// raw layer — JSON in, JSON out
-try (Model model = Model.openai("sk-...", "gpt-4o")) {
-    String result = model.generateText("\"What is Rust?\"");
-}
-
-// typed layer — typed objects
-try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
-    GenerateTextResult result = model.generateText("What is Rust?");
-    System.out.println(result.getText());
-    System.out.println(result.getUsage().getInputTokens());
-}
-```
-
-`TypedModel.generateText` overloads: `(String prompt)`,
-`(String prompt, GenerateTextOptions options)`,
-`(List<ModelMessage> messages)`,
-`(List<ModelMessage> messages, GenerateTextOptions options)`.
-
-> Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
-
-## Streaming Generation
-
-```java
-// raw layer — callback-based (JSON parts), blocks the calling thread
-try (Model model = Model.openai("sk-...", "gpt-4o")) {
-    // No onError: stream failures throw AimuxException from streamText.
-    model.streamText("\"Write a haiku\"", null,
-        part -> System.out.println(part),   // onPart (String JSON)
-        () -> {});                          // onDone
-}
-
-// raw layer — pull-based (lazy Stream<String>)
-model.streamTextStream("\"Write a haiku\"").forEach(System.out::println);
-
-// typed layer — typed StreamPart objects
-try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
-    model.streamTextStream("\"Write a haiku\"")
-        .forEach(part -> System.out.println(part));  // TextStreamPart
-}
-```
-
-`TypedModel.streamText` (callback) and `streamTextStream` (pull) both have
-`(String prompt)`, `(String prompt, options)`, `(List<ModelMessage> messages)`,
-and `(List<ModelMessage> messages, options)` overloads.
-
-> Stream part variants are documented in the
-> [API overview](../API.md#streaming-generation).
-
-## Tool-Call Repair
-
-An unparseable tool call never fails generation: it comes back as a
-`ToolCall` with `getInvalid() == true` and `getError()`. Set
-`repairToolCall` on the options to fix such a call in Java, the way the AI SDK
-`repairToolCall` does (RFC-0035). It may do anything to produce the
-replacement — including a second `generateText` against a repair model. That
-holds on the stream too: the FFI re-entrancy guard is thread-local, so the
-binding runs a stream hook on its own thread (the stream thread waits for it,
-so part order is unaffected) instead of on the native callback thread, where
-any generate call would fail with `AIMUX_E_FFI_REENTRANT_CALL`. A stream hook
-may also call back into **the model being streamed**, but only from the thread
-it is invoked on: that thread borrows the stream's read hold on the model, so it
-does not queue behind a pending `close()`. Extra threads the hook starts itself
-do not borrow it and would deadlock against a concurrent `close()`.
-
-```java
-GenerateTextOptions options = GenerateTextOptions.builder()
-    .tools(Collections.singletonList(weatherTool()))
-    .repairToolCall(context -> {
-        // context: the raw call (input is the provider's argument TEXT), the
-        // error, the tool's input schema, and the tools/messages/instructions
-        // the call was generated with.
-        String fixed = context.getToolCall().getInput().replace("city", "location");
-        return RawToolCall.builder()
-            .toolCallId(context.getToolCall().getToolCallId())
-            .toolName(context.getToolCall().getToolName())
-            .input(fixed)                // raw argument text, re-validated by aimux
-            .build();
-    })
-    .build();
-
-ToolCall call = model.generateText("Weather in Tokyo?", options)
-    .getToolCalls().get(0);            // repaired: getInvalid() == null
-```
-
-- Return `null` to leave the call as it was (invalid, original error).
-- Throw to report a failed attempt: the call stays invalid with a
-  `ToolCallRepair` error carrying the exception's message. The replacement is
-  re-parsed and re-validated; if it is still invalid, the same error reports
-  both the original and the new cause.
-- Called at most once per tool call, never for a valid one, and never when the
-  options carry no tool set.
-- Applies to `TypedModel` `generateText` / `generateObject` /
-  `consumeStreamText` / `streamText` / `streamTextStream`, and to
-  `generateTextAsOpenAI`, which repairs the native result and converts it
-  (`Model.generateTextResultAsOpenAI`) because a `ChatCompletion` carries no
-  invalid marker. It is never serialized into the options JSON.
-  `streamTextAsOpenAI` does not reflect repair. On the stream the repaired
-  `TextStreamPart.ToolCall` replaces the original; tool input deltas are forwarded
-  verbatim, repair or not.
-- If a stream repair fails at the boundary (not in the hook), `onError` is
-  told and the unrepaired part is still delivered. The stream waits for the
-  hook without a timeout, and calling `close()` on the streaming model from
-  inside the hook deadlocks, as it does from a stream callback.
-
-## TypedModel
-
-| API | Signature |
-|------|------|
-| `TypedModel.openai` / `TypedModel.anthropic` | `static TypedModel openai(String apiKey, String modelId)` (+ `openaiWithBase` / `anthropicWithBase` with `baseUrl`) |
-| `TypedModel.of` | `static TypedModel of(Model model)` — wrap an existing raw `Model` (does not own the handle) |
-| `generateText` | `GenerateTextResult generateText(...)` — 4 overloads (see above) |
-| `streamText` | callback-based: `(prompt/options, Consumer<StreamPart> onPart, Runnable onDone, Consumer<String> onError)` |
-| `streamTextStream` | `Stream<StreamPart> streamTextStream(...)` — 4 overloads, pull-based |
-
-`TypedModel` is `Closeable` (owning factories must be closed with
-try-with-resources); `AiMuxError` values surface as `AimuxException`.
-
-## Vector Embedding
-
-```java
-try (EmbeddingModel model = EmbeddingModel.openai("sk-...", "text-embedding-3-small")) {
-    String result = model.embed("[\"hello\", \"world\"]");
-}
-// result: {"embeddings":[[0.1,0.2,...],[0.3,0.4,...]],"usage":{"tokens":5}, ...}
-```
-
-| Factory | Providers |
-|------|------|
-| `EmbeddingModel.openai` / `openaiWithBase` | OpenAI |
-| `EmbeddingModel.cohere` / `cohereWithBase` | Cohere |
-| `EmbeddingModel.google` / `googleWithBase` | Google |
-
-`embed(String valuesJson)` / `embed(String valuesJson, String optsJson)`.
-
-## Speech Synthesis (TTS)
-
-```java
-try (SpeechModel model = SpeechModel.openai("sk-...", "tts-1")) {
-    String opts = new JSONObject()
-        .put("text", "Hello")
-        .put("voice", "alloy")
-        .put("outputFormat", "mp3")
-        .toString();
-    String result = model.generate(opts);
-}
-```
-
-Factories: `SpeechModel.openai` / `openaiWithBase`.
-
-## Speech to Text (STT)
-
-```java
-try (TranscriptionModel model = TranscriptionModel.openai("sk-...", "whisper-1")) {
-    String result = model.generate(base64Audio, "audio/wav");
-}
-```
-
-Factories: `TranscriptionModel.openai` / `openaiWithBase`.
-`generate(String audioBase64, String mediaType)` /
-`generate(String audioBase64, String mediaType, String optsJson)`.
-
-## Image Generation
-
-```java
-try (ImageModel model = ImageModel.openai("sk-...", "dall-e-3")) {
-    String result = model.generate("{\"prompt\":\"an otter\",\"n\":1}");
-}
-```
-
-Factories: `ImageModel.openai` / `openaiWithBase`, `ImageModel.google` /
-`googleWithBase`.
-
-## Video Generation
-
-```java
-try (VideoModel model = VideoModel.google("sk-...", "veo-3.0")) {
-    String result = model.generate("{\"prompt\":\"a sunset\",\"n\":1}");
-}
-```
-
-Factories: `VideoModel.google` / `googleWithBase`.
-
-## Reranking
-
-```java
-try (RerankingModel model = RerankingModel.cohere("sk-...", "rerank-v3.0")) {
-    String result = model.rerank("{\"query\":\"...\",\"documents\":{\"type\":\"text\",\"values\":[...]},\"topN\":2}");
-}
-```
-
-Factories: `RerankingModel.cohere` / `cohereWithBase`.
-
-## Search
-
-```java
-try (SearchModel model = SearchModel.tavily("sk-...")) {
-    String result = model.search("{\"query\":\"What is Rust?\",\"maxResults\":5}");
-}
-// result: {"results":[{"title":"Rust",...}],"answer":"Rust is a systems language."}
-```
-
-Factories: `SearchModel.tavily` / `tavilyWithBase`.
-
-## File Upload
-
-```java
-try (Files files = Files.openai("sk-...")) {
-    String result = files.uploadFile(base64Data, "application/pdf");
-}
-// result: {"providerReference":{"openai":"file-abc"}, ...}
-```
-
-Factories: `Files.openai` / `openaiWithBase`.
-`uploadFile(String dataBase64, String mediaType)` /
-`uploadFile(String dataBase64, String mediaType, String optsJson)`.
-
-## Types
-
-The DTOs are generated by `aimux-codegen` from the Rust types, one top-level
-class per type, in the package `ai.arcships.aimux.types`
-(`bindings/java/generated/ai/arcships/aimux/types/`; do not edit them, run
-`cargo run -p aimux-codegen`). Import `ai.arcships.aimux.types.*`. The text and
-tool surface includes `ToolCall`, `FunctionTool`, `ProviderTool`, `Tool`
-(sealed), `ToolChoice` (sealed, with custom serializer for the scalar-or-object
-wire form), `ContentPart` (sealed), `ModelMessage`, `GenerateTextOptions`,
-`FileBytes` / `FileData`, `GenerateContent`, `LanguageModelUsage`,
-`GenerateTextResult`, `GenerateObjectResult`, `TextStreamPart` (sealed) and
-`ToolResultOutput`. Field names
-are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...)
-and optional fields are absent, never `null`. Sealed hierarchies are tagged on
-`type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
-`{"type":"tool-call",...}`); bytes (`FileBytes`, image and file parts) are
-base64 strings, as the AI SDK's JSON carries a `Uint8Array`. An `unknown`
-value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
-`NullNode` and is written back as `null`, a missing field stays Java `null`
-and is omitted. A response `timestamp` is a JavaScript `Date` in the AI SDK's
-JSON: a `toISOString()` string, UTC with milliseconds
-(`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
-
-A `ContentPart.File` is the AI SDK `FilePart`: its `data` is a `FilePartData`
-(`Tagged(FileData)`, `Bare` for a base64 or URL string, or `Reference` for a
-bare `{provider: id}`); the builder also takes a `FileData` or inline bytes
-(written as tagged data). `ContentPart.ReasoningFile.data` is a
-`ReasoningFilePartData`. There is no `file-base64` / `file-url` /
-`file-reference` part.
-
-A generated file is a `GeneratedFile`, the AI SDK's
-`{"base64", "mediaType", "providerMetadata"?}` (`getBytes()` decodes it).
-`TextStreamPart.File` and `TextStreamPart.ReasoningFile` (also the result's `content`
-and `reasoning` file parts) carry it as `{"type": "file", "file": {...},
-"providerMetadata"?}`; the provider-level `GenerateResult.content` keeps
-`mediaType` and tagged `data`.
-
-A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
-`toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
-built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /
-`content`. The provider-level `GenerateContent.ToolResult` keeps `result`,
-`isError`, `preliminary` and `dynamic`; the stream's `TextStreamPart.ToolResult`
-is a provider-executed tool's result (Rust `TypedToolResult`: `output` and
-the call's `input`), next to `TextStreamPart.ToolError` and
-`TextStreamPart.ToolOutputDenied`.
-
-`GenerateTextOptions.output` is the AI SDK's `output` as a JSON node, for
-example `{"type":"object","schema":{...}}` (tagged by `type`: `text`,
-`object`, `array`, `choice` or `json`); the parsed value is
-`GenerateTextResult.output`, a `NullNode` when the model produced JSON `null`.
-`ImageCallOptions` / `VideoCallOptions` take `size` / `resolution` as `"WxH"`
-strings (e.g. `"1024x1024"`) and `aspectRatio` as `"W:H"` (e.g. `"16:9"`).
-
-`RawToolCall` and `ToolCallRepairContext` serve
-[tool-call repair](#tool-call-repair); `ToolCallRepair` (the hook itself) is a
-top-level functional interface, not a generated DTO.
-
-`ToolCall` (top-level and `TextStreamPart.ToolCall`) carries `getProviderMetadata()`
-plus `getInvalid()` (set by Core when tool lookup, input parse, or schema
-validation fails, even after repair) and `getError()` (the serialized
-`AiMuxError` for that failure).
-
-The top-level `ToolCall` and `RawToolCall` serialize `"type": "tool-call"` and
-`Source` serializes `"type": "source"` (`getType()`), as the AI SDK's
-`TypedToolCall` and `Source` in a result's `toolCalls` and `sources`. Reading
-accepts JSON without the tag and rejects a different one.
-
-The generated package also declares the typed multimodal surface:
-`EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,
-`ImageCallOptions` / `ImageResult`, `TranscriptionCallOptions` /
-`TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
-`VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
-`UploadFileParams` / `UploadFileResult`. Sealed unions (`AudioData`,
-`ImageOutputs`, `VideoFileData`) are base64 strings on the wire (a `Binary`
-value is written as base64)
-and `VideoData` / `VideoFile` are tagged on `type`, all with custom Jackson
-serializers. Response types (`EmbeddingResponse`, etc.) match
-the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).
-
-## Error Handling
-
-- **All fallible raw APIs** (`Model.generateText`, multimodal, …): a failed C
-  call returns an `aimux_error_t *`; Java decodes it and throws the typed
-  `AimuxException` subclass (see [Errors](#errors) above). Success payloads
-  are plain result JSON strings, not error envelopes.
-- **Typed text layer** (`TypedModel`): AiMuxError failures throw the same hierarchy;
-  failing to decode the library's own output is a binding invariant and throws
-  `IllegalStateException("aimux: failed to decode <Type>: …")`.
-
-## Coverage
-
-Full multimodal surface — text generation, streaming, embedding, TTS, STT,
-image, video, reranking, search, and file upload. Verified by the JUnit suite
-(mock-server E2E + contract wire-format round-trips, no real network).
-See the [coverage matrix](../API.md#feature-coverage).
-
-## Build & Test
-
-```bash
-# First build the aimux-ffi .so
-cargo build -p aimux-ffi --release
-
-cd bindings/java
-export JAVA_HOME=...   # JDK 9+ (bytecode targets Java 8 via --release 8)
-export LD_LIBRARY_PATH="$(pwd)/../../target/release:${LD_LIBRARY_PATH}"
-# or point the tests at another build (e.g. a debug build in a shared target dir):
-# export AIMUX_FFI_LIB_DIR=/path/to/target/debug
-gradle test
-```
+- `NativeException` retains `kind`, `code`, message and the full `error`
+  payload.
+- Domain exceptions select subclasses by `error.name`; unfamiliar variants use
+  the domain's `Unknown` subclass and retain their payload.
+- Retryability comes from `error.isRetryable`; a retry delay comes from
+  `error.responseHeaders` (`retry-after`), as with the AI SDK.
+- The payload's `cause` is `getCause()`: an `ErrorCause` chain. A retry
+  error's cause is its last attempt.
+
+## Breaking changes in 0.6
+
+- The unversioned binding is replaced by ABI 1 / ops 1.0.
+- Provider-specific constructors (`Model.openai`, `TypedModel.openai`, …) are
+  removed; use `Aimux.createProvider` / `provider.languageModel` and the
+  operation API.
+- Hand-written `Types` / `MultimodalTypes` are replaced by generated DTOs in
+  `ai.arcships.aimux.types`.
+- Errors are the shared envelope; old getters and retry hints are removed.
+
+## See also
+
+- [bindings/java/README.md](../../bindings/java/README.md) — lifecycle, async,
+  callback and test details.
+- [docs/api/ops.md](ops.md) — operation names.
+- [docs/error-model.md](../error-model.md) — error codes and cause chains.
+- [Java provider list](providers.md).

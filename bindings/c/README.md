@@ -1,5 +1,8 @@
 # C and C++ primitives
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 provider exports are
+> removed. See [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 The examples include the generated `aimux-ffi/include/aimux.h` and use only
 ABI primitives. Both examples run offline and print the manifest and
 runtime description. `aimux_raii.hpp` owns strings, errors, and handles;

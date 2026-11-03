@@ -88,7 +88,7 @@ pub mod prelude {
     pub use crate::embedding_model::{
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,
     };
-    pub use crate::error::{AiMuxError, ApiCallError};
+    pub use crate::error::{AiMuxError, ApiCallError, ApiCallErrorOrigin};
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     #[allow(deprecated)]
     pub use crate::generate::generate_object;
@@ -185,8 +185,8 @@ pub use custom_provider::{CustomProvider, CustomProviderOptions, custom_provider
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
 pub use error::{
-    AiMuxError, ApiCallError, ErrorCause, RetryError, RetryErrorReason, SourceError,
-    ToolChoiceViolationError,
+    AiMuxError, ApiCallError, ApiCallErrorOrigin, ErrorCause, RetryError, RetryErrorReason,
+    SourceError, ToolChoiceViolationError,
 };
 pub use files_model::Files;
 pub use image_model::ImageModel;
