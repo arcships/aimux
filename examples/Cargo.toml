@@ -1,0 +1,28 @@
+[package]
+name = "aimux-examples"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Runnable Rust examples for aimux (arcships). Not published."
+
+[[bin]]
+name = "chat"
+path = "chat.rs"
+
+[[bin]]
+name = "stream"
+path = "stream.rs"
+
+[[bin]]
+name = "switch-provider"
+path = "switch_provider.rs"
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-providers = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+
+[lints]
+workspace = true

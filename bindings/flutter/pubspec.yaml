@@ -1,5 +1,5 @@
 name: aimux
-description: Unified LLM service layer for Flutter/Dart (Rust core, 327 providers, C ABI via dart:ffi)
+description: In-process LLM SDK for Flutter/Dart (aimux, Rust core, 300+ providers, C ABI via dart:ffi)
 version: 0.6.0
 homepage: https://github.com/arcships/aimux
 repository: https://github.com/arcships/aimux

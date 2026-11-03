@@ -3,7 +3,12 @@ name = "aimux-ops"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Transport-independent operation dispatch for aimux bindings"
+repository.workspace = true
+homepage.workspace = true
+description = "Shared operation dispatch for aimux (arcships) language bindings"
+keywords = ["llm", "ai", "sdk", "bindings"]
+categories = ["api-bindings"]
+documentation = "https://docs.rs/aimux-ops"
 
 [dependencies]
 schemars = { workspace = true }

@@ -3,7 +3,12 @@ name = "aimux-codegen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Deterministic C ABI, control schema, and op constant generation from aimux-ops"
+keywords = ["llm", "codegen", "ffi"]
+categories = ["development-tools"]
+documentation = "https://docs.rs/aimux-codegen"
 
 [dependencies]
 aimux-ops = { path = "../../aimux-ops" }

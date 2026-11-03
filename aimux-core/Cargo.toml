@@ -3,8 +3,10 @@ name = "aimux-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core abstractions for aimux: LanguageModel trait, message types, and user-facing API"
-keywords = ["llm", "ai", "openai", "anthropic", "provider"]
+repository.workspace = true
+homepage.workspace = true
+description = "Core types for aimux (arcships): in-process LLM access, LanguageModel, and AI SDK V4 JSON shapes"
+keywords = ["llm", "ai", "openai", "sdk", "provider"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-core"
 

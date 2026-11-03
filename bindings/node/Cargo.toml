@@ -3,7 +3,9 @@ name = "aimux-node"
 version = "0.6.0"
 edition = "2024"
 license = "MIT"
-description = "Node.js binding for aimux (napi-rs, native path — bypasses aimux-ffi)"
+description = "Node.js binding for aimux (arcships), an in-process LLM provider SDK"
+repository = "https://github.com/arcships/aimux"
+homepage = "https://github.com/arcships/aimux"
 
 [lib]
 crate-type = ["cdylib"]

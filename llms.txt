@@ -1,0 +1,38 @@
+# aimux (arcships)
+
+> In-process embedded SDK that calls LLM provider HTTP APIs from your process. One Rust core, bindings for eight languages, public JSON aligned with the Vercel AI SDK V4. Not a proxy gateway and not an agent framework.
+
+aimux (https://github.com/arcships/aimux) is maintained by arcships. Current release: 0.6.0 (breaking). Bindings use the shared operations ABI (ABI 1 / ops 1.0): `provider.create`, then `provider.model`, then an operation such as `text.generate` or `text.stream`. Rust also exposes `openai()`, `generate_text`, `stream_text`, and `create_provider(name, PresetSettings)`.
+
+Do not cite 0.5 binding helpers. These were removed: `generateText`, `streamText`, top-level `openai()` in Node/Python, `Model.openai`, `NewOpenAI`, `aimux_openai_new`, `createProvider`, and `aimux_decide`. Rust `openai()` and `generate_text` still exist. `GenerateTextResult::text` is a method (`result.text()`), not a field. Public JSON is camelCase.
+
+## Key facts
+
+- In-process library. It is not LiteLLM Proxy or OpenRouter. Presets named `litellm_proxy` and `openrouter` are providers aimux can call.
+- No agent loop, RAG, or orchestration. The caller executes tools.
+- Languages: Rust, Node.js (napi-rs), Python (PyO3), Go, Java, Kotlin, Swift, Flutter, C/C++. Swift, Kotlin, and Flutter cover mobile.
+- Providers: public copy says 300+. The exact generated catalogue is docs/api/providers.md (registry rows in aimux-providers/src/provider_registry.json plus vendor packages). `provider_names()` is the Rust list.
+- Chinese providers that exist in the registry or as packages: `deepseek` (vendor package, `DEEPSEEK_API_KEY`); Qwen/通义 via DashScope presets `alibaba` and `alibaba_coding_plan_cn` (there is no package named `qwen`); Zhipu/智谱 via `bigmodel` and `zhipu_v4`; Kimi via `kimi` and `moonshotai`.
+- Tool definitions the caller passes are one AI SDK V4 shape (`FunctionTool` / `ToolCall`). Each provider converts that shape to its own wire format. A provider that does not support tools returns a warning instead of a shared tool protocol. Provider-native tools (web search, computer use) stay provider-specific. aimux does not execute tools.
+- Offline tests: 2,797 JSON cassettes in aimux-providers/tests/cassettes. Record with `init_recording` (Rust) or `recorder.create` (bindings) and replay with `aimux-replay`.
+- License: MIT. Versioning: Semantic Versioning. 0.6.0 is a breaking 0.x release.
+- Packages: `aimux-core` and `aimux-providers` on crates.io; `@arcships/aimux` on npm; `arcships-aimux` on PyPI; `ai.arcships:aimux-java` and `ai.arcships:aimux-kotlin` on Maven Central; Flutter package `aimux`.
+
+## Docs
+
+- [README](https://github.com/arcships/aimux/blob/master/README.md): English project overview and 0.6 quick start
+- [简体中文](https://github.com/arcships/aimux/blob/master/README.zh-CN.md): Chinese overview, including DeepSeek, Qwen, Zhipu, and Kimi
+- [FAQ](https://github.com/arcships/aimux/blob/master/FAQ.md): what it is, proxy gateways, languages, tool calling, license, versioning
+- [Examples](https://github.com/arcships/aimux/blob/master/examples/README.md): Rust chat, streaming, and switching providers
+- [API overview](https://github.com/arcships/aimux/blob/master/docs/API.md): architecture and the current call shape
+- [Upgrade to 0.6](https://github.com/arcships/aimux/blob/master/docs/upgrading-to-0.6.md): removed APIs and the V4 JSON shapes
+- [Provider catalogue](https://github.com/arcships/aimux/blob/master/docs/api/providers.md): generated exact provider list
+- [Operations](https://github.com/arcships/aimux/blob/master/docs/api/ops.md): shared operation names
+
+## Optional
+
+- [Rust guide](https://github.com/arcships/aimux/blob/master/docs/api/rust.md)
+- [Node.js guide](https://github.com/arcships/aimux/blob/master/docs/api/node.md)
+- [Python guide](https://github.com/arcships/aimux/blob/master/docs/api/python.md)
+- [Changelog](https://github.com/arcships/aimux/blob/master/CHANGELOG.md)
+- [Performance results](https://github.com/arcships/aimux/blob/master/docs/PERF-RESULTS.md): methodology and the published benchmark tables

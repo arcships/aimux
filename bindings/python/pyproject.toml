@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "arcships-aimux"
 version = "0.6.0"
-description = "Python binding for the aimux shared operations dispatcher"
+description = "Python binding for aimux (arcships), an in-process LLM provider SDK"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"

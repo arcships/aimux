@@ -1,7 +1,9 @@
 {
   "name": "@arcships/aimux",
   "version": "0.6.0",
-  "description": "Unified LLM service layer — one API for 327 AI providers (Rust core, Node.js binding)",
+  "description": "In-process LLM SDK for aimux (arcships): one Rust core and 300+ provider names (Node.js binding)",
+  "homepage": "https://github.com/arcships/aimux",
+  "keywords": ["llm", "openai", "ai-sdk", "rust", "aimux"],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

@@ -25,7 +25,7 @@ async fn main() -> Result<(), AiMuxError> {
     })?;
     let model = provider.chat("gpt-4o");
     let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default()).await?;
-    println!("{}", result.text);
+    println!("{}", result.text());
     Ok(())
 }
 ```

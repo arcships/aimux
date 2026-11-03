@@ -6,6 +6,7 @@ members = [
     "aimux-provider-utils",
     "aimux-providers",
     "aimux-stream",
+    "examples",
     "tools/aimux-codegen",
     "tools/aimux-cli",
     "tools/aimux-replay",
@@ -18,11 +19,12 @@ version = "0.6.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/arcships/aimux"
-description = "Rust alternative to Vercel AI SDK - unified provider interface for LLM applications"
+homepage = "https://github.com/arcships/aimux"
+description = "In-process SDK for LLM provider access. One Rust core, eight language bindings, JSON aligned with the Vercel AI SDK V4."
 rust-version = "1.85"
 
 # Release profile: minimize binary size for FFI bindings.
-# - lto + codegen-units=1: cross-crate dead-code elimination across 325 providers
+# - lto + codegen-units=1: cross-crate dead-code elimination across the provider set
 # - panic="abort": drop .eh_frame unwind tables (~9% of binary)
 # - strip: remove symbol tables
 # - opt-level="z": optimize for size
