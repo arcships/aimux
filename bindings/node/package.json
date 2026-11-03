@@ -1,7 +1,7 @@
 {
   "name": "@arcships/aimux",
-  "version": "0.5.0",
-  "description": "Unified LLM service layer — one API for 325 AI providers (Rust core, Node.js binding)",
+  "version": "0.6.0",
+  "description": "Unified LLM service layer — one API for 327 AI providers (Rust core, Node.js binding)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

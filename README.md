@@ -6,6 +6,10 @@
 
 > **A unified LLM access layer written in Rust. One API for [327 provider names](docs/api/providers.md).**
 
+> **0.6.0 is a breaking release.** Every binding now uses the shared operations
+> ABI (ABI 1 / ops 1.0), and public JSON follows the AI SDK V4. See
+> [Upgrading to 0.6](docs/upgrading-to-0.6.md) before moving a 0.5 integration.
+
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
@@ -52,7 +56,8 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
   each registry-backed OpenAI-compatible provider (base URL, env var, auth
   mode, template parameters); the embedded JSON is parsed once into a runtime
   descriptor table. Rust uses `create_provider(name, PresetSettings)` for
-  presets and vendor packages; bindings retain `provider(name, ...)`.
+  presets and vendor packages; bindings use `provider.create` +
+  `provider.model` and the shared operation names.
   Packages follow the AI SDK shape: `XxxProviderSettings` + `create_xxx()` + a default `xxx()`.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
@@ -61,6 +66,26 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
   and trace visualization (RFC-0029).
 - **Hermetic tests** — 2,800+ cassettes replay real API responses; no network
   or API keys required.
+
+## Upgrading from 0.5
+
+0.6.0 is a breaking release. The main changes:
+
+- **Operations replace constructors.** Bindings use `provider.create` +
+  `provider.model` and the shared operation names; provider-specific
+  constructors and the 0.5 top-level helpers are removed.
+- **Public JSON follows AI SDK V4.** Fields are camelCase, unions use the AI
+  SDK tags, and file/tool/usage/stream shapes are the AI SDK shapes.
+- **Errors are the shared envelope.** Use `{kind, code, message, error}` and
+  the native `cause` chain; retry delays are read from `responseHeaders`, not
+  `retryMs`.
+- **DTOs are generated.** Hand-written 0.5 wire types are removed; ABI 1 /
+  ops 1.0 and the manifest digest must match the native library.
+- **Recording stays on schema 2.** Schema 3 and transport replay are a
+  follow-up.
+
+Read the full [0.6 upgrade guide](docs/upgrading-to-0.6.md) before moving an
+integration.
 
 ## Performance
 
@@ -99,6 +124,7 @@ middleware, and telemetry per request).
 aimux/
 ├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
 ├── aimux-providers       # Provider implementations — registry-backed + typed (docs/api/providers.md)
+├── aimux-ops             # Shared operation dispatcher, manifest and generated DTOs
 ├── aimux-stream          # SSE parsing
 ├── aimux-provider-utils  # One-exchange HTTP helpers, response handlers, API-key loading, streamed tool-call tracking
 ├── aimux-ffi             # C ABI (opaque handles + JSON results + owned aimux_error_t *) for non-native bindings
@@ -123,6 +149,7 @@ cargo add aimux-core aimux-providers
 |-------|-------------|-----------|
 | `aimux-core` | Core abstractions: `LanguageModel` / `Provider` / `Message` / `StreamPart` | [crates.io](https://crates.io/crates/aimux-core) |
 | `aimux-providers` | Provider implementations — [registry-backed + typed](docs/api/providers.md) | [crates.io](https://crates.io/crates/aimux-providers) |
+| `aimux-ops` | Shared operation dispatcher, manifest and generated DTOs | [crates.io](https://crates.io/crates/aimux-ops) |
 | `aimux-stream` | SSE parsing | [crates.io](https://crates.io/crates/aimux-stream) |
 | `aimux-provider-utils` | One-exchange HTTP helpers, typed response handlers, streamed tool-call tracking | [crates.io](https://crates.io/crates/aimux-provider-utils) |
 | `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
@@ -134,16 +161,27 @@ npm install @arcships/aimux
 ```
 
 ```typescript
-import { openai, generateText } from '@arcships/aimux'
+import { Client, LanguageModel } from '@arcships/aimux'
 
-const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
-const result = await generateText(model, 'Explain Rust ownership in one sentence.')
-console.log(result.text)
+const client = new Client()
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: process.env.OPENAI_API_KEY },
+})
+const model = await provider.model('gpt-4o-mini', 'languageModel')
+if (!(model instanceof LanguageModel)) throw new Error('Expected LanguageModel')
+try {
+  const result = await model.generate('Explain Rust ownership in one sentence.')
+  console.log(result.text)
+} finally {
+  await model.close()
+  await provider.close()
+}
 ```
 
-> The package ships a typed wrapper (`generateText` / `streamText`) on top of
-> the raw napi API. Need the raw JSON-string interface? Use
-> `import { openai } from '@arcships/aimux/raw'`.
+> The typed facade uses `Client` and the resource classes; the 0.5
+> top-level `openai` and `generateText` helpers are removed. Need the raw
+> JSON-string interface? Use `import { Runtime } from '@arcships/aimux/raw'`.
 
 ## Quick start
 
@@ -246,29 +284,28 @@ let result = generate_text(&routed, "…", Default::default()).await?;
 
 WebSocket-based streaming transcription with push-audio / next-part /
 retryable timeouts, in every binding ([RFC-0028](rfc/0028-transcription-streaming.md)).
-TypeScript:
+Python:
 
-```typescript
-import { openaiTranscription, startTranscriptionSession } from '@arcships/aimux/raw'
+```python
+from aimux import Client
 
-const model = await openaiTranscription(process.env.OPENAI_API_KEY!, 'gpt-realtime-whisper')
-const session = await startTranscriptionSession(model, null)
-
-session.pushAudio(pcmChunk) // push audio as it arrives
-
-for (;;) {
-  try {
-    const raw = await session.nextPart(500)
-    if (raw === null) break                       // stream ended
-    const part = JSON.parse(raw)
-    if ('TranscriptDelta' in part) process.stdout.write(part.TranscriptDelta.delta)
-  } catch (e: any) {
-    if (e.retryable === false && e.message.includes('timeout')) continue
-    throw e                                       // real failure — typed error
-  }
-}
-session.close()
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "openai",
+    "settings": {"apiKey": "your-api-key"},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "transcriptionModel", "modelId": "gpt-realtime-whisper",
+    })["handle"]) as model:
+        with client.adopt(model.call("transcription.start")) as operation:
+            operation.push(pcm_chunk)  # push audio as it arrives
+            operation.call("operation.inputDone")
+            part = operation.call("operation.next", {"timeoutMs": 500})
+            print(part)
 ```
+
+The same operation names are available from Node, Go, Java, Kotlin, Swift,
+Flutter and C. See each language guide for the binding-specific wrapper.
 
 ## Switch providers
 
@@ -289,8 +326,9 @@ let names = provider_names();
 
 Rust by-name creation covers vendor packages and all 282 presets. Each vendor
 also has `create_xxx(XxxProviderSettings {..})` and a default instance `xxx()`.
-Bindings keep their own `provider(name, ...)` API. Runtime model listing uses
-`Provider::discovery()` and then `ProviderDiscovery::list_models()` — see
+Bindings use `provider.create` and `provider.model` with the shared operation
+names. Runtime model listing uses `Provider::discovery()` and then
+`ProviderDiscovery::list_models()` — see
 [docs/api/rust.md](docs/api/rust.md#providers).
 
 ## Provider coverage
@@ -318,11 +356,11 @@ aimux ships 8 bindings that share the same Rust core:
 | **Node.js** | native | napi-rs v3 | `npm install @arcships/aimux` — [npm](https://www.npmjs.com/package/@arcships/aimux) | bundled in the package, nothing to do |
 | **Python** | native | PyO3 + maturin | `pip install arcships-aimux` — [PyPI](https://pypi.org/project/arcships-aimux/) | bundled in the wheel, nothing to do |
 | **Go** | C ABI | cgo (static link) | `go get github.com/arcships/aimux/bindings/go` then `go generate` | auto-downloaded `.a` from [GitHub Releases](https://github.com/arcships/aimux/releases) |
-| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.3.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
-| **Kotlin** | C ABI | JNA | `ai.arcships:aimux-kotlin` — Maven Central · **requires JDK 17+** (0.3.0) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
-| **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central | same as Kotlin — see [guide](docs/api/java.md#install) |
+| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.6.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
+| **Kotlin** | C ABI | JNA + coroutines | `ai.arcships:aimux-kotlin` — Maven Central · Java 8+ bytecode | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
+| **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central · Java 8+ | same as Kotlin — see [guide](docs/api/java.md#install) |
 | **Flutter** | C ABI | dart:ffi | `aimux` on pub.dev — Flutter plugin, native core embedded (publisher `arcships.ai`) | iOS/Android 开箱即用，桌面端开发/测试 — see [guide](docs/api/flutter.md#install) |
-| **C / C++** | C ABI | direct link | `.so`/`.dylib`/`.dll` + `aimux-ffi.h` from [GitHub Releases](https://github.com/arcships/aimux/releases) | link against it — see [guide](docs/api/c.md#install) |
+| **C / C++** | C ABI | direct link | `.so`/`.dylib`/`.dll` + `aimux.h` from [GitHub Releases](https://github.com/arcships/aimux/releases) | link against it — see [guide](docs/api/c.md#install) |
 
 See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).
 
@@ -340,6 +378,7 @@ Tests run on cassette playback — no network and no keys. See
 | Doc | Contents |
 |-----|----------|
 | [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
+| [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) | **0.6 migration guide** — breaking changes by language |
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
 | [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) | **Adding a provider** — the three-case checklist (registry row / new protocol / single modality) |
 | [docs/api/providers.md](docs/api/providers.md) | **Provider list** — every provider with entry points and the canonical counts (generated) |

@@ -1,5 +1,9 @@
 # aimux Kotlin coroutine facade
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The independent Kotlin JNA
+> implementation is removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 The Kotlin artifact depends on `ai.arcships:aimux-java` at the same version.
 Java owns native loading, ABI/ops validation, resources, wire DTOs and error
 decoding. Kotlin adds coroutines, bounded Flow collection and a sealed exception

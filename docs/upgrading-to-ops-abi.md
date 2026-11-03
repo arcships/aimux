@@ -1,5 +1,9 @@
 # Upgrading to the ops ABI
 
+> This is the C-ABI-specific migration. For the full 0.6.0 release, including
+> the public JSON, Rust, Node, Python, Go, Java, Kotlin, Swift and Flutter API
+> changes, start with [Upgrading to 0.6](upgrading-to-0.6.md).
+
 Upgrade the native library, header, language packages and generated metadata
 together. ABI 1 (`65536`) and ops `1.0` replace the unversioned exports and
 provider-specific constructors. Rebuild native consumers against
