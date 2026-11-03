@@ -1516,6 +1516,9 @@ detailed sections below.
   `aimux_provider_utils::optional_field` is the `deserialize_with` for a zod
   `.optional()` field (absent is `None`, an explicit `null` fails the
   schema); it replaces the copies in the DeepSeek, Google and Groq options.
+  `aimux_provider_utils::parse_option_fields` validates a per-field options
+  object from `providerOptions` (returning `InvalidArgument` on invalid type
+  or field error), shared by the OpenAI chat and Anthropic option parsers.
 - `aimux_provider_utils::create_provider_stream_error` and
   `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
   `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
@@ -2139,15 +2142,6 @@ detailed sections below.
   option fails the same way, where Azure said `Invalid Azure transcription
   options: null field` and OpenAI `invalid openai provider options` without a
   cause. Checks beyond the types (ranges, patterns) keep their messages.
-- OpenAI chat and Anthropic provider options are checked against serde
-  schemas of `openaiLanguageModelChatOptions` and
-  `anthropicLanguageModelOptions` and fail the same way, where both said
-  `invalid <provider> provider options` without a cause. What a valid
-  namespace keeps is unchanged. Anthropic now parses `anthropic` and a custom
-  provider name's namespace each on its own and then merges them, as
-  `@ai-sdk/anthropic` does: an invalid `anthropic` option fails even when the
-  custom namespace sets the same key, and the error names the namespace that
-  failed.
 - The MaaS and xAI providers on Google Vertex hand the OpenAI-compatible
   package their request body change as a `CompatibleBodyRewrite` variant
   (`openai_compatible/request_rewrite.rs`) instead of setting the public
