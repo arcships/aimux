@@ -17,7 +17,8 @@ The repository root is not a Swift package; add the package under
 .package(path: "../aimux/bindings/swift"),
 .target(
     name: "YourApp",
-    dependencies: [.product(name: "Aimux", package: "aimux")]
+    // The local package identity is the directory basename (`swift`).
+    dependencies: [.product(name: "Aimux", package: "swift")]
 )
 ```
 
