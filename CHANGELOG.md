@@ -16,6 +16,12 @@ detailed sections below.
 
 ### Build
 
+- The Go binding's macOS cgo flags link `CoreFoundation`, which the
+  `iana-time-zone` dependency used by the release archive requires. The
+  Flutter publish job also builds its ABI test fixtures and Dart bridge
+  before `flutter test`, matching the CI job; both were missing from the first
+  0.6.0 tag run.
+
 - The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
   slices) are built with the `staticlib-release` profile, the `release`
   profile without LTO. One command replaces the two old ones:
