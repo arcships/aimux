@@ -100,9 +100,11 @@ For transcription, use `aimux_operation_push` and
 
 ```c
 if (err) {
+    char *message = aimux_error_message(err);
     char *json = aimux_error_json(err);
     fprintf(stderr, "code=%d message=%s json=%s\n",
-            aimux_error_code(err), aimux_error_message(err), json);
+            aimux_error_code(err), message, json);
+    aimux_free_string(message);
     aimux_free_string(json);
     aimux_error_free(err);
 }

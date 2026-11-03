@@ -10,22 +10,26 @@ the module.
 
 ## Install
 
-Add the package via SwiftPM (the git tag is the version):
+The repository root is not a Swift package; add the package under
+`bindings/swift` from a checkout as a local dependency:
 
 ```swift
-.package(url: "https://github.com/arcships/aimux", from: "0.6.0"),
+.package(path: "../aimux/bindings/swift"),
 .target(
     name: "YourApp",
     dependencies: [.product(name: "Aimux", package: "aimux")]
 )
 ```
 
+In Xcode, use **File → Add Package Dependencies → Add Local** and select
+`bindings/swift`. A remote URL dependency is not provided for 0.6.0.
+
 Provide the matching `libaimux_ffi.dylib` / XCFramework from the release on the
 loader path. For a local build:
 
 ```bash
 cargo build -p aimux-ffi --release
-swift test --disable-sandbox \
+swift test --package-path bindings/swift --disable-sandbox \
   -Xlinker -L -Xlinker "$PWD/target/release" \
   -Xlinker -rpath -Xlinker "$PWD/target/release"
 ```

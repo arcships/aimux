@@ -26,7 +26,7 @@ suspend fun generate() {
             println(result)
             aimuxFlow<StreamFrame> { executor, consumer ->
                 model.streamAsync(params, consumer, executor)
-            }.collect { frame -> println(frame.json) }
+            }.collect { frame -> println("${frame.type}: ${frame.event ?: frame.outcome}") }
         }
     }
 }

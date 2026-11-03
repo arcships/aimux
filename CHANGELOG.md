@@ -81,6 +81,15 @@ detailed sections below.
 
 ### Breaking
 
+> **Historical entries in this section.** The V4 migration landed in layers,
+> so some entries below name transitional APIs that were replaced again before
+> the final 0.6.0 cutover — for example `aimux_error_provider_code`,
+> `aimux_decide`, `aimux_provider_new`, `aimux_register_providers`, Node
+> `ProviderConfig` / native constructors, and `describeDecisionModel`. Treat
+> those names as history, not as 0.6 migration targets: the final surface is
+> the ops ABI in [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) and the
+> fourteen primitives in `aimux-ffi/include/aimux.h`.
+
 - `anthropic::types::StreamErrorData::is_retryable` is an
   `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
   `None` an absent one. `code` and `status_code` keep their types and are

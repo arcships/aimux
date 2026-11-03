@@ -24,9 +24,11 @@ packages. Do not mix 0.5 and 0.6 artifacts:
 | Manifest | the runtime's manifest `digest` must equal the generated `MANIFEST_DIGEST` |
 | Bindings | Node/Python/Go/Java/Kotlin/Swift/Flutter/C from the same release |
 
-A native load fails fast with `UnsupportedOpsVersion` (protocol code 302) when
-the ABI, ops version or manifest digest differs. Rebuild native consumers
-against the new header; 0.5 forwarding aliases were intentionally removed.
+A native load fails fast on an ABI, ops-version or manifest-digest mismatch.
+Ops calls report protocol error `302` (`UnsupportedOpsVersion`); Java and
+Kotlin surface the same failure as `IllegalStateException` while
+`Aimux.load()` validates the manifest. Rebuild native consumers against the
+new header; 0.5 forwarding aliases were intentionally removed.
 
 ## Shared changes
 
@@ -67,7 +69,19 @@ The public JSON is no longer aimux's own dialect. The important changes are:
 The generated DTOs in every binding mirror these shapes. Do not keep a
 hand-written 0.5 DTO alongside the generated one.
 
-### 3. Errors are the shared envelope, with causes
+### 3. Endpoint defaults changed
+
+- OpenAI's `language_model` and `call` select **Responses**. Use `chat` when
+  you need Chat Completions; an unchanged 0.5 call may silently move to a
+  different endpoint.
+- xAI and Hugging Face are Responses-only; their Chat Completions models are
+  removed. Call their chat endpoints through `create_openai_compatible` with
+  the vendor base URL if you need that path.
+- Azure defaults to the Responses API in 0.6.
+- Decision models use the AI SDK `DecisionModelV4` shape and the explicit
+  `decision` method; their options and result JSON changed.
+
+### 4. Errors are the shared envelope, with causes
 
 All public errors use:
 
@@ -89,12 +103,17 @@ All public errors use:
 See [error-model.md](error-model.md) for the code ranges and per-language
 mapping.
 
-### 4. Recording and replay
+### 5. Recording and replay
 
 Recording stays on schema 2 in 0.6; schema 3 and transport replay are a
-separate follow-up. Existing 0.5 recordings remain readable. The recorder,
-session store and tracing are still process-wide configuration; they are not
-created implicitly by a provider constructor.
+separate follow-up. Recordings written by 0.5 (schemas 1 and 2) still **load**,
+but 0.6 does not guarantee they **replay**: an empty legacy `provider_id`, the
+old prompt/options shapes and pre-V4 decision options/results fail at replay
+time with an error naming the incompatible field. Keep the 0.5 release
+installed if you need to replay those files, or re-record them with 0.6.
+
+The recorder, session store and tracing are still process-wide configuration;
+they are not created implicitly by a provider constructor.
 
 ## Rust
 

@@ -451,13 +451,15 @@ shared `runtime.configure` operation:
 { "logging": { "level": "debug" } }
 ```
 
-`runtime.describe` reports the requested level and whether logging is frozen.
-The same operation is available from Node, Python, Go, Java, Kotlin, Swift,
-Flutter and C; a host-installed subscriber is never overridden. The
-`AIMUX_LOG*` environment variables take precedence.
+`runtime.configure` applies the level and returns the logging state
+(`requestedLevel`, `frozen`); `runtime.describe` reports versions and
+capabilities, not logging state. The same operation is available from Node,
+Python, Go, Java, Kotlin, Swift, Flutter and C; a host-installed subscriber is
+never overridden. The `AIMUX_LOG*` environment variables take precedence.
 
-`level` accepts `off | error | warn | info | debug | trace` (empty/null
-defaults to `warn`).
+`level` is required and accepts exactly `off | error | warn | info | debug |
+trace`. Omit the `logging` member to leave logging unchanged; an empty or
+`null` level is invalid.
 
 ### What is logged
 
