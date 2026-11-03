@@ -1944,6 +1944,144 @@ mod do_stream {
         );
     }
 
+    /// An HTTP 429 and a 429 error frame inside an accepted stream carry the
+    /// same status; `origin` tells them apart (#400), so a host knows which
+    /// one could replay output already delivered if retried.
+    #[tokio::test]
+    async fn a_rate_limit_records_whether_it_came_from_the_response_or_the_stream() {
+        let limited = Canned {
+            status: 429,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: br#"{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}"#.to_vec(),
+        };
+        let (result, _) = stream_result("gpt-4o", limited, no_raw()).await;
+        let Err(AiMuxError::ApiCall(http)) = result else {
+            panic!("expected an API call error, got {:?}", result.map(|_| ()));
+        };
+        assert_eq!(http.status_code, Some(429));
+        assert_eq!(http.origin, aimux_core::ApiCallErrorOrigin::HttpResponse);
+
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}"#,
+        ]));
+        let (result, _) = stream("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+        let parts: Vec<_> = result.stream.collect().await;
+        let frame = parts
+            .iter()
+            .find_map(|part| match part {
+                Ok(StreamPart::Error {
+                    error: AiMuxError::ApiCall(error),
+                }) => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        assert_eq!(frame.status_code, Some(429));
+        assert_eq!(frame.origin, aimux_core::ApiCallErrorOrigin::StreamEvent);
+    }
+
+    /// Strict stream mode (#403): a reply that ends without a
+    /// `finish_reason` fails instead of finishing with `other`, and the tool
+    /// call it accumulated is not delivered. With the option off the tool
+    /// call is flushed at the end of the body, as in the AI SDK.
+    #[tokio::test]
+    async fn strict_stream_fails_without_a_finish_reason_and_holds_back_tool_calls() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Rome\"}"}}]},"finish_reason":null}]}"#,
+        ]));
+        let is_tool_call = |part: &Result<StreamPart, AiMuxError>| matches!(part, Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1");
+
+        let (result, _) = stream_result("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+        let lenient: Vec<_> = result.unwrap().stream.collect().await;
+        assert!(lenient.iter().any(is_tool_call), "{lenient:?}");
+
+        let (result, _) = stream_result(
+            "gpt-4o",
+            stream_chunks(&chunks),
+            json!({ "includeRawChunks": false, "strictStream": true }),
+        )
+        .await;
+        let strict: Vec<_> = result.unwrap().stream.collect().await;
+        assert!(!strict.iter().any(is_tool_call), "{strict:?}");
+        assert!(
+            !strict
+                .iter()
+                .any(|part| matches!(part, Ok(StreamPart::Finish { .. }))),
+            "{strict:?}"
+        );
+        let Some(Err(AiMuxError::Other { message, .. })) = strict.last() else {
+            panic!("expected the strict stream to fail: {strict:?}");
+        };
+        assert_eq!(
+            message,
+            "Strict stream: the stream ended without a finish_reason"
+        );
+    }
+
+    /// Strict stream mode (#403): a complete reply finishes as usual; its
+    /// tool call is delivered right before `Finish`.
+    #[tokio::test]
+    async fn strict_stream_delivers_a_complete_reply() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Rome\"}"}}]},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+        ]));
+        let (result, _) = stream_result(
+            "gpt-4o",
+            stream_chunks(&chunks),
+            json!({ "includeRawChunks": false, "strictStream": true }),
+        )
+        .await;
+        let parts: Vec<_> = result.unwrap().stream.collect().await;
+        let n = parts.len();
+        assert!(n >= 2, "{parts:?}");
+        assert!(
+            matches!(&parts[n - 2], Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1"),
+            "{parts:?}"
+        );
+        assert!(
+            matches!(
+                &parts[n - 1],
+                Ok(StreamPart::Finish { finish_reason, .. })
+                    if finish_reason.unified == aimux_core::types::FinishReasonUnified::ToolCalls
+            ),
+            "{parts:?}"
+        );
+    }
+
+    /// A chunk with `"error": null` is a normal chunk (#397). Upstream's chunk
+    /// schema is a union of the chunk object and `openaiErrorDataSchema`
+    /// (openai-chat-api.ts); a chunk with `choices` takes the first branch,
+    /// which drops the unknown `error` key, so `'error' in value` is false.
+    /// Gateways put the null member on the first chunk and the usage chunk;
+    /// on the first chunk it used to fail the whole call with a 500.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"error":null}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"id":"x","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"error":null}"#,
+        ]));
+
+        let (parts, _) = stream_parts("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+
+        let kinds: Vec<&str> = parts
+            .iter()
+            .map(|part| part["type"].as_str().unwrap_or("stream-error"))
+            .collect();
+        assert!(!kinds.contains(&"error"), "{parts:?}");
+        assert!(!kinds.contains(&"stream-error"), "{parts:?}");
+        assert!(
+            parts.contains(&json!({ "delta": "hello", "id": "0", "type": "text-delta" })),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doStream › should stream text deltas
     #[tokio::test]
     async fn should_stream_text_deltas() {

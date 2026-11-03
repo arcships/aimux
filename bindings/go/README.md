@@ -1,5 +1,9 @@
 # aimux-go
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. Provider-specific
+> constructors are removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 Go bindings for the operation C ABI. Requires cgo, Go 1.24+, the matching
 generated `aimux-ffi/include/aimux.h`, and a matching Rust library.
 Provider-specific constructors have been replaced by operation calls.

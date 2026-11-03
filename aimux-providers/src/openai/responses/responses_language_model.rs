@@ -361,17 +361,21 @@ impl LanguageModel for OpenAIResponsesModel {
             body.clone(),
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
+            options.strict_stream == Some(true),
             ResponsesToolNames::new(options.tools.as_deref()),
             prompt_approval_tool_call_ids(options),
         )?;
 
-        Ok(StreamResult {
-            stream,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream,
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -1191,6 +1195,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
             provider_code,
             response_body: Some(raw_body.to_string()),
             response_headers: Some(response_headers.clone()),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
                 message,
                 request_url,
@@ -1235,6 +1240,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                             status_code: Some(200),
                             response_body: Some(raw_body.to_string()),
                             response_headers: Some(response_headers.clone()),
+                            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                             ..ApiCallError::new(
                                 format!(
                                     "Invalid JSON response: message content part of type {} is not output_text",
@@ -1883,7 +1889,8 @@ fn generate_source_id() -> String {
 ///
 /// # Errors
 ///
-/// An early `error` / `response.failed` event returns an `ApiCall` setup error;
+/// An early `error`, or `response.failed` with a non-null error, returns an
+/// `ApiCall` setup error, as [`read_until_output`] does;
 /// malformed events yield parse-error items and do not end the stream.
 // This reducer is shared by OpenAI, Azure, and Codex. Keeping the wire inputs
 // explicit is clearer than introducing a second context object used nowhere
@@ -1913,6 +1920,7 @@ where
         request_body,
         response_headers,
         false,
+        false,
     )
 }
 
@@ -1927,6 +1935,7 @@ pub(crate) fn build_responses_event_stream_with_raw<S>(
     request_body: Value,
     response_headers: HashMap<String, String>,
     include_raw_chunks: bool,
+    strict: bool,
 ) -> Result<ResponsesEventStream, AiMuxError>
 where
     S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
@@ -1941,6 +1950,7 @@ where
         request_body,
         response_headers,
         include_raw_chunks,
+        strict,
         ResponsesToolNames::default(),
         HashMap::new(),
     )
@@ -1957,6 +1967,7 @@ pub(crate) fn build_responses_event_stream_with_tools<S>(
     request_body: Value,
     response_headers: HashMap<String, String>,
     include_raw_chunks: bool,
+    strict: bool,
     tool_names: ResponsesToolNames,
     prompt_approval_tool_call_ids: HashMap<String, String>,
 ) -> Result<ResponsesEventStream, AiMuxError>
@@ -1966,7 +1977,7 @@ where
     // Peek at the first SSE event to detect early errors (before any output).
     if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if etype == "error" || etype == "response.failed" {
+        if etype == "error" || (etype == "response.failed" && !val["response"]["error"].is_null()) {
             return Err(crate::openai::stream_error::openai_stream_error(
                 val,
                 &request_url,
@@ -1986,6 +1997,7 @@ where
                 url: request_url,
                 request_body,
                 response_headers,
+                strict,
                 ..StreamContext::default()
             },
             provider_key,
@@ -2860,7 +2872,11 @@ impl Transformer for OpenAIResponsesStream {
                             {
                                 *final_reasoning_context = Some(ctx.clone());
                             }
-                            if !*stream_errored && resp_obj.get("error").is_some() {
+                            // `response.error` is `object | null`: only a
+                            // non-null one is an error (upstream's `!= null`).
+                            if !*stream_errored
+                                && resp_obj.get("error").is_some_and(|error| !error.is_null())
+                            {
                                 *stream_errored = true;
                                 controller.enqueue(StreamPart::Error {
                                     error: crate::openai::stream_error::openai_stream_error(
@@ -2908,6 +2924,13 @@ impl Transformer for OpenAIResponsesStream {
     }
 
     fn flush(self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some() || self.stream_errored,
+            "a response.completed, response.incomplete or response.failed event",
+            controller,
+        ) {
+            return;
+        }
         // Build provider metadata for the Finish part: { <provider_key>: {
         // responseId, serviceTier?, reasoningContext? } }. Mirrors the TS
         // flush() providerMetadata, which carries `service_tier` and
