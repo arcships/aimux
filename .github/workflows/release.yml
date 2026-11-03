@@ -605,6 +605,15 @@ jobs:
           cp -r mobile-artifacts/aimux_ffi.xcframework bindings/flutter/ios/
       - name: Build host FFI library (for tests)
         run: cargo build -p aimux-ffi --release
+      # The Dart ABI tests load a deterministic fixture and the Dart bridge.
+      # CI builds both in its flutter-binding job; the release job needs the
+      # same preparation before `flutter test`.
+      - name: Build the ABI test fixtures and the Dart bridge
+        working-directory: bindings/flutter
+        run: |
+          python3 tool/build_test_fixture.py
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
+            -o .dart_tool/native/libaimux_dart.so
       - name: Test
         working-directory: bindings/flutter
         env:
