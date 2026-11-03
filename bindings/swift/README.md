@@ -1,5 +1,8 @@
 # Aimux Swift
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 provider constructors
+> are removed. See [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 The Swift package uses the versioned C ABI and its generated header. Link
 `aimux_ffi`, or provide it in a packaged XCFramework. Generated `AimuxOps`
 constants are part of the Swift module.

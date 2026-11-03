@@ -5,7 +5,14 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-03
+
+**Breaking release.** 0.6.0 moves every binding onto the shared operations ABI
+(ABI 1 / ops 1.0) and aligns the public JSON with the Vercel AI SDK V4.
+Provider-specific constructors, the old error getters and the hand-written
+binding DTOs are removed; errors now carry the shared envelope and a native
+cause chain. See the [0.6 upgrade guide](docs/upgrading-to-0.6.md) and the
+detailed sections below.
 
 ### Build
 
@@ -73,6 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `maturin build --release` pick the profile up; no command changes.
 
 ### Breaking
+
+> **Historical entries in this section.** The V4 migration landed in layers,
+> so some entries below name transitional APIs that were replaced again before
+> the final 0.6.0 cutover — for example `aimux_error_provider_code`,
+> `aimux_decide`, `aimux_provider_new`, `aimux_register_providers`, Node
+> `ProviderConfig` / native constructors, and `describeDecisionModel`. Treat
+> those names as history, not as 0.6 migration targets: the final surface is
+> the ops ABI in [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) and the
+> fourteen primitives in `aimux-ffi/include/aimux.h`.
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
   `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
@@ -1517,6 +1533,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `moonshotai`, `kimi` and `zenmux` presets send `max_output_tokens` as
+  `max_completion_tokens` instead of `max_tokens` (`profile.max_tokens_key` in
+  `provider_registry.json`). Moonshot's chat API documents `max_tokens` as
+  deprecated in favor of `max_completion_tokens`; ZenMux documents `max_tokens`
+  as unsupported (#401). The discontinued `moonshot-v1-*` models remain listed
+  until a separate registry cleanup.
 - The Amazon Bedrock event-stream decoder rejects a frame that declares more
   than 24 MiB (`MAX_EVENT_STREAM_FRAME_LEN`, the service-side maximum of
   AWS's `aws-c-event-stream`) as soon as its length is read. It used to
@@ -2698,7 +2720,8 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
-[Unreleased]: https://github.com/arcships/aimux/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/arcships/aimux/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arcships/aimux/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/arcships/aimux/compare/v0.2.0...v0.2.1
