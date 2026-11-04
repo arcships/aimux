@@ -8,6 +8,7 @@ use aimux_core::language_model_message::{
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
 use aimux_core::shared::FileData;
+use aimux_core::types::Warning;
 use aimux_provider_utils::resolve_full_media_type;
 
 fn is_image(media_type: &str) -> bool {
@@ -105,6 +106,7 @@ fn convert_assistant_message(content: &[AssistantPart]) -> Value {
 /// `UnsupportedFunctionality` for a non-image file or an undetectable image subtype.
 pub(crate) fn convert_to_groq_chat_messages(
     prompt: &LanguageModelPrompt,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let mut messages = Vec::new();
 
@@ -140,7 +142,7 @@ pub(crate) fn convert_to_groq_chat_messages(
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": aimux_provider_utils::tool_result_to_content(output),
+                        "content": aimux_provider_utils::tool_result_to_content(output, warnings),
                     }));
                 }
             }

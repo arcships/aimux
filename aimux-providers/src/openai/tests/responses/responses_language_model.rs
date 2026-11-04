@@ -8675,7 +8675,8 @@ mod openai_responses_language_model {
         }
 
         /// aimux #466: refusal deltas stream as text; `refusal.done` adds the
-        /// whole refusal only to a part that streamed no delta.
+        /// whole refusal only to a part that streamed no delta, and only once
+        /// (every `done` is sent twice here).
         #[tokio::test]
         async fn should_stream_refusals_as_text() {
             let message =
@@ -8685,7 +8686,8 @@ mod openai_responses_language_model {
                     .iter()
                     .map(|delta| json!({"type": "response.refusal.delta", "item_id": "refusal-1", "output_index": 0, "content_index": content_index, "delta": delta}))
                     .collect();
-                events.push(json!({"type": "response.refusal.done", "item_id": "refusal-1", "output_index": 0, "content_index": content_index, "refusal": done}));
+                let done = json!({"type": "response.refusal.done", "item_id": "refusal-1", "output_index": 0, "content_index": content_index, "refusal": done});
+                events.extend([done.clone(), done]);
                 events
             };
             let mut events = vec![
@@ -8749,6 +8751,61 @@ mod openai_responses_language_model {
                 .map(|part| part["delta"].clone())
                 .collect();
             assert_eq!(deltas, vec![json!("Cannot comply.")]);
+        }
+
+        /// aimux #466 with #468: a refusal part beside an `output_text` part
+        /// is its own text block, keyed by `(item_id, content_index)`, so the
+        /// refusal does not land in the text; checked on dim's strict stream.
+        #[tokio::test]
+        async fn should_stream_a_refusal_part_as_its_own_text_block() {
+            let message =
+                json!({"type": "message", "id": "msg-1", "role": "assistant", "content": []});
+            let events = [
+                json!({"type": "response.created", "response": {"id": "resp-1", "created_at": 1, "model": "gpt-4o"}}),
+                json!({"type": "response.output_item.added", "output_index": 0, "item": message}),
+                json!({"type": "response.content_part.added", "item_id": "msg-1", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}}),
+                json!({"type": "response.output_text.delta", "item_id": "msg-1", "output_index": 0, "content_index": 0, "delta": "Partly."}),
+                json!({"type": "response.content_part.added", "item_id": "msg-1", "output_index": 0, "content_index": 1, "part": {"type": "refusal", "refusal": ""}}),
+                json!({"type": "response.refusal.delta", "item_id": "msg-1", "output_index": 0, "content_index": 1, "delta": "Cannot comply."}),
+                json!({"type": "response.refusal.done", "item_id": "msg-1", "output_index": 0, "content_index": 1, "refusal": "Cannot comply."}),
+                json!({"type": "response.output_item.done", "output_index": 0, "item": message}),
+                json!({"type": "response.completed", "response": {"incomplete_details": null, "usage": {"input_tokens": 3, "output_tokens": 2}}}),
+            ];
+            let mock = sse_mock(
+                events
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect(),
+            );
+            let stream = stream_do(
+                &mock,
+                "gpt-4o",
+                json!({"prompt": stream_test_prompt(), "strictStream": true}),
+            )
+            .await
+            .unwrap();
+            let parts = stream_collect(stream).await;
+            assert!(stream_find(&parts, "error").is_none(), "{parts:?}");
+            let text: Vec<_> = parts
+                .iter()
+                .filter(|part| {
+                    part["type"]
+                        .as_str()
+                        .is_some_and(|kind| kind.starts_with("text-"))
+                })
+                .map(|part| json!([part["type"], part["id"], part.get("delta")]))
+                .collect();
+            assert_eq!(
+                text,
+                vec![
+                    json!(["text-start", "msg-1", null]),
+                    json!(["text-delta", "msg-1", "Partly."]),
+                    json!(["text-end", "msg-1", null]),
+                    json!(["text-start", "msg-1:1", null]),
+                    json!(["text-delta", "msg-1:1", "Cannot comply."]),
+                    json!(["text-end", "msg-1:1", null]),
+                ]
+            );
         }
 
         /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doStream › should preserve async mode on streamed function calls

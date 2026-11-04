@@ -19,7 +19,8 @@ fn convert_with(
     prompt: &LanguageModelPrompt,
     mode: SystemMessageMode,
 ) -> Result<Value, AiMuxError> {
-    convert_prompt_to_openai_messages_with_mode_fallible(prompt, mode).map(Value::Array)
+    convert_prompt_to_openai_messages_with_mode_fallible(prompt, mode, &mut Vec::new())
+        .map(Value::Array)
 }
 
 fn convert(prompt: &LanguageModelPrompt) -> Result<Value, AiMuxError> {
@@ -838,6 +839,7 @@ mod older_convert {
         let messages = convert_prompt_to_openai_messages_with_mode_fallible(
             &prompt,
             SystemMessageMode::System,
+            &mut Vec::new(),
         )
         .unwrap();
         messages[0]["tool_calls"][0]["function"]["arguments"].clone()

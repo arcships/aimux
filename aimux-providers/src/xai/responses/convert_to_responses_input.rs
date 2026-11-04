@@ -199,7 +199,7 @@ pub fn convert_to_xai_responses_input(
                     else {
                         continue;
                     };
-                    let output_value = convert_tool_output(output)?;
+                    let output_value = convert_tool_output(output, &mut warnings)?;
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_call_id,
@@ -213,7 +213,10 @@ pub fn convert_to_xai_responses_input(
     Ok((input, warnings))
 }
 
-fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
+fn convert_tool_output(
+    output: &ToolResultOutput,
+    warnings: &mut Vec<Warning>,
+) -> Result<Value, AiMuxError> {
     match output {
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             Ok(json!(reason.as_deref().unwrap_or("tool execution denied")))
@@ -244,7 +247,9 @@ fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
             }
             Ok(json!(parts))
         }
-        _ => Ok(aimux_provider_utils::tool_result_to_content(output)),
+        _ => Ok(aimux_provider_utils::tool_result_to_content(
+            output, warnings,
+        )),
     }
 }
 

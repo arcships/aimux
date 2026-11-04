@@ -381,6 +381,7 @@ pub(crate) fn build_request_body(
             metadata_key: &metadata_key,
             supports_multi_part_tool_content: chat.supports_multi_part_tool_content,
         },
+        &mut warnings,
     )?;
     body.insert("messages".into(), Value::Array(messages));
 
@@ -520,7 +521,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         let mut content = Vec::new();
         content.extend(content_parts(choice.message.content.as_ref()));
-        content.extend(refusal_text(choice.message.refusal));
+        content.extend(refusal_text(choice.message.refusal.as_ref()));
         let reasoning = choice
             .message
             .reasoning_content
@@ -807,7 +808,7 @@ impl Transformer for OpenAICompatibleChatStream {
                 }));
             }
             delta_content.extend(content_parts(choice.delta.content.as_ref()));
-            delta_content.extend(refusal_text(choice.delta.refusal));
+            delta_content.extend(refusal_text(choice.delta.refusal.as_ref()));
             for part in delta_content {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
@@ -983,12 +984,13 @@ struct PendingToolCall {
 }
 
 /// A refusal as visible text. aimux extension (#461): the AI SDK does not
-/// read `refusal`.
-fn refusal_text(refusal: Option<String>) -> Option<GenerateContent> {
+/// read `refusal`. Anything but a non-empty string is no refusal.
+fn refusal_text(refusal: Option<&Value>) -> Option<GenerateContent> {
     refusal
+        .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
         .map(|text| GenerateContent::Text {
-            text,
+            text: text.to_owned(),
             provider_metadata: None,
         })
 }

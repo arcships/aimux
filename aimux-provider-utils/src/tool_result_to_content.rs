@@ -8,13 +8,18 @@
 
 use aimux_core::language_model_message::{ToolResultContent, ToolResultOutput};
 use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
 /// The tool message content upstream's chat converters build: the text of a
 /// text or error-text output, the denial reason (or `Tool call execution
 /// denied.`), or `JSON.stringify` of a JSON, error-JSON or content output.
+///
+/// A content output's error flag has no place in that string; `warnings`
+/// receives a warning for it (see [`warn_tool_result_error_flag`]).
 #[must_use]
-pub fn tool_result_to_content(output: &ToolResultOutput) -> Value {
+pub fn tool_result_to_content(output: &ToolResultOutput, warnings: &mut Vec<Warning>) -> Value {
+    warn_tool_result_error_flag(output, warnings);
     Value::String(match output {
         ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
             value.clone()
@@ -27,6 +32,23 @@ pub fn tool_result_to_content(output: &ToolResultOutput) -> Value {
         }
         ToolResultOutput::Content { value, .. } => tool_result_content_value(value).to_string(),
     })
+}
+
+/// aimux extension (#470): upstream has no error flag on a `content` output,
+/// so a chat-style provider sends a failed result as regular content. Warn
+/// once per result whose `isError` is set, so the loss is not silent.
+pub fn warn_tool_result_error_flag(output: &ToolResultOutput, warnings: &mut Vec<Warning>) {
+    if let ToolResultOutput::Content {
+        is_error: Some(true),
+        ..
+    } = output
+    {
+        warnings.push(Warning::Other {
+            message: "The error flag (isError) of a tool result is not representable on this \
+                      provider; the result is sent as regular tool content."
+                .into(),
+        });
+    }
 }
 
 /// The content parts of a `content` output as upstream serializes them with
