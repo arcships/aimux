@@ -14,8 +14,8 @@
 //! - `toMatchSnapshot()` values are `snapshots/<test name>.json`, converted
 //!   from the vitest `.snap` file (their text matches the fixtures).
 //! - #472 goes beyond the AI SDK: text block ids are `text-{item_id}:{index}`
-//!   with `contentIndex` in the start metadata, and function calls carry
-//!   their item id as `itemId`.
+//!   with `itemId` and `contentIndex` in the start metadata, and function
+//!   calls carry their item id as `itemId`.
 //!
 //! The last top-level cases are the older Responses subset (formerly
 //! `tests/xai_upstream_e2e_test.rs`), on the same [`MockFetch`].
@@ -3792,7 +3792,7 @@ mod xai_responses_language_model {
                             "toolName": "image_generation",
                             "type": "tool-result"
                         }),
-                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-start", "providerMetadata": { "xai": { "contentIndex": 0 } } }),
+                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-start", "providerMetadata": { "xai": { "itemId": "msg_00000000-0000-4000-8000-000000000002", "contentIndex": 0 } } }),
                         json!({ "delta": "Here's", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
                         json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
                         json!({ "delta": " serene", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
@@ -3940,7 +3940,7 @@ mod xai_responses_language_model {
                             "toolName": "image_generation",
                             "type": "tool-result"
                         }),
-                        json!({ "id": "text-msg_123:0", "type": "text-start", "providerMetadata": { "xai": { "contentIndex": 0 } } }),
+                        json!({ "id": "text-msg_123:0", "type": "text-start", "providerMetadata": { "xai": { "itemId": "msg_123", "contentIndex": 0 } } }),
                         json!({
                             "delta": "Here is your origami fox.",
                             "id": "text-msg_123:0",
@@ -5602,7 +5602,7 @@ async fn message_content_parts_keep_their_own_text_blocks() {
     );
     assert_eq!(
         first_part(&parts, "text-start")["providerMetadata"],
-        json!({"xai": {"contentIndex": 0}})
+        json!({"xai": {"itemId": "msg_1", "contentIndex": 0}})
     );
 }
 

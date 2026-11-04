@@ -1,6 +1,8 @@
 //! Prompt to the Responses `input` array (`convert-to-xai-responses-input.ts`),
 //! with the image `detail` option of `xai-file-part-options.ts`.
 
+use std::collections::HashMap;
+
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
@@ -86,6 +88,10 @@ pub fn convert_to_xai_responses_input(
                 input.push(json!({ "role": "user", "content": content_parts }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
+                // The text parts of one message item become one input item,
+                // keyed by their `itemId` (#472; the AI SDK sends one item
+                // per part).
+                let mut text_items: HashMap<String, usize> = HashMap::new();
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -98,11 +104,26 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
-                            let mut msg_obj = json!({ "role": "assistant", "content": text });
-                            if let Some(id) = id {
-                                msg_obj["id"] = json!(id);
+                            let text_part = json!({ "type": "output_text", "text": text });
+                            match id {
+                                Some(id) => match text_items.get(&id) {
+                                    Some(&index) => input[index]["content"]
+                                        .as_array_mut()
+                                        .expect("a grouped text item has a content array")
+                                        .push(text_part),
+                                    None => {
+                                        text_items.insert(id.clone(), input.len());
+                                        input.push(json!({
+                                            "role": "assistant",
+                                            "id": id,
+                                            "content": [text_part],
+                                        }));
+                                    }
+                                },
+                                None => {
+                                    input.push(json!({ "role": "assistant", "content": text }));
+                                }
                             }
-                            input.push(msg_obj);
                         }
                         AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,

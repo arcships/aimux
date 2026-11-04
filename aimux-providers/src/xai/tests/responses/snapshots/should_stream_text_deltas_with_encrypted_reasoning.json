@@ -673,6 +673,7 @@
     "type": "text-start",
     "providerMetadata": {
       "xai": {
+        "itemId": "msg_0b824fe9-3250-2588-0bbf-0810402fc822",
         "contentIndex": 0
       }
     }

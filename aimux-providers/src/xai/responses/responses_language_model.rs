@@ -165,7 +165,8 @@ fn text_block_id(item_id: &str, content_index: u64) -> String {
 }
 
 /// Open the text block of a content part, ending the open block of the same
-/// message's previous part first.
+/// message's previous part first. The start carries the item id, which the
+/// replay groups the message's parts by.
 fn start_text_block(
     item_id: &str,
     content_index: u64,
@@ -182,11 +183,13 @@ fn start_text_block(
     });
     let block_id = text_block_id(item_id, content_index);
     content_blocks.push(block_id.clone());
+    let mut meta = json!({ "contentIndex": content_index });
+    if !item_id.is_empty() {
+        meta["itemId"] = json!(item_id);
+    }
     controller.enqueue(StreamPart::TextStart {
         id: block_id,
-        provider_metadata: Some(crate::xai::options::xai_metadata(
-            json!({ "contentIndex": content_index }),
-        )),
+        provider_metadata: Some(crate::xai::options::xai_metadata(meta)),
     });
 }
 

@@ -334,6 +334,40 @@ mod convert_to_xai_responses_input {
             );
         }
 
+        /// #472: the text parts of one message item replay as one input
+        /// item with one `output_text` per part, not one item per part.
+        #[test]
+        fn groups_text_parts_of_one_item() {
+            let part = |text: &str, index: u64| {
+                json!({
+                    "type": "text",
+                    "text": text,
+                    "providerOptions": { (NAMESPACE): { "itemId": "msg_1", "contentIndex": index } },
+                })
+            };
+            let (input, _) = convert(&parse_prompt(json!([
+                {
+                    "role": "assistant",
+                    "content": [part("before", 0), part("after", 1), part("only-in-done", 2)],
+                },
+            ])));
+
+            assert_eq!(
+                input,
+                json!([
+                    {
+                        "role": "assistant",
+                        "id": "msg_1",
+                        "content": [
+                            { "type": "output_text", "text": "before" },
+                            { "type": "output_text", "text": "after" },
+                            { "type": "output_text", "text": "only-in-done" },
+                        ],
+                    },
+                ])
+            );
+        }
+
         /// upstream: @ai-sdk/xai src/responses/convert-to-xai-responses-input.test.ts › convertToXaiResponsesInput › assistant messages › should handle client-side tool-call parts
         #[test]
         fn should_handle_client_side_tool_call_parts() {
