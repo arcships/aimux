@@ -1554,16 +1554,12 @@ fn writer_loop(
                     damaged.note_dropped_evicted_event(&call_id);
                     continue;
                 }
-                entry_or_init(
-                    &mut w,
-                    &mut pending,
-                    &mut pending_order,
-                    &mut evicted_calls,
-                    &call_id,
-                    &damaged,
-                    &write_error,
-                )
-                .transport_closed = true;
+                // RecordingOutcomeStream 与 HTTP 层各发一次;已写出的 call 不再
+                // 建空占位(#460)。
+                let Some(rec) = pending.get_mut(&call_id) else {
+                    continue;
+                };
+                rec.transport_closed = true;
                 try_finalize(
                     &mut w,
                     &mut pending,
@@ -2258,8 +2254,11 @@ impl Recorder for RingRecorder {
 
     fn record_transport_closed(&self, call_id: &str) {
         let mut inner = self.inner.lock().unwrap();
-        inner.entry_or_init_bounded(call_id).transport_closed = true;
-        inner.finalize(call_id);
+        // 同 JSONL writer:已收进 completed 的 call 不再建空占位(#460)。
+        if let Some(rec) = inner.pending.get_mut(call_id) {
+            rec.transport_closed = true;
+            inner.finalize(call_id);
+        }
     }
 
     /// 内存模式:把 barrier 已满足的 pending 全部收进 completed(对应
@@ -2989,6 +2988,34 @@ mod tests {
         );
         assert!(parsed.input.prompt.is_empty());
         assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #460: the HTTP layer closes the transport again after
+    /// `RecordingOutcomeStream` has finalized the call; that must not write a
+    /// second, empty line.
+    #[test]
+    fn a_second_transport_close_writes_no_extra_line() {
+        let dir =
+            std::env::temp_dir().join(format!("aimux-rec-second-close-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        rec.record_outcome("call-twice", &success_outcome());
+        rec.record_transport_closed("call-twice");
+        rec.record_transport_closed("call-twice");
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 1, "{content}");
+
+        let ring = RingRecorder::new();
+        ring.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        ring.record_outcome("call-twice", &success_outcome());
+        ring.record_transport_closed("call-twice");
+        ring.record_transport_closed("call-twice");
+        assert_eq!(ring.pending_count(), 0);
+        assert_eq!(ring.completed().len(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
