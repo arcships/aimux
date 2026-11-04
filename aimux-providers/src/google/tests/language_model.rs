@@ -8078,8 +8078,8 @@ mod signed_text_parts {
     }
 }
 
-// Not an upstream case: the chunk whose candidate carries `finishReason` ends
-// the stream, whether or not the body ends with it (#469).
+// Not an upstream case: the stream ends at the finish reason and its usage,
+// whether or not the body ends with them (#469).
 mod terminal_chunk {
     use std::time::Duration;
 
@@ -8141,9 +8141,17 @@ mod terminal_chunk {
     }
 
     #[tokio::test]
-    async fn chunks_after_the_terminal_chunk_are_not_read() {
+    async fn the_stream_ends_at_the_usage_after_the_finish_reason() {
+        let mut finish_without_usage = terminal_chunk("done");
+        finish_without_usage
+            .as_object_mut()
+            .unwrap()
+            .remove("usageMetadata");
+        let usage =
+            json!({ "promptTokenCount": 1, "candidatesTokenCount": 3, "totalTokenCount": 4 });
         let mock = sse_stream_mock(vec![
-            sse_data_chunk(&terminal_chunk("done")),
+            sse_data_chunk(&finish_without_usage),
+            sse_data_chunk(&json!({ "usageMetadata": usage })),
             sse_data_chunk(&terminal_chunk("late")),
         ]);
         let model = stream_test_provider(&mock).chat("gemini-pro");
@@ -8153,7 +8161,9 @@ mod terminal_chunk {
         let deltas = stream_events_of_type(&events, &["text-delta"]);
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0]["delta"], "done");
-        assert_eq!(stream_events_of_type(&events, &["finish"]).len(), 1);
+        let finishes = stream_events_of_type(&events, &["finish"]);
+        assert_eq!(finishes.len(), 1);
+        assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
         assert_eq!(events.last().unwrap()["type"], "finish");
     }
 }

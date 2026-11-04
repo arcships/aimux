@@ -632,10 +632,6 @@ impl GoogleLanguageModelStream {
 
         if let Some(reason) = candidate.finish_reason.as_deref() {
             self.final_finish_reason = Some(parse_finish_reason(reason, self.has_tool_calls));
-            // The terminal chunk completes the turn, and the body may stay
-            // open (keep-alive, proxies). Upstream waits for its end (#469).
-            self.finish(controller);
-            controller.terminate();
         }
     }
 }
@@ -801,7 +797,18 @@ impl Transformer for GoogleLanguageModelStream {
         };
 
         match event {
-            Ok(GoogleStreamEvent::Chunk(chunk)) => self.transform_chunk(chunk, controller),
+            Ok(GoogleStreamEvent::Chunk(chunk)) => {
+                let has_usage = chunk.usage_metadata.is_some();
+                self.transform_chunk(chunk, controller);
+                // The turn is complete once it has a finish reason (or a
+                // confirmed prompt block) and the usage at or after it, which
+                // may come in a later chunk; the body itself may stay open
+                // (keep-alive, proxies). Upstream waits for its end (#469).
+                if has_usage && self.final_finish_reason.is_some() {
+                    self.finish(controller);
+                    controller.terminate();
+                }
+            }
             Ok(GoogleStreamEvent::Error(error)) => {
                 controller.enqueue(StreamPart::Error {
                     error: super::error::google_stream_error(
