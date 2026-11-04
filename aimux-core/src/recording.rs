@@ -1742,10 +1742,12 @@ fn write_ready_all(
 
 fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
     match serde_json::to_string(&rec) {
-        Ok(line) => {
+        Ok(mut line) => {
             // 每行落盘,保证崩溃前已写行可见;失败记入粘性错误槽,
-            // 由 try_flush 显式暴露。
-            if let Err(e) = writeln!(w, "{line}").and_then(|()| w.flush()) {
+            // 由 try_flush 显式暴露。记录连同换行一次写出:超过 BufWriter
+            // 容量的行若分两次写,同目录上重叠的 recorder 会插进中间(#465)。
+            line.push('\n');
+            if let Err(e) = w.write_all(line.as_bytes()).and_then(|()| w.flush()) {
                 note_write_error(write_error, &e);
             }
         }
@@ -3016,6 +3018,44 @@ mod tests {
         ring.record_transport_closed("call-twice");
         assert_eq!(ring.pending_count(), 0);
         assert_eq!(ring.completed().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #465: two recorders on one directory write records larger than the
+    /// `BufWriter` capacity; no line may be split by the other's writes.
+    #[test]
+    fn overlapping_recorders_never_interleave_large_records() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-overlap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recorders: Vec<_> = (0..2)
+            .map(|_| JsonlRecorder::try_new(&dir).unwrap())
+            .collect();
+        let options = CallOptions::new(
+            crate::language_model_message::convert_to_language_model_prompt(
+                &[crate::message::ModelMessage::user("x".repeat(16_384))],
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        for index in 0..128 {
+            for (writer, recorder) in recorders.iter().enumerate() {
+                let id = format!("writer-{writer}-{index}");
+                recorder.record_input(&id, &options, "openai", "test-model");
+                recorder.record_outcome(&id, &success_outcome());
+                recorder.record_transport_closed(&id);
+            }
+        }
+        for recorder in &recorders {
+            recorder.try_flush().unwrap();
+        }
+        drop(recorders);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 256);
+        for line in content.lines() {
+            serde_json::from_str::<Recording>(line).unwrap();
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
