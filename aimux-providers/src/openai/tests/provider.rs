@@ -938,8 +938,9 @@ mod older_factory {
             usage.input_tokens.no_cache,
             n(&total["inputTokenDetails"]["noCacheTokens"])
         );
-        // #478: the recording reports no `prompt_tokens_details`, so the cache
-        // read count stays unknown where the AI SDK reports 0.
+        // #478: the recording reports no `prompt_tokens_details` or
+        // `completion_tokens_details`, so the cache read and reasoning counts
+        // stay unknown where the AI SDK reports 0.
         assert_eq!(total["inputTokenDetails"]["cacheReadTokens"], json!(0));
         assert_eq!(usage.input_tokens.cache_read, None);
         assert_eq!(usage.output_tokens.total, n(&total["outputTokens"]));
@@ -947,10 +948,8 @@ mod older_factory {
             usage.output_tokens.text,
             n(&total["outputTokenDetails"]["textTokens"])
         );
-        assert_eq!(
-            usage.output_tokens.reasoning,
-            n(&total["outputTokenDetails"]["reasoningTokens"])
-        );
+        assert_eq!(total["outputTokenDetails"]["reasoningTokens"], json!(0));
+        assert_eq!(usage.output_tokens.reasoning, None);
         assert_eq!(
             usage.input_tokens.total.unwrap() + usage.output_tokens.total.unwrap(),
             n(&total["totalTokens"]).unwrap()
