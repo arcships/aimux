@@ -9,6 +9,9 @@ use aimux_core::shared::{JsonObject, SharedProviderOptions};
 pub(crate) const NAMESPACE: &str = "elevenlabs";
 
 /// The ElevenLabs options in a providerOptions map.
+///
+/// Only the realtime transcription path reads it.
+#[cfg(feature = "realtime")]
 pub(crate) fn elevenlabs_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> Option<&JsonObject> {
