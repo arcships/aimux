@@ -8078,6 +8078,86 @@ mod signed_text_parts {
     }
 }
 
+// Not an upstream case: the chunk whose candidate carries `finishReason` ends
+// the stream, whether or not the body ends with it (#469).
+mod terminal_chunk {
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    fn terminal_chunk(text: &str) -> Value {
+        json!({
+            "candidates": [{
+                "content": { "role": "model", "parts": [{ "text": text }] },
+                "finishReason": "STOP",
+                "index": 0,
+            }],
+            "usageMetadata": { "promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2 },
+        })
+    }
+
+    #[tokio::test]
+    async fn the_terminal_chunk_finishes_while_the_body_stays_open() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+            }
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
+            let body = sse_data_chunk(&terminal_chunk("done"));
+            socket
+                .write_all(format!("{head}{body}").as_bytes())
+                .await
+                .unwrap();
+            socket.flush().await.unwrap();
+            // Keep the body open past the wait below.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+        let model = create_google(GoogleProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(format!("http://{address}/v1beta")),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat("gemini-pro");
+
+        let result = model
+            .do_stream(&stream_call_options_with(json!({})))
+            .await
+            .expect("doStream succeeds");
+        let parts = tokio::time::timeout(Duration::from_secs(2), stream_parts_of(result)).await;
+        server.abort();
+
+        let parts = parts.expect("the stream ends at the terminal chunk");
+        assert_eq!(parts.last().unwrap()["type"], "finish");
+    }
+
+    #[tokio::test]
+    async fn chunks_after_the_terminal_chunk_are_not_read() {
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&terminal_chunk("done")),
+            sse_data_chunk(&terminal_chunk("late")),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        let deltas = stream_events_of_type(&events, &["text-delta"]);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0]["delta"], "done");
+        assert_eq!(stream_events_of_type(&events, &["finish"]).len(), 1);
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+}
+
 // Not an upstream case: the shape of the error an in-stream `{"error": ...}`
 // event becomes (`google_stream_error` through `create_provider_stream_error`).
 mod in_stream_error {

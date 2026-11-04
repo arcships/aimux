@@ -632,6 +632,10 @@ impl GoogleLanguageModelStream {
 
         if let Some(reason) = candidate.finish_reason.as_deref() {
             self.final_finish_reason = Some(parse_finish_reason(reason, self.has_tool_calls));
+            // The terminal chunk completes the turn, and the body may stay
+            // open (keep-alive, proxies). Upstream waits for its end (#469).
+            self.finish(controller);
+            controller.terminate();
         }
     }
 }
@@ -835,8 +839,8 @@ impl Transformer for GoogleLanguageModelStream {
 }
 
 impl GoogleLanguageModelStream {
-    /// Close the open segments and emit `Finish`: at the end of the body, or
-    /// right after an error event.
+    /// Close the open segments and emit `Finish`: at the terminal chunk, at
+    /// the end of the body, or right after an error event.
     fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text/reasoning segment.
         self.end_text(controller);
