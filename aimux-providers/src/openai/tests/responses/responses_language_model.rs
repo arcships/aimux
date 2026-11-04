@@ -12897,7 +12897,8 @@ mod older_upstream_e2e {
         assert_eq!(nested.raw.unwrap()["cached_tokens"], json!(7));
 
         let top_level_only = model.do_generate(&options()).await.unwrap().usage;
-        assert_eq!(top_level_only.input_tokens.cache_read, Some(0));
+        // #478: no nested count was reported, so the cache read count stays unknown.
+        assert_eq!(top_level_only.input_tokens.cache_read, None);
         assert_eq!(top_level_only.input_tokens.no_cache, Some(100));
         assert_eq!(top_level_only.raw.unwrap()["cached_tokens"], json!(7));
     }
