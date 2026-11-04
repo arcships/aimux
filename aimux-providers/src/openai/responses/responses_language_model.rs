@@ -1539,6 +1539,9 @@ const MODELED_CHUNK_TYPES: &[&str] = &[
     "response.reasoning_summary_part.added",
     "response.reasoning_summary_part.done",
     "response.reasoning_summary_text.delta",
+    // aimux extension (#466): refusal events are modeled, not dropped.
+    "response.refusal.delta",
+    "response.refusal.done",
 ];
 
 /// How long to keep looking for an error frame once `response.in_progress`
@@ -2037,6 +2040,8 @@ struct OpenAIResponsesStream {
     response_id: Option<String>,
     stream_errored: bool,
     text_states: HashMap<String, Value>,
+    /// Refusal parts (item id, content index) that streamed a delta.
+    refusal_deltas: HashSet<(String, u64)>,
     output_ids: HashMap<usize, String>,
     text_annotations: HashMap<String, Vec<Value>>,
     logprobs: Vec<Value>,
@@ -2082,6 +2087,7 @@ impl Transformer for OpenAIResponsesStream {
             ref mut response_id,
             ref mut stream_errored,
             ref mut text_states,
+            ref mut refusal_deltas,
             ref mut output_ids,
             ref mut text_annotations,
             ref mut logprobs,
@@ -2380,6 +2386,31 @@ impl Transformer for OpenAIResponsesStream {
                             .unwrap_or("")
                             .to_string();
                         controller.text_delta(id, delta);
+                    }
+
+                    // ── response.refusal.delta/done → TextDelta ───────────────
+                    // aimux extension (#466): the AI SDK drops refusal events,
+                    // so a refusal would end as an empty answer. `done` carries
+                    // the whole refusal, sent only for a part without deltas.
+                    "response.refusal.delta" | "response.refusal.done" => {
+                        let id = resolve_output_item_id(&parsed, output_ids);
+                        let part = (
+                            id.clone(),
+                            parsed["content_index"].as_u64().unwrap_or_default(),
+                        );
+                        let text = if etype == "response.refusal.delta" {
+                            parsed["delta"].as_str().filter(|text| !text.is_empty())
+                        } else if refusal_deltas.contains(&part) {
+                            None
+                        } else {
+                            parsed["refusal"].as_str().filter(|text| !text.is_empty())
+                        };
+                        if let Some(text) = text {
+                            if etype == "response.refusal.delta" {
+                                refusal_deltas.insert(part);
+                            }
+                            controller.text_delta(id, text.to_owned());
+                        }
                     }
 
                     // ── function_call_arguments.delta → ToolInputDelta ────────

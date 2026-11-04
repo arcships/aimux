@@ -8598,6 +8598,83 @@ mod openai_responses_language_model {
             );
         }
 
+        /// aimux #466: refusal deltas stream as text; `refusal.done` adds the
+        /// whole refusal only to a part that streamed no delta.
+        #[tokio::test]
+        async fn should_stream_refusals_as_text() {
+            let message =
+                json!({"type": "message", "id": "refusal-1", "role": "assistant", "content": []});
+            let refusal = |content_index: u64, deltas: &[&str], done: &str| {
+                let mut events: Vec<Value> = deltas
+                    .iter()
+                    .map(|delta| json!({"type": "response.refusal.delta", "item_id": "refusal-1", "output_index": 0, "content_index": content_index, "delta": delta}))
+                    .collect();
+                events.push(json!({"type": "response.refusal.done", "item_id": "refusal-1", "output_index": 0, "content_index": content_index, "refusal": done}));
+                events
+            };
+            let mut events = vec![
+                json!({"type": "response.created", "response": {"id": "resp-1", "created_at": 1, "model": "gpt-4o"}}),
+                json!({"type": "response.output_item.added", "output_index": 0, "item": message}),
+            ];
+            events.extend(refusal(0, &["Cannot ", "comply."], "Cannot comply."));
+            events.extend(refusal(1, &[], " Sorry."));
+            events.push(
+                json!({"type": "response.output_item.done", "output_index": 0, "item": message}),
+            );
+            events.push(json!({"type": "response.completed", "response": {"incomplete_details": null, "usage": {"input_tokens": 3, "output_tokens": 2}}}));
+            let mock = sse_mock(
+                events
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect(),
+            );
+            let stream = stream_do(&mock, "gpt-4o", json!({"prompt": stream_test_prompt()}))
+                .await
+                .unwrap();
+            let deltas: Vec<_> = stream_collect(stream)
+                .await
+                .into_iter()
+                .filter(|part| part["type"] == "text-delta")
+                .map(|part| part["delta"].clone())
+                .collect();
+            assert_eq!(
+                deltas,
+                vec![json!("Cannot "), json!("comply."), json!(" Sorry.")]
+            );
+        }
+
+        /// aimux #466: an empty refusal delta does not hide the text in
+        /// `refusal.done`.
+        #[tokio::test]
+        async fn should_stream_a_refusal_done_after_an_empty_delta() {
+            let message =
+                json!({"type": "message", "id": "refusal-1", "role": "assistant", "content": []});
+            let events = [
+                json!({"type": "response.created", "response": {"id": "resp-1", "created_at": 1, "model": "gpt-4o"}}),
+                json!({"type": "response.output_item.added", "output_index": 0, "item": message}),
+                json!({"type": "response.refusal.delta", "item_id": "refusal-1", "output_index": 0, "content_index": 0, "delta": ""}),
+                json!({"type": "response.refusal.done", "item_id": "refusal-1", "output_index": 0, "content_index": 0, "refusal": "Cannot comply."}),
+                json!({"type": "response.output_item.done", "output_index": 0, "item": message}),
+                json!({"type": "response.completed", "response": {"incomplete_details": null, "usage": {"input_tokens": 3, "output_tokens": 2}}}),
+            ];
+            let mock = sse_mock(
+                events
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect(),
+            );
+            let stream = stream_do(&mock, "gpt-4o", json!({"prompt": stream_test_prompt()}))
+                .await
+                .unwrap();
+            let deltas: Vec<_> = stream_collect(stream)
+                .await
+                .into_iter()
+                .filter(|part| part["type"] == "text-delta")
+                .map(|part| part["delta"].clone())
+                .collect();
+            assert_eq!(deltas, vec![json!("Cannot comply.")]);
+        }
+
         /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doStream › should preserve async mode on streamed function calls
         #[tokio::test]
         async fn should_preserve_async_mode_on_streamed_function_calls() {
