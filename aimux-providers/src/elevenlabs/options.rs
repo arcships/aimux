@@ -3,6 +3,7 @@
 //! `@ai-sdk/elevenlabs` reads `providerOptions.elevenlabs`, whatever the
 //! provider is named. This module is the one place that spells the key.
 
+#[cfg(feature = "realtime")]
 use aimux_core::shared::{JsonObject, SharedProviderOptions};
 
 /// The providerOptions key.
