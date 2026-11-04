@@ -13,6 +13,9 @@
 //! - `undefined` properties are absent from the expected JSON.
 //! - `toMatchSnapshot()` values are `snapshots/<test name>.json`, converted
 //!   from the vitest `.snap` file (their text matches the fixtures).
+//! - #472 goes beyond the AI SDK: text block ids are `text-{item_id}:{index}`
+//!   with `contentIndex` in the start metadata, and function calls carry
+//!   their item id as `itemId`.
 //!
 //! The last top-level cases are the older Responses subset (formerly
 //! `tests/xai_upstream_e2e_test.rs`), on the same [`MockFetch`].
@@ -2436,6 +2439,7 @@ mod xai_responses_language_model {
                     json!([
                         {
                             "input": "{\"location\":\"sf\"}",
+                            "providerMetadata": { "xai": { "itemId": "fc_123" } },
                             "toolCallId": "call_123",
                             "toolName": "weather",
                             "type": "tool-call"
@@ -3788,24 +3792,24 @@ mod xai_responses_language_model {
                             "toolName": "image_generation",
                             "type": "tool-result"
                         }),
-                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-start" }),
-                        json!({ "delta": "Here's", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " serene", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " image", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " of", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " paper", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " boat", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " sailing", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " on", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " leaf", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": "-", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": "covered", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": " pond", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "delta": ":", "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-delta" }),
-                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002", "type": "text-end" }),
+                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-start", "providerMetadata": { "xai": { "contentIndex": 0 } } }),
+                        json!({ "delta": "Here's", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " serene", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " image", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " of", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " paper", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " boat", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " sailing", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " on", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " a", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " leaf", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": "-", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": "covered", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": " pond", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "delta": ":", "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-delta" }),
+                        json!({ "id": "text-msg_00000000-0000-4000-8000-000000000002:0", "type": "text-end" }),
                         json!({
                             "finishReason": { "raw": "completed", "unified": "stop" },
                             "providerMetadata": {
@@ -3936,13 +3940,13 @@ mod xai_responses_language_model {
                             "toolName": "image_generation",
                             "type": "tool-result"
                         }),
-                        json!({ "id": "text-msg_123", "type": "text-start" }),
+                        json!({ "id": "text-msg_123:0", "type": "text-start", "providerMetadata": { "xai": { "contentIndex": 0 } } }),
                         json!({
                             "delta": "Here is your origami fox.",
-                            "id": "text-msg_123",
+                            "id": "text-msg_123:0",
                             "type": "text-delta"
                         }),
-                        json!({ "id": "text-msg_123", "type": "text-end" }),
+                        json!({ "id": "text-msg_123:0", "type": "text-end" }),
                         json!({
                             "finishReason": { "raw": "completed", "unified": "stop" },
                             "type": "finish",
@@ -4191,7 +4195,12 @@ mod xai_responses_language_model {
 
                 assert_contains(
                     &parts,
-                    json!({ "type": "tool-input-start", "id": "call_123", "toolName": "weather" }),
+                    json!({
+                        "type": "tool-input-start",
+                        "id": "call_123",
+                        "toolName": "weather",
+                        "providerMetadata": { "xai": { "itemId": "fc_123" } }
+                    }),
                 );
                 assert_contains(
                     &parts,
@@ -4211,7 +4220,8 @@ mod xai_responses_language_model {
                         "type": "tool-call",
                         "toolCallId": "call_123",
                         "toolName": "weather",
-                        "input": "{\"location\":\"sf\"}"
+                        "input": "{\"location\":\"sf\"}",
+                        "providerMetadata": { "xai": { "itemId": "fc_123" } }
                     }),
                 );
             }
@@ -5542,5 +5552,103 @@ async fn summary_delta_before_part_added_opens_one_reasoning_block() {
             json!(["reasoning-end", "reasoning-rs_1", null]),
         ],
         "{parts:#}"
+    );
+}
+
+/// #472: each `output_text` content part keeps its own text block, and a part
+/// that only appears in `output_item.done` is filled from it.
+#[tokio::test]
+async fn message_content_parts_keep_their_own_text_blocks() {
+    let fetch = MockFetch::new(vec![sse(&[
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "output": []}}),
+        json!({"type": "response.output_item.added", "output_index": 0, "item": {"type": "message", "id": "msg_1"}}),
+        json!({"type": "response.output_text.delta", "item_id": "msg_1", "content_index": 0, "delta": "before"}),
+        json!({"type": "response.output_text.delta", "item_id": "msg_1", "content_index": 1, "delta": "after"}),
+        json!({"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "id": "msg_1", "content": [
+            {"type": "output_text", "text": "before"},
+            {"type": "output_text", "text": "after"},
+            {"type": "output_text", "text": "only-in-done"}
+        ]}}),
+        json!({"type": "response.completed", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "status": "completed", "output": []}}),
+    ])]);
+    let mut options = options();
+    options.strict_stream = Some(true);
+
+    let parts = stream_parts(model(&fetch).do_stream(&options).await.unwrap()).await;
+
+    let text: Vec<Value> = parts
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|part| {
+            part["type"].as_str().unwrap().starts_with("text") || part["type"] == "error"
+        })
+        .map(|part| json!([part["type"], part["id"], part.get("delta")]))
+        .collect();
+    assert_eq!(
+        text,
+        vec![
+            json!(["text-start", "text-msg_1:0", null]),
+            json!(["text-delta", "text-msg_1:0", "before"]),
+            json!(["text-end", "text-msg_1:0", null]),
+            json!(["text-start", "text-msg_1:1", null]),
+            json!(["text-delta", "text-msg_1:1", "after"]),
+            json!(["text-end", "text-msg_1:1", null]),
+            json!(["text-start", "text-msg_1:2", null]),
+            json!(["text-delta", "text-msg_1:2", "only-in-done"]),
+            json!(["text-end", "text-msg_1:2", null]),
+        ],
+        "{parts:#}"
+    );
+    assert_eq!(
+        first_part(&parts, "text-start")["providerMetadata"],
+        json!({"xai": {"contentIndex": 0}})
+    );
+}
+
+/// #472: a streamed `function_call` carries its item id, which differs from
+/// its `call_id`.
+#[tokio::test]
+async fn a_streamed_function_call_carries_its_item_id() {
+    let item = json!({"type": "function_call", "id": "fc_native", "call_id": "call_native", "name": "echo"});
+    let mut done = item.clone();
+    done["arguments"] = json!("{\"text\":\"x\"}");
+    let fetch = MockFetch::new(vec![sse(&[
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "output": []}}),
+        json!({"type": "response.output_item.added", "output_index": 0, "item": item}),
+        json!({"type": "response.function_call_arguments.delta", "output_index": 0, "delta": "{\"text\":\"x\"}"}),
+        json!({"type": "response.output_item.done", "output_index": 0, "item": done}),
+        json!({"type": "response.completed", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "status": "completed", "output": []}}),
+    ])]);
+
+    let parts = stream_parts(model(&fetch).do_stream(&options()).await.unwrap()).await;
+
+    let item_id = json!({"xai": {"itemId": "fc_native"}});
+    assert_eq!(
+        first_part(&parts, "tool-input-start")["providerMetadata"],
+        item_id
+    );
+    let call = first_part(&parts, "tool-call");
+    assert_eq!(call["toolCallId"], "call_native");
+    assert_eq!(call["providerMetadata"], item_id);
+}
+
+/// #472: a generated `function_call` carries its item id too.
+#[tokio::test]
+async fn a_generated_function_call_carries_its_item_id() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "status": "completed",
+        "output": [{"type": "function_call", "id": "fc_native", "call_id": "call_native", "name": "echo", "arguments": "{\"text\":\"x\"}", "status": "completed"}],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+
+    let result = model(&fetch).do_generate(&options()).await.unwrap();
+
+    assert_eq!(
+        content_json(&result),
+        json!([{
+            "type": "tool-call", "toolCallId": "call_native", "toolName": "echo",
+            "input": "{\"text\":\"x\"}", "providerMetadata": {"xai": {"itemId": "fc_native"}}
+        }])
     );
 }
