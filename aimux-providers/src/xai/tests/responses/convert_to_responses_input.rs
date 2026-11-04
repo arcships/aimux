@@ -368,6 +368,73 @@ mod convert_to_xai_responses_input {
             );
         }
 
+        /// #472: a tool call between two parts of one message item keeps its
+        /// place; parts with another or no `itemId` are not merged.
+        #[test]
+        fn keeps_the_order_of_text_parts_around_other_items() {
+            let part = |text: &str, item_id: &str| {
+                json!({
+                    "type": "text",
+                    "text": text,
+                    "providerOptions": { (NAMESPACE): { "itemId": item_id } },
+                })
+            };
+            let (input, _) = convert(&parse_prompt(json!([
+                {
+                    "role": "assistant",
+                    "content": [
+                        part("first", "msg_1"),
+                        {
+                            "type": "tool-call",
+                            "toolCallId": "call_1",
+                            "toolName": "weather",
+                            "input": { "location": "SF" },
+                            "providerOptions": { (NAMESPACE): { "itemId": "fc_1" } },
+                        },
+                        part("second", "msg_1"),
+                        part("other", "msg_2"),
+                        { "type": "text", "text": "plain" },
+                        part("third", "msg_2"),
+                    ],
+                },
+            ])));
+
+            assert_eq!(
+                input,
+                json!([
+                    {
+                        "role": "assistant",
+                        "id": "msg_1",
+                        "content": [{ "type": "output_text", "text": "first" }],
+                    },
+                    {
+                        "type": "function_call",
+                        "id": "fc_1",
+                        "call_id": "call_1",
+                        "name": "weather",
+                        "arguments": "{\"location\":\"SF\"}",
+                        "status": "completed",
+                    },
+                    {
+                        "role": "assistant",
+                        "id": "msg_1",
+                        "content": [{ "type": "output_text", "text": "second" }],
+                    },
+                    {
+                        "role": "assistant",
+                        "id": "msg_2",
+                        "content": [{ "type": "output_text", "text": "other" }],
+                    },
+                    { "role": "assistant", "content": "plain" },
+                    {
+                        "role": "assistant",
+                        "id": "msg_2",
+                        "content": [{ "type": "output_text", "text": "third" }],
+                    },
+                ])
+            );
+        }
+
         /// upstream: @ai-sdk/xai src/responses/convert-to-xai-responses-input.test.ts › convertToXaiResponsesInput › assistant messages › should handle client-side tool-call parts
         #[test]
         fn should_handle_client_side_tool_call_parts() {

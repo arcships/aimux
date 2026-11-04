@@ -1,8 +1,6 @@
 //! Prompt to the Responses `input` array (`convert-to-xai-responses-input.ts`),
 //! with the image `detail` option of `xai-file-part-options.ts`.
 
-use std::collections::HashMap;
-
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
@@ -88,10 +86,10 @@ pub fn convert_to_xai_responses_input(
                 input.push(json!({ "role": "user", "content": content_parts }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
-                // The text parts of one message item become one input item,
-                // keyed by their `itemId` (#472; the AI SDK sends one item
-                // per part).
-                let mut text_items: HashMap<String, usize> = HashMap::new();
+                // Consecutive text parts of one message item become one
+                // input item (#472; the AI SDK sends one item per part). Any
+                // other item in between starts a new one, so the order holds.
+                let mut last_text_item: Option<(String, usize)> = None;
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -105,21 +103,24 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
                             let text_part = json!({ "type": "output_text", "text": text });
+                            let continues = matches!(
+                                (&last_text_item, &id),
+                                (Some((last, index)), Some(id)) if last == id && index + 1 == input.len()
+                            );
                             match id {
-                                Some(id) => match text_items.get(&id) {
-                                    Some(&index) => input[index]["content"]
-                                        .as_array_mut()
-                                        .expect("a grouped text item has a content array")
-                                        .push(text_part),
-                                    None => {
-                                        text_items.insert(id.clone(), input.len());
-                                        input.push(json!({
-                                            "role": "assistant",
-                                            "id": id,
-                                            "content": [text_part],
-                                        }));
-                                    }
-                                },
+                                Some(_) if continues => input
+                                    .last_mut()
+                                    .and_then(|item| item["content"].as_array_mut())
+                                    .expect("a grouped text item has a content array")
+                                    .push(text_part),
+                                Some(id) => {
+                                    last_text_item = Some((id.clone(), input.len()));
+                                    input.push(json!({
+                                        "role": "assistant",
+                                        "id": id,
+                                        "content": [text_part],
+                                    }));
+                                }
                                 None => {
                                     input.push(json!({ "role": "assistant", "content": text }));
                                 }
