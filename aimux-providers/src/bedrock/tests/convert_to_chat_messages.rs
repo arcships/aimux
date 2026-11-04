@@ -20,7 +20,7 @@ fn convert(value: Value) -> Result<Value, AiMuxError> {
 
 /// `convertToAmazonBedrockChatMessages(prompt, isMistral)`.
 fn convert_with(value: Value, is_mistral: bool) -> Result<Value, AiMuxError> {
-    convert_prompt(&prompt(value), is_mistral).map(to_result)
+    convert_prompt(&prompt(value), is_mistral, false).map(to_result)
 }
 
 /// The message of an `AI_UnsupportedFunctionalityError`.
@@ -2447,7 +2447,7 @@ mod bedrock_convert {
     use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
     use serde_json::{Value, json};
 
-    use crate::bedrock::convert_to_chat_messages::convert_prompt_to_bedrock;
+    use crate::bedrock::convert_to_chat_messages::{convert_prompt, convert_prompt_to_bedrock};
 
     // ── prompt builders ─────────────────────────────────────────────────────────
 
@@ -2668,6 +2668,7 @@ mod bedrock_convert {
                         text: "The result is 42".to_string(),
                         provider_options: None,
                     })],
+                    is_error: None,
                 },
             )])])
             .unwrap();
@@ -2683,6 +2684,41 @@ mod bedrock_convert {
                     }]
                 })
             );
+        }
+
+        /// Claude and Nova get `status` on every toolResult, and an error
+        /// result that carries an image keeps `status: "error"`; other model
+        /// families get no `status` (#470).
+        #[test]
+        fn tool_result_status_follows_the_error_flag() {
+            let image_error = ToolResultOutput::Content {
+                value: vec![ToolResultContent::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64("aGVsbG8=".to_string()),
+                    },
+                    media_type: "image/png".to_string(),
+                    filename: None,
+                    provider_options: None,
+                })],
+                is_error: Some(true),
+            };
+            let text = ToolResultOutput::Text {
+                value: "ok".to_string(),
+                provider_options: None,
+            };
+            let prompt = vec![tool_msg(vec![
+                tool_result("call-1", image_error),
+                tool_result("call-2", text),
+            ])];
+
+            let (_, messages) = convert_prompt(&prompt, false, true).unwrap();
+            let result = |i: usize| &messages[0]["content"][i]["toolResult"];
+            assert_eq!(result(0)["status"], json!("error"));
+            assert_eq!(result(0)["content"][0]["image"]["format"], json!("png"));
+            assert_eq!(result(1)["status"], json!("success"));
+
+            let (_, messages) = convert_prompt(&prompt, false, false).unwrap();
+            assert_eq!(messages[0]["content"][0]["toolResult"].get("status"), None);
         }
     }
 
@@ -3275,6 +3311,7 @@ mod bedrock_convert {
                     filename: None,
                     provider_options: None,
                 })],
+                is_error: None,
             },
         )])])
         .unwrap();
@@ -3303,6 +3340,7 @@ mod bedrock_convert {
                     filename: Some("tool-result.pdf".to_string()),
                     provider_options: None,
                 })],
+                is_error: None,
             },
         )])])
         .unwrap();
@@ -3477,6 +3515,34 @@ mod bedrock_remaining {
             messages[0]["content"][0]["toolResult"]["toolUseId"],
             json!("8eHypBDcw")
         );
+    }
+
+    /// Only Claude and Nova accept `toolResult.status`; other families get
+    /// none (#470).
+    #[test]
+    fn tool_result_status_only_for_claude_and_nova() {
+        let prompt = vec![tool_msg(vec![tool_result(
+            "call-1".to_string(),
+            json!({
+                "type": "content",
+                "value": [{ "type": "text", "text": "failed" }],
+                "isError": true,
+            }),
+        )])];
+        let mut opts = default_options(prompt);
+        opts.tools = Some(vec![test_tool().into()]);
+        let status = |model_id: &str| {
+            let (body, _, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+            body["messages"][0]["content"][0]["toolResult"]
+                .get("status")
+                .cloned()
+        };
+        assert_eq!(
+            status("us.anthropic.claude-sonnet-4-20250514-v1:0"),
+            Some(json!("error"))
+        );
+        assert_eq!(status("us.amazon.nova-pro-v1:0"), Some(json!("error")));
+        assert_eq!(status("us.meta.llama4-maverick-17b-instruct-v1:0"), None);
     }
 
     /// partial: `should normalize tool call IDs in tool calls when isMistral is true`; full port in src/bedrock/tests/convert_to_chat_messages.rs.

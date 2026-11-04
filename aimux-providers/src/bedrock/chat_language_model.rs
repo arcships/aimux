@@ -1430,7 +1430,11 @@ pub fn build_request_body_checked(
             ),
         );
     }
-    let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."))?;
+    let (system, messages) = convert_prompt(
+        &prompt,
+        model_id.contains("mistral."),
+        anthropic || model_id.contains("amazon.nova"),
+    )?;
     let mut body = json!({"messages":messages});
     if !system.is_empty() {
         body["system"] = json!(system);

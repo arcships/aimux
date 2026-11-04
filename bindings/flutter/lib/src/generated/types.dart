@@ -7055,8 +7055,13 @@ final class LanguageModelToolResultOutputErrorJson
 
 final class LanguageModelToolResultOutputContent
     extends LanguageModelToolResultOutput {
+  /// Whether the tool call failed. Beyond the AI SDK's `content` output,
+  /// so a result that carries an image or a file can still be an
+  /// error (#470).
+  final bool? isError;
   final List<ToolResultContent> value;
   const LanguageModelToolResultOutputContent({
+    this.isError,
     required this.value,
   });
   @override
@@ -7064,6 +7069,7 @@ final class LanguageModelToolResultOutputContent
   factory LanguageModelToolResultOutputContent.fromJson(
       Map<String, dynamic> json) {
     return LanguageModelToolResultOutputContent(
+      isError: json['isError'] as bool?,
       value: (json['value'] as List)
           .map((item) =>
               ToolResultContent.fromJson(item as Map<String, dynamic>))
@@ -7073,6 +7079,7 @@ final class LanguageModelToolResultOutputContent
 
   Map<String, dynamic> toJson() => {
         'type': 'content',
+        if (isError != null) 'isError': isError,
         'value': value.map((item) => item.toJson()).toList(),
       };
 }

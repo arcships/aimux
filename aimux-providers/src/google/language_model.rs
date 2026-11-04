@@ -1603,7 +1603,7 @@ pub(crate) fn validate_call_options_for_namespace(
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
                     if let ToolPart::ToolResult(part) = part
-                        && let ToolResultOutput::Content { value } = &part.output
+                        && let ToolResultOutput::Content { value, .. } = &part.output
                     {
                         for part in value {
                             if let ToolResultContent::File(file) = part

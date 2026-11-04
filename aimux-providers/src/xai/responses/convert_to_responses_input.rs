@@ -218,7 +218,7 @@ fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             Ok(json!(reason.as_deref().unwrap_or("tool execution denied")))
         }
-        ToolResultOutput::Content { value } => {
+        ToolResultOutput::Content { value, .. } => {
             let mut parts = Vec::new();
             for item in value {
                 match item {

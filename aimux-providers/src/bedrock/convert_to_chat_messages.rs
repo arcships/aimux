@@ -41,12 +41,13 @@ use serde_json::{Value, json};
 pub(super) fn convert_prompt_to_bedrock(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
-    convert_prompt(prompt, false)
+    convert_prompt(prompt, false, false)
 }
 
 pub(super) fn convert_prompt(
     prompt: &LanguageModelPrompt,
     is_mistral: bool,
+    tool_result_status: bool,
 ) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
     validate_prompt(prompt)?;
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -135,6 +136,7 @@ pub(super) fn convert_prompt(
                                     &mut content,
                                     &mut document_counter,
                                     is_mistral,
+                                    tool_result_status,
                                 );
                                 if let Some(cp) = cache_point(part.provider_options.as_ref()) {
                                     content.push(cp);
@@ -215,6 +217,7 @@ pub(super) fn convert_prompt(
                                     &mut results,
                                     &mut document_counter,
                                     is_mistral,
+                                    tool_result_status,
                                 );
                             }
                             AssistantPart::ToolCall(ToolCallPart {
@@ -287,14 +290,35 @@ fn push_tool_result(
     content: &mut Vec<Value>,
     doc_counter: &mut u32,
     is_mistral: bool,
+    tool_result_status: bool,
 ) {
     let result_content = resolve_tool_result_output(&part.output, doc_counter);
-    content.push(json!({
-        "toolResult": {
-            "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
-            "content": result_content,
-        }
-    }));
+    let mut block = json!({
+        "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
+        "content": result_content,
+    });
+    // The AI SDK never writes `status` (#470). AWS: "This field is only
+    // supported by Amazon Nova and Anthropic Claude 3 and 4 models."
+    if tool_result_status {
+        let status = if tool_result_is_error(&part.output) {
+            "error"
+        } else {
+            "success"
+        };
+        block["status"] = json!(status);
+    }
+    content.push(json!({ "toolResult": block }));
+}
+
+/// Whether a tool result reports a failure, independent of its content form.
+fn tool_result_is_error(output: &ToolResultOutput) -> bool {
+    match output {
+        ToolResultOutput::ErrorText { .. }
+        | ToolResultOutput::ErrorJson { .. }
+        | ToolResultOutput::ExecutionDenied { .. } => true,
+        ToolResultOutput::Content { is_error, .. } => is_error == &Some(true),
+        ToolResultOutput::Text { .. } | ToolResultOutput::Json { .. } => false,
+    }
 }
 
 fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u32) {
@@ -430,7 +454,7 @@ fn resolve_tool_result_output(output: &ToolResultOutput, doc_counter: &mut u32) 
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             vec![json!({ "text": reason.as_deref().unwrap_or("Tool call execution denied.") })]
         }
-        ToolResultOutput::Content { value } => {
+        ToolResultOutput::Content { value, .. } => {
             let mut content = Vec::new();
             for part in value {
                 match part {
@@ -745,7 +769,7 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
 }
 
 fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiMuxError> {
-    if let ToolResultOutput::Content { value } = result {
+    if let ToolResultOutput::Content { value, .. } = result {
         for part in value {
             match part {
                 ToolResultContent::Text(_) => {}

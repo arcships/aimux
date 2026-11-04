@@ -134,6 +134,13 @@
     },
     {
       "properties": {
+        "isError": {
+          "description": "Whether the tool call failed. Beyond the AI SDK's `content` output,\nso a result that carries an image or a file can still be an\nerror (#470).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "type": {
           "const": "content",
           "type": "string"

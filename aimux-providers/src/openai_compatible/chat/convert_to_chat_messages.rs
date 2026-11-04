@@ -92,7 +92,7 @@ fn convert_message(
                 // `content` output is an array of content parts only when
                 // the provider supports multi-part tool content.
                 let content = match output {
-                    ToolResultOutput::Content { value }
+                    ToolResultOutput::Content { value, .. }
                         if spec.supports_multi_part_tool_content =>
                     {
                         Value::Array(
