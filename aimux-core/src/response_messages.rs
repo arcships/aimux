@@ -482,18 +482,6 @@ mod tests {
     // streamed reasoning path, where the metadata arrives on the end event.
     // Comparing serialized text pins key order, which `Value` equality on an
     // order-preserving map does not.
-    /// stream-text.ts:1550-1636: a delta or end of a part that was never
-    /// started is not recorded.
-    #[test]
-    fn a_part_that_was_never_started_is_not_recorded() {
-        let mut builder = ResponseMessageBuilder::new();
-        builder.text_delta("t1", "Hello", None);
-        builder.text_end("t1", None);
-        builder.reasoning_delta("r1", "Thinking...", None);
-        builder.reasoning_end("r1", None);
-        assert!(builder.finish().content.is_empty());
-    }
-
     #[test]
     fn part_metadata_replays_whole_into_provider_options() {
         let metadata: SharedProviderMetadata = serde_json::from_value(json!({

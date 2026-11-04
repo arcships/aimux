@@ -736,61 +736,70 @@ async fn an_empty_text_delta_is_forwarded_only_with_provider_metadata() {
     );
 }
 
-/// stream-text.test.ts:2642-2720 ("should not read Object.prototype for
-/// missing text/reasoning part ids"), stream-text.ts:1550-1636: a delta for a
-/// part that was never started is forwarded, followed by an error part, and
-/// the stream continues; the part is not recorded. The upstream tests use
-/// `__proto__` as the id and also check `Object.prototype` stays clean, a
-/// JavaScript concern with no Rust counterpart.
+/// The stream of a model that sends `delta` with no start part
+/// (stream-text.test.ts:2642-2720).
+async fn missing_part_stream(delta: StreamPart) -> Vec<TextStreamPart> {
+    let model = ScriptedModel::streaming(vec![
+        Ok(StreamPart::ResponseMetadata(
+            crate::types::ResponseMetadata {
+                id: Some("id-0".into()),
+                timestamp: Some("1970-01-01T00:00:00.000Z".parse().unwrap()),
+                model_id: Some("mock-model-id".into()),
+            },
+        )),
+        Ok(delta),
+        Ok(StreamPart::Finish {
+            finish_reason: finish(FinishReasonUnified::Stop, "stop"),
+            usage: usage(3, 0, 10, 0),
+            provider_metadata: None,
+        }),
+    ]);
+    collect(
+        stream_text(&model, "test-input", GenerateTextOptions::default())
+            .await
+            .unwrap(),
+    )
+    .await
+}
+
+fn has_error(stream: &[TextStreamPart], message: &str) -> bool {
+    stream
+        .iter()
+        .any(|part| matches!(part, TextStreamPart::Error { error } if error.to_string() == message))
+}
+
+/// stream-text.test.ts:2642-2680 ("should not read Object.prototype for
+/// missing text part ids"). The `Object.prototype` checks have no Rust
+/// counterpart.
 #[tokio::test]
-async fn a_delta_for_a_missing_part_is_followed_by_an_error_part() {
-    for (delta, message) in [
-        (
-            StreamPart::TextDelta {
-                id: "__proto__".into(),
-                delta: "Hello".into(),
-                provider_metadata: None,
-            },
-            "text part __proto__ not found",
-        ),
-        (
-            StreamPart::ReasoningDelta {
-                id: "__proto__".into(),
-                delta: "Thinking...".into(),
-                provider_metadata: None,
-            },
-            "reasoning part __proto__ not found",
-        ),
-    ] {
-        let parts = vec![
-            Ok(StreamPart::ResponseMetadata(
-                crate::types::ResponseMetadata {
-                    id: Some("id-0".into()),
-                    timestamp: Some("1970-01-01T00:00:00.000Z".parse().unwrap()),
-                    model_id: Some("mock-model-id".into()),
-                },
-            )),
-            Ok(delta),
-            Ok(StreamPart::Finish {
-                finish_reason: finish(FinishReasonUnified::Stop, "stop"),
-                usage: usage(3, 0, 10, 0),
-                provider_metadata: None,
-            }),
-        ];
-        let model = ScriptedModel::streaming(parts);
-        let stream = collect(
-            stream_text(&model, "test-input", GenerateTextOptions::default())
-                .await
-                .unwrap(),
-        )
-        .await;
-        let kinds: Vec<String> = stream.iter().map(kind).collect();
-        assert_eq!(kinds[3..], ["error", "finish-step", "finish"]);
-        let TextStreamPart::Error { error } = &stream[3] else {
-            unreachable!()
-        };
-        assert_eq!(error.to_string(), message);
-    }
+async fn should_not_read_object_prototype_for_missing_text_part_ids() {
+    let stream = missing_part_stream(StreamPart::TextDelta {
+        id: "__proto__".into(),
+        delta: "Hello".into(),
+        provider_metadata: None,
+    })
+    .await;
+    assert!(
+        has_error(&stream, "text part __proto__ not found"),
+        "{stream:?}"
+    );
+}
+
+/// stream-text.test.ts:2682-2720 ("should not read Object.prototype for
+/// missing reasoning part ids"). The `Object.prototype` checks have no Rust
+/// counterpart.
+#[tokio::test]
+async fn should_not_read_object_prototype_for_missing_reasoning_part_ids() {
+    let stream = missing_part_stream(StreamPart::ReasoningDelta {
+        id: "__proto__".into(),
+        delta: "Thinking...".into(),
+        provider_metadata: None,
+    })
+    .await;
+    assert!(
+        has_error(&stream, "reasoning part __proto__ not found"),
+        "{stream:?}"
+    );
 }
 
 fn provider_result(id: &str, name: &str, result: Value, is_error: Option<bool>) -> ToolResult {

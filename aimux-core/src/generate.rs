@@ -1857,7 +1857,10 @@ async fn stream_in_operation(
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
-            let mut active_parts = ActiveParts::default();
+            // The text and reasoning parts started and not yet ended
+            // (`activeTextContent`, `activeReasoningContent`).
+            let mut active_text: HashSet<String> = HashSet::new();
+            let mut active_reasoning: HashSet<String> = HashSet::new();
             let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
@@ -1985,10 +1988,32 @@ async fn stream_in_operation(
                                 .widen::<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>()
                                 .into_text_stream_part()
                             {
-                                let missing = active_parts.track(&part);
+                                // stream-text.ts:1540-1636: a delta or end of a part
+                                // that was never started is followed by an error part.
+                                let missing = match &part {
+                                    TextStreamPart::TextStart { id, .. } => {
+                                        active_text.insert(id.clone());
+                                        None
+                                    }
+                                    TextStreamPart::TextDelta { id, .. } => (!active_text.contains(id))
+                                        .then(|| format!("text part {id} not found")),
+                                    TextStreamPart::TextEnd { id, .. } => (!active_text.remove(id))
+                                        .then(|| format!("text part {id} not found")),
+                                    TextStreamPart::ReasoningStart { id, .. } => {
+                                        active_reasoning.insert(id.clone());
+                                        None
+                                    }
+                                    TextStreamPart::ReasoningDelta { id, .. } => (!active_reasoning.contains(id))
+                                        .then(|| format!("reasoning part {id} not found")),
+                                    TextStreamPart::ReasoningEnd { id, .. } => (!active_reasoning.remove(id))
+                                        .then(|| format!("reasoning part {id} not found")),
+                                    _ => None,
+                                };
                                 yield Ok(part);
-                                if let Some(error) = missing {
-                                    yield Ok(TextStreamPart::Error { error });
+                                if let Some(message) = missing {
+                                    yield Ok(TextStreamPart::Error {
+                                        error: AiMuxError::other(message),
+                                    });
                                 }
                             }
                         }
@@ -2026,40 +2051,6 @@ async fn stream_in_operation(
         model: step_model,
         output,
     })
-}
-
-/// The text and reasoning parts started and not yet ended in the stream
-/// (`activeTextContent` and `activeReasoningContent`,
-/// stream-text.ts:1540-1636).
-#[derive(Default)]
-struct ActiveParts {
-    text: HashSet<String>,
-    reasoning: HashSet<String>,
-}
-
-impl ActiveParts {
-    /// Track a forwarded part. A delta or end whose part was never started
-    /// is followed by an error part, and the stream continues.
-    fn track(&mut self, part: &TextStreamPart) -> Option<AiMuxError> {
-        let (active, id, kind) = match part {
-            TextStreamPart::TextStart { id, .. } => {
-                self.text.insert(id.clone());
-                return None;
-            }
-            TextStreamPart::ReasoningStart { id, .. } => {
-                self.reasoning.insert(id.clone());
-                return None;
-            }
-            TextStreamPart::TextDelta { id, .. } => (self.text.contains(id), id, "text"),
-            TextStreamPart::TextEnd { id, .. } => (self.text.remove(id), id, "text"),
-            TextStreamPart::ReasoningDelta { id, .. } => {
-                (self.reasoning.contains(id), id, "reasoning")
-            }
-            TextStreamPart::ReasoningEnd { id, .. } => (self.reasoning.remove(id), id, "reasoning"),
-            _ => return None,
-        };
-        (!active).then(|| AiMuxError::other(format!("{kind} part {id} not found")))
-    }
 }
 
 /// The state of the streamed step: what `stream-text.ts:2736-2780` keeps
