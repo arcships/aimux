@@ -809,7 +809,11 @@ impl XaiResponsesStream {
                         .unwrap_or(0);
                     let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
                     let block_id = text_block_id(item_id, content_index);
-                    if filled_text_blocks.insert(block_id.clone()) {
+                    filled_text_blocks.insert(block_id.clone());
+                    // A late delta for a part whose block the next part
+                    // already ended reopens it, so its text is kept and a
+                    // strict stream sees a started block.
+                    if !content_blocks.contains(&block_id) {
                         start_text_block(item_id, content_index, content_blocks, controller);
                     }
                     controller.text_delta(block_id, delta.to_string());

@@ -355,15 +355,7 @@ mod convert_to_xai_responses_input {
             assert_eq!(
                 input,
                 json!([
-                    {
-                        "role": "assistant",
-                        "id": "msg_1",
-                        "content": [
-                            { "type": "output_text", "text": "before" },
-                            { "type": "output_text", "text": "after" },
-                            { "type": "output_text", "text": "only-in-done" },
-                        ],
-                    },
+                    { "role": "assistant", "content": "beforeafteronly-in-done", "id": "msg_1" },
                 ])
             );
         }
@@ -402,11 +394,7 @@ mod convert_to_xai_responses_input {
             assert_eq!(
                 input,
                 json!([
-                    {
-                        "role": "assistant",
-                        "id": "msg_1",
-                        "content": [{ "type": "output_text", "text": "first" }],
-                    },
+                    { "role": "assistant", "content": "first", "id": "msg_1" },
                     {
                         "type": "function_call",
                         "id": "fc_1",
@@ -415,22 +403,10 @@ mod convert_to_xai_responses_input {
                         "arguments": "{\"location\":\"SF\"}",
                         "status": "completed",
                     },
-                    {
-                        "role": "assistant",
-                        "id": "msg_1",
-                        "content": [{ "type": "output_text", "text": "second" }],
-                    },
-                    {
-                        "role": "assistant",
-                        "id": "msg_2",
-                        "content": [{ "type": "output_text", "text": "other" }],
-                    },
+                    { "role": "assistant", "content": "second", "id": "msg_1" },
+                    { "role": "assistant", "content": "other", "id": "msg_2" },
                     { "role": "assistant", "content": "plain" },
-                    {
-                        "role": "assistant",
-                        "id": "msg_2",
-                        "content": [{ "type": "output_text", "text": "third" }],
-                    },
+                    { "role": "assistant", "content": "third", "id": "msg_2" },
                 ])
             );
         }

@@ -87,8 +87,9 @@ pub fn convert_to_xai_responses_input(
             }
             LanguageModelMessage::Assistant { content, .. } => {
                 // Consecutive text parts of one message item become one
-                // input item (#472; the AI SDK sends one item per part). Any
-                // other item in between starts a new one, so the order holds.
+                // input item with their joined text (#472; the AI SDK sends
+                // one item per part). Any other item in between starts a new
+                // one, so the order holds.
                 let mut last_text_item: Option<(String, usize)> = None;
                 for part in content {
                     match part {
@@ -102,28 +103,24 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
-                            let text_part = json!({ "type": "output_text", "text": text });
                             let continues = matches!(
                                 (&last_text_item, &id),
                                 (Some((last, index)), Some(id)) if last == id && index + 1 == input.len()
                             );
-                            match id {
-                                Some(_) if continues => input
-                                    .last_mut()
-                                    .and_then(|item| item["content"].as_array_mut())
-                                    .expect("a grouped text item has a content array")
-                                    .push(text_part),
-                                Some(id) => {
+                            if continues {
+                                let item = input.last_mut().expect("the grouped text item");
+                                let joined = format!(
+                                    "{}{text}",
+                                    item["content"].as_str().unwrap_or_default()
+                                );
+                                item["content"] = json!(joined);
+                            } else {
+                                let mut msg_obj = json!({ "role": "assistant", "content": text });
+                                if let Some(id) = id {
                                     last_text_item = Some((id.clone(), input.len()));
-                                    input.push(json!({
-                                        "role": "assistant",
-                                        "id": id,
-                                        "content": [text_part],
-                                    }));
+                                    msg_obj["id"] = json!(id);
                                 }
-                                None => {
-                                    input.push(json!({ "role": "assistant", "content": text }));
-                                }
+                                input.push(msg_obj);
                             }
                         }
                         AssistantPart::ToolCall(ToolCallPart {

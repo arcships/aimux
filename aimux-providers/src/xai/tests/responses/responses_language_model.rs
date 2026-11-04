@@ -5606,6 +5606,53 @@ async fn message_content_parts_keep_their_own_text_blocks() {
     );
 }
 
+/// #472: a late delta for a part whose block the next part already ended
+/// reopens that block instead of failing a strict stream.
+#[tokio::test]
+async fn a_late_delta_reopens_its_part_block() {
+    let fetch = MockFetch::new(vec![sse(&[
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "output": []}}),
+        json!({"type": "response.output_item.added", "output_index": 0, "item": {"type": "message", "id": "msg_1"}}),
+        json!({"type": "response.output_text.delta", "item_id": "msg_1", "content_index": 0, "delta": "a"}),
+        json!({"type": "response.output_text.delta", "item_id": "msg_1", "content_index": 1, "delta": "b"}),
+        json!({"type": "response.output_text.delta", "item_id": "msg_1", "content_index": 0, "delta": "c"}),
+        json!({"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "id": "msg_1", "content": [
+            {"type": "output_text", "text": "ac"},
+            {"type": "output_text", "text": "b"}
+        ]}}),
+        json!({"type": "response.completed", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "status": "completed", "output": []}}),
+    ])]);
+    let mut options = options();
+    options.strict_stream = Some(true);
+
+    let parts = stream_parts(model(&fetch).do_stream(&options).await.unwrap()).await;
+
+    let text: Vec<Value> = parts
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|part| {
+            part["type"].as_str().unwrap().starts_with("text") || part["type"] == "error"
+        })
+        .map(|part| json!([part["type"], part["id"], part.get("delta")]))
+        .collect();
+    assert_eq!(
+        text,
+        vec![
+            json!(["text-start", "text-msg_1:0", null]),
+            json!(["text-delta", "text-msg_1:0", "a"]),
+            json!(["text-end", "text-msg_1:0", null]),
+            json!(["text-start", "text-msg_1:1", null]),
+            json!(["text-delta", "text-msg_1:1", "b"]),
+            json!(["text-end", "text-msg_1:1", null]),
+            json!(["text-start", "text-msg_1:0", null]),
+            json!(["text-delta", "text-msg_1:0", "c"]),
+            json!(["text-end", "text-msg_1:0", null]),
+        ],
+        "{parts:#}"
+    );
+}
+
 /// #472: a streamed `function_call` carries its item id, which differs from
 /// its `call_id`.
 #[tokio::test]
