@@ -801,20 +801,17 @@ pub(crate) fn new_call_id() -> String {
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
 ///
 /// 这是 recording、logging 和 public error context 的唯一敏感键策略。
-/// 覆盖 `authorization`/`api-key`/`apikey`/`key`/`cookie`/`set-cookie`。
-/// 其中 `key` 取 **exact** 匹配
-/// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
-/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
+/// 名字先 lowercase,再去掉 `-`/`_` 后匹配:以 `key`/`token`/`auth` 结尾
+/// (`x-api-key`、`X-Prodia-Key`、`Ocp-Apim-Subscription-Key`、
+/// `x-portkey-virtual-key`、`helicone-auth`),含 `apikey`/`secret`
+/// (`x-api-secret`),含 `authorization`,以及 `cookie`/`set-cookie`。
+/// 调用方可经 `ProviderHeaders.user`/`CallOptions.headers` 配置任意名字的
+/// 凭据头,故按后缀宽匹配(#459);代价是 `X-Key`、`monkey` 以及缓存路由键
+/// `prompt_cache_key`/`promptCacheKey` 这类非凭据名字也会被脱敏。
 ///
-/// **token 不再用 contains**——教训:`contains("token")` 会误伤
+/// **token 不用 contains**——教训:`contains("token")` 会误伤
 /// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
-/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为
-/// 精确匹配常见 bearer-token 字段和 AWS Bedrock sigv4 的
-/// `x-amz-security-token`(name 已 lowercase 归一化)。其余 needle 维持 contains,以覆盖
-/// `x-goog-api-key`/`proxy-authorization` 等变体。
-///
-/// Provider auth headers whose names match none of these are listed by name:
-/// Prodia's `X-Prodia-Key` and the Azure `Ocp-Apim-Subscription-Key`.
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     // Fast stack-only ASCII path for normal header / JSON key lengths (<= 128 B).
@@ -835,10 +832,10 @@ pub fn is_sensitive_key(name: &str) -> bool {
         let squashed = &sq_buf[..sq_len];
         return n == b"cookie"
             || n == b"set-cookie"
-            || n == b"key"
-            || squashed == b"xprodiakey"
-            || squashed.ends_with(b"subscriptionkey")
+            || squashed.ends_with(b"key")
             || squashed.ends_with(b"token")
+            || squashed.ends_with(b"auth")
+            || contains_subslice(squashed, b"secret")
             || contains_subslice(n, b"authorization")
             || contains_subslice(squashed, b"apikey");
     }
@@ -846,10 +843,10 @@ pub fn is_sensitive_key(name: &str) -> bool {
     let squashed: String = n.chars().filter(|c| *c != '-' && *c != '_').collect();
     n == "cookie"
         || n == "set-cookie"
-        || n == "key"
-        || squashed == "xprodiakey"
-        || squashed.ends_with("subscriptionkey")
+        || squashed.ends_with("key")
         || squashed.ends_with("token")
+        || squashed.ends_with("auth")
+        || squashed.contains("secret")
         || n.contains("authorization")
         || squashed.contains("apikey")
 }
@@ -2708,6 +2705,10 @@ mod tests {
             "X-Prodia-Key",
             "Ocp-Apim-Subscription-Key",
             "ocp_apim_subscription_key",
+            // #459: configured gateway credential headers.
+            "x-portkey-virtual-key",
+            "helicone-auth",
+            "x-api-secret",
         ] {
             assert!(is_sensitive_key(key), "{key} must be redacted");
         }
@@ -2722,7 +2723,7 @@ mod tests {
         let v = serde_json::json!({
             "headers": {
                 "Authorization": "Bearer sk-abc",
-                "X-Key": "ok",
+                "X-Request-Id": "ok",
                 "x-goog-api-key": "gkey",
                 "x-amz-security-token": "sts-tok"
             },
@@ -2746,7 +2747,7 @@ mod tests {
         assert_eq!(r["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
         assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
-        assert_eq!(r["headers"]["X-Key"], "ok");
+        assert_eq!(r["headers"]["X-Request-Id"], "ok");
         assert_eq!(r["providerOptions"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["api_key"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["token"], "[REDACTED]");
