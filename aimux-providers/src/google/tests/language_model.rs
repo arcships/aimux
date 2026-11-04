@@ -8184,8 +8184,13 @@ mod in_stream_error {
                 "status": "RESOURCE_EXHAUSTED",
             }
         });
+        // The text chunk carries no finish reason, which would end the
+        // stream before the error event (#469).
+        let text_chunk = json!({
+            "candidates": [{ "content": { "parts": [{ "text": "Hello" }], "role": "model" } }],
+        });
         let mock = sse_stream_mock(vec![
-            sse_text_chunks(&["Hello"], None, None).concat(),
+            sse_data_chunk(&text_chunk),
             sse_data_chunk(&error_event),
         ]);
         let model = stream_test_provider(&mock).chat("gemini-pro");
