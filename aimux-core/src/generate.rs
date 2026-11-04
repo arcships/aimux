@@ -11,7 +11,7 @@
 //!    `streamText` do (ai@7.0.127 `generate-text/generate-text.ts`,
 //!    `generate-text/stream-text.ts`). Aimux runs one step per call.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -805,11 +805,11 @@ impl StreamTextResult {
                     id,
                     text,
                     provider_metadata,
-                } => rm.text_delta(id, &text, provider_metadata),
+                } => rm.text_delta(&id, &text, provider_metadata),
                 TextStreamPart::TextEnd {
                     id,
                     provider_metadata,
-                } => rm.text_end(id, provider_metadata),
+                } => rm.text_end(&id, provider_metadata),
                 TextStreamPart::ReasoningStart {
                     id,
                     provider_metadata,
@@ -818,11 +818,11 @@ impl StreamTextResult {
                     id,
                     text,
                     provider_metadata,
-                } => rm.reasoning_delta(id, &text, provider_metadata),
+                } => rm.reasoning_delta(&id, &text, provider_metadata),
                 TextStreamPart::ReasoningEnd {
                     id,
                     provider_metadata,
-                } => rm.reasoning_end(id, provider_metadata),
+                } => rm.reasoning_end(&id, provider_metadata),
                 TextStreamPart::ToolCall(call) => rm.tool_call(&call),
                 // Tool results (not preliminary ones), tool errors and
                 // approval responses enter the step content as they arrive
@@ -1857,6 +1857,10 @@ async fn stream_in_operation(
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
+            // The text and reasoning parts started and not yet ended
+            // (`activeTextContent`, `activeReasoningContent`).
+            let mut active_text: HashSet<String> = HashSet::new();
+            let mut active_reasoning: HashSet<String> = HashSet::new();
             let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
@@ -1984,7 +1988,33 @@ async fn stream_in_operation(
                                 .widen::<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>()
                                 .into_text_stream_part()
                             {
+                                // stream-text.ts:1540-1636: a delta or end of a part
+                                // that was never started is followed by an error part.
+                                let missing = match &part {
+                                    TextStreamPart::TextStart { id, .. } => {
+                                        active_text.insert(id.clone());
+                                        None
+                                    }
+                                    TextStreamPart::TextDelta { id, .. } => (!active_text.contains(id))
+                                        .then(|| format!("text part {id} not found")),
+                                    TextStreamPart::TextEnd { id, .. } => (!active_text.remove(id))
+                                        .then(|| format!("text part {id} not found")),
+                                    TextStreamPart::ReasoningStart { id, .. } => {
+                                        active_reasoning.insert(id.clone());
+                                        None
+                                    }
+                                    TextStreamPart::ReasoningDelta { id, .. } => (!active_reasoning.contains(id))
+                                        .then(|| format!("reasoning part {id} not found")),
+                                    TextStreamPart::ReasoningEnd { id, .. } => (!active_reasoning.remove(id))
+                                        .then(|| format!("reasoning part {id} not found")),
+                                    _ => None,
+                                };
                                 yield Ok(part);
+                                if let Some(message) = missing {
+                                    yield Ok(TextStreamPart::Error {
+                                        error: AiMuxError::other(message),
+                                    });
+                                }
                             }
                         }
                     },
