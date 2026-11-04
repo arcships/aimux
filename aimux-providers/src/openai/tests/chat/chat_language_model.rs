@@ -323,9 +323,10 @@ fn tool_call_content() -> Value {
 }
 
 fn finish_usage(input: u32, output: u32, raw: Value) -> Value {
+    // #478: unreported counts stay unknown (the AI SDK fills 0).
     json!({
-        "inputTokens": { "cacheRead": 0, "noCache": input, "total": input },
-        "outputTokens": { "reasoning": 0, "text": output, "total": output },
+        "inputTokens": { "noCache": input, "total": input },
+        "outputTokens": { "text": output, "total": output },
         "raw": raw,
     })
 }
@@ -449,8 +450,9 @@ mod do_generate {
         assert_eq!(
             json!(result.usage),
             json!({
-                "inputTokens": { "cacheRead": 0, "noCache": 20, "total": 20 },
-                "outputTokens": { "reasoning": 0, "text": 5, "total": 5 },
+                // #478: unreported counts stay unknown (the AI SDK fills 0).
+                "inputTokens": { "noCache": 20, "total": 20 },
+                "outputTokens": { "text": 5, "total": 5 },
                 "raw": { "completion_tokens": 5, "prompt_tokens": 20, "total_tokens": 25 },
             })
         );
@@ -528,9 +530,10 @@ mod do_generate {
 
         assert_eq!(
             json!(result.usage),
+            // #478: unreported counts stay unknown (the AI SDK fills 0).
             json!({
-                "inputTokens": { "cacheRead": 0, "noCache": 20, "total": 20 },
-                "outputTokens": { "reasoning": 0, "text": 0, "total": 0 },
+                "inputTokens": { "noCache": 20, "total": 20 },
+                "outputTokens": {},
                 "raw": { "prompt_tokens": 20, "total_tokens": 20 },
             })
         );
@@ -1161,7 +1164,8 @@ mod do_generate {
             json!(result.usage),
             json!({
                 "inputTokens": { "cacheRead": 1152, "cacheWrite": 256, "noCache": 592, "total": 2000 },
-                "outputTokens": { "reasoning": 0, "text": 20, "total": 20 },
+                // #478: unreported counts stay unknown (the AI SDK fills 0).
+                "outputTokens": { "text": 20, "total": 20 },
                 "raw": usage,
             })
         );
@@ -1519,7 +1523,8 @@ mod do_generate {
         assert_eq!(
             json!(result.usage),
             json!({
-                "inputTokens": { "cacheRead": 0, "noCache": 15, "total": 15 },
+                // #478: unreported counts stay unknown (the AI SDK fills 0).
+                "inputTokens": { "noCache": 15, "total": 15 },
                 "outputTokens": { "reasoning": 10, "text": 10, "total": 20 },
                 "raw": usage,
             })
@@ -2718,7 +2723,8 @@ mod do_stream {
                 "type": "finish",
                 "usage": {
                     "inputTokens": { "cacheRead": 1152, "cacheWrite": 256, "noCache": 592, "total": 2000 },
-                    "outputTokens": { "reasoning": 0, "text": 20, "total": 20 },
+                    // #478: unreported counts stay unknown (the AI SDK fills 0).
+                    "outputTokens": { "text": 20, "total": 20 },
                     "raw": {
                         "completion_tokens": 20,
                         "prompt_tokens": 2000,
@@ -2922,7 +2928,8 @@ mod do_stream {
             assert_eq!(
                 parts,
                 expected(json!({
-                    "inputTokens": { "cacheRead": 0, "noCache": 15, "total": 15 },
+                    // #478: unreported counts stay unknown (the AI SDK fills 0).
+                    "inputTokens": { "noCache": 15, "total": 15 },
                     "outputTokens": { "reasoning": 10, "text": 10, "total": 20 },
                     "raw": {
                         "completion_tokens": 20,
