@@ -8,14 +8,18 @@
 >
 > 本手册是"知识"的归宿：各厂商的 wire 参数、配置示例、核实日期。知识会过期——以厂商官方文档为准，本手册仅作参考。
 > 数据来源：[model-config-research/](internal/model-config-research/)（2026-08-01 全网调研，250 家）。
+>
+> **0.6 调用方式。** 绑定不再提供 `generateText` / `createProvider`。Node 用 `Client` 创建 provider，再 `model.generate(prompt, options)`。对外 JSON 是 camelCase：`maxOutputTokens`、`providerOptions`。Rust 源码字段仍是 `max_output_tokens`、`provider_options`，序列化后同为这两个 camelCase 键。下面示例里的对象就是 `providerOptions` 的值。
 
 ---
 
 ## 1. reasoning：按包映射
 
 ```ts
-await generateText(model, prompt, { reasoning: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' })
-// 注：枚举另有 provider-default（不传档位），实际可设档位 6 个
+await model.generate(prompt, {
+  reasoning: 'none', // or 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+})
+// 枚举另有 provider-default（不传档位）。上面列出的是可设档位。
 ```
 
 - OpenAI-compatible 默认把档位写成 `reasoning_effort`；原生 provider 按包规则映射。例如 Groq 将 minimal 映射为 low、xhigh 映射为 high；DeepSeek 将 minimal/low 映射为 low、medium/high 映射为 high、xhigh 映射为 max。
@@ -40,12 +44,14 @@ await generateText(model, prompt, { reasoning: 'none' | 'minimal' | 'low' | 'med
 
 ```ts
 // 显式关思考（优先于 reasoning）
-await generateText(model, p, { provider_options: { deepseek: { thinking: { type: 'disabled' } } } })
+await model.generate(p, {
+  providerOptions: { deepseek: { thinking: { type: 'disabled' } } },
+})
 
 // 开思考 + xhigh 档（官方样例：两参数独立）
-await generateText(model, p, {
+await model.generate(p, {
   reasoning: 'xhigh',
-  provider_options: { deepseek: { thinking: { type: 'enabled' } } },
+  providerOptions: { deepseek: { thinking: { type: 'enabled' } } },
 })
 ```
 
@@ -57,20 +63,20 @@ await generateText(model, p, {
 
 | 厂商 | 关思考 wire | 配置示例 | 备注/来源 |
 |---|---|---|---|
-| **GLM / Zhipu**（bigmodel/zai/zhipu_v4） | `thinking:{type:"disabled"}` | `provider_options: { zhipuV4: { thinking: { type: 'disabled' } } }` | 跨代稳定（batch-01/06） |
-| **Qwen 系**（alibaba/baidu） | `enable_thinking: false`；预算 `thinking_budget` [100,16384] | `provider_options: { alibaba: { enable_thinking: false } }`；开思考 `{ enable_thinking: true, thinking_budget: 16384 }` | qwen3 混合（batch-01）；**纯思考版不可关**；新版混合用消息级 `/no_think` |
-| **Kimi / Moonshot** | k3: `reasoning_effort`（low/high/max）；k2.5/k2.6: `thinking:{type:"disabled"}`；k2.7-code: **不可关** | `provider_options: { moonshotai: { thinking: { type: 'disabled' } } }`（k2.5/k2.6 系） | by-model 三套（batch-03） |
-| **MiniMax** | M3: `thinking:{type:"disabled"}`；M2.x: **不可关**（传 disabled 仍思考） | `provider_options: { minimax: { thinking: { type: 'disabled' } } }` | 开启值 M3 用 `"adaptive"`（batch-04） |
-| **方舟 / 豆包**（bytedance/byteplus） | `thinking:{type:"disabled"}`；带预算 `{type:"enabled",budget_tokens:N}` | `provider_options: { bytedance: { thinking: { type: 'disabled' } } }` | batch-01/02 |
-| **DeepInfra** | `reasoning:{enabled:false}` | `provider_options: { deepinfra: { reasoning: { enabled: false } } }` | 非 thinking 对象（batch-02） |
-| **SiliconFlow** | `thinking_budget`（思维链 token 上限，Qwen3 系强制截断；**无 0=关 语义**，关思考走 qwen 系 `enable_thinking`） | `provider_options: { siliconflow: { thinking_budget: 1024 } }`（调低预算） | batch-05 |
-| **Perplexity** | `reasoning_effort` 四档 + `stream_mode`；推理 token **不可强制关闭** | `provider_options: { perplexity: { stream_mode: 'concise' } }` | batch-05 |
-| **Groq** | `reasoning_format`（如 raw）；effort 按包映射 | `provider_options: { groq: { reasoningFormat: 'raw' } }` | `reasoningEffort` 接受 none/default/low/medium/high |
-| **Heroku** | `extended_thinking:{enabled,budget_tokens,include_reasoning}`；未知参数需 `allow_ignored_params` | `provider_options: { heroku: { extended_thinking: { enabled: true, budget_tokens: 2000 } } }`；非标准参数一并 `provider_options: { heroku: { allow_ignored_params: true, ... } }` | batch-03 |
-| **Hetzner** | `chat_template_kwargs:{enable_thinking:false}` | `provider_options: { hetzner: { chat_template_kwargs: { enable_thinking: false } } }` | 社区实测（batch-03） |
-| **Venice** | `venice_parameters:{disable_thinking:true}` | `provider_options: { venice: { venice_parameters: { disable_thinking: true } } }` | 封闭字段（batch-06） |
-| **腾讯 hy3**（TokenHub） | `thinking:{type:"enabled"}` + `reasoning_effort`（默认 low） | `provider_options: { tencentTokenhub: { thinking: { type: 'enabled' }, reasoning_effort: 'low' } }` | batch-06（C 级官方文档） |
-| **StepFun** | `reasoning_format: "general"/"deepseek-style"` | `provider_options: { stepfun: { reasoning_format: 'deepseek-style' } }` | batch-05 |
+| **GLM / Zhipu**（bigmodel/zai/zhipu_v4） | `thinking:{type:"disabled"}` | `providerOptions: { zhipuV4: { thinking: { type: 'disabled' } } }` | 跨代稳定（batch-01/06） |
+| **Qwen 系**（alibaba/baidu） | `enable_thinking: false`；预算 `thinking_budget` [100,16384] | `providerOptions: { alibaba: { enable_thinking: false } }`；开思考 `{ enable_thinking: true, thinking_budget: 16384 }` | qwen3 混合（batch-01）；**纯思考版不可关**；新版混合用消息级 `/no_think` |
+| **Kimi / Moonshot** | k3: `reasoning_effort`（low/high/max）；k2.5/k2.6: `thinking:{type:"disabled"}`；k2.7-code: **不可关** | `providerOptions: { moonshotai: { thinking: { type: 'disabled' } } }`（k2.5/k2.6 系） | by-model 三套（batch-03） |
+| **MiniMax** | M3: `thinking:{type:"disabled"}`；M2.x: **不可关**（传 disabled 仍思考） | `providerOptions: { minimax: { thinking: { type: 'disabled' } } }` | 开启值 M3 用 `"adaptive"`（batch-04） |
+| **方舟 / 豆包**（bytedance/byteplus） | `thinking:{type:"disabled"}`；带预算 `{type:"enabled",budget_tokens:N}` | `providerOptions: { bytedance: { thinking: { type: 'disabled' } } }` | batch-01/02 |
+| **DeepInfra** | `reasoning:{enabled:false}` | `providerOptions: { deepinfra: { reasoning: { enabled: false } } }` | 非 thinking 对象（batch-02） |
+| **SiliconFlow** | `thinking_budget`（思维链 token 上限，Qwen3 系强制截断；**无 0=关 语义**，关思考走 qwen 系 `enable_thinking`） | `providerOptions: { siliconflow: { thinking_budget: 1024 } }`（调低预算） | batch-05 |
+| **Perplexity** | `reasoning_effort` 四档 + `stream_mode`；推理 token **不可强制关闭** | `providerOptions: { perplexity: { stream_mode: 'concise' } }` | batch-05 |
+| **Groq** | `reasoning_format`（如 raw）；effort 按包映射 | `providerOptions: { groq: { reasoningFormat: 'raw' } }` | `reasoningEffort` 接受 none/default/low/medium/high |
+| **Heroku** | `extended_thinking:{enabled,budget_tokens,include_reasoning}`；未知参数需 `allow_ignored_params` | `providerOptions: { heroku: { extended_thinking: { enabled: true, budget_tokens: 2000 } } }`；非标准参数一并 `providerOptions: { heroku: { allow_ignored_params: true, ... } }` | batch-03 |
+| **Hetzner** | `chat_template_kwargs:{enable_thinking:false}` | `providerOptions: { hetzner: { chat_template_kwargs: { enable_thinking: false } } }` | 社区实测（batch-03） |
+| **Venice** | `venice_parameters:{disable_thinking:true}` | `providerOptions: { venice: { venice_parameters: { disable_thinking: true } } }` | 封闭字段（batch-06） |
+| **腾讯 hy3**（TokenHub） | `thinking:{type:"enabled"}` + `reasoning_effort`（默认 low） | `providerOptions: { tencentTokenhub: { thinking: { type: 'enabled' }, reasoning_effort: 'low' } }` | batch-06（C 级官方文档） |
+| **StepFun** | `reasoning_format: "general"/"deepseek-style"` | `providerOptions: { stepfun: { reasoning_format: 'deepseek-style' } }` | batch-05 |
 
 ## 4. max_tokens_key（内置修复，用户无感）
 
@@ -81,14 +87,14 @@ registry 内置了 7 家兼容厂商的 max tokens 字段名差异（**纯内部
 - 原生 Groq 和 DeepSeek 使用 `max_tokens`，不走 registry 推断。
 
 ```ts
-// 用户始终写 max_output_tokens，aimux 按厂商自动选字段名
-await generateText(model, prompt, { max_output_tokens: 4096 })
+// 绑定写 maxOutputTokens。Rust 写 max_output_tokens。aimux 按厂商选择 wire 字段名。
+await model.generate(prompt, { maxOutputTokens: 4096 })
 // OpenAI 推理模型 → {"max_completion_tokens":4096}
 // stepfun → {"max_tokens":4096}
 ```
 
-> 使用顶层 `max_output_tokens`，由包选择 wire 字段名。`provider_options`
-> 必须是 namespace → object 的结构；`provider_options.maxCompletionTokens`
+> 使用顶层 `maxOutputTokens`（Rust 字段 `max_output_tokens`），由包选择 wire 字段名。`providerOptions`
+> 必须是 namespace → object 的结构；`providerOptions.maxCompletionTokens`
 > 直接放数字不符合结构，不能作为 max tokens 的配置入口。
 >
 > 未内置 `max_tokens_key` 的兼容厂商走默认推断：推理模型发
@@ -99,8 +105,8 @@ await generateText(model, prompt, { max_output_tokens: 4096 })
 
 ```ts
 // OpenAI-compatible per-call：厂商命名空间下 schema 不认识的字段原样进入请求体
-await generateText(model, prompt, {
-  provider_options: { alibaba: { enable_thinking: false } },
+await model.generate(prompt, {
+  providerOptions: { alibaba: { enable_thinking: false } },
 })
 
 // OpenAI-compatible 已知字段（user / reasoningEffort / textVerbosity / strictJsonSchema）按 schema 处理，
@@ -143,23 +149,25 @@ aimux **不自动合并**二者:`list_models` 不带 anya2a 配置,`get_model_sp
 ### 7.1 使用方式
 
 ```ts
-// 1. 创建 provider 句柄
-const p = await createProvider('deepseek', apiKey)
+const client = new Client()
+const provider = await client.provider({
+  package: 'deepseek',
+  settings: { apiKey },
+})
 
-// 2. 列出可用模型(仅 provider 官方数据:RuntimeModel[],通常只有 id)
-const models = await p.listModels()
-// → [{ id: 'deepseek-v4', owned_by: 'deepseek', created: 1715367049 }, ...]
+// 列出可用模型：provider.invoke method "listModels"（RuntimeModel[]，通常只有 id）
+const models = await provider.invoke('listModels')
 
-// 3. 独立拉取 anya2a 社区配置(thin fetch,无缓存);host 自行按 modelId 合并
-const catalogue = await getModelSpecs()
-const spec = catalogue.specs?.['deepseek']?.['deepseek-v4']
-// → { limits: { context: 1000000 }, reasoning: { effort: 'high' }, ... } 或 undefined
-// specs 按 createProvider 接受的名字分组；anya2a 中没有对应 aimux provider 的条目放在
-// catalogue.unmapped，按 anya2a 自己的 provider id 分组，aimux 不猜名字
+// 独立拉取 anya2a 社区配置（catalogue.fetch，无缓存）。host 自行按 modelId 合并。
+const catalogue = await client.catalogue({})
+// specs 按 provider.create 接受的名字分组；anya2a 中没有对应 aimux provider 的条目放在
+// catalogue.unmapped，按 anya2a 自己的 provider id 分组，aimux 不猜名字。
 
-// 4. 用户读 spec,按业务自己定 options
-const model = await p.model('deepseek-v4')
-await generateText(model, prompt, { max_output_tokens: 8000, provider_options: { deepseek: { thinking: { type: 'enabled' } } } })
+const model = await provider.model('deepseek-chat', 'languageModel')
+await model.generate(prompt, {
+  maxOutputTokens: 8000,
+  providerOptions: { deepseek: { thinking: { type: 'enabled' } } },
+})
 ```
 
 ### 7.2 config 是咨询性的
@@ -177,7 +185,7 @@ anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字
 
 ### 7.4 覆盖范围
 
-Rust 通过 `Provider::discovery()` 检查厂商是否提供模型发现,返回 `None` 表示未提供。预设表有 282 行;Groq 和 DeepSeek 由各自厂商包提供发现。绑定的 provider 句柄保留 `listModels()` / `list_models()` API。
+Rust 通过 `Provider::discovery()` 检查厂商是否提供模型发现,返回 `None` 表示未提供，再调用 `list_models()`。绑定没有 0.5 的 `listModels()` 方法：操作是 `provider.invoke`，`method` 为 `"listModels"`。`get_model_specs` 仍是 Rust 函数；绑定对应全局操作 `catalogue.fetch`。预设表的行数以生成的 [api/providers.md](api/providers.md) 为准。Groq 和 DeepSeek 由各自厂商包提供发现。
 
 ### 7.5 无内置缓存(不存在缓存/离线环境变量)
 

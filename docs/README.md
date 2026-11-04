@@ -1,11 +1,15 @@
 # aimux documentation
 
-Public documentation for aimux — a unified LLM access layer written in Rust.
+Public documentation for aimux (arcships) — an in-process embedded SDK for LLM provider access, written in Rust. Not a proxy gateway.
 
 ## Guides & references
 
 | Doc | Contents |
 |-----|----------|
+| [../README.zh-CN.md](../README.zh-CN.md) | **简体中文 README** |
+| [../FAQ.md](../FAQ.md) | What aimux is, proxy gateways, languages, tool calling, license, versioning |
+| [../examples/](../examples/) | Runnable Rust examples (chat, streaming, switching providers) |
+| [../llms.txt](../llms.txt) | Short summary for AI answer engines |
 | [upgrading-to-0.6.md](upgrading-to-0.6.md) | **0.6 migration guide** — breaking changes by language and the upgrade checklist |
 | [API.md](API.md) | **API overview** — architecture, language guides, providers, operations, errors |
 | [api/reference.md](api/reference.md) | **API reference index** — generated DTOs, core types, ops and error sources |

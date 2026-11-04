@@ -1,6 +1,6 @@
 # aimux — Project Introduction and Promotional Material
 
-> **Unified LLM service access layer — Rust core, one API to access 327 AI providers, 8 language bindings**
+> **In-process embedded SDK — one Rust core, 300+ provider names, 8 language bindings. Not a proxy gateway.**
 >
 > This document compiles all of aimux's design decisions and benchmark conclusions, for use in README, blogs, and technical talks.
 >
@@ -13,7 +13,7 @@
 
 ## One-line Positioning
 
-> **aimux is a Rust replacement for the Vercel AI SDK. It converges the HTTP APIs of 327 AI providers into a single unified interface, uses a Rust core to deliver a 7-15x performance advantage, and covers eight language ecosystems — Node / Python / Go / Java / Kotlin / Swift / Flutter / C — through FFI bindings.**
+> **aimux (arcships) is an in-process embedded SDK. It calls provider HTTP APIs from your process through one Rust core, with bindings for Node, Python, Go, Java, Kotlin, Swift, Flutter, and C. Public JSON follows the Vercel AI SDK V4 shapes. It is not a proxy gateway.**
 
 aimux does not do agent loops, RAG, or orchestration — it focuses solely on unifying service access. This is the fundamental difference between it and LangChain / Mastra: the former is an access layer, the latter is an orchestration layer.
 
@@ -24,9 +24,9 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 | Metric | Value |
 |------|------|
 | Rust code | 144,500+ lines |
-| AI providers | 327 accepted names (282 registry-backed presets + 45 vendor packages; listed by `provider_names()`) |
+| AI providers | 300+ names in public copy. Exact list: generated [api/providers.md](api/providers.md) (`provider_names()`) |
 | Modality traits | 8 (text/embedding/image/video/speech/transcription/reranking/search) |
-| Test cassettes | 2,650 recorded replays |
+| Test cassettes | 2,797 JSON files under `aimux-providers/tests/cassettes` |
 | Test files | 118 |
 | Rust crates | 7 core + 8 bindings |
 | Language bindings | 8 (Node / Python / Go / Java / Kotlin / Swift / Flutter / C) |
@@ -231,7 +231,7 @@ JS/Python call → JSON.stringify → serde_json::from_str → Rust core → ser
 
 #### 4. Recorded testing (Cassette)
 
-2,650 real API response recordings, with no dependency on network or keys:
+2,797 real API response recordings, with no dependency on network or keys:
 
 ```
 Testing: mock server replays fixed responses → deterministic testing
@@ -262,7 +262,7 @@ The provider layer does not directly depend on `reqwest`; it abstracts the HTTP 
 |------|-------|--------|:---:|
 | Performance (Node equivalent comparison) | 0.101ms | 1.488ms (OpenAI SDK) | **aimux 14.7x** |
 | Performance (Python equivalent comparison) | 0.080ms | 0.595ms (OpenAI SDK) | **aimux 7.5x** |
-| Provider coverage | 327 | ~20 | **aimux 14.5x** |
+| Provider coverage | 300+ (exact list in [providers.md](api/providers.md)) | ~20 | **aimux** |
 | Modalities | 8 | 6 | **aimux** (more video/STT/reranking/search/file) |
 | Memory (2000 req) | +0~2MB | +60~144MB | **aimux** |
 | GC pauses | None (Rust) | V8 GC jitter | **aimux** |
@@ -290,10 +290,10 @@ aimux does not compete with LangChain; instead it serves as the layer beneath La
 
 | Dimension | aimux | rig / rust-genai |
 |------|-------|------------------|
-| Provider count | 327 | ~20-40 |
+| Provider count | 300+ (exact list in [providers.md](api/providers.md)) | ~20-40 |
 | Multi-language bindings | 8 | Rust only |
 | Multimodal | 8 traits | Partial |
-| Recorded testing | 2,650 cassettes | Few |
+| Recorded testing | 2,797 JSON cassettes | Few |
 | Positioning | Pure access layer | Access + partial orchestration |
 
 ---
@@ -397,7 +397,7 @@ async fn main() -> Result<(), AiMuxError> {
         GenerateTextOptions::default(),
     ).await?;
 
-    println!("{}", result.text);
+    println!("{}", result.text());
     Ok(())
 }
 ```
@@ -444,9 +444,9 @@ let model = provider.language_model("llama-3.3-70b-versatile")?;
 
 The native protocol providers have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while compatible presets use provider_registry.json and a runtime descriptor table. `create_provider(name, PresetSettings)` selects either a preset or a vendor package.
 
-### 4. Recorded testing with 2650 cassettes
+### 4. Recorded testing with 2,797 JSON cassettes
 
-Tests do not depend on network or keys. Each CI run replays the full set of 2650 cassettes, guaranteeing regression safety for protocol conversion. The cassettes come from real API responses and cover scenarios such as tool calling, multi-turn dialogue, reasoning/thinking, and structured output.
+Tests do not depend on network or keys. The files under `aimux-providers/tests/cassettes` replay recorded API responses, covering tool calling, multi-turn dialogue, reasoning/thinking, and structured output.
 
 ### 5. Data model aligned with AI SDK V4
 
@@ -458,10 +458,10 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 
 ### Completed
 
-- [x] 327 provider names accepted by `create_provider` (282 presets + 45 vendor packages; `provider_names()` lists them)
+- [x] Provider names accepted by `create_provider` (`provider_names()` lists them; the generated catalogue is the exact count)
 - [x] 8 modality traits (text/embedding/image/video/speech/transcription/reranking/search)
 - [x] 7 language bindings (Node/Python/Swift/Kotlin/Flutter/C/Rust)
-- [x] 2650 cassette recorded tests
+- [x] 2,797 JSON cassette files under `aimux-providers/tests/cassettes`
 - [x] Performance benchmark: 14.7x (Node) / 7.5x (Python) lead
 - [x] Request-layer optimization (RFC-0009: connection pool + backoff + timeout + reqwest decoupling)
 - [x] Data model aligned with AI SDK V4

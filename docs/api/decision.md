@@ -1,8 +1,11 @@
 # Decision API
 
-> **0.6.0.** Decision resources are obtained with `provider.model` and
-> `method: "decision"`; call `decision.capabilities` / `decision.decide`.
-> See [Upgrading to 0.6](../upgrading-to-0.6.md) for the binding-wide changes.
+> **0.6.0.** Decision resources are obtained with `provider.create` and
+> `provider.model` (`method: "decision"`). Call `decision.capabilities` and
+> `decision.decide`. The 0.5 helpers `createProvider`, `decide`, `jevDecision`,
+> `NewJevDecision`, `DecisionModel.jev`, `aimux_jev_decision_new`, and
+> `aimux_decide` are removed. Rust still has `decide` and `JevProvider`.
+> See [Upgrading to 0.6](../upgrading-to-0.6.md).
 
 `decide` 对同一个文本或 JSON state 回答多道 typed questions，结果按问题 ID
 索引。模型契约是 AI SDK 的 `DecisionModelV4`（`@ai-sdk/provider@4.0.22
@@ -72,21 +75,30 @@ UnsupportedFunctionality。
 创建句柄和描述模型均不发网络请求。
 
 ```ts
-import { createProvider, decide } from '@arcships/aimux'
+import { Client, DecisionModel } from '@arcships/aimux'
 
-const provider = await createProvider('openai', process.env.OPENAI_API_KEY)
-const model = await provider.decisionModel('gpt-6-luna')
-const result = await decide(model, {
-  state: 'Please refund the duplicate charge',
-  questions: { refund: { type: 'boolean', instructions: 'Is a refund requested?' } },
-  providerOptions: { openai: { safetyIdentifier: 'app-user-123' } },
+const client = new Client()
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: process.env.OPENAI_API_KEY },
 })
-console.log(result.answers.refund) // { type: 'boolean', probability: 0.93 }
+const model = await provider.model('gpt-6-luna', 'decision')
+if (!(model instanceof DecisionModel)) throw new Error('Expected DecisionModel')
+try {
+  const result = await model.decide({
+    state: 'Please refund the duplicate charge',
+    questions: { refund: { type: 'boolean', instructions: 'Is a refund requested?' } },
+    providerOptions: { openai: { safetyIdentifier: 'app-user-123' } },
+  })
+  console.log(result.answers.refund) // { type: 'boolean', probability: 0.93 }
+} finally {
+  await model.close()
+  await provider.close()
+}
 ```
 
-Python 对应 `create_provider('openai', key).decision_model('gpt-6-luna')`，随后
-调用下文的 `decide`。Rust 使用 `create_openai(settings)` 返回的 provider 的
-`decision(model_id)` 或 `Provider::decision_model`。服务地址为 `{base_url}/decisions`，默认使用
+Python 用 `provider.create`（`package` 为 `openai`），再 `provider.model`（`method` 为 `decision`），然后 `decision.decide`。Rust 使用 `create_openai(settings)` 返回的 provider 的
+`decision(model_id)` 或 `Provider::decision_model`，再调用 `decide`。服务地址为 `{base_url}/decisions`，默认使用
 `https://api.openai.com/v1`；继承 provider 的认证、headers、organization/project 和传输，
 重试次数由调用的 `maxRetries` 控制。Registry 的 `openai:<model>` 解析到这个原生模型。
 
@@ -103,7 +115,7 @@ Choice 支持 2–255 项，Score 至少两级，每级接受文本或 `{label, 
 | `safetyIdentifier` | 最多 128 字符，作为 `safety_identifier` 发送 |
 
 ```ts
-const result = await decide(model, {
+const result = await model.decide({
   state: 'Rate the picture',
   questions: {
     choice: { type: 'choice', instructions: 'Pick a value', criteria: { boolean_true: null, text_true: null } },
@@ -139,11 +151,12 @@ provider 为 `<语言模型 provider>.decision`。`OpenAIProvider::evaluation(mo
 ## 本地运行时和 Cloudflare
 
 ```ts
-const runtime = await createProvider('sglang', undefined, {
-  baseUrl: 'http://127.0.0.1:30000/v1',
+const runtime = await client.provider({
+  package: 'sglang',
+  settings: { baseUrl: 'http://127.0.0.1:30000/v1' },
 })
-const model = await runtime.decisionModel('my-served-model')
-const result = await decide(model, {
+const model = await runtime.model('my-served-model', 'decision')
+const result = await model.decide({
   state: { ticket: 'Checkout failed' },
   questions: { urgent: { type: 'boolean', instructions: 'Needs action today?' } },
   providerOptions: { sglang: { protocol: 'decisions', temperature: 1 } },
@@ -211,7 +224,7 @@ SGLang detail 接受 low/high/auto；其他本地 SystemOne provider 不接受 d
 已有完整 prompt token IDs 的调用方可选 SGLang score 或 vLLM generative_scoring：
 
 ```ts
-const result = await decide(model, {
+const result = await model.decide({
   state: 'The state encoded into the prompt',
   questions: { urgent: { type: 'boolean', instructions: 'Needs action today?' } },
   providerOptions: { sglang: {
@@ -268,10 +281,16 @@ NoSuchModel（`modelType = "decisionModel"`），与 `provider-registry.ts:447-4
 ## Node.js
 
 ```ts
-import { jevDecision, decide, describeDecisionModel } from '@arcships/aimux'
+import { Client, DecisionModel } from '@arcships/aimux'
 
-const model = await jevDecision(process.env.TYPESAFE_API_KEY!, 'jev-latest')
-const result = await decide(model, {
+const client = new Client()
+const provider = await client.provider({
+  package: 'jev',
+  settings: { apiKey: process.env.TYPESAFE_API_KEY },
+})
+const model = await provider.model('jev-latest', 'decision')
+if (!(model instanceof DecisionModel)) throw new Error('Expected DecisionModel')
+const result = await model.decide({
   state: { message: 'Please refund the duplicate charge' },
   questions: {
     refund: { type: 'boolean', instructions: 'Is a refund requested?' },
@@ -283,7 +302,7 @@ const result = await decide(model, {
   maxRetries: 0,
 })
 console.log(result.answers, result.rounding)
-console.log(describeDecisionModel(model))
+console.log(await model.capabilities())
 // { specificationVersion: 'v4', provider: 'jev', modelId: 'jev-latest',
 //   supportedQuestionTypes: ['choice', 'score', 'boolean'] }
 ```
@@ -293,26 +312,34 @@ factory 的第三个 `endpoint` 参数可覆盖完整 POST URL，用于显式配
 或本地 contract 测试。第四个 `probabilitySource` 参数接受 `native`、
 `logit_scoring` 或 `model_estimate`，官方接入缺省为 `native`。
 
-`decide` 的第三个参数接受 AbortSignal。
+Node 的 `model.decide(options, { signal })` 把 `AbortSignal` 传给这次调用。Python 在 `Client.call` / `Handle.call` 上传 `abort`。
 
 ## Python
 
 ```python
 import os
-from aimux import jev_decision, decide, describe_decision_model
+from aimux import Client
 
-model = jev_decision(os.environ['TYPESAFE_API_KEY'], 'jev-latest')
-result = decide(model, {'message': 'Please refund the duplicate charge'}, {
-    'refund': {'type': 'boolean', 'instructions': 'Is a refund requested?'},
-}, maxRetries=0)
-print(result['answers']['refund']['probability'])
-print(describe_decision_model(model))
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "jev",
+    "settings": {"apiKey": os.environ["TYPESAFE_API_KEY"]},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "decision", "modelId": "jev-latest",
+    })["handle"]) as model:
+        result = model.call("decision.decide", {"options": {
+            "state": {"message": "Please refund the duplicate charge"},
+            "questions": {
+                "refund": {"type": "boolean", "instructions": "Is a refund requested?"},
+            },
+            "maxRetries": 0,
+        }})
+        print(result["answers"]["refund"]["probability"])
+        print(model.call("decision.capabilities"))
 ```
 
-`decide(model, state, questions, **options)` 的关键字参数即 `DecideOptions` 其余字段的 JSON 键
-（`maxRetries`、`timeout`、`headers`、`providerOptions`），结果是 `DecideResult` 的 dict。
-`jev_decision` 可选第四个参数 `probability_source` 缺省为 `'native'`，结果在
-`providerMetadata['jev']['probabilitySource']` 保留声明的来源。
+`decision.decide` 的 `options` 是 `DecideOptions` JSON（`maxRetries`、`timeout`、`headers`、`providerOptions`）。Jev 的 `settings.probabilitySource` 接受 `native`、`logit_scoring` 或 `model_estimate`，缺省 `native`。结果在 `providerMetadata['jev']['probabilitySource']` 保留声明的来源。覆盖完整 POST URL 时设置 `settings.endpoint`。
 
 ## Jev 原生题目描述字段
 
@@ -340,43 +367,22 @@ Boolean criteria 的未知键等错误。Jev 在请求前检查 Choice 最多 25
 
 ## Go / Java / Kotlin / Swift / Flutter
 
-五种绑定复用相同请求/结果 JSON contract。通过已有的 provider 工厂创建
-`openai` 句柄后，调用 Go `provider.DecisionModel("gpt-6-luna")`，或
-Java/Kotlin/Swift/Flutter `provider.decisionModel("gpt-6-luna")`。
-模型独立持有连接配置，关闭 provider 后仍可使用；模型需按下表释放。
-下表保留 Jev 快捷工厂，默认访问 TypeSafe 官方服务。
+五种绑定复用相同请求/结果 JSON。先 `provider.create`（`package` 为 `openai` 或 `jev`），再 `provider.model`，`method` 为 `decision`。0.5 的 `NewJevDecision`、`DecisionModel.jev` 已删除。
 
-| 语言 | 创建模型 | 调用 | 描述模型 | 释放 |
-|---|---|---|---|---|
-| Go | `NewJevDecision(key, "jev-latest")` | `model.Decide(options)` / `DecideContext(ctx, options)` | `model.Describe()` | `defer model.Close()` |
-| Java | `DecisionModel.jev(key, "jev-latest")` | `model.decide(optionsJson)` | `model.describe()` | try-with-resources |
-| Kotlin | `DecisionModel.jev(key, "jev-latest")` | `model.decide(optionsJson)` | `model.describe()` | `use {}` |
-| Swift | `DecisionModel.jev(apiKey: key, modelId: "jev-latest")` | `model.decide(options: optionsJson)` | `model.describe()` | `close()` 或 ARC |
-| Flutter | `DecisionModel.jev(key, 'jev-latest')` | `model.decide(optionsMap)` / `decideJson(optionsJson)` | `model.describe()` | `model.close()` |
+Java 在创建之后可以调用 `provider.decisionModel(modelId)`，它发送的就是 `method: "decision"`。`DecisionModel.decide` 的参数是 `{"options": <DecideOptions>}`，`capabilities()` 对应 `decision.capabilities`。Go 用 `aimux.Create` / `aimux.CallInto` 调同样的操作名，见 [Go 指南](go.md)。
 
-Go 的 Decide 接受可 JSON 序列化的对象，Context 取消会停止 native HTTP 请求。
-Java/Kotlin/Swift 的调用及描述返回 JSON 字符串；Flutter 返回 Map 并提供
-原始 JSON 调用。Java/Kotlin/Swift/Flutter 可传原有 C ABI abort handle；0 表示
-无显式取消。C ABI 调用同步阻塞，Flutter 可将 HTTP 调用放入 worker isolate。
+Jev 的 settings 接受 `apiKey`、`endpoint`、`headers`、`probabilitySource`。不提供决策模型的 provider 在 `provider.model` 上报错。
 
 ## C ABI
 
-`aimux_provider_handle_new("openai", key, config_json, &provider_handle)` 和
-`aimux_provider_decision_model(provider_handle, model_id, &handle)` 创建 OpenAI
-决策模型。不提供决策模型的 provider 返回 `AIMUX_E_NO_SUCH_MODEL`。
+0.6 没有 `aimux_jev_decision_new`、`aimux_decide` 或 `aimux_decision_capabilities`。用生成头里的 `aimux_call`：
 
-`aimux_jev_decision_new(key, model_id, endpoint_or_NULL, &handle)` 创建模型，
-`aimux_decide(handle, opts_json, &out_json)` 接受 `DecideOptions` JSON、返回
-`DecideResult` JSON，`aimux_decide_with_abort` 可传入现有 abort handle。返回错误遵循
-[错误模型](../error-model.md)。用 aimux_drop_handle 释放模型，
-aimux_free_string 释放结果。`aimux_decision_capabilities(handle, &out_json)`
-返回 `{specificationVersion, provider, modelId, supportedQuestionTypes}`（`decision-model-v4.ts:7-11`），
-无网络请求，并遵守相同的字符串生命周期（导出名保持兼容）。
+1. `AIMUX_OP_PROVIDER_CREATE`（`provider.create`），body 为 `{"package":"jev","settings":{"apiKey":"...","probabilitySource":"native"}}` 或 `{"package":"openai","settings":{"apiKey":"..."}}`。
+2. `AIMUX_OP_PROVIDER_MODEL`（`provider.model`），`method` 为 `decision`。
+3. `AIMUX_OP_DECISION_DECIDE`（`decision.decide`），body 为 `{"options": <DecideOptions>}`。
+4. `AIMUX_OP_DECISION_CAPABILITIES`（`decision.capabilities`）返回 `{specificationVersion, provider, modelId, supportedQuestionTypes}`，不发网络请求。
 
-显式配置概率来源时可使用 `aimux_jev_decision_new_with_probability_source(key, model_id,
-endpoint, probability_source, &handle)`，source 接受上述三个值，NULL 使用
-`native`。原有 `aimux_jev_decision_new` 签名保持兼容。未知 source 在模型创建时
-返回 InvalidArgument。
+错误是 owned `aimux_error_t *`，用 `aimux_error_json` 读取。见 [C 指南](c.md) 和 [错误模型](../error-model.md)。未知的 `probabilitySource` 在创建 provider 时返回 InvalidArgument。
 
 ## 结果语义
 
@@ -404,18 +410,19 @@ TypeSafe 官方 Choice 支持 1–255 项，Score 支持 2–10 级；state 支�
 
 ## 录制与回放
 
-`decide` 复用统一录制器；各语言现有的 `init_recording` / ring recording
-入口均会录制 decision。无需在调用处另存 JSON。例如 Python：
+Rust 的 `init_recording` 仍会录下 `decide`。绑定不再导出 `init_recording`：用 `recorder.create`，再 `recorder.attach`。Python：
 
 ```python
-from aimux import init_recording, recording_flush, recording_stop
-
-init_recording("./recordings")
-try:
-    result = decide(model, state, questions)
-finally:
-    recording_flush()
-    recording_stop()
+with client.adopt(client.call("recorder.create", {
+    "backend": {"type": "jsonl", "directory": "./recordings"},
+    "capturePolicy": "full",
+})["handle"]) as recorder:
+    recorder.call("recorder.attach")
+    try:
+        result = model.call("decision.decide", {"options": options})
+    finally:
+        recorder.call("recorder.flush")
+        recorder.call("recorder.stop")
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，

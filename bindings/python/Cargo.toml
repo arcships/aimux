@@ -3,7 +3,9 @@ name = "aimux-python"
 version = "0.6.0"
 edition = "2024"
 license = "MIT"
-description = "Python binding for aimux (PyO3, native path — bypasses aimux-ffi)"
+description = "Python binding for aimux (arcships), an in-process LLM provider SDK"
+repository = "https://github.com/arcships/aimux"
+homepage = "https://github.com/arcships/aimux"
 
 [lib]
 name = "aimux"

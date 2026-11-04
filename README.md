@@ -1,19 +1,32 @@
-# aimux
+# aimux (arcships)
 
 <p align="center">
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for [327 provider names](docs/api/providers.md).**
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-> **0.6.0 is a breaking release.** Every binding now uses the shared operations
-> ABI (ABI 1 / ops 1.0), and public JSON follows the AI SDK V4. See
-> [Upgrading to 0.6](docs/upgrading-to-0.6.md) before moving a 0.5 integration.
+**aimux is an in-process embedded SDK: one Rust core and one call shape for 300+ provider names, with bindings for eight languages.**
+
+It links into your process and calls each provider's HTTP API directly. It is not a proxy gateway. It does not add agent loops, RAG, or orchestration.
+
+> **0.6.0 is a breaking release.** Every binding uses the shared operations ABI (ABI 1 / ops 1.0). Public JSON follows the Vercel AI SDK V4 shapes (camelCase fields, the AI SDK's union tags). See [Upgrading to 0.6](docs/upgrading-to-0.6.md) before moving a 0.5 integration. Binding helpers from 0.5 (`generateText`, `Model.openai`, `NewOpenAI`, `aimux_openai_new`) are removed. The Rust functions `openai()` and `generate_text` remain.
+
+| | |
+|---|---|
+| Languages | Rust, Node.js, Python, Go, Java, Kotlin, Swift, Flutter, C/C++ |
+| Providers | 300+ names. Exact list, generated: [docs/api/providers.md](docs/api/providers.md) |
+| Offline tests | 2,797 JSON cassettes in `aimux-providers/tests/cassettes` |
+| License | [MIT](LICENSE) |
+
+[FAQ](FAQ.md) · [Examples](examples/) · [llms.txt](llms.txt) · [API overview](docs/API.md) · [中文](README.zh-CN.md) · [Roadmap](ROADMAP.md)
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-327-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-300%2B-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -22,24 +35,61 @@
 [![GitHub Release](https://img.shields.io/github/v/release/arcships/aimux)](https://github.com/arcships/aimux/releases)
 [![Maven Central](https://img.shields.io/maven-central/v/ai.arcships/aimux-java)](https://central.sonatype.com/artifact/ai.arcships/aimux-java)
 
-aimux is a Rust implementation of a unified LLM provider access layer. It
-collapses the HTTP APIs of every AI provider into a single
-`dyn LanguageModel` interface that anything upstream can call.
+## Quick start (0.6.0)
 
-Unlike **rig** or **langchain**, aimux does **not** build agent loops, RAG, or
-orchestration — it focuses exclusively on unifying service access. That is the
-difference: aimux is an access layer, those are orchestration layers.
+Rust. `openai()` reads `OPENAI_API_KEY` when the request is sent. `chat` is Chat Completions. On this package, `language_model` selects the Responses API.
+
+```rust
+use aimux_core::prelude::*;
+use aimux_providers::openai::openai;
+
+#[tokio::main]
+async fn main() -> Result<(), AiMuxError> {
+    let model = openai().chat("gpt-4o");
+    let result = generate_text(
+        &model,
+        "Explain Rust ownership in one sentence.",
+        GenerateTextOptions::default(),
+    )
+    .await?;
+    println!("{}", result.text());
+    Ok(())
+}
+```
+
+Node.js. `npm install @arcships/aimux`
+
+```typescript
+import { Client, LanguageModel } from '@arcships/aimux'
+
+const client = new Client()
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: process.env.OPENAI_API_KEY },
+})
+const model = await provider.model('gpt-4o-mini', 'languageModel')
+if (!(model instanceof LanguageModel)) throw new Error('Expected LanguageModel')
+try {
+  const result = await model.generate('Explain Rust ownership in one sentence.')
+  console.log(result.text)
+} finally {
+  await model.close()
+  await provider.close()
+}
+```
+
+The same three steps — `provider.create`, `provider.model`, then an operation such as `text.generate` — are what Python, Go, Java, Kotlin, Swift, Flutter, and C call. Runnable Rust programs: [examples/](examples/). Per-language guides: [docs/api/](docs/api/).
 
 ---
 
-For planned milestones and their current status, see the [roadmap](ROADMAP.md).
-
 ## Why aimux
 
-- **327 provider names** — 282 registry-backed OpenAI-compatible presets
-  + 45 vendor packages, covering text and other modalities. Local engines
-  such as Ollama/vLLM are presets. `provider_names()` lists the Rust names;
-  the generated catalogue lives in [docs/api/providers.md](docs/api/providers.md).
+- **300+ provider names** — the generated catalogue
+  ([docs/api/providers.md](docs/api/providers.md)) is the exact list.
+  `provider_registry.json` holds the OpenAI-compatible presets; vendor
+  packages such as OpenAI, Anthropic, Google, and DeepSeek are separate.
+  `provider_names()` lists the Rust names. Local engines such as Ollama and
+  vLLM are presets.
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
@@ -64,7 +114,8 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
   Go, Java, C — plus `aimux-web`, a browser console for model-call testing
   and trace visualization (RFC-0029).
-- **Hermetic tests** — 2,800+ cassettes replay real API responses; no network
+- **Hermetic tests** — 2,797 JSON cassettes under
+  `aimux-providers/tests/cassettes` replay recorded API responses; no network
   or API keys required.
 
 ## Upgrading from 0.5
@@ -154,56 +205,9 @@ cargo add aimux-core aimux-providers
 | `aimux-provider-utils` | One-exchange HTTP helpers, typed response handlers, streamed tool-call tracking | [crates.io](https://crates.io/crates/aimux-provider-utils) |
 | `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
 
-**Node.js**:
+**Node.js**: `npm install @arcships/aimux`. The 0.6 quick start is at the top of this file. The raw JSON-string interface is `import { Runtime } from '@arcships/aimux/raw'`.
 
-```bash
-npm install @arcships/aimux
-```
-
-```typescript
-import { Client, LanguageModel } from '@arcships/aimux'
-
-const client = new Client()
-const provider = await client.provider({
-  package: 'openai',
-  settings: { apiKey: process.env.OPENAI_API_KEY },
-})
-const model = await provider.model('gpt-4o-mini', 'languageModel')
-if (!(model instanceof LanguageModel)) throw new Error('Expected LanguageModel')
-try {
-  const result = await model.generate('Explain Rust ownership in one sentence.')
-  console.log(result.text)
-} finally {
-  await model.close()
-  await provider.close()
-}
-```
-
-> The typed facade uses `Client` and the resource classes; the 0.5
-> top-level `openai` and `generateText` helpers are removed. Need the raw
-> JSON-string interface? Use `import { Runtime } from '@arcships/aimux/raw'`.
-
-## Quick start
-
-```rust
-use aimux_core::prelude::*;
-use aimux_providers::openai::openai;
-
-#[tokio::main]
-async fn main() -> Result<(), AiMuxError> {
-    // The default provider loads OPENAI_API_KEY when a request is made.
-    let model = openai().chat("gpt-4o");
-
-    let result = generate_text(
-        &model,
-        "Explain Rust ownership in one sentence.",
-        GenerateTextOptions::default(),
-    ).await?;
-
-    println!("{}", result.text);
-    Ok(())
-}
-```
+Other packages: [bindings/README.md](bindings/README.md).
 
 ## Streaming
 
@@ -324,7 +328,7 @@ let names = provider_names();
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-Rust by-name creation covers vendor packages and all 282 presets. Each vendor
+Rust by-name creation covers vendor packages and every registry preset. Each vendor
 also has `create_xxx(XxxProviderSettings {..})` and a default instance `xxx()`.
 Bindings use `provider.create` and `provider.model` with the shared operation
 names. Runtime model listing uses `Provider::discovery()` and then
@@ -377,6 +381,10 @@ Tests run on cassette playback — no network and no keys. See
 
 | Doc | Contents |
 |-----|----------|
+| [README.zh-CN.md](README.zh-CN.md) | **简体中文** — same positioning, with DeepSeek, Qwen/通义, Zhipu/智谱, and Kimi |
+| [FAQ.md](FAQ.md) | What aimux is, how it differs from a proxy gateway, languages, tools, license |
+| [examples/](examples/) | Runnable Rust programs: chat, streaming, switching providers |
+| [llms.txt](llms.txt) | Short summary for AI answer engines |
 | [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
 | [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) | **0.6 migration guide** — breaking changes by language |
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |

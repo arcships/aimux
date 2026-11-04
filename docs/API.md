@@ -86,7 +86,7 @@ async fn main() -> Result<(), AiMuxError> {
         "Hello",
         GenerateTextOptions::default(),
     ).await?;
-    println!("{}", result.text);
+    println!("{}", result.text());
     Ok(())
 }
 ```
@@ -96,9 +96,9 @@ binding READMEs.
 
 ## Providers
 
-There are 327 provider names: 282 registry-backed OpenAI-compatible presets and
-45 vendor packages. The generated catalogue is
-[api/providers.md](api/providers.md).
+Public copy says 300+ provider names. The generated catalogue is the exact
+list: [api/providers.md](api/providers.md) (registry rows in
+`provider_registry.json` plus the vendor packages).
 
 Rust:
 
