@@ -4732,6 +4732,43 @@ mod older_remaining {
         );
     }
 
+    /// A provider-executed `content` result with `isError` keeps the flag (#470).
+    #[test]
+    fn mcp_content_tool_result_keeps_is_error() {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool-call",
+                    "toolCallId": "mcptoolu_1",
+                    "toolName": "echo",
+                    "input": {},
+                    "providerExecuted": true,
+                    "providerOptions": { "anthropic": { "type": "mcp-tool-use", "serverName": "echo" } },
+                },
+                {
+                    "type": "tool-result",
+                    "toolCallId": "mcptoolu_1",
+                    "toolName": "echo",
+                    "output": {
+                        "type": "content",
+                        "value": [{ "type": "text", "text": "failed" }],
+                        "isError": true,
+                    },
+                },
+            ],
+        }]))
+        .unwrap();
+        let result =
+            crate::anthropic::convert_to_prompt::convert_prompt_to_anthropic_full_fallible(
+                &prompt, false,
+            )
+            .unwrap();
+        let block = &result.messages[0]["content"][1];
+        assert_eq!(block["type"], json!("mcp_tool_result"));
+        assert_eq!(block["is_error"], json!(true));
+    }
+
     /// An MCP tool named like a provider tool (`web_search` here) gets no
     /// unsupported-result warning: upstream's MCP branch has no `break` and falls
     /// into `if (providerToolName === 'web_search')`, which pushes a

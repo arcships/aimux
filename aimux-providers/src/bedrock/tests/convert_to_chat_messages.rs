@@ -20,7 +20,7 @@ fn convert(value: Value) -> Result<Value, AiMuxError> {
 
 /// `convertToAmazonBedrockChatMessages(prompt, isMistral)`.
 fn convert_with(value: Value, is_mistral: bool) -> Result<Value, AiMuxError> {
-    convert_prompt(&prompt(value), is_mistral, false).map(to_result)
+    convert_prompt(&prompt(value), is_mistral).map(to_result)
 }
 
 /// The message of an `AI_UnsupportedFunctionalityError`.
@@ -809,6 +809,7 @@ mod assistant_messages {
                             "toolResult": {
                                 "toolUseId": "call-1",
                                 "content": [{ "text": "{\"sum\":4}" }],
+                                "status": "success",
                             },
                         }],
                     },
@@ -828,6 +829,7 @@ mod assistant_messages {
                             "toolResult": {
                                 "toolUseId": "call-2",
                                 "content": [{ "text": "{\"sum\":6}" }],
+                                "status": "success",
                             },
                         }],
                     },
@@ -886,6 +888,7 @@ mod assistant_messages {
                                 "toolResult": {
                                     "toolUseId": "call-1",
                                     "content": [{ "text": "{\"sum\":4}" }],
+                                    "status": "success",
                                 },
                             },
                             { "text": "Now double that." },
@@ -1487,6 +1490,7 @@ mod assistant_messages {
                             "toolResult": {
                                 "content": [{ "text": "Sunny, 72F" }],
                                 "toolUseId": "call-1",
+                                "status": "success",
                             },
                         }],
                         "role": "user",
@@ -1571,6 +1575,7 @@ mod assistant_messages {
                             "toolResult": {
                                 "content": [{ "text": "Sunny, 72F" }],
                                 "toolUseId": "call-1",
+                                "status": "success",
                             },
                         }],
                         "role": "user",
@@ -1837,6 +1842,7 @@ mod tool_messages {
                         "content": [
                             { "image": { "format": "jpeg", "source": { "bytes": "base64data" } } },
                         ],
+                        "status": "success",
                     },
                 }],
             })
@@ -1879,6 +1885,7 @@ mod tool_messages {
                                 },
                             },
                         }],
+                        "status": "success",
                     },
                 }],
             })
@@ -1916,6 +1923,7 @@ mod tool_messages {
                         "content": [
                             { "video": { "format": "mp4", "source": { "bytes": "base64data" } } },
                         ],
+                        "status": "success",
                     },
                 }],
             })
@@ -1958,6 +1966,7 @@ mod tool_messages {
                                 },
                             },
                         }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2000,6 +2009,7 @@ mod tool_messages {
                                 "source": { "bytes": "base64data" },
                             },
                         }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2082,6 +2092,7 @@ mod tool_messages {
                     "toolResult": {
                         "toolUseId": "call-123",
                         "content": [{ "text": "{\"value\":42}" }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2203,6 +2214,7 @@ mod mistral_tool_call_id_normalization {
                     "toolResult": {
                         "toolUseId": "8eHypBDcw",
                         "content": [{ "text": "The result is 42" }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2255,6 +2267,7 @@ mod mistral_tool_call_id_normalization {
                     "toolResult": {
                         "toolUseId": original_id,
                         "content": [{ "text": "The result is 42" }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2275,6 +2288,7 @@ mod mistral_tool_call_id_normalization {
                     "toolResult": {
                         "toolUseId": original_id,
                         "content": [{ "text": "The result is 42" }],
+                        "status": "success",
                     },
                 }],
             })
@@ -2447,7 +2461,7 @@ mod bedrock_convert {
     use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
     use serde_json::{Value, json};
 
-    use crate::bedrock::convert_to_chat_messages::{convert_prompt, convert_prompt_to_bedrock};
+    use crate::bedrock::convert_to_chat_messages::convert_prompt_to_bedrock;
 
     // ── prompt builders ─────────────────────────────────────────────────────────
 
@@ -2679,16 +2693,16 @@ mod bedrock_convert {
                     "content": [{
                         "toolResult": {
                             "toolUseId": "call-123",
-                            "content": [{ "text": "The result is 42" }]
+                            "content": [{ "text": "The result is 42" }],
+                            "status": "success",
                         }
                     }]
                 })
             );
         }
 
-        /// Claude and Nova get `status` on every toolResult, and an error
-        /// result that carries an image keeps `status: "error"`; other model
-        /// families get no `status` (#470).
+        /// Every toolResult carries its status; an error result that carries
+        /// an image keeps `status: "error"` (#470).
         #[test]
         fn tool_result_status_follows_the_error_flag() {
             let image_error = ToolResultOutput::Content {
@@ -2702,23 +2716,25 @@ mod bedrock_convert {
                 })],
                 is_error: Some(true),
             };
+            let denied = ToolResultOutput::ExecutionDenied {
+                reason: None,
+                provider_options: None,
+            };
             let text = ToolResultOutput::Text {
                 value: "ok".to_string(),
                 provider_options: None,
             };
-            let prompt = vec![tool_msg(vec![
+            let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![
                 tool_result("call-1", image_error),
-                tool_result("call-2", text),
-            ])];
-
-            let (_, messages) = convert_prompt(&prompt, false, true).unwrap();
+                tool_result("call-2", denied),
+                tool_result("call-3", text),
+            ])])
+            .unwrap();
             let result = |i: usize| &messages[0]["content"][i]["toolResult"];
             assert_eq!(result(0)["status"], json!("error"));
             assert_eq!(result(0)["content"][0]["image"]["format"], json!("png"));
-            assert_eq!(result(1)["status"], json!("success"));
-
-            let (_, messages) = convert_prompt(&prompt, false, false).unwrap();
-            assert_eq!(messages[0]["content"][0]["toolResult"].get("status"), None);
+            assert_eq!(result(1)["status"], json!("error"));
+            assert_eq!(result(2)["status"], json!("success"));
         }
     }
 
@@ -3126,7 +3142,7 @@ mod bedrock_convert {
                     "toolUse": { "input": { "city": "SF" }, "name": "getWeather", "toolUseId": "call-1" }
                 }]},
                 { "role": "user", "content": [{
-                    "toolResult": { "toolUseId": "call-1", "content": [{ "text": "Sunny, 72F" }] }
+                    "toolResult": { "toolUseId": "call-1", "content": [{ "text": "Sunny, 72F" }], "status": "success" }
                 }]},
             ])
         );
@@ -3165,7 +3181,7 @@ mod bedrock_convert {
                     { "toolUse": { "input": { "city": "SF" }, "name": "getWeather", "toolUseId": "call-1" } },
                 ]},
                 { "role": "user", "content": [{
-                    "toolResult": { "toolUseId": "call-1", "content": [{ "text": "Sunny, 72F" }] }
+                    "toolResult": { "toolUseId": "call-1", "content": [{ "text": "Sunny, 72F" }], "status": "success" }
                 }]},
                 { "role": "assistant", "content": [
                     { "reasoningContent": { "reasoningText": {
@@ -3320,7 +3336,8 @@ mod bedrock_convert {
             json!({
                 "toolResult": {
                     "toolUseId": "call-123",
-                    "content": [{ "image": { "format": "jpeg", "source": { "bytes": "base64data" } } }]
+                    "content": [{ "image": { "format": "jpeg", "source": { "bytes": "base64data" } } }],
+                    "status": "success",
                 }
             })
         );
@@ -3351,7 +3368,8 @@ mod bedrock_convert {
                     "toolUseId": "call-123",
                     "content": [{
                         "document": { "format": "pdf", "name": "tool-result", "source": { "bytes": "base64data" } }
-                    }]
+                    }],
+                    "status": "success",
                 }
             })
         );
@@ -3378,7 +3396,8 @@ mod bedrock_convert {
             json!({
                 "toolResult": {
                     "toolUseId": "call-123",
-                    "content": [{ "text": "{\"value\":42}" }]
+                    "content": [{ "text": "{\"value\":42}" }],
+                    "status": "success",
                 }
             })
         );
@@ -3515,34 +3534,6 @@ mod bedrock_remaining {
             messages[0]["content"][0]["toolResult"]["toolUseId"],
             json!("8eHypBDcw")
         );
-    }
-
-    /// Only Claude and Nova accept `toolResult.status`; other families get
-    /// none (#470).
-    #[test]
-    fn tool_result_status_only_for_claude_and_nova() {
-        let prompt = vec![tool_msg(vec![tool_result(
-            "call-1".to_string(),
-            json!({
-                "type": "content",
-                "value": [{ "type": "text", "text": "failed" }],
-                "isError": true,
-            }),
-        )])];
-        let mut opts = default_options(prompt);
-        opts.tools = Some(vec![test_tool().into()]);
-        let status = |model_id: &str| {
-            let (body, _, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
-            body["messages"][0]["content"][0]["toolResult"]
-                .get("status")
-                .cloned()
-        };
-        assert_eq!(
-            status("us.anthropic.claude-sonnet-4-20250514-v1:0"),
-            Some(json!("error"))
-        );
-        assert_eq!(status("us.amazon.nova-pro-v1:0"), Some(json!("error")));
-        assert_eq!(status("us.meta.llama4-maverick-17b-instruct-v1:0"), None);
     }
 
     /// partial: `should normalize tool call IDs in tool calls when isMistral is true`; full port in src/bedrock/tests/convert_to_chat_messages.rs.

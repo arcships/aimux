@@ -41,13 +41,12 @@ use serde_json::{Value, json};
 pub(super) fn convert_prompt_to_bedrock(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
-    convert_prompt(prompt, false, false)
+    convert_prompt(prompt, false)
 }
 
 pub(super) fn convert_prompt(
     prompt: &LanguageModelPrompt,
     is_mistral: bool,
-    tool_result_status: bool,
 ) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
     validate_prompt(prompt)?;
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -136,7 +135,6 @@ pub(super) fn convert_prompt(
                                     &mut content,
                                     &mut document_counter,
                                     is_mistral,
-                                    tool_result_status,
                                 );
                                 if let Some(cp) = cache_point(part.provider_options.as_ref()) {
                                     content.push(cp);
@@ -217,7 +215,6 @@ pub(super) fn convert_prompt(
                                     &mut results,
                                     &mut document_counter,
                                     is_mistral,
-                                    tool_result_status,
                                 );
                             }
                             AssistantPart::ToolCall(ToolCallPart {
@@ -290,24 +287,22 @@ fn push_tool_result(
     content: &mut Vec<Value>,
     doc_counter: &mut u32,
     is_mistral: bool,
-    tool_result_status: bool,
 ) {
     let result_content = resolve_tool_result_output(&part.output, doc_counter);
-    let mut block = json!({
-        "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
-        "content": result_content,
-    });
-    // The AI SDK never writes `status` (#470). AWS: "This field is only
-    // supported by Amazon Nova and Anthropic Claude 3 and 4 models."
-    if tool_result_status {
-        let status = if tool_result_is_error(&part.output) {
-            "error"
-        } else {
-            "success"
-        };
-        block["status"] = json!(status);
-    }
-    content.push(json!({ "toolResult": block }));
+    // The Converse API carries the outcome beside the content; the AI SDK
+    // never writes it (#470).
+    let status = if tool_result_is_error(&part.output) {
+        "error"
+    } else {
+        "success"
+    };
+    content.push(json!({
+        "toolResult": {
+            "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
+            "content": result_content,
+            "status": status,
+        }
+    }));
 }
 
 /// Whether a tool result reports a failure, independent of its content form.
