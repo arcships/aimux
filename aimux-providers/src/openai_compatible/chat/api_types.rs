@@ -110,6 +110,9 @@ pub(crate) struct StreamChunk {
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct StreamChoice {
+    /// Read only in strict stream mode, which keeps candidate 0 (#473).
+    #[serde(default)]
+    pub index: Option<usize>,
     #[serde(default)]
     pub delta: Delta,
     #[serde(default)]
