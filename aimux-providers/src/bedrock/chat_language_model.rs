@@ -336,9 +336,24 @@ impl AmazonBedrockChatStream {
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as usize;
 
-        let Some(delta) = payload.get("delta") else {
+        let Some(delta) = payload.get("delta").filter(|delta| !delta.is_null()) else {
             return;
         };
+        // #476: a delta needs exactly one known member, as in the AI SDK's
+        // chunk schema; unlike its runtime, the tool block is closed without
+        // a call so that none completes with input the model never sent.
+        if !is_known_delta(delta) {
+            if let Some((id, name, _)) = self.tool_blocks.remove(&idx)
+                && !(self.uses_json_tool && name == "json")
+            {
+                controller.tool_input_end(id);
+            }
+            self.final_finish_reason = Some(FINISH_ERROR);
+            controller.enqueue_error(AiMuxError::invalid_response_data(format!(
+                "unsupported Amazon Bedrock content block delta: {delta}"
+            )));
+            return;
+        }
         // Text delta
         if let Some(text) = delta.get("text").and_then(|v| v.as_str())
             && !text.is_empty()
@@ -461,7 +476,12 @@ impl AmazonBedrockChatStream {
     }
 
     fn message_stop(&mut self, payload: &serde_json::Value) {
-        if let Some(reason) = payload.get("stopReason").and_then(|v| v.as_str()) {
+        if let Some(reason) = payload.get("stopReason").and_then(|v| v.as_str())
+            && self
+                .final_finish_reason
+                .as_ref()
+                .is_none_or(|reason| reason.unified != FinishReasonUnified::Error)
+        {
             let mut finish_reason = map_finish_reason(reason);
             if self.is_json_response_from_tool
                 && finish_reason.unified == FinishReasonUnified::ToolCalls
@@ -639,6 +659,28 @@ impl Transformer for AmazonBedrockChatStream {
             provider_metadata,
         });
     }
+}
+
+/// Whether a `contentBlockDelta` delta has exactly one of the AI SDK's
+/// members: a `text` string, a `citation` object, a `toolUse.input` string or
+/// a `reasoningContent` with a `text`, `signature`, `data` or
+/// `redactedContent` string.
+fn is_known_delta(delta: &Value) -> bool {
+    let Some(delta) = delta.as_object() else {
+        return false;
+    };
+    let text = delta.get("text").map(Value::is_string);
+    let citation = delta.get("citation").map(Value::is_object);
+    let tool_use = delta
+        .get("toolUse")
+        .map(|tool_use| tool_use.get("input").is_some_and(Value::is_string));
+    let reasoning = delta.get("reasoningContent").map(|reasoning| {
+        ["text", "signature", "data", "redactedContent"]
+            .iter()
+            .any(|key| reasoning.get(key).is_some_and(Value::is_string))
+    });
+    let members = [text, citation, tool_use, reasoning];
+    members.iter().flatten().count() == 1 && !members.contains(&Some(false))
 }
 
 /// Attach accumulated encrypted reasoning once at the end of the block.
