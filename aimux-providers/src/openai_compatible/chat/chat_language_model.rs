@@ -24,7 +24,7 @@ use aimux_core::shared::{
 };
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
-use aimux_core::types::{FinishReason, Usage, Warning};
+use aimux_core::types::{FinishReason, FinishReasonUnified, Usage, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -35,6 +35,7 @@ use crate::openai_compatible::error::{ErrorStructure, default_error_structure};
 use crate::openai_compatible::utils::to_camel_case;
 use crate::stream::{
     ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+    strict_error,
 };
 
 use super::api_types::{ChatCompletionResponse, StreamChunk, UsageResponse};
@@ -688,6 +689,9 @@ struct OpenAICompatibleChatStream {
     final_usage_raw: Option<Value>,
     final_usage_parsed: Option<UsageResponse>,
     final_finish_reason: Option<FinishReason>,
+    /// The first wire `finish_reason`; strict stream mode fails a later
+    /// delta or a different `finish_reason` (#473).
+    first_finish_reason: Option<String>,
     response_metadata_emitted: bool,
     tool_calls: ChatToolCalls,
     /// Some compatible servers send the first delta of a call without
@@ -793,7 +797,15 @@ impl Transformer for OpenAICompatibleChatStream {
             self.final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
         }
 
-        for choice in chunk.choices.into_iter().take(1) {
+        // The AI SDK reads the first choice; strict stream mode reads only
+        // candidate 0, an omitted index being 0 (#473).
+        let strict = self.ctx.strict;
+        for choice in chunk
+            .choices
+            .into_iter()
+            .filter(|choice| !strict || choice.index.unwrap_or(0) == 0)
+            .take(1)
+        {
             let reasoning_delta = choice
                 .delta
                 .reasoning_content
@@ -808,6 +820,27 @@ impl Transformer for OpenAICompatibleChatStream {
             }
             delta_content.extend(content_parts(choice.delta.content.as_ref()));
             delta_content.extend(refusal_text(choice.delta.refusal));
+            if strict && let Some(first) = &self.first_finish_reason {
+                let problem = if !delta_content.is_empty()
+                    || choice
+                        .delta
+                        .tool_calls
+                        .as_ref()
+                        .is_some_and(|d| !d.is_empty())
+                {
+                    Some(format!("a delta after finish_reason `{first}`"))
+                } else {
+                    choice
+                        .finish_reason
+                        .as_ref()
+                        .filter(|reason| *reason != first)
+                        .map(|reason| format!("finish_reason `{reason}` after `{first}`"))
+                };
+                if let Some(problem) = problem {
+                    controller.error(strict_error(problem));
+                    return;
+                }
+            }
             for part in delta_content {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
@@ -849,7 +882,9 @@ impl Transformer for OpenAICompatibleChatStream {
                     let arguments = function.and_then(|f| f.arguments.as_deref());
                     let buffered;
                     let delta = match dtc.index {
-                        Some(index) if !self.forwarded.contains(&index) => {
+                        // Strict stream mode wants the id and name on the
+                        // first delta of a call.
+                        Some(index) if !strict && !self.forwarded.contains(&index) => {
                             let entry = self.pending.entry(index).or_default();
                             if entry.id.is_none() {
                                 entry.id.clone_from(&dtc.id);
@@ -883,7 +918,12 @@ impl Transformer for OpenAICompatibleChatStream {
                             ..ToolCallDelta::default()
                         },
                     };
-                    if !self.tool_calls.delta(delta, controller) {
+                    let applied = if strict {
+                        self.tool_calls.strict_delta(delta, controller)
+                    } else {
+                        self.tool_calls.delta(delta, controller)
+                    };
+                    if !applied {
                         return;
                     }
                 }
@@ -913,6 +953,7 @@ impl Transformer for OpenAICompatibleChatStream {
 
             if let Some(reason) = choice.finish_reason {
                 self.final_finish_reason = Some(parse_finish_reason(&reason));
+                self.first_finish_reason.get_or_insert(reason);
             }
         }
     }
@@ -924,6 +965,25 @@ impl Transformer for OpenAICompatibleChatStream {
             controller,
         ) {
             return;
+        }
+        // Strict stream mode: the finish_reason agrees with the tool calls
+        // (#473).
+        if self.ctx.strict
+            && let Some(reason) = &self.final_finish_reason
+        {
+            let problem = match reason.unified {
+                FinishReasonUnified::ToolCalls if self.tool_calls.is_empty() => {
+                    Some("finish_reason `tool_calls` without a tool call")
+                }
+                FinishReasonUnified::Stop if !self.tool_calls.is_empty() => {
+                    Some("finish_reason `stop` with a tool call")
+                }
+                _ => None,
+            };
+            if let Some(problem) = problem {
+                controller.error(strict_error(problem));
+                return;
+            }
         }
         if self.reasoning_started {
             controller.reasoning_end(REASONING_ID);

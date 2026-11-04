@@ -11,7 +11,9 @@
 //!   an error part of its own;
 //! - a client tool call (not provider-executed) is held back until `Finish`
 //!   and delivered right before it, or dropped when the stream finishes
-//!   with an error or fails.
+//!   with an error or fails;
+//! - a tool-input part for a client tool call that already completed fails
+//!   the stream (#474).
 //!
 //! A failure is a terminal [`AiMuxError::Other`] item whose cause is the
 //! `InvalidResponseData` the check found: nothing follows it, and as it is
@@ -55,6 +57,8 @@ struct StrictParts {
     text: HashSet<String>,
     reasoning: HashSet<String>,
     tool_input: HashSet<String>,
+    /// The ids of the client tool calls seen so far, held or delivered.
+    completed_calls: HashSet<String>,
     /// Client tool calls waiting for `Finish`.
     held: Vec<StreamPart>,
     finished: bool,
@@ -175,12 +179,25 @@ impl Transformer for StrictParts {
         };
         if let Some((block, id, step)) = tracked {
             let id = id.clone();
+            if matches!(block, Block::ToolInput) && self.completed_calls.contains(&id) {
+                let kind = match step {
+                    Step::Start => "tool-input-start",
+                    Step::Continue(kind) => kind,
+                    Step::End => "tool-input-end",
+                };
+                self.fail(
+                    format!("{kind} for tool call `{id}` that already completed"),
+                    controller,
+                );
+                return;
+            }
             if !self.track(block, &id, step, controller) {
                 return;
             }
         }
         match part {
             StreamPart::ToolCall(ref call) if call.provider_executed != Some(true) => {
+                self.completed_calls.insert(call.tool_call_id.clone());
                 self.held.push(part);
             }
             StreamPart::Error { .. } => {
