@@ -368,6 +368,21 @@ mod do_generate {
         );
     }
 
+    /// aimux #461: a refusal is the visible text of the answer.
+    #[tokio::test]
+    async fn should_extract_refusal_as_text() {
+        let message =
+            json!({ "role": "assistant", "content": null, "refusal": "I cannot help with that." });
+        let body = completion(message, "stop", usage_4_34_30());
+
+        let (result, _) = generate("gpt-4o", json_value(&body), json!({})).await;
+
+        assert_eq!(
+            json!(result.content),
+            json!([{ "text": "I cannot help with that.", "type": "text" }])
+        );
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doGenerate › should extract an audio transcript alongside tool calls
     #[tokio::test]
     async fn should_extract_an_audio_transcript_alongside_tool_calls() {
@@ -1778,6 +1793,25 @@ mod do_generate {
         assert_eq!(warnings(&result), json!([]));
     }
 
+    /// aimux #462: `forceServiceTier` sends the tier to a model id the
+    /// capability table does not know, without a warning.
+    #[tokio::test]
+    async fn should_send_forced_service_tier_to_a_deployment_alias() {
+        for tier in ["flex", "priority"] {
+            let (result, mock) = generate(
+                "my-deployment-alias",
+                openai_text_json(),
+                json!({ "providerOptions": { "openai": { "serviceTier": tier, "forceServiceTier": true } } }),
+            )
+            .await;
+            assert_eq!(request_body(&mock)["service_tier"], json!(tier));
+            assert_eq!(warnings(&result), json!([]));
+
+            let (_, body) = service_tier("my-deployment-alias", tier).await;
+            assert_eq!(body.get("service_tier"), None);
+        }
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doGenerate › should send serviceTier fast processing setting
     #[tokio::test]
     async fn should_send_service_tier_fast_processing_setting() {
@@ -2080,6 +2114,38 @@ mod do_stream {
         assert_eq!(finish["type"], "finish", "{parts:?}");
         assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
         assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
+    }
+
+    /// aimux #461: refusal deltas stream as text deltas.
+    #[tokio::test]
+    async fn should_stream_refusal_deltas_as_text() {
+        let model = "gpt-4o";
+        let chunks = sse(&[
+            text_chunk(
+                model,
+                0,
+                r#"{"role":"assistant","content":"","refusal":"I cannot "}"#,
+                "null",
+                "",
+            ),
+            text_chunk(model, 0, r#"{"refusal":"help with that."}"#, "null", ""),
+            text_chunk(model, 0, "{}", r#""stop""#, ""),
+        ]);
+
+        let (parts, _) = stream_parts(model, stream_chunks(&chunks), json!({})).await;
+
+        let deltas: Vec<_> = parts
+            .iter()
+            .filter(|part| part["type"] == "text-delta")
+            .cloned()
+            .collect();
+        assert_eq!(
+            deltas,
+            vec![
+                json!({ "type": "text-delta", "id": "0", "delta": "I cannot " }),
+                json!({ "type": "text-delta", "id": "0", "delta": "help with that." }),
+            ]
+        );
     }
 
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doStream › should stream text deltas

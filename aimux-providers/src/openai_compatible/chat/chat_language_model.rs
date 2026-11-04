@@ -520,6 +520,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         let mut content = Vec::new();
         content.extend(content_parts(choice.message.content.as_ref()));
+        content.extend(refusal_text(choice.message.refusal));
         let reasoning = choice
             .message
             .reasoning_content
@@ -806,6 +807,7 @@ impl Transformer for OpenAICompatibleChatStream {
                 }));
             }
             delta_content.extend(content_parts(choice.delta.content.as_ref()));
+            delta_content.extend(refusal_text(choice.delta.refusal));
             for part in delta_content {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
@@ -978,6 +980,17 @@ struct PendingToolCall {
     id: Option<String>,
     arguments: String,
     extra: Value,
+}
+
+/// A refusal as visible text. aimux extension (#461): the AI SDK does not
+/// read `refusal`.
+fn refusal_text(refusal: Option<String>) -> Option<GenerateContent> {
+    refusal
+        .filter(|text| !text.is_empty())
+        .map(|text| GenerateContent::Text {
+            text,
+            provider_metadata: None,
+        })
 }
 
 /// Normalize text and thinking parts, preserving their order.
