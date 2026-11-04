@@ -11,7 +11,7 @@
 //!    `streamText` do (ai@7.0.127 `generate-text/generate-text.ts`,
 //!    `generate-text/stream-text.ts`). Aimux runs one step per call.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -805,11 +805,11 @@ impl StreamTextResult {
                     id,
                     text,
                     provider_metadata,
-                } => rm.text_delta(id, &text, provider_metadata),
+                } => rm.text_delta(&id, &text, provider_metadata),
                 TextStreamPart::TextEnd {
                     id,
                     provider_metadata,
-                } => rm.text_end(id, provider_metadata),
+                } => rm.text_end(&id, provider_metadata),
                 TextStreamPart::ReasoningStart {
                     id,
                     provider_metadata,
@@ -818,11 +818,11 @@ impl StreamTextResult {
                     id,
                     text,
                     provider_metadata,
-                } => rm.reasoning_delta(id, &text, provider_metadata),
+                } => rm.reasoning_delta(&id, &text, provider_metadata),
                 TextStreamPart::ReasoningEnd {
                     id,
                     provider_metadata,
-                } => rm.reasoning_end(id, provider_metadata),
+                } => rm.reasoning_end(&id, provider_metadata),
                 TextStreamPart::ToolCall(call) => rm.tool_call(&call),
                 // Tool results (not preliminary ones), tool errors and
                 // approval responses enter the step content as they arrive
@@ -1857,6 +1857,7 @@ async fn stream_in_operation(
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
+            let mut active_parts = ActiveParts::default();
             let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
@@ -1984,7 +1985,11 @@ async fn stream_in_operation(
                                 .widen::<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>()
                                 .into_text_stream_part()
                             {
+                                let missing = active_parts.track(&part);
                                 yield Ok(part);
+                                if let Some(error) = missing {
+                                    yield Ok(TextStreamPart::Error { error });
+                                }
                             }
                         }
                     },
@@ -2021,6 +2026,40 @@ async fn stream_in_operation(
         model: step_model,
         output,
     })
+}
+
+/// The text and reasoning parts started and not yet ended in the stream
+/// (`activeTextContent` and `activeReasoningContent`,
+/// stream-text.ts:1540-1636).
+#[derive(Default)]
+struct ActiveParts {
+    text: HashSet<String>,
+    reasoning: HashSet<String>,
+}
+
+impl ActiveParts {
+    /// Track a forwarded part. A delta or end whose part was never started
+    /// is followed by an error part, and the stream continues.
+    fn track(&mut self, part: &TextStreamPart) -> Option<AiMuxError> {
+        let (active, id, kind) = match part {
+            TextStreamPart::TextStart { id, .. } => {
+                self.text.insert(id.clone());
+                return None;
+            }
+            TextStreamPart::ReasoningStart { id, .. } => {
+                self.reasoning.insert(id.clone());
+                return None;
+            }
+            TextStreamPart::TextDelta { id, .. } => (self.text.contains(id), id, "text"),
+            TextStreamPart::TextEnd { id, .. } => (self.text.remove(id), id, "text"),
+            TextStreamPart::ReasoningDelta { id, .. } => {
+                (self.reasoning.contains(id), id, "reasoning")
+            }
+            TextStreamPart::ReasoningEnd { id, .. } => (self.reasoning.remove(id), id, "reasoning"),
+            _ => return None,
+        };
+        (!active).then(|| AiMuxError::other(format!("{kind} part {id} not found")))
+    }
 }
 
 /// The state of the streamed step: what `stream-text.ts:2736-2780` keeps

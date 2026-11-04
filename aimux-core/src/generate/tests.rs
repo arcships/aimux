@@ -535,6 +535,10 @@ async fn an_aborted_stream_ends_with_an_abort_part() {
         Ok(StreamPart::StreamStart {
             warnings: Vec::new(),
         }),
+        Ok(StreamPart::TextStart {
+            id: "t1".into(),
+            provider_metadata: None,
+        }),
         Ok(StreamPart::TextDelta {
             id: "t1".into(),
             delta: "partial".into(),
@@ -565,7 +569,10 @@ async fn an_aborted_stream_ends_with_an_abort_part() {
             assert_eq!(reason.as_deref(), Some("request aborted"));
         }
     }
-    assert_eq!(kinds, ["start", "start-step", "text-delta", "abort"]);
+    assert_eq!(
+        kinds,
+        ["start", "start-step", "text-start", "text-delta", "abort"]
+    );
 
     let mut model = ScriptedModel::streaming(vec![Ok(StreamPart::StreamStart {
         warnings: Vec::new(),
@@ -611,11 +618,17 @@ async fn an_incomplete_stream_without_output_is_an_error() {
             if message == "No output generated. The model stream ended without a finish chunk."
     ));
 
-    let model = ScriptedModel::streaming(vec![Ok(StreamPart::TextDelta {
-        id: "t1".into(),
-        delta: "partial".into(),
-        provider_metadata: None,
-    })]);
+    let model = ScriptedModel::streaming(vec![
+        Ok(StreamPart::TextStart {
+            id: "t1".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::TextDelta {
+            id: "t1".into(),
+            delta: "partial".into(),
+            provider_metadata: None,
+        }),
+    ]);
     let parts = collect(
         stream_text(&model, "hi", GenerateTextOptions::default())
             .await
@@ -625,14 +638,21 @@ async fn an_incomplete_stream_without_output_is_an_error() {
     let kinds: Vec<String> = parts.iter().map(kind).collect();
     assert_eq!(
         kinds,
-        ["start", "start-step", "text-delta", "finish-step", "finish"]
+        [
+            "start",
+            "start-step",
+            "text-start",
+            "text-delta",
+            "finish-step",
+            "finish"
+        ]
     );
     let TextStreamPart::FinishStep {
         finish_reason,
         usage,
         performance,
         ..
-    } = &parts[3]
+    } = &parts[4]
     else {
         unreachable!()
     };
@@ -714,6 +734,63 @@ async fn an_empty_text_delta_is_forwarded_only_with_provider_metadata() {
         deltas,
         vec![(String::new(), true), ("hi".to_string(), false)]
     );
+}
+
+/// stream-text.test.ts:2642-2720 ("should not read Object.prototype for
+/// missing text/reasoning part ids"), stream-text.ts:1550-1636: a delta for a
+/// part that was never started is forwarded, followed by an error part, and
+/// the stream continues; the part is not recorded. The upstream tests use
+/// `__proto__` as the id and also check `Object.prototype` stays clean, a
+/// JavaScript concern with no Rust counterpart.
+#[tokio::test]
+async fn a_delta_for_a_missing_part_is_followed_by_an_error_part() {
+    for (delta, message) in [
+        (
+            StreamPart::TextDelta {
+                id: "__proto__".into(),
+                delta: "Hello".into(),
+                provider_metadata: None,
+            },
+            "text part __proto__ not found",
+        ),
+        (
+            StreamPart::ReasoningDelta {
+                id: "__proto__".into(),
+                delta: "Thinking...".into(),
+                provider_metadata: None,
+            },
+            "reasoning part __proto__ not found",
+        ),
+    ] {
+        let parts = vec![
+            Ok(StreamPart::ResponseMetadata(
+                crate::types::ResponseMetadata {
+                    id: Some("id-0".into()),
+                    timestamp: Some("1970-01-01T00:00:00.000Z".parse().unwrap()),
+                    model_id: Some("mock-model-id".into()),
+                },
+            )),
+            Ok(delta),
+            Ok(StreamPart::Finish {
+                finish_reason: finish(FinishReasonUnified::Stop, "stop"),
+                usage: usage(3, 0, 10, 0),
+                provider_metadata: None,
+            }),
+        ];
+        let model = ScriptedModel::streaming(parts);
+        let stream = collect(
+            stream_text(&model, "test-input", GenerateTextOptions::default())
+                .await
+                .unwrap(),
+        )
+        .await;
+        let kinds: Vec<String> = stream.iter().map(kind).collect();
+        assert_eq!(kinds[3..], ["error", "finish-step", "finish"]);
+        let TextStreamPart::Error { error } = &stream[3] else {
+            unreachable!()
+        };
+        assert_eq!(error.to_string(), message);
+    }
 }
 
 fn provider_result(id: &str, name: &str, result: Value, is_error: Option<bool>) -> ToolResult {
