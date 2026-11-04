@@ -174,6 +174,7 @@ async fn a_failed_finish_is_not_replaced_by_tool_calls() {
 async fn a_delta_after_the_finish_reason_fails() {
     let late = [
         json!({"content":"late"}),
+        json!({"refusal":"late refusal"}),
         json!({"reasoning_content":"late thought"}),
         json!({"tool_calls":[{"index":0,"id":"call-late","type":"function","function":{"name":"lookup","arguments":"{}"}}]}),
     ];

@@ -194,6 +194,9 @@ pub(crate) async fn execute_generate(
         .message
         .content
         .filter(|text| !text.is_empty())
+        // aimux extension (#461): the AI SDK does not read `refusal`.
+        .or(choice.message.refusal)
+        .filter(|text| !text.is_empty())
         .or_else(|| choice.message.audio.and_then(|audio| audio.transcript))
         && !text.is_empty()
     {
@@ -531,7 +534,13 @@ impl Transformer for OpenAIChatStream {
             }
 
             // Text delta; an active reasoning block ends before text starts.
-            if let Some(content) = choice.delta.content {
+            // aimux extension (#461): a refusal delta is text too.
+            let refusal = choice.delta.refusal.filter(|text| !text.is_empty());
+            let text = match choice.delta.content {
+                Some(content) if content.is_empty() => refusal.or(Some(content)),
+                content => content.or(refusal),
+            };
+            if let Some(content) = text {
                 self.end_reasoning(controller);
                 if !self.text_started {
                     self.text_started = true;
@@ -904,10 +913,14 @@ fn apply_service_tier(
 ) {
     let service_tier = openai_option(provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
+    // aimux extension (#462): `forceServiceTier` declares the tier support of
+    // a model id the capability table cannot know, such as a deployment alias.
+    let force = openai_option(provider_opts, "forceServiceTier")
+        .is_some_and(|v| v.as_bool().unwrap_or(false));
     if let Some(ref st) = service_tier {
         match st.as_str() {
             "flex" => {
-                if caps.supports_flex_processing {
+                if caps.supports_flex_processing || force {
                     body["service_tier"] = json!(st);
                 } else {
                     warnings.push(Warning::Unsupported {
@@ -920,7 +933,7 @@ fn apply_service_tier(
                 }
             }
             "priority" | "fast" => {
-                if caps.supports_priority_processing {
+                if caps.supports_priority_processing || force {
                     body["service_tier"] = json!(st);
                 } else {
                     warnings.push(Warning::Unsupported {

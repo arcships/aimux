@@ -13,7 +13,8 @@ use thiserror::Error;
 /// A numeric `retry-after-ms` takes precedence, even when negative or out of
 /// range. An absent or malformed millisecond value falls back to
 /// `retry-after` seconds, then an HTTP date. Only finite, non-negative delays
-/// fitting in `u64` are returned; fractional milliseconds are truncated.
+/// fitting in `u64` are returned; fractional milliseconds round up so a retry
+/// never starts before the server's hint (#458).
 #[must_use]
 pub fn retry_after_ms_from_headers(
     headers: &HashMap<String, String>,
@@ -34,7 +35,7 @@ pub fn retry_after_ms_from_headers(
     fn milliseconds(value: f64) -> Option<u64> {
         // u64::MAX rounds up to 2^64 as f64, so the upper bound is exclusive.
         if value.is_finite() && (0.0..u64::MAX as f64).contains(&value) {
-            Some(value.trunc() as u64)
+            Some(value.ceil() as u64)
         } else {
             None
         }
@@ -1334,10 +1335,11 @@ mod tests {
         let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_445_412_480);
         for (value, expected) in [
             ("250", Some(250)),
-            ("250.999", Some(250)),
-            ("0.999", Some(0)),
+            ("250.999", Some(251)),
+            ("0.999", Some(1)),
             ("-0", Some(0)),
-            (" 250.5 ", Some(250)),
+            (" 250.5 ", Some(251)),
+            ("25.9", Some(26)),
             ("1e3", Some(1_000)),
             ("-1", None),
             ("-0.1", None),
@@ -1356,8 +1358,9 @@ mod tests {
         }
         for (value, expected) in [
             ("1.5", Some(1_500)),
-            ("1.2349", Some(1_234)),
-            ("0.0009", Some(0)),
+            ("1.2349", Some(1_235)),
+            ("0.0009", Some(1)),
+            ("0.0259", Some(26)),
             ("-0.0001", None),
             ("18446744073709552", None),
             ("1.5 seconds", None),

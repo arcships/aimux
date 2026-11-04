@@ -974,6 +974,7 @@ mod xai_responses_language_model {
                                     }),
                                     ToolResultContent::File(png_file(None)),
                                 ],
+                                is_error: None,
                             },
                             provider_options: None,
                         })],
