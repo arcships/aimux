@@ -305,6 +305,8 @@ struct GoogleLanguageModelStream {
     namespace: Namespace,
     code_execution_tool_name: String,
     text_id: Option<String>,
+    /// Signature of the open text block, from its last signed part.
+    text_signature: Option<String>,
     reasoning_id: Option<String>,
     block_counter: usize,
     final_usage: Usage,
@@ -419,33 +421,19 @@ impl GoogleLanguageModelStream {
 
                 // text part
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    if text.is_empty() {
-                        // Empty-text part may carry a thoughtSignature
-                        // (upstream :784-794): emit as a zero-length
-                        // delta with the signature metadata on
-                        // whichever block is open — text or
-                        // reasoning (mirrors the non-streaming
-                        // path, which attaches to the last
-                        // content item regardless of type).
-                        if let Some(meta) = &thought_sig_meta
-                            && let Some(id) = &self.text_id
-                        {
-                            controller.enqueue(StreamPart::TextDelta {
-                                id: id.clone(),
-                                delta: String::new(),
-                                provider_metadata: Some(meta.clone()),
-                            });
-                        }
-                    } else {
+                    // An empty part is kept when it carries a signature (#467).
+                    let signature = part
+                        .get("thoughtSignature")
+                        .and_then(Value::as_str)
+                        .filter(|signature| !signature.is_empty());
+                    if !text.is_empty() || signature.is_some() {
                         let is_thought = part
                             .get("thought")
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false);
                         if is_thought {
                             // Close any open text block before starting reasoning
-                            if let Some(id) = self.text_id.take() {
-                                controller.text_end(id);
-                            }
+                            self.end_text(controller);
                             // Start a reasoning block if not already active
                             if self.reasoning_id.is_none() {
                                 let id = format!("{}", self.block_counter);
@@ -467,6 +455,20 @@ impl GoogleLanguageModelStream {
                             // Close any open reasoning block before starting text
                             if let Some(id) = self.reasoning_id.take() {
                                 controller.reasoning_end(id);
+                            }
+                            // Gemini replays each signed part as received, so
+                            // a part signed differently from the open block
+                            // starts its own; an unsigned part continues it.
+                            // Upstream appends every part to one block (#467).
+                            if let Some(signature) = signature {
+                                if self
+                                    .text_signature
+                                    .as_deref()
+                                    .is_some_and(|open| open != signature)
+                                {
+                                    self.end_text(controller);
+                                }
+                                self.text_signature = Some(signature.to_owned());
                             }
                             if self.text_id.is_none() {
                                 let id = format!("{}", self.block_counter);
@@ -586,9 +588,7 @@ impl GoogleLanguageModelStream {
                 } else if let Some(inline) = part.get("inlineData") {
                     // File output — upstream :847-877.
                     // Close any open text/reasoning block before file.
-                    if let Some(id) = self.text_id.take() {
-                        controller.text_end(id);
-                    }
+                    self.end_text(controller);
                     if let Some(id) = self.reasoning_id.take() {
                         controller.reasoning_end(id);
                     }
@@ -615,14 +615,17 @@ impl GoogleLanguageModelStream {
                             },
                         );
                     }
-                }
-            }
-            // Function calls come after the other parts, as upstream.
-            for part in parts {
-                if let Some(call) = part.get("functionCall")
-                    && !self.function_call(call, part, controller)
-                {
-                    return;
+                } else if let Some(call) = part.get("functionCall") {
+                    // Text and reasoning close before the call, in part
+                    // order, so text after the call starts its own block.
+                    // Upstream handles the calls after the other parts (#467).
+                    self.end_text(controller);
+                    if let Some(id) = self.reasoning_id.take() {
+                        controller.reasoning_end(id);
+                    }
+                    if !self.function_call(call, part, controller) {
+                        return;
+                    }
                 }
             }
         }
@@ -634,6 +637,14 @@ impl GoogleLanguageModelStream {
 }
 
 impl GoogleLanguageModelStream {
+    /// Close the open text block, if any.
+    fn end_text(&mut self, controller: &mut Controller) {
+        if let Some(id) = self.text_id.take() {
+            controller.text_end(id);
+        }
+        self.text_signature = None;
+    }
+
     /// One `functionCall` part: a chunk of streamed arguments (`partialArgs`,
     /// or a name with `willContinue`), the empty chunk that ends a streamed
     /// call, or a complete call. `false` when the arguments cannot be
@@ -828,9 +839,7 @@ impl GoogleLanguageModelStream {
     /// right after an error event.
     fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text/reasoning segment.
-        if let Some(id) = self.text_id.take() {
-            controller.text_end(id);
-        }
+        self.end_text(controller);
         if let Some(id) = self.reasoning_id.take() {
             controller.reasoning_end(id);
         }

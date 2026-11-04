@@ -8008,6 +8008,76 @@ mod older_upstream_e2e {
     }
 }
 
+// Not an upstream case: a part signed differently from the open text block
+// starts its own, an unsigned or same-signed part (Gemini streams a part's
+// signature on its last fragment) continues it, and text closes before a
+// function call (#467).
+mod signed_text_parts {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_differently_signed_part_opens_its_own_text_block() {
+        let chunk = json!({
+            "candidates": [{
+                "content": { "role": "model", "parts": [
+                    { "text": "plain" },
+                    { "text": "before", "thoughtSignature": "sig-before" },
+                    { "text": " more" },
+                    { "text": "", "thoughtSignature": "sig-before" },
+                    { "text": "after", "thoughtSignature": "sig-after" },
+                    {
+                        "functionCall": { "id": "call-1", "name": "echo", "args": {} },
+                        "thoughtSignature": "sig-tool",
+                    },
+                    { "text": "", "thoughtSignature": "sig-end" },
+                ]},
+                "finishReason": "STOP",
+                "index": 0,
+            }],
+        });
+        let mock = sse_stream_mock(vec![sse_data_chunk(&chunk)]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+        let trace: Vec<String> = stream_events_of_type(
+            &events,
+            &["text-start", "text-delta", "text-end", "tool-call"],
+        )
+        .iter()
+        .map(|event| {
+            let signature = event["providerMetadata"]["google"]["thoughtSignature"]
+                .as_str()
+                .unwrap_or("-");
+            let id = event["id"].as_str().unwrap_or_default();
+            match event["type"].as_str().unwrap() {
+                "text-delta" => format!("delta {id} {} {signature}", event["delta"]),
+                "tool-call" => format!("tool-call {}", event["toolCallId"].as_str().unwrap()),
+                kind => format!("{kind} {id} {signature}"),
+            }
+        })
+        .collect();
+
+        assert_eq!(
+            trace,
+            [
+                "text-start 0 -",
+                r#"delta 0 "plain" -"#,
+                r#"delta 0 "before" sig-before"#,
+                r#"delta 0 " more" -"#,
+                r#"delta 0 "" sig-before"#,
+                "text-end 0 -",
+                "text-start 1 sig-after",
+                r#"delta 1 "after" sig-after"#,
+                "text-end 1 -",
+                "tool-call call-1",
+                "text-start 2 sig-end",
+                r#"delta 2 "" sig-end"#,
+                "text-end 2 -",
+            ]
+        );
+    }
+}
+
 // Not an upstream case: the shape of the error an in-stream `{"error": ...}`
 // event becomes (`google_stream_error` through `create_provider_stream_error`).
 mod in_stream_error {
