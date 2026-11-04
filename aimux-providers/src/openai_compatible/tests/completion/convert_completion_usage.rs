@@ -7,7 +7,7 @@ fn usage_json(raw: &Value) -> Value {
     serde_json::to_value(usage(raw.as_object().cloned())).expect("usage serializes")
 }
 
-mod convert_completion_usage {
+mod convert_open_ai_compatible_completion_usage {
     use super::*;
 
     #[test]
