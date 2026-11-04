@@ -8598,6 +8598,82 @@ mod openai_responses_language_model {
             );
         }
 
+        /// aimux #468: each content part of a message is its own text block,
+        /// and a function call carries its item id.
+        #[tokio::test]
+        async fn should_stream_each_content_part_as_a_text_block() {
+            let message = json!({"type": "message", "id": "msg-1", "role": "assistant", "phase": "commentary", "content": []});
+            let function_call = json!({"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "weather", "arguments": "{\"location\":\"sf\"}"});
+            let part = |content_index: u64, delta: &str| {
+                [
+                    json!({"type": "response.content_part.added", "item_id": "msg-1", "output_index": 0, "content_index": content_index, "part": {"type": "output_text", "text": "", "annotations": []}}),
+                    json!({"type": "response.output_text.delta", "item_id": "msg-1", "output_index": 0, "content_index": content_index, "delta": delta}),
+                ]
+            };
+            let mut events = vec![
+                json!({"type": "response.created", "response": {"id": "resp-1", "created_at": 1, "model": "gpt-4o"}}),
+                json!({"type": "response.output_item.added", "output_index": 0, "item": message}),
+            ];
+            events.extend(part(0, "before"));
+            events.extend(part(1, "after"));
+            events.extend([
+                json!({"type": "response.output_item.done", "output_index": 0, "item": message}),
+                json!({"type": "response.output_item.added", "output_index": 1, "item": function_call}),
+                json!({"type": "response.output_item.done", "output_index": 1, "item": function_call}),
+                json!({"type": "response.completed", "response": {"incomplete_details": null, "usage": {"input_tokens": 1, "output_tokens": 1}}}),
+            ]);
+            let mock = sse_mock(
+                events
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect(),
+            );
+            let stream = stream_do(
+                &mock,
+                "gpt-4o",
+                json!({"prompt": stream_test_prompt(), "tools": stream_test_tools()}),
+            )
+            .await
+            .unwrap();
+            let parts = stream_collect(stream).await;
+            let text: Vec<_> = parts
+                .iter()
+                .filter(|part| {
+                    part["type"]
+                        .as_str()
+                        .is_some_and(|kind| kind.starts_with("text-"))
+                })
+                .map(|part| json!([part["type"], part["id"], part.get("delta")]))
+                .collect();
+            assert_eq!(
+                text,
+                vec![
+                    json!(["text-start", "msg-1", null]),
+                    json!(["text-delta", "msg-1", "before"]),
+                    json!(["text-end", "msg-1", null]),
+                    json!(["text-start", "msg-1:1", null]),
+                    json!(["text-delta", "msg-1:1", "after"]),
+                    json!(["text-end", "msg-1:1", null]),
+                ]
+            );
+            let starts: Vec<_> = parts
+                .iter()
+                .filter(|part| part["type"] == "text-start")
+                .collect();
+            assert_eq!(
+                starts[1]["providerMetadata"],
+                json!({"openai": {"itemId": "msg-1", "phase": "commentary", "contentIndex": 1}})
+            );
+            stream_assert_match(
+                stream_find(&parts, "tool-input-start").unwrap(),
+                &json!({"id": "call-1", "providerMetadata": {"openai": {"itemId": "fc-1"}}}),
+            );
+            stream_assert_match(
+                stream_find(&parts, "tool-call").unwrap(),
+                &json!({"toolCallId": "call-1", "providerMetadata": {"openai": {"itemId": "fc-1"}}}),
+            );
+        }
+
         /// aimux #466: refusal deltas stream as text; `refusal.done` adds the
         /// whole refusal only to a part that streamed no delta.
         #[tokio::test]
@@ -9136,6 +9212,8 @@ mod openai_responses_language_model {
                     }),
                     json!({
                         "id": "call_6KxSghkb4MVnunFH2TxPErLP",
+                        // #468
+                        "providerMetadata": {"openai": {"itemId": "fc_67cb13a838088190be08eb3927c87501"}},
                         "toolName": "currentLocation",
                         "type": "tool-input-start",
                     }),
@@ -9161,6 +9239,8 @@ mod openai_responses_language_model {
                     }),
                     json!({
                         "id": "call_Dg6WUmFHNeR5JxX1s53s1G4b",
+                        // #468
+                        "providerMetadata": {"openai": {"itemId": "fc_67cb13a858f081908a600343fa040f47"}},
                         "toolName": "weather",
                         "type": "tool-input-start",
                     }),
@@ -9268,7 +9348,8 @@ mod openai_responses_language_model {
             .unwrap();
             let events = stream_collect(stream).await;
             let mut expected = vec![
-                json!({"type": "tool-input-start", "id": "call_parallel_malformed", "toolName": "parallel"}),
+                // #468
+                json!({"type": "tool-input-start", "id": "call_parallel_malformed", "toolName": "parallel", "providerMetadata": {"openai": {"itemId": "fc_parallel_malformed"}}}),
             ];
             for delta in input_deltas {
                 expected.push(json!({"type": "tool-input-delta", "id": "call_parallel_malformed", "delta": delta}));
@@ -9299,7 +9380,8 @@ mod openai_responses_language_model {
             .unwrap();
             let events = stream_collect(stream).await;
             let mut expected = vec![
-                json!({"type": "tool-input-start", "id": "call_parallel_truncated", "toolName": "parallel"}),
+                // #468
+                json!({"type": "tool-input-start", "id": "call_parallel_truncated", "toolName": "parallel", "providerMetadata": {"openai": {"itemId": "fc_parallel_truncated"}}}),
             ];
             for delta in input_deltas {
                 expected.push(json!({"type": "tool-input-delta", "id": "call_parallel_truncated", "delta": delta}));
@@ -9631,6 +9713,8 @@ mod openai_responses_language_model {
                         }),
                         json!({
                             "id": "call_custom_sql_001",
+                            // #468
+                            "providerMetadata": {"openai": {"itemId": "ct_abc123def456"}},
                             "toolName": "write_sql",
                             "type": "tool-input-start",
                         }),
@@ -11338,6 +11422,7 @@ mod openai_responses_language_model {
                     "fixtures/openai-reasoning-encrypted-content.1.chunks.txt"
                 ));
                 let stream = stream_do(&mock, "gpt-5.1-codex-max", json!({"prompt": stream_test_prompt(), "tools": [{"type": "function", "name": "calculator", "inputSchema": {"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}, "op": {"type": "string"}}, "required": ["a", "b"], "additionalProperties": false}}], "providerOptions": {"openai": {"reasoningEffort": "high", "maxCompletionTokens": 32000, "store": false, "include": ["reasoning.encrypted_content"], "reasoningSummary": "auto", "forceReasoning": true}}})).await.unwrap();
+                // #468: tool-input-start carries the item id in this snapshot.
                 stream_assert_parts(
                     &stream_collect(stream).await,
                     &stream_snapshot(include_str!(

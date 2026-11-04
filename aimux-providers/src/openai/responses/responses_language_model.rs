@@ -1728,6 +1728,35 @@ fn reasoning_item_metadata(provider_key: &str, item_id: &str) -> ProviderMetadat
         .expect("provider metadata must be an object")
 }
 
+/// The open text block of a message item, else the item id itself.
+fn text_block_id(text_blocks: &HashMap<String, (u64, String)>, item_id: String) -> String {
+    text_blocks
+        .get(&item_id)
+        .map_or(item_id, |(_, block)| block.clone())
+}
+
+/// aimux extension (#468): the AI SDK starts a function call without
+/// metadata; the item id is sent here too, not only on the tool call.
+fn tool_input_start(
+    controller: &mut Controller,
+    provider_key: &str,
+    item: &Value,
+    call_id: String,
+    tool_name: String,
+) {
+    controller.enqueue(StreamPart::ToolInputStart {
+        id: call_id,
+        tool_name,
+        provider_executed: None,
+        dynamic: None,
+        title: None,
+        provider_metadata: Some(
+            provider_namespace(provider_key, tool_metadata(item))
+                .expect("provider metadata must be an object"),
+        ),
+    });
+}
+
 fn tool_metadata(item: &Value) -> Value {
     let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
     for key in ["async", "namespace"] {
@@ -2042,6 +2071,8 @@ struct OpenAIResponsesStream {
     text_states: HashMap<String, Value>,
     /// Refusal parts (item id, content index) that streamed a delta.
     refusal_deltas: HashSet<(String, u64)>,
+    /// The open text block of each message item: its content index and id.
+    text_blocks: HashMap<String, (u64, String)>,
     output_ids: HashMap<usize, String>,
     text_annotations: HashMap<String, Vec<Value>>,
     logprobs: Vec<Value>,
@@ -2088,6 +2119,7 @@ impl Transformer for OpenAIResponsesStream {
             ref mut stream_errored,
             ref mut text_states,
             ref mut refusal_deltas,
+            ref mut text_blocks,
             ref mut output_ids,
             ref mut text_annotations,
             ref mut logprobs,
@@ -2187,6 +2219,7 @@ impl Transformer for OpenAIResponsesStream {
                                         .to_string();
                                     output_ids.insert(output_index, id.clone());
                                     text_states.insert(id.clone(), item.clone());
+                                    text_blocks.insert(id.clone(), (0, id.clone()));
                                     controller.enqueue(StreamPart::TextStart {
                                         id,
                                         provider_metadata: Some(
@@ -2215,7 +2248,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.tool_input_start(call_id, name);
+                                    tool_input_start(controller, provider_key, item, call_id, name);
                                 }
                                 "custom_tool_call" => {
                                     let call_id = item
@@ -2234,7 +2267,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.tool_input_start(call_id, name);
+                                    tool_input_start(controller, provider_key, item, call_id, name);
                                 }
                                 "reasoning" => {
                                     let id = item
@@ -2385,7 +2418,36 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.text_delta(id, delta);
+                        controller.text_delta(text_block_id(text_blocks, id), delta);
+                    }
+
+                    // ── response.content_part.added → a new text block ────────
+                    // aimux extension (#468): the AI SDK merges the content
+                    // parts of a message into one text block; each part after
+                    // the first opens its own, marked with its `contentIndex`.
+                    "response.content_part.added" => {
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
+                        let content_index = parsed["content_index"].as_u64().unwrap_or_default();
+                        if parsed["part"]["type"] == "output_text"
+                            && let Some((index, block)) = text_blocks.get_mut(&item_id)
+                            && content_index > *index
+                        {
+                            controller.text_end(std::mem::take(block));
+                            *index = content_index;
+                            *block = format!("{item_id}:{content_index}");
+                            let mut metadata = text_states.get(&item_id).map_or_else(
+                                || json!({ "itemId": item_id }),
+                                |item| text_metadata(item, None),
+                            );
+                            metadata["contentIndex"] = json!(content_index);
+                            controller.enqueue(StreamPart::TextStart {
+                                id: block.clone(),
+                                provider_metadata: Some(
+                                    provider_namespace(provider_key, metadata)
+                                        .expect("provider metadata must be an object"),
+                                ),
+                            });
+                        }
                     }
 
                     // ── response.refusal.delta/done → TextDelta ───────────────
@@ -2409,7 +2471,7 @@ impl Transformer for OpenAIResponsesStream {
                             if etype == "response.refusal.delta" {
                                 refusal_deltas.insert(part);
                             }
-                            controller.text_delta(id, text.to_owned());
+                            controller.text_delta(text_block_id(text_blocks, id), text.to_owned());
                         }
                     }
 
@@ -2549,8 +2611,9 @@ impl Transformer for OpenAIResponsesStream {
                                         metadata_item["phase"] = phase.clone();
                                     }
                                     let annotations = text_annotations.remove(&id);
+                                    let block = text_blocks.remove(&id).map(|(_, block)| block);
                                     controller.enqueue(StreamPart::TextEnd {
-                                        id,
+                                        id: block.unwrap_or(id),
                                         provider_metadata: Some(
                                             provider_namespace(
                                                 provider_key,
