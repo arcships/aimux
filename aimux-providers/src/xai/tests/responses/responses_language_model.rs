@@ -5504,3 +5504,43 @@ async fn strict_stream_reports_a_malformed_chunk_as_the_only_error() {
         "{items:?}"
     );
 }
+
+/// #471: a summary delta before its `reasoning_summary_part.added` opens the
+/// block; the late `part.added` opens no second one, and strict mode accepts it.
+#[tokio::test]
+async fn summary_delta_before_part_added_opens_one_reasoning_block() {
+    let fetch = MockFetch::new(vec![sse(&[
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "output": []}}),
+        json!({"type": "response.output_item.added", "output_index": 0, "item": {"type": "reasoning", "id": "rs_1"}}),
+        json!({"type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "summary_index": 0, "delta": "first "}),
+        json!({"type": "response.reasoning_summary_part.added", "item_id": "rs_1", "summary_index": 0}),
+        json!({"type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "summary_index": 0, "delta": "thought"}),
+        json!({"type": "response.output_item.done", "output_index": 0, "item": {"type": "reasoning", "id": "rs_1"}}),
+        json!({"type": "response.completed", "response": {"id": "resp_123", "object": "response", "model": DEFAULT_MODEL_ID, "status": "completed", "output": [], "usage": {"input_tokens": 1, "output_tokens": 2}}}),
+    ])]);
+    let mut options = options();
+    options.strict_stream = Some(true);
+
+    let parts = stream_parts(model(&fetch).do_stream(&options).await.unwrap()).await;
+
+    let reasoning: Vec<Value> = parts
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|part| {
+            let kind = part["type"].as_str().unwrap();
+            kind.starts_with("reasoning") || kind == "error"
+        })
+        .map(|part| json!([part["type"], part["id"], part.get("delta")]))
+        .collect();
+    assert_eq!(
+        reasoning,
+        vec![
+            json!(["reasoning-start", "reasoning-rs_1", null]),
+            json!(["reasoning-delta", "reasoning-rs_1", "first "]),
+            json!(["reasoning-delta", "reasoning-rs_1", "thought"]),
+            json!(["reasoning-end", "reasoning-rs_1", null]),
+        ],
+        "{parts:#}"
+    );
+}

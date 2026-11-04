@@ -710,28 +710,17 @@ impl XaiResponsesStream {
                     return;
                 }
 
-                // ── reasoning_summary_text.delta ──
-                if event_type == "response.reasoning_summary_text.delta" {
-                    let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                    let block_id = format!("reasoning-{item_id}");
-                    controller.enqueue(StreamPart::ReasoningDelta {
-                        id: block_id,
-                        delta: delta.to_string(),
-                        provider_metadata: Some(crate::xai::options::xai_metadata(
-                            json!({ "itemId": item_id }),
-                        )),
-                    });
-                    return;
-                }
-
                 // ── reasoning_summary_text.done ──
                 if event_type == "response.reasoning_summary_text.done" {
                     return;
                 }
 
-                // ── reasoning_text.delta ──
-                if event_type == "response.reasoning_text.delta" {
+                // ── reasoning_summary_text.delta / reasoning_text.delta ──
+                // A summary delta may arrive before its `part.added` (#471),
+                // so it opens the block like a reasoning text delta.
+                if event_type == "response.reasoning_summary_text.delta"
+                    || event_type == "response.reasoning_text.delta"
+                {
                     let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
                     let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
                     let block_id = format!("reasoning-{item_id}");
