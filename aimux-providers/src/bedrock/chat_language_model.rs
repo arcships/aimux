@@ -579,6 +579,47 @@ impl AmazonBedrockChatStream {
             self.finish_meta
                 .insert("serviceTier".to_string(), st.clone());
         }
+        // #477: `metadata` is the last event of a Converse stream, so the turn
+        // finishes here instead of waiting for the body to close, which can
+        // hang behind keep-alives and proxies.
+        if self
+            .final_finish_reason
+            .as_ref()
+            .is_some_and(|reason| reason.unified != FinishReasonUnified::Error)
+        {
+            self.finish(controller);
+            controller.terminate();
+        }
+    }
+
+    /// Emit `Finish`, at `metadata` after a `messageStop` or at the end of
+    /// the body.
+    fn finish(&mut self, controller: &mut Controller) {
+        // #26: merge the stop sentinel into the metadata payload, then build
+        // the Finish provider_metadata under `amazonBedrock` (mirrors the
+        // TS `doStream` flush handler).
+        if self.is_json_response_from_tool {
+            self.finish_meta
+                .insert("isJsonResponseFromTool".into(), json!(true));
+            self.finish_meta
+                .insert("stopSequence".into(), serde_json::Value::Null);
+        }
+        if let Some(seq) = self.stop_sequence.take() {
+            self.finish_meta
+                .insert("stopSequence".to_string(), serde_json::Value::String(seq));
+        }
+        let provider_metadata = if self.finish_meta.is_empty() {
+            None
+        } else {
+            let payload = serde_json::Value::Object(std::mem::take(&mut self.finish_meta));
+            Some(options::metadata(payload))
+        };
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.final_finish_reason.take().unwrap_or(FINISH_OTHER),
+            usage: std::mem::take(&mut self.final_usage),
+            provider_metadata,
+        });
     }
 }
 
@@ -675,31 +716,7 @@ impl Transformer for AmazonBedrockChatStream {
         ) {
             return;
         }
-        // #26: merge the stop sentinel into the metadata payload, then build
-        // the Finish provider_metadata under `amazonBedrock` (mirrors the
-        // TS `doStream` flush handler).
-        if self.is_json_response_from_tool {
-            self.finish_meta
-                .insert("isJsonResponseFromTool".into(), json!(true));
-            self.finish_meta
-                .insert("stopSequence".into(), serde_json::Value::Null);
-        }
-        if let Some(seq) = self.stop_sequence {
-            self.finish_meta
-                .insert("stopSequence".to_string(), serde_json::Value::String(seq));
-        }
-        let provider_metadata = if self.finish_meta.is_empty() {
-            None
-        } else {
-            let payload = serde_json::Value::Object(self.finish_meta);
-            Some(options::metadata(payload))
-        };
-
-        controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.unwrap_or(FINISH_OTHER),
-            usage: self.final_usage,
-            provider_metadata,
-        });
+        self.finish(controller);
     }
 }
 

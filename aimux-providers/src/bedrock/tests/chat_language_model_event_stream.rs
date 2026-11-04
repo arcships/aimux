@@ -799,3 +799,52 @@ mod strict_content_block_layout {
         }
     }
 }
+
+mod metadata_finish {
+    use super::*;
+
+    /// #477: after a `messageStop`, `metadata` finishes the stream with its
+    /// usage; a frame after it is not read.
+    #[tokio::test]
+    async fn finishes_at_metadata_after_message_stop() {
+        let event =
+            |event_type: &str, payload: Value| create_event(event_type, &payload.to_string());
+        let items = stream_items(&model_streaming(
+            "anthropic.test",
+            &[
+                event(
+                    "contentBlockDelta",
+                    json!({ "contentBlockIndex": 0, "delta": { "text": "done" } }),
+                ),
+                event("contentBlockStop", json!({ "contentBlockIndex": 0 })),
+                event("messageStop", json!({ "stopReason": "end_turn" })),
+                event(
+                    "metadata",
+                    json!({ "usage": { "inputTokens": 3, "outputTokens": 5, "totalTokens": 8 } }),
+                ),
+                event(
+                    "contentBlockDelta",
+                    json!({ "contentBlockIndex": 1, "delta": { "text": "late" } }),
+                ),
+            ],
+        ))
+        .await;
+
+        let parts: Vec<Value> = items
+            .into_iter()
+            .map(|item| serde_json::to_value(item.expect("stream does not throw")).unwrap())
+            .collect();
+        assert!(
+            !parts.iter().any(|part| part["delta"] == json!("late")),
+            "{parts:?}"
+        );
+        assert_match_object(
+            parts.last().expect("a finish part"),
+            &json!({
+                "type": "finish",
+                "finishReason": { "unified": "stop" },
+                "usage": { "outputTokens": { "total": 5 } },
+            }),
+        );
+    }
+}
