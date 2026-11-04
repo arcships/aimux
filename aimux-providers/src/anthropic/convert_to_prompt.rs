@@ -1180,10 +1180,6 @@ fn convert_assistant_tool_result(
         ToolResultOutput::ErrorText { .. }
             | ToolResultOutput::ErrorJson { .. }
             | ToolResultOutput::ExecutionDenied { .. }
-            | ToolResultOutput::Content {
-                is_error: Some(true),
-                ..
-            }
     );
     let tool_name = tool_name.as_str();
     let payload_type = value.get("type").and_then(|t| t.as_str());
