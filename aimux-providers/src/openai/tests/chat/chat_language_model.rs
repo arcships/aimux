@@ -1778,6 +1778,25 @@ mod do_generate {
         assert_eq!(warnings(&result), json!([]));
     }
 
+    /// aimux #462: `forceServiceTier` sends the tier to a model id the
+    /// capability table does not know, without a warning.
+    #[tokio::test]
+    async fn should_send_forced_service_tier_to_a_deployment_alias() {
+        for tier in ["flex", "priority"] {
+            let (result, mock) = generate(
+                "my-deployment-alias",
+                openai_text_json(),
+                json!({ "providerOptions": { "openai": { "serviceTier": tier, "forceServiceTier": true } } }),
+            )
+            .await;
+            assert_eq!(request_body(&mock)["service_tier"], json!(tier));
+            assert_eq!(warnings(&result), json!([]));
+
+            let (_, body) = service_tier("my-deployment-alias", tier).await;
+            assert_eq!(body.get("service_tier"), None);
+        }
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doGenerate › should send serviceTier fast processing setting
     #[tokio::test]
     async fn should_send_service_tier_fast_processing_setting() {

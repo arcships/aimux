@@ -3285,6 +3285,29 @@ mod openai_responses_language_model {
                 );
             }
 
+            /// aimux #462: `forceServiceTier` sends the tier to a model id the
+            /// capability table does not know, without a warning.
+            #[tokio::test]
+            async fn should_send_forced_service_tier_to_a_deployment_alias() {
+                for tier in ["flex", "priority"] {
+                    let r = run(
+                        "my-deployment-alias",
+                        json!({
+                          "prompt": test_prompt(),
+                          "providerOptions": {
+                            "openai": {
+                              "serviceTier": tier,
+                              "forceServiceTier": true
+                            }
+                          }
+                        }),
+                    )
+                    .await;
+                    assert_eq!(r.body["service_tier"], json!(tier));
+                    assert_json_eq(&r.warnings(), &json!([]));
+                }
+            }
+
             /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doGenerate › basic text response › should send serviceTier ultrafast provider option
             #[tokio::test]
             async fn should_send_service_tier_ultrafast_provider_option() {

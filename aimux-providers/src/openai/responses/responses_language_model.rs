@@ -817,11 +817,15 @@ fn apply_responses_service_tier(
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
+    // aimux extension (#462): `forceServiceTier` declares the tier support of
+    // a model id the capability table cannot know, such as a deployment alias.
+    let force = openai_option(ns, provider_opts, "forceServiceTier")
+        .is_some_and(|v| v.as_bool().unwrap_or(false));
     if let Some(st) = openai_option(ns, provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
     {
         match st.as_str() {
-            "flex" if !caps.supports_flex_processing => {
+            "flex" if !caps.supports_flex_processing && !force => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some(
@@ -830,7 +834,7 @@ fn apply_responses_service_tier(
                     ),
                 });
             }
-            "priority" | "fast" if !caps.supports_priority_processing => {
+            "priority" | "fast" if !caps.supports_priority_processing && !force => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some("priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string()),
