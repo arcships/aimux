@@ -304,7 +304,7 @@ pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<
         | ToolResultOutput::ExecutionDenied {
             provider_options, ..
         } => get_prompt_cache_breakpoint(provider_options),
-        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+        ToolResultOutput::Content { value, .. } => value.iter().find_map(|part| match part {
             aimux_core::language_model_message::ToolResultContent::Text(part) => {
                 get_prompt_cache_breakpoint(&part.provider_options)
             }

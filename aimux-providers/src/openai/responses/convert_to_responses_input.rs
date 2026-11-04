@@ -734,7 +734,7 @@ fn convert_tool_result_output(
     custom: bool,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
-    let ToolResultOutput::Content { value } = output else {
+    let ToolResultOutput::Content { value, .. } = output else {
         return Ok(aimux_provider_utils::tool_result_to_content(output));
     };
     let mut parts = Vec::new();

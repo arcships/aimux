@@ -2371,6 +2371,12 @@ export type LanguageModelToolResultOutput =
   }
   | {
     type: "content"
+    /**
+     * Whether the tool call failed. Beyond the AI SDK's `content` output,
+     * so a result that carries an image or a file can still be an
+     * error (#470).
+     */
+    isError?: boolean | null
     value: Array<ToolResultContent>
   }
 

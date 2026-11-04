@@ -383,7 +383,7 @@ fn convert_tool_parts(
             value
         };
         match output {
-            ToolResultOutput::Content { value } => {
+            ToolResultOutput::Content { value, .. } => {
                 if supports_function_response_parts {
                     let mut texts = Vec::new();
                     let mut files = Vec::new();

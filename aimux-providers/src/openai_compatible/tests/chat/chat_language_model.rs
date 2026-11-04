@@ -5072,7 +5072,10 @@ mod upstream_e2e {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call-1".into(),
                     tool_name: "weather".into(),
-                    output: ToolResultOutput::Content { value },
+                    output: ToolResultOutput::Content {
+                        value,
+                        is_error: None,
+                    },
                     provider_options: None,
                 })],
                 provider_options: None,
