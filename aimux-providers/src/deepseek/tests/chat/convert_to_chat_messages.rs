@@ -230,6 +230,7 @@ mod convert_to_deep_seek_chat_messages {
                                 "mediaType": "image/png",
                             })),
                         ],
+                        is_error: None,
                     },
                     provider_options: None,
                 })],

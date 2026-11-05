@@ -21,6 +21,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ApiCallError.class));
             case "ApiCallErrorInput":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ApiCallErrorInput.class));
+            case "ApiCallErrorOrigin":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ApiCallErrorOrigin.class));
             case "AspectRatio":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AspectRatio.class));
             case "AssistantContent":

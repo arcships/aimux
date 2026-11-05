@@ -46,19 +46,17 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
-use aimux_core::types::Warning;
+use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 
 use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, validate_base_url,
 };
 
-use crate::openai::config::OpenAIModelConfig;
-use crate::openai::responses::responses_convert::{
+use crate::openai::internal::{
+    OpenAIModelConfig, OpenAIResponsesModel, ResponsesNamespace,
     build_responses_event_stream_with_raw, build_responses_generate_result,
-};
-use crate::openai::responses::{
-    OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
+    build_responses_request_body, list_models_once, openai_failed_response_handler, supported_urls,
 };
 pub use crate::shared::TransformRequestBody;
 use aimux_provider_utils::{AuthScheme, Credential};
@@ -250,7 +248,7 @@ impl CodexProvider {
         );
         // Codex speaks the Responses API, so its models take the URLs the
         // OpenAI Responses model takes.
-        config.supported_urls = crate::openai::config::supported_urls(method);
+        config.supported_urls = supported_urls(method);
         config
     }
 
@@ -296,7 +294,7 @@ impl ProviderDiscovery for CodexProvider {
     /// `GET {base_url}/models` (OpenAI-compatible): one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config("models");
-        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
+        Box::pin(async move { list_models_once(&config).await })
     }
 }
 
@@ -344,7 +342,10 @@ impl CodexModel {
     /// Subscription `do_generate`: the endpoint only accepts streaming, so
     /// request with `stream: true` and assemble the final result from the
     /// terminal `response.completed` / `response.incomplete` event (the
-    /// official client always streams; non-streaming requests error).
+    /// official client always streams; non-streaming requests error). A
+    /// `response.failed` event is terminal too: an error when its
+    /// `response.error` is not null, otherwise a result finishing as the
+    /// stream does.
     async fn subscription_generate(
         &self,
         options: &CallOptions,
@@ -360,7 +361,7 @@ impl CodexModel {
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            crate::openai::openai_failed_response_handler(),
+            openai_failed_response_handler(),
         )
         .await
         .map_err(Self::map_subscription_401)?;
@@ -369,6 +370,8 @@ impl CodexModel {
         // (parsed response object, raw event payload) of the terminal event.
         let mut completed: Option<(Value, String)> = None;
         let mut failure: Option<AiMuxError> = None;
+        // The terminal event was a `response.failed` with a null error.
+        let mut failed_without_error = false;
 
         while let Some(event) = sse.next().await {
             match event {
@@ -384,6 +387,17 @@ impl CodexModel {
                             let raw = data.to_string();
                             let obj = data.get("response").cloned().unwrap_or(data);
                             completed = Some((obj, raw));
+                            break;
+                        }
+                        // A `response.failed` whose `response.error` is
+                        // null is not an error (upstream's `!= null`, which
+                        // the shared stream reducer follows): its response
+                        // object is the terminal one.
+                        "response.failed" if data["response"]["error"].is_null() => {
+                            let raw = data.to_string();
+                            let obj = data.get("response").cloned().unwrap_or(data);
+                            completed = Some((obj, raw));
+                            failed_without_error = true;
                             break;
                         }
                         "response.failed" | "error" => {
@@ -432,15 +446,27 @@ impl CodexModel {
         }
 
         match completed {
-            Some((data, raw)) => build_responses_generate_result(
-                &data,
-                &raw,
-                warnings,
-                ResponsesNamespace::OPENAI.write_key().to_string(),
-                endpoint,
-                body,
-                response_headers,
-            ),
+            Some((data, raw)) => {
+                let mut result = build_responses_generate_result(
+                    &data,
+                    &raw,
+                    warnings,
+                    ResponsesNamespace::OPENAI.write_key().to_string(),
+                    endpoint,
+                    body,
+                    response_headers,
+                )?;
+                // As the stream reducer's `response.failed` arm: without an
+                // `incomplete_details` reason, a failed response finishes
+                // with `error`.
+                if failed_without_error && data["incomplete_details"]["reason"].as_str().is_none() {
+                    result.finish_reason = FinishReason {
+                        unified: FinishReasonUnified::Error,
+                        raw: Some("error".to_string()),
+                    };
+                }
+                Ok(result)
+            }
             None => Err(failure.unwrap_or_else(|| {
                 AiMuxError::invalid_response_data(
                     "subscription stream ended without response.completed".to_string(),
@@ -462,7 +488,7 @@ impl CodexModel {
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            crate::openai::openai_failed_response_handler(),
+            openai_failed_response_handler(),
         )
         .await
         .map_err(Self::map_subscription_401)?;
@@ -483,15 +509,19 @@ impl CodexModel {
             body.clone(),
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
+            options.strict_stream == Some(true),
         )?;
 
-        Ok(StreamResult {
-            stream,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream,
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -605,7 +635,7 @@ pub async fn codex_refresh_at(
         },
         body,
         aimux_provider_utils::create_json_response_handler(),
-        crate::openai::openai_failed_response_handler(),
+        openai_failed_response_handler(),
     )
     .await?;
 
@@ -693,5 +723,57 @@ mod tests {
         assert!(!error.is_retryable);
         assert_eq!(error.data, Some(event.clone()));
         assert_eq!(error.response_body, Some(event.to_string()));
+    }
+
+    // A subscription `response.failed` event whose `response.error` is null
+    // is not an error, as in the stream: the result finishes with `error`.
+    #[tokio::test]
+    async fn subscription_response_failed_with_a_null_error_finishes_with_error() {
+        use aimux_core::language_model::LanguageModel;
+        use aimux_core::language_model_message::LanguageModelMessage;
+        use aimux_core::options::CallOptions;
+        use aimux_core::types::FinishReasonUnified;
+        use aimux_provider_utils::Resolvable;
+        use serde_json::json;
+
+        use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+        let event = json!({
+            "type": "response.failed",
+            "response": {
+                "id": "resp_failed_null_error",
+                "created_at": 1_741_269_019,
+                "model": "gpt-5",
+                "output": [],
+                "error": null,
+                "incomplete_details": null,
+            },
+        });
+        let mock = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: format!("data: {event}\n\n").into_bytes(),
+        }]);
+        let provider = super::create_codex(super::CodexProviderSettings {
+            mode: super::CodexMode::ChatGptAccount {
+                token: Resolvable::Value("token".into()),
+                account_id: None,
+            },
+            fetch: Some(mock.transport()),
+            ..Default::default()
+        })
+        .expect("valid settings");
+
+        let result = provider
+            .responses("gpt-5")
+            .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+                "Hello",
+            )]))
+            .await
+            .expect("a null error is not an error");
+
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Error);
+        assert_eq!(result.finish_reason.raw.as_deref(), Some("error"));
+        assert!(result.content.is_empty());
     }
 }

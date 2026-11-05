@@ -5,9 +5,78 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-05
+
+Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,
+but the manifest digest changes, so every binding in a process must come from
+0.6.1.
+
+### Added
+
+- `forceServiceTier` for OpenAI Chat and Responses: send the caller's service
+  tier for a deployment alias without the capability warning (#485).
+- `ToolResultOutput::Content` gains optional `isError` (wire `isError`, omitted
+  when `None`), so a tool result that carries text, an image or a file can also
+  be a failure. Anthropic and Bedrock map it (#486).
+
+### Fixed
+
+- OpenAI: Chat and Responses refusal text streams as visible text; Responses
+  content parts stream as separate blocks and replay references a message item
+  once; the chat converter replays `reasoning_content`; the capability helpers
+  are public as `aimux_providers::openai::language_model_capabilities`
+  (#485, #492).
+- xAI: a reasoning summary delta opens its block before
+  `reasoning_summary_part.added`; each Responses `output_text` part keeps its
+  own text block; a late delta reopens it; replay groups one item's adjacent
+  text parts (#482).
+- Google and Vertex: a differently signed text part starts a new text block,
+  empty signed text is replayed, and the stream finishes at the chunk carrying
+  the finish reason and usage instead of waiting for EOF (#488).
+- Bedrock: a Converse `contentBlockDelta` without exactly one known member
+  fails the stream; strict mode rejects unopened or unclosed content blocks;
+  a non-error `messageStop` plus `metadata` finishes the stream (#489).
+- Core: text and reasoning deltas for parts that were never started now yield
+  the upstream error part instead of creating the part; retry hints round
+  fractional milliseconds up; `parse_tool_call::parse_json_input` is public
+  (#479, #481).
+- Strict stream: a completed tool call rejects later tool-input events, and the
+  OpenAI-compatible chat stream enforces one candidate index, one tool-call
+  identity shape and one finish reason (#484).
+- Recording: credential-like header names are redacted, a second transport
+  close writes no duplicate line, and JSONL lines are written atomically
+  (#483).
+- Usage: chat and completion converters keep counts the provider did not report
+  as unknown instead of filling 0 (#487).
+- SigV4: caller-supplied `x-amz-content-sha256` and `x-amz-security-token` are
+  kept and signed as aws4fetch does (#480).
+- Providers: the realtime-only items compile under `--no-default-features`, and
+  CI lints that configuration (#497).
+
+### Breaking
+
+- The generated `LanguageModelToolResultOutput.Content` gains `isError`:
+  Java/Kotlin `Content` constructors take it as the first positional argument,
+  Swift's `.content` case becomes `.content(isError:value:)`, and Rust struct
+  literals or exhaustive patterns need the new field. The wire JSON is
+  additive.
+
+## [0.6.0] - 2026-11-03
+
+**Breaking release.** 0.6.0 moves every binding onto the shared operations ABI
+(ABI 1 / ops 1.0) and aligns the public JSON with the Vercel AI SDK V4.
+Provider-specific constructors, the old error getters and the hand-written
+binding DTOs are removed; errors now carry the shared envelope and a native
+cause chain. See the [0.6 upgrade guide](docs/upgrading-to-0.6.md) and the
+detailed sections below.
 
 ### Build
+
+- The Go binding's macOS cgo flags link `CoreFoundation`, which the
+  `iana-time-zone` dependency used by the release archive requires. The
+  Flutter publish job also builds its ABI test fixtures and Dart bridge
+  before `flutter test`, matching the CI job; both were missing from the first
+  0.6.0 tag run.
 
 - The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
   slices) are built with the `staticlib-release` profile, the `release`
@@ -73,6 +142,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `maturin build --release` pick the profile up; no command changes.
 
 ### Breaking
+
+> **Historical entries in this section.** The V4 migration landed in layers,
+> so some entries below name transitional APIs that were replaced again before
+> the final 0.6.0 cutover — for example `aimux_error_provider_code`,
+> `aimux_decide`, `aimux_provider_new`, `aimux_register_providers`, Node
+> `ProviderConfig` / native constructors, and `describeDecisionModel`. Treat
+> those names as history, not as 0.6 migration targets: the final surface is
+> the ops ABI in [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) and the
+> fourteen primitives in `aimux-ffi/include/aimux.h`.
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
   `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
@@ -1377,6 +1455,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `with_user_agent_suffix`, and map an optional URL with
   `url.map(without_trailing_slash)`.
 
+- `aimux_providers::openai::tools::AzureOpenAITools` moved to
+  `aimux_providers::azure::AzureOpenAITools` (also re-exported at
+  `aimux_providers::AzureOpenAITools`), as `@ai-sdk/azure`'s
+  `src/azure-openai-tools.ts` (RFC-0046 R2).
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
@@ -1489,6 +1572,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aimux_provider_utils::optional_field` is the `deserialize_with` for a zod
   `.optional()` field (absent is `None`, an explicit `null` fails the
   schema); it replaces the copies in the DeepSeek, Google and Groq options.
+  `aimux_provider_utils::parse_option_fields` validates a per-field options
+  object from `providerOptions` (returning `InvalidArgument` on invalid type
+  or field error), shared by the OpenAI chat and Anthropic option parsers.
 - `aimux_provider_utils::create_provider_stream_error` and
   `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
   `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
@@ -1509,6 +1595,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `moonshotai`, `kimi` and `zenmux` presets send `max_output_tokens` as
+  `max_completion_tokens` instead of `max_tokens` (`profile.max_tokens_key` in
+  `provider_registry.json`). Moonshot's chat API documents `max_tokens` as
+  deprecated in favor of `max_completion_tokens`; ZenMux documents `max_tokens`
+  as unsupported (#401). The discontinued `moonshot-v1-*` models remain listed
+  until a separate registry cleanup.
 - The Amazon Bedrock event-stream decoder rejects a frame that declares more
   than 24 MiB (`MAX_EVENT_STREAM_FRAME_LEN`, the service-side maximum of
   AWS's `aws-c-event-stream`) as soon as its length is read. It used to
@@ -1517,6 +1609,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checksum is now checked once its 12 bytes arrive, before the rest of the
   frame, and the buffer gives back the capacity a large frame left behind.
   The AI SDK's decoder has no such limit.
+- SSE streams end at `data: [DONE]` (`create_event_source_response_handler`,
+  so OpenAI Chat, OpenAI-compatible presets and every other SSE provider).
+  The frame was skipped and the stream went on reading the response body,
+  so a server that wrote `[DONE]` and kept the connection open held the
+  caller's last `next()` until the connection closed (#396). This departs
+  from the AI SDK on purpose: it skips `[DONE]` and reads to the end of the
+  body, while aimux stops there. Anything a server sends after `[DONE]`
+  (such as a gateway's trailing usage chunk) is not read, and the body is
+  not drained, so that connection is not reused.
+- A stream chunk whose `error` member is `null` is a normal chunk, not an
+  error frame: OpenAI Chat and Completion (Azure and Codex included), the
+  OpenAI-compatible chat and completion models (every preset), Groq,
+  DeepSeek, Mistral, and the first event of Open Responses. A gateway that
+  sends `"error": null` on healthy chunks failed the whole call with a 500
+  when the first chunk carried it, and ended the stream with an error part
+  when a later one did. As in the AI SDK, where a chunk with `choices`
+  matches the chunk schema and the unknown key is dropped (#397).
+- A raw byte request body (`HttpBody::Bytes`: audio uploads, Bedrock, file
+  uploads) no longer replaces a `content-type` the caller set in
+  `HttpRequest.headers`, `ProviderSettings.headers` or `CallOptions.headers`;
+  the body's media type is sent only when the caller set none, as for JSON
+  bodies and in the AI SDK's `postToApi`. A multipart body still sends its
+  own `multipart/...; boundary=...` type, since the boundary is generated
+  with the body (#398).
 - Luma image generation follows `@ai-sdk/luma` 3.0.54: `referenceType:
   'character'` sends `character: { <id>: { images } }` grouped by
   `images[i].id` (it was sent as `image`); a `failed` generation, or a
@@ -2666,7 +2782,9 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
-[Unreleased]: https://github.com/arcships/aimux/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/arcships/aimux/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/arcships/aimux/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arcships/aimux/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/arcships/aimux/compare/v0.2.0...v0.2.1

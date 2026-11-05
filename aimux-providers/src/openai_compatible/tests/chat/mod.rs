@@ -3,3 +3,4 @@ mod chat_language_model;
 mod convert_chat_usage;
 mod convert_to_chat_messages;
 mod prepare_tools;
+mod strict_stream;
