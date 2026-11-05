@@ -1505,13 +1505,16 @@ pub(crate) async fn anthropic_stream_core(
         },
     );
 
-    Ok(StreamResult {
-        stream: Box::pin(stream),
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::shared::StreamResponseInfo {
-            headers: Some(response_headers),
-        }),
-    })
+    Ok(crate::stream::strict_guard(
+        StreamResult {
+            stream: Box::pin(stream),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
+        },
+        options,
+    ))
 }
 
 /// The `TransformStream` of `AnthropicMessagesLanguageModel.doStream`.

@@ -1,656 +1,122 @@
 # aimux · Go API
 
-> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
-> which V4 removed: errors are now the shared `ErrorEnvelope`
-> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
-> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
-> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
-> AI SDK. The current API is in [bindings/go/README.md](../../bindings/go/README.md).
-> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. Provider-specific Go
+> constructors were removed. See the
+> [0.6 upgrade guide](../upgrading-to-0.6.md).
 
-> Unified LLM service access layer — one API to access AI providers
-
-The Go binding goes through the `aimux-ffi` C ABI: cgo statically links
-`libaimux_ffi.a`, so the Rust core is compiled into the executable and the
-result is a single binary. See [RFC-0011](../../rfc/0011-golang-bindings.md)
-for the design.
-
-Shared reference — parameter tables, result shapes, factory functions, and the
-feature coverage matrix — lives in the [API overview](../API.md).
+The Go binding statically links `libaimux_ffi.a` through cgo, so the Rust core
+is compiled into the executable and the result is a single binary. It requires
+Go 1.24+, cgo, the matching generated header and a matching Rust archive.
 
 ## Install
 
 ```bash
 go get github.com/arcships/aimux/bindings/go
-go generate github.com/arcships/aimux/bindings/go   # downloads libaimux_ffi.a for your platform
+go generate github.com/arcships/aimux/bindings/go
 go build ./...
 ```
 
-Details (version pinning, unsupported platforms):
-[bindings/go/README.md](../../bindings/go/README.md).
+`go generate` downloads the platform archive and `aimux.h` from the matching
+release. Pin it with `AIMUX_FFI_VERSION` when needed.
 
-Requires **Go 1.23+**.
+For local development:
+
+```bash
+cargo build -p aimux-ffi --profile staticlib-release
+cd bindings/go
+go test ./...
+```
+
+## Quick start
+
+```go
+ctx := context.Background()
+provider, err := aimux.Create(ctx, nil, "provider.create", map[string]any{
+    "package": "openai",
+    "settings": map[string]any{"apiKey": os.Getenv("OPENAI_API_KEY")},
+})
+if err != nil {
+    return err
+}
+defer provider.Close()
+
+model, err := aimux.Create(ctx, provider, "provider.model", map[string]any{
+    "method": "languageModel", "modelId": "gpt-4o-mini",
+})
+if err != nil {
+    return err
+}
+defer model.Close()
+
+result, err := aimux.CallInto[aimux.GenerateTextResult](ctx, model, "text.generate", map[string]any{
+    "prompt": "Hello", "options": aimux.GenerateTextOptions{},
+})
+if err != nil {
+    return err
+}
+fmt.Println(result.Text)
+```
+
+`Create` owns the returned entry, whether the operation returns a decimal
+handle string or an object containing `handle`. `Call` invokes a global
+operation; `Handle.Call` invokes an operation on an owned handle. Names and
+versions come from `generated/ops.go` and `Manifest()`.
+
+## Types and handles
+
+- `Call` accepts typed values or `json.RawMessage` and returns canonical raw
+  JSON. `CallInto[T]` decodes a typed result.
+- `Params` preserves absent keys versus explicit null. Optional scalars and
+  structs use pointers; optional slices and maps omit nil.
+- `Field[T]` distinguishes absent, explicit null and a typed value through
+  `Present`, `Null` and `Value`.
+- Tagged unions expose a sealed `Value` variant and reject unknown tags.
+- Handle IDs encode as decimal strings, including values above 2^53. Never
+  adopt an ID twice.
+
+## Streams and operations
+
+`Handle.Stream` returns copied event JSON through `Events()`. The queue holds
+seven events plus one pending producer, with at most 1 MiB per event. The
+producer closes the channel after callbacks return. `Cancel` releases a full
+queue even without a consumer. Always close an abandoned stream.
+
+`StartOperation` retains its context signal through the transcription
+operation lifetime. `Push`, `InputDone`, `NextPart`, `Status`, `Cancel` and
+`Close` expose operation controls. `NextPart` distinguishes `Part`, `Ended`
+and `PollTimeout`.
 
 ## Errors
 
-Go follows openai-go / anthropic-sdk-go: **one `*aimux.Error` struct**
-implementing `error` (not a class tree). Inspect with `errors.As`:
-
 ```go
-result, err := model.GenerateText(`"hi"`, "")
-if err != nil {
-    var e *aimux.Error
-    if errors.As(err, &e) {
-        // e.Code, e.Message, e.Status, e.RetryMs
-        if e.Code == aimux.CodeAPICall { // every HTTP-shaped failure
-            switch e.Status {
-            case 429:
-                // rate limited; e.RetryMs may be a delay hint
-            case 401:
-                // auth failure
-            case 404:
-                // model not found
-            }
-        }
-    }
-    return err
+var aimuxErr *aimux.Error
+if errors.As(err, &aimuxErr) {
+    fmt.Println(aimuxErr.Envelope.Kind, aimuxErr.Envelope.Code, aimuxErr.Envelope.Message)
+    fmt.Println(errors.Unwrap(err)) // cause chain
 }
 ```
 
-| Field | Meaning |
-|-------|---------|
-| `Code` | error code (`CodeAPICall`, `CodeTokenExpired`, …; matches C `aimux_error_code_t`) |
-| `Message` | human-readable text |
-| `Status` | HTTP status, or `-1` |
-| `RetryMs` | rate-limit hint, or `-1` (`0` = retry now) |
-| `Retryable` | the core's retry verdict; never derived from `Status` |
-| `ProviderCode`, `ProviderMessage`, `ResponseBody`, `URL`, `RequestBodyValues`, `ResponseHeaders`, `Data` | `CodeAPICall` payload; empty under any other code (request-id evidence rides in `ResponseHeaders`) |
-| `ModelID`, `ModelType` | `CodeNoSuchModel` payload; empty under any other code |
-| `ProviderID` | `CodeNoSuchProvider` payload; empty under any other code |
-| `ToolName` | `CodeNoSuchTool` / `CodeInvalidToolInput` payload: the tool name called |
-| `AvailableTools` | `CodeNoSuchTool` payload: `[]string` of the tools the call offered; `nil` when not reported |
-| `ToolInput` | `CodeInvalidToolInput` payload: the raw argument text the model produced |
-| `OriginalError` | `CodeToolCallRepair` payload: the pre-repair failure as `json.RawMessage` wire JSON (same encoding as `ToolCall.Error`) |
-| `EnvVar` | `CodeLoadAPIKey` / `CodeLoadSetting` payload: the environment variable that was consulted |
-
-`Code` values 1..20 mirror aimux-core's `AiMuxError` variants; 4 is retired
-(the legacy `Tool` variant) and 14 is `CodeRetry`. The tool-call variants
-arrive as `CodeNoSuchTool` (15), `CodeInvalidToolInput` (16), and
-`CodeToolCallRepair` (17); `CodeNoOutputGenerated` is 18; a missing API key / provider setting are
-`CodeLoadAPIKey` (19) / `CodeLoadSetting` (20). A code outside the enum is a header/library
-mismatch and fails with a `panic`, not an error type.
-
-Recording failures are a separate type, as in Rust (`recording::RecordingError`
-is unrelated to `AiMuxError`): `RecordingTryFlush() error` returns
-`*aimux.RecordingError{Code RecordingErrorCode, Message string}`, with `Code`
-one of `RecordingErrorInit … RecordingErrorWrite` (matches C
-`aimux_error_code_t`; only `WriterGone`, `FlushTimeout`, `Write` are
-reachable from a flush). `InitRecording(dir) error` reports construction
-failures (`Init`, `OpenFile`, `Spawn`) as the same `*aimux.RecordingError`; on
-failure the previous recorder stays in place. Inspect with
-`errors.As(err, &re)`. It is not an `*aimux.Error`; its `Code` belongs to
-`RecordingErrorCode`, not the core `aimux.Code` enum.
-The legacy `RecordingFlush()` stays and never reports.
-
-The two types — `*Error`, `*RecordingError` — share no base beyond `error`;
-`errors.As` for one never matches another. There is no third aimux type.
-
-**C ABI failures** ("your call, not the model") have codes 200–206 in C but
-no Go type of their own; the binding maps them to native Go errors:
-
-| Failure | Go |
-|---------|----|
-| bad raw JSON in `promptJson` / `optsJson` / `configJSON` | plain `error` naming the parameter, e.g. `aimux: prompt_json: invalid JSON` — checked in Go before the C call with `json.Valid` **plus** a surrogate-pairing scan, because `json.Valid` accepts unpaired `\uD800`–`\uDFFF` escapes that serde_json rejects (required parameters reject `""`; optional `""` = default; JSONL by line) |
-| a string parameter that is not valid UTF-8, or contains a NUL | plain `error`: `aimux: <param>: must be valid UTF-8` / `aimux: <param>: must not contain NUL` — a Go string is an arbitrary byte sequence and `C.CString` passes it through verbatim (a NUL would truncate the argument silently), so every user-supplied string is checked before the C call. Two exceptions, both deliberate: the five `mustNew` constructors panic instead (see below), and `InitLogging` has no error channel and falls back to `"warn"` |
-| a typed option struct (`ProviderConfig`, `EmbeddingCallOptions`, `SpeechCallOptions`, … , `TranscriptionSessionOpts`) whose raw JSON field carries bad bytes | plain `error` naming the marshalled parameter, e.g. `aimux: opts: invalid JSON: unpaired high surrogate \uD800`, `aimux: config_json: must be valid UTF-8` — `json.Marshal` is **not** self-validating: it coerces invalid UTF-8 in a Go *string* field to U+FFFD and escapes NUL, but a `json.RawMessage` field (`ProviderOptions`, `Documents`, `Files`, `Mask`, `Data`, `InputSchema`) is emitted through `compact()`, which checks JSON *syntax only*. Raw non-UTF-8 bytes and lone `\uD800`–`\uDFFF` escapes therefore survive marshalling, so every marshalled C argument gets the same `checkJSON` as a raw-string parameter |
-| use-after-close (`Model`, `ProviderHandle`, multimodal models, `TranscriptionSession`) | `errors.Is(err, aimux.ErrClosed)` — guarded in Go before the C call |
-| a `nil` `*Model` handed to a composite constructor — a `NewRouter` child, a `NewMoa` reference, or the `NewMoa` aggregator | plain `error` naming the position: `aimux: router: models[2] is nil`, `aimux: moa: references[1] is nil`, `aimux: moa: aggregator is nil` — checked in Go before the C call, so a nil element is a returned error rather than the nil-pointer dereference that would otherwise take the process down |
-| trace query (`TraceAggregate`, `TraceSessionChain`, `TraceExportJsonl`, `TraceClear`) on a model that never went through `Trace` / `TraceAudited` | `errors.Is(err, aimux.ErrNotTraced)` — guarded in Go before the C call, ahead of argument validation; the trace store is keyed on the wrapper handle, so C can only report it as a missing handle |
-| C code 200–206 (NULL / non-UTF-8 argument, malformed wire JSON, dead handle, re-entrant call, result serialization, callback failure) | returned as a plain `error` (not `*Error`, not `*RecordingError`, not `ErrClosed`): `aimux: <the C message>` |
-
-Decoder: every fallible C call returns an opaque `aimux_error_t *` (NULL =
-success, result in the out-parameter). One `aimux_error_code()` distinguishes
-`AiMuxError` (1–20), `RecordingError` (100–105), and C ABI failures (200–206).
-`expectAimuxError`, `expectRecordingError`, and `expectFfiError` enforce the
-range expected by each call; the first two restore `*Error` and
-`*RecordingError`, while 200–206 becomes a plain `error`. Every path frees the
-getter strings and calls
-`aimux_error_free` exactly once; errors are never handles. Nothing of
-this leaks into the Go API.
-
-The binding has five panic sites. Four are unreachable from Go input; the
-fifth is the documented `Must`-style API, which panics on invalid input **by
-design** — that one is opt-in, and every one of its five entry points has a
-`NewXxx` twin that returns the same failure as an `error` instead.
-
-| Panic site | Reachable from Go input? |
-|------------|--------------------------|
-| `aimux.go` `mustNew` — behind `OpenAI` / `OpenAIWithBase` / `Anthropic` / `AnthropicWithBase` / `DeepSeek` | **Yes, by design.** `regexp.MustCompile` convention: an `apiKey` / `modelID` / `baseURL` that is not valid UTF-8 or contains a NUL panics, as does any AiMuxError failure. Use `NewOpenAI` / `NewOpenAIWithBase` / `NewAnthropic` / `NewAnthropicWithBase` / `NewDeepSeek` for anything caller-supplied |
-| `aimux.go` `InitLogging` — `expectFfiError` returned an error | No. `level` is coerced first: empty, non-UTF-8, or NUL-bearing falls back to `"warn"`, which is what aimux-core does with an unparseable level anyway (`AIMUX_LOG` / `AIMUX_LOG_LEVEL` outrank it regardless). That leaves no documented failure for `aimux_init_logging`, so a non-nil error here is a header/library mismatch |
-| `aimux.go` `expectAimuxError` — `aimux_error_code_t` outside 1..20 | No. Header/library version mismatch |
-| `aimux.go` `expectRecordingError` — `aimux_error_code_t` outside the enum | No. Header/library version mismatch |
-| `multimodal.go` `TranscriptionSession.NextPart` — unknown `aimux_transcription_next_part` state | No. Header/library version mismatch |
-
-The three mismatch panics are a contract violation the C header itself says to
-abort on, not an error to report.
-
-For `CodeRetry`, `Reason`, `Errors`, and `LastError()` preserve
-the concrete attempt history.
-
-## Quick Start
-
-```go
-// cgo statically links libaimux_ffi.a, producing a single binary (the Rust core is compiled into the executable)
-model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
-defer model.Close()
-result, err := model.GenerateText(`"What is Rust?"`, "")
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(result)
-// streaming (typed: model.Stream(prompt, opts) yields *StreamPart values)
-stream := model.StreamText(`"Write a haiku"`, "")
-for part := range stream.Parts() {
-    fmt.Println(part) // StreamPart JSON, e.g. {"type":"text-delta","id":"0","text":"..."}
-}
-if err := stream.Err(); err != nil { // only after Parts has closed
-    log.Fatal(err)
-}
-```
-
-Drain `Parts()` completely, or call `Cancel()` when stopping early. Context
-variants connect cancellation automatically. `Cancel` releases callback
-backpressure and aborts the native request; it never closes `Parts()` itself.
-The producer closes `Parts()` after the blocking native call returns.
-
-## Providers
-
-The vendor packages and 282 registry-backed OpenAI-compatible providers are reachable by string name:
-
-> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
-> typed factories remain available. Custom endpoints use the `WithBase` variant.
-> Full list: [providers.md](providers.md).
-
-```go
-model, err := aimux.Provider("groq", "", "llama-3.3-70b")
-if err != nil { log.Fatal(err) }
-defer model.Close()
-
-// Base URL override:
-model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
-defer model2.Close()
-
-// Full settings (baseUrl / headers / organization / project / params).
-// Retry is a per-call option (GenerateTextOptions.MaxRetries) and request-body
-// overrides no longer exist: any other key in config_json is rejected as
-// CodeInvalidArgument, so ProviderConfig has neither.
-model3, err := aimux.ProviderWithConfig("groq", "sk-...", "llama-3.3-70b", &aimux.ProviderConfig{
-	Headers: map[string]string{"X-Custom": "1"},
-})
-defer model3.Close()
-
-// A preset with template parameters:
-model4, err := aimux.ProviderWithConfig("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instruct",
-	&aimux.ProviderConfig{Params: map[string]string{"account_id": "acct123"}})
-defer model4.Close()
-
-// A missing key or setting is CodeLoadAPIKey / CodeLoadSetting; Error.EnvVar
-// names the environment variable that was consulted.
-```
-
-`NewDeepSeek` / `DeepSeek` remain as by-name shortcuts to the vendor package. Unknown
-names return an error.
-
-## Text Generation
-
-Non-streaming text generation; returns the complete result.
-
-```go
-model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
-defer model.Close()
-result, err := model.GenerateText(`"What is Rust?"`, "")
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(result)
-```
-
-> Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
-
-## Streaming Generation
-
-Returns generated content as a stream, output chunk by chunk.
-
-```go
-stream := model.StreamText(`"Write a haiku"`, "")
-defer stream.Cancel()
-
-for part := range stream.Parts() {
-    fmt.Println(part) // StreamPart JSON
-}
-if err := stream.Err(); err != nil {
-    log.Fatal(err)
-}
-```
-
-Each part is an object tagged by `type` (`text-delta`, `tool-call`, `finish`,
-...). The typed `model.Stream(prompt, opts)` yields `*StreamPart{Type, Raw}`
-instead; decode `Raw` (the whole part) into the struct you need:
-
-```go
-for part := range typed.Parts() {
-    if part.Type == "text-delta" {
-        var td aimux.TextDeltaPayload
-        json.Unmarshal(part.Raw, &td)
-        fmt.Print(td.Text)
-    }
-}
-```
-
-> Stream part variants are documented in the [API overview](../API.md#streaming-generation).
-> Drain `Parts()` before calling `Err()`. If you stop reading early, call
-> `Cancel()` so the native stream does not keep running.
-
-## Tool-Call Repair
-
-A tool call the model got wrong does not fail generation: it comes back with
-`Invalid == true` and an `Error`. Set `RepairToolCall` on the options to fix
-such a call in Go, before the result is decoded. It is the Go equivalent of
-the AI SDK `repairToolCall`.
-
-```go
-opts := &aimux.GenerateTextOptions{
-    Tools: []aimux.Tool{weatherTool},
-    RepairToolCall: func(ctx *aimux.ToolCallRepairContext) (*aimux.RawToolCall, error) {
-        // ctx carries the raw argument text, the error, the tool's schema,
-        // the tool set, and the transcript the model saw.
-        fixed, err := fixArguments(ctx.ToolCall.Input, ctx.InputSchema)
-        if err != nil {
-            return nil, err // recorded as a failed repair
-        }
-        return &aimux.RawToolCall{
-            ToolCallID: ctx.ToolCall.ToolCallID,
-            ToolName:   ctx.ToolCall.ToolName,
-            Input:      fixed, // raw argument TEXT, not an object
-        }, nil
-    },
-}
-result, err := model.Generate("weather in Singapore?", opts)
-```
-
-Return value:
-
-| Return | Result |
-|------|------|
-| a `*RawToolCall` | re-parsed and re-validated; a still-invalid call carries a `ToolCallRepair` error |
-| `nil, nil` | the call is left as it was, with its original error |
-| `nil, err` | the call stays invalid, carrying a `ToolCallRepair` error whose cause is `err.Error()` |
-
-The function runs after the model call, outside any native call, so it may
-itself call aimux — e.g. ask a model to rewrite the arguments. Each call is
-repaired at most once.
-
-It applies to the typed entry points `Generate`, `GenerateObj`,
-`ConsumeStream` and `Stream` (which delivers the repaired `tool-call` part;
-input deltas are always forwarded verbatim), and to `GenerateAsOpenAI`: a
-`ChatCompletion` carries no invalid marker, so it repairs the native result
-and converts it (`Model.GenerateTextResultAsOpenAI`). `StreamAsOpenAI` does
-not reflect repair — its argument deltas are the provider's text, as in the
-AI SDK. The raw JSON-string methods (`GenerateText`, `StreamText`) take no
-options struct and are likewise unaffected.
-
-## Vector Embedding
-
-Converts text into a vector representation.
-
-```go
-// Typed API — Embed() takes []string, returns a JSON string you can parse
-// with ParseEmbeddingResult.
-embedder, err := aimux.NewOpenAIEmbedding("sk-...", "text-embedding-3-small")
-if err != nil {
-    log.Fatal(err)
-}
-defer embedder.Close()
-
-resultJSON, err := embedder.Embed([]string{"hello", "world"}, nil)
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseEmbeddingResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(len(result.Embeddings))       // 2
-fmt.Println(len(result.Embeddings[0]))    // 1536 (dimension depends on model)
-```
-
-## Speech Synthesis (TTS)
-
-Converts text into speech audio.
-
-```go
-voice := "alloy"
-outputFormat := "mp3"
-
-speaker, err := aimux.NewOpenAISpeech("sk-...", "tts-1")
-if err != nil {
-    log.Fatal(err)
-}
-defer speaker.Close()
-
-resultJSON, err := speaker.Generate(&aimux.SpeechCallOptions{
-    Text:         "Hello world!",
-    Voice:        &voice,    // optional *string fields — pass a pointer or nil
-    OutputFormat: &outputFormat,
-})
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseSpeechResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-// audio bytes: []byte(result.Audio) (a base64 string on the wire)
-```
-
-## Speech to Text (STT)
-
-Converts audio into text (non-streaming).
-
-```go
-transcriber, err := aimux.NewOpenAITranscription("sk-...", "whisper-1")
-if err != nil {
-    log.Fatal(err)
-}
-defer transcriber.Close()
-
-// audioBase64 is base64-encoded audio; media type e.g. "audio/mp3"
-resultJSON, err := transcriber.Generate(audioBase64, "audio/mp3", nil)
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseTranscriptionResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(result.Text)              // transcribed text
-fmt.Println(result.Segments)          // timestamped segments
-fmt.Println(*result.Language)         // detected language
-```
-
-## Image Generation
-
-```go
-prompt := "A cute baby sea otter"
-
-imager, err := aimux.NewOpenAIImage("sk-...", "dall-e-3")
-if err != nil {
-    log.Fatal(err)
-}
-defer imager.Close()
-
-resultJSON, err := imager.Generate(&aimux.ImageCallOptions{
-    Prompt: &prompt,
-    N:      1, // required
-})
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseImageResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-// []byte(result.Images[0]) — the image bytes
-```
-
-## Video Generation
-
-Most video models return a URL; `Generate` downloads it, as the AI SDK's
-`generateVideo` does, and returns the video's bytes.
-
-```go
-prompt := "A cat playing piano"
-n := 1
-pollIntervalMs := uint64(1_000)
-pollTimeoutMs := uint64(120_000)
-
-videor, err := aimux.NewGoogleVideo("sk-...", "veo-3.0")
-if err != nil {
-    log.Fatal(err)
-}
-defer videor.Close()
-
-resultJSON, err := videor.Generate(&aimux.VideoCallOptions{
-    Prompt: &prompt,
-    N:      &n,
-    Poll: &aimux.VideoPollOptions{
-        IntervalMS: &pollIntervalMs,
-        TimeoutMS:  &pollTimeoutMs,
-    },
-})
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseVideoResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-// result.Videos[0].Data — the downloaded video (Type "binary": a video returned as a URL is downloaded)
-```
-
-## Reranking
-
-Reorders a document list by relevance.
-
-```go
-topN := 3
-
-reranker, err := aimux.NewCohereReranking("sk-...", "rerank-v3.0")
-if err != nil {
-    log.Fatal(err)
-}
-defer reranker.Close()
-
-resultJSON, err := reranker.Rerank(&aimux.RerankingCallOptions{
-    Query:     "What is Rust?",
-    Documents: json.RawMessage(`{"type":"text","values":["Rust is a systems programming language.","Rust is a chemical element."]}`),
-    TopN:      &topN,
-})
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseRerankingResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-// result.Ranking sorted by relevance score
-for _, rank := range result.Ranking {
-    fmt.Println(rank.Index, rank.RelevanceScore)
-}
-```
-
-## Search
-
-Calls a search provider to obtain results.
-
-```go
-maxResults := 5
-
-searcher, err := aimux.NewTavilySearch("tvly-...")
-if err != nil {
-    log.Fatal(err)
-}
-defer searcher.Close()
-
-resultJSON, err := searcher.Search(&aimux.SearchCallOptions{
-    Query:      "What is Rust?",
-    MaxResults: &maxResults,
-})
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseSearchResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-// result.Results is []SearchResultItem; result.Answer is *string (may be nil)
-for _, item := range result.Results {
-    fmt.Println(*item.Title, *item.URL)
-}
-```
-
-## File Upload
-
-Uploads a file to the provider and returns a file ID.
-
-```go
-files, err := aimux.NewOpenAIFiles("sk-...")
-if err != nil {
-    log.Fatal(err)
-}
-defer files.Close()
-
-// dataBase64 is base64-encoded file content; media type e.g. "application/pdf"
-resultJSON, err := files.Upload(dataBase64, "application/pdf", nil)
-if err != nil {
-    log.Fatal(err)
-}
-result, err := aimux.ParseUploadFileResult(resultJSON)
-if err != nil {
-    log.Fatal(err)
-}
-id, _ := result.ProviderReference.Get("openai")
-fmt.Println(id)  // file-xxx
-```
-
-## API Surface
-
-All constructors come in two flavors: `NewXxx(...) (T, error)` (checked) and
-`Xxx(...) T` (unchecked, panics on failure). Every model type has a `Close()`
-method that atomically drops the underlying FFI handle. Handle wrappers must
-not be copied after first use. `Close` is idempotent and does not wait for an
-in-flight network call or stream; a racing call either enters Rust first and
-continues with its cloned `Arc`, or receives an invalid-handle error.
-
-### Constructors
-
-| Constructor | Returns | Notes |
-|------|------|------|
-| `NewOpenAI` / `NewOpenAIWithBase` | `*Model` | plus `OpenAI` / `OpenAIWithBase`, which **panic** on any failure, invalid input included |
-| `NewAnthropic` / `NewAnthropicWithBase` | `*Model` | plus `Anthropic` / `AnthropicWithBase`, which **panic** on any failure, invalid input included |
-| `NewDeepSeek` | `*Model` | DeepSeek uses its official base URL; `DeepSeek` is the **panicking** twin |
-| `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding` `(key, modelID)` | `*EmbeddingModel` | each has a `…WithBase` variant |
-| `NewOpenAISpeech(key, modelID)` | `*SpeechModel` | |
-| `NewOpenAITranscription(key, modelID)` | `*TranscriptionModel` | |
-| `NewOpenAIImage` / `NewGoogleImage` `(key, modelID)` | `*ImageModel` | each has a `…WithBase` variant |
-| `NewGoogleVideo(key, modelID)` | `*VideoModel` | |
-| `NewCohereReranking(key, modelID)` | `*RerankingModel` | |
-| `NewTavilySearch(key)` | `*SearchModel` | no model ID needed |
-| `NewOpenAIFiles(key)` | `*Files` | |
-| `NewRouter(models []*Model, configJSON)` | `*Model` | RFC-0021 fallback router over `models` (must be non-empty); the same model may appear more than once |
-| `NewMoa(references []*Model, aggregator *Model, configJSON)` | `*Model` | RFC-0022 mixture-of-agents; `references` may be empty, may repeat a model, and may contain the aggregator |
-
-#### Composite constructors and concurrency
-
-`NewRouter` and `NewMoa` snapshot each atomic handle in caller order and never
-hold a Go lifecycle lock while calling C. Duplicate models require no special
-case, and opposite caller orders cannot form an ABBA cycle because there is no
-multi-lock protocol. Concurrent `Close` is resolved by the Rust registry:
-construction either clones a model `Arc` or returns an invalid-handle error.
-
-- **A `nil` element is a returned error**, checked before the C call:
-  `aimux: router: models[i] is nil`, `aimux: moa: references[i] is nil`,
-  `aimux: moa: aggregator is nil`.
-
-Both constructors take a new reference to each child, so the caller keeps
-ownership: closing a child afterwards does not invalidate the composite, and
-the composite must be closed separately.
-
-### Methods
-
-| Type | Methods | Result |
-|------|------|------|
-| `*Model` | `GenerateText(promptJson, optsJson) (string, error)` — raw JSON; `Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextResult, error)` — typed | typed input via `Generate` |
-| `*Model` | `StreamText(promptJson, optsJson) *Stream` — raw JSON parts; `Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, error)` — typed `*StreamPart` values | `Stream.Parts()` / `TypedStream.Parts()` channels, `.Err()` |
-| `*EmbeddingModel` | `Embed(values []string, opts *EmbeddingCallOptions) (string, error)` | returns JSON; use `ParseEmbeddingResult` |
-| `*SpeechModel` | `Generate(opts *SpeechCallOptions) (string, error)` | `ParseSpeechResult` |
-| `*ImageModel` | `Generate(opts *ImageCallOptions) (string, error)` | `ParseImageResult` |
-| `*TranscriptionModel` | `Generate(audioBase64, mediaType string, opts *TranscriptionCallOptions) (string, error)` | `ParseTranscriptionResult` |
-| `*VideoModel` | `Generate(opts *VideoCallOptions) (string, error)` | `ParseVideoResult` |
-| `*RerankingModel` | `Rerank(opts *RerankingCallOptions) (string, error)` | `ParseRerankingResult` |
-| `*SearchModel` | `Search(opts *SearchCallOptions) (string, error)` | `ParseSearchResult` |
-| `*Files` | `Upload(dataBase64, mediaType string, opts *UploadFileCallOptions) (string, error)` | `ParseUploadFileResult` |
-
-`opts` is required (non-nil) for `SpeechModel.Generate`, `ImageModel.Generate`, `VideoModel.Generate`, `Rerank` and `Search` — it carries the input; `nil` returns `aimux: <Method>: opts is required`. `Embed`, `TranscriptionModel.Generate` and `Upload` accept `nil` opts (defaults). `InitProxy` requires non-empty JSON (`"{}"` for defaults); `TraceAggregate("")` means "all". The trace queries (`TraceAggregate`, `TraceSessionChain`, `TraceExportJsonl`, `TraceClear`) run only on the `*Model` returned by `Trace()` / `TraceAudited()`; on any other model they return `aimux.ErrNotTraced`.
-
-## Types
-
-Typed structs are generated by `aimux-codegen` from the Rust types into
-`bindings/go/types_gen.go` (package `aimux`; do not edit it, run
-`cargo run -p aimux-codegen`), text and multimodal alike: `GenerateTextOptions`,
-`GenerateTextResult`, `TextStreamPart`, `ModelMessage`, `Tool`, `ToolChoice`,
-`ToolCall`, `ToolResult`, `LanguageModelUsage`, `StepResult`,
-`FinishReasonUnified`, `ContentPart`, `ReasoningEffort`, `Warning`,
-`GenerateObjectResult`, `RawToolCall`, `GeneratedFile`, plus
-`EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
-`ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,
-`VideoCallOptions/Result`, `RerankingCallOptions/Result`,
-`SearchCallOptions/Result`, `UploadFileParams` / `UploadFileResult`.
-
-The multimodal methods return JSON strings through the C ABI; the
-`ParseXxxResult` functions decode them into the typed structs. All call-option
-pointer fields (`*string`, `*bool`, `*int`) are optional — pass `nil` to omit.
-Image `Size` and video `Resolution` are `"WxH"` strings (`"1024x1024"`);
-`AspectRatio` is `"W:H"` (`"16:9"`). Binary data (`Audio`, `Images`, `VideoData.Data`) is `aimux.Bytes`: a
-base64 string on the wire (the AI SDK's JSON for a `Uint8Array`), always `[]byte` in Go.
-
-### Wire format
-
-The JSON the binding reads and writes is the AI SDK JSON, the same as the
-generated TypeScript types in `bindings/node/src/generated/types.ts`: camelCase field names
-(`toolCallId`, `finishReason`, `inputTokens`, `providerOptions`, ...), unions
-tagged by a `type` key (`"tool-call"`, `"text-delta"`, ...; errors by `name`),
-and optional fields absent rather than `null`. Go field tags follow it, so a
-typed struct marshals to exactly that JSON. An `unknown` value keeps a JSON
-`null` apart from a missing field: response and request `Body` fields are
-`json.RawMessage`, `nil` when the field was missing and `null` when the JSON
-carried `null`; so is `Error.Data`, the API call error's data.
-A response `Timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
-`toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
-which `time.Parse(time.RFC3339, ...)` reads.
-
-A generated file (`GenerateTextResult.Files`) is a `GeneratedFile`, the AI
-SDK's `{"base64", "mediaType", "providerMetadata"?}`; `Bytes()` decodes it.
-A `file` / `reasoning-file` content or stream part wraps it as
-`{"type": "file", "file": {...}, "providerMetadata"?}`; the provider-level
-`GenerateResult.Content` keeps `{"type": "file", "mediaType", "data": {"type": "data" | "url", ...}}`.
-
-A tool result goes back to the model as a `tool-result` content part in a
-`tool` message; its `output` is a union:
-
-```go
-msg := aimux.ModelMessage{
-    Role: aimux.RoleTool,
-    Content: []map[string]any{{
-        "type":       "tool-result",
-        "toolCallId": call.ToolCallID,
-        "toolName":   call.ToolName,
-        // {"type":"text"|"error-text","value":string},
-        // {"type":"json"|"error-json","value":any},
-        // {"type":"execution-denied","reason":string},
-        // {"type":"content","value":[...]}
-        "output": map[string]any{"type": "json", "value": map[string]any{"temp": "20C"}},
-    }},
-}
-```
-
-`ToolCall` carries `ProviderMetadata` plus `Invalid` (set by Core when tool
-lookup, input parse, or schema validation fails, even after repair) and `Error`
-(the serialized `AiMuxError` for that failure).
-
-`ToolCall` and `RawToolCall` marshal with `"type": "tool-call"` first, and
-`Source` with `"type": "source"` before its `sourceType`, as the AI SDK's
-`TypedToolCall` and `Source` (a result's `ToolCalls` and `Sources`, a repair
-context's `ToolCall`). Unmarshaling accepts JSON without the tag and rejects a
-different one.
+- `Envelope` contains the domain, code, message and complete error payload.
+- `RawEnvelope` retains unknown envelope fields.
+- `Unwrap()` returns the payload's cause as `*aimux.Cause`; a retry error's
+  cause is its last attempt.
+- Read a retry delay from `error.responseHeaders`, not from a dedicated retry
+  field.
+- The binding adds no retry policy.
+
+## Breaking changes in 0.6
+
+- `NewOpenAI` / `NewAnthropic` and the other provider-specific constructors are
+  removed; use `Create` / `Call` / `CallInto`.
+- Operations replace the 0.5 provider/model API; handles are decimal strings.
+- Errors are the shared envelope; typed error getters were replaced by the
+  payload and cause chain.
+- Generated DTOs replace the hand-written wire types.
+
+## See also
+
+- [bindings/go/README.md](../../bindings/go/README.md) — build, archive,
+  platform and test details.
+- [docs/api/ops.md](ops.md) — operation names.
+- [docs/error-model.md](../error-model.md) — error codes and cause chains.
+- [Go provider list](providers.md).

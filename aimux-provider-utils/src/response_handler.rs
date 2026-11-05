@@ -133,6 +133,7 @@ where
                 response_body: Some(String::from_utf8_lossy(&body).into_owned()),
                 response_headers: Some(headers.clone()),
                 cause: Some(ErrorCause::source(&error)),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     input.url.clone(),
@@ -211,6 +212,7 @@ pub fn invalid_response_api_call(
         response_headers: Some(response_headers),
         data: Some(crate::logging::redact_error_context(response_body)),
         cause: Some(ErrorCause::source(error)),
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
         ..ApiCallError::new(
             error.to_string(),
             crate::http::sanitized_request_url(url),
@@ -265,6 +267,7 @@ where
             response_headers: Some(headers.clone()),
             data: parsed_data.map(crate::logging::redact_error_context),
             is_retryable: aimux_core::error::is_retryable_status(status),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(message, input.url, input.request_body_values)
         }));
         Ok(ResponseHandlerOutput {
@@ -312,6 +315,7 @@ fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
 
 /// Parse an SSE response and deserialize each `data:` field as `T`.
 ///
+/// A `data: [DONE]` event ends the stream; nothing after it is read.
 /// Invalid JSON in a complete event remains a recoverable frame error. SSE
 /// decoding failures terminate the byte stream and are non-retryable API errors.
 #[must_use]
@@ -334,6 +338,7 @@ where
                     response_headers: Some(headers.clone()),
                     is_retryable: true,
                     cause: Some(ErrorCause::source(&error)),
+                    origin: aimux_core::ApiCallErrorOrigin::Transport,
                     ..ApiCallError::new(
                         error.to_string(),
                         body_url.clone(),
@@ -365,7 +370,14 @@ where
                     break;
                 };
                 match item {
-                    Ok(event) if event.data == "[DONE]" => continue,
+                    // `data: [DONE]` is OpenAI's terminal frame ("the stream
+                    // terminated by a `data: [DONE]` message", openai-openapi
+                    // `CreateChatCompletionRequest.stream`). End here rather
+                    // than wait for the body to close: a server that keeps
+                    // the connection open after it would otherwise hold the
+                    // caller's last `next()` forever. The AI SDK skips the
+                    // frame and waits for EOF (`parse-json-event-stream.ts`).
+                    Ok(event) if event.data == "[DONE]" => break,
                     Ok(event) => yield parse_event::<T>(&event.data),
                     Err(aimux_stream::SseError::Stream(error)) => {
                         // Preserve response transport failures as ApiCallError
@@ -374,6 +386,7 @@ where
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: true,
                             cause: Some(ErrorCause::source(error.as_ref())),
+                            origin: aimux_core::ApiCallErrorOrigin::Transport,
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
@@ -390,6 +403,7 @@ where
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: false,
                             cause: Some(ErrorCause::source(&error)),
+                            origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
@@ -436,6 +450,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
             response_body: Some(error_body_string(&body, truncated)),
             response_headers: Some(headers.clone()),
             is_retryable: aimux_core::error::is_retryable_status(status),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(message, input.url, input.request_body_values)
         }));
         Ok(ResponseHandlerOutput {

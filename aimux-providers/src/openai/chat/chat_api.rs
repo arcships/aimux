@@ -31,6 +31,9 @@ pub struct Choice {
 pub struct MessageResponse {
     pub role: Option<String>,
     pub content: Option<String>,
+    /// Refusal text, visible output like `content` (#461).
+    #[serde(default)]
+    pub refusal: Option<String>,
     #[serde(default)]
     pub audio: Option<AudioResponse>,
     /// Reasoning text (`reasoning` field of OpenAI-shaped servers).
@@ -131,6 +134,9 @@ pub struct StreamChoice {
 pub struct Delta {
     #[serde(default)]
     pub content: Option<String>,
+    /// Refusal text delta, visible output like `content` (#461).
+    #[serde(default)]
+    pub refusal: Option<String>,
     /// Reasoning text delta (`reasoning` field of OpenAI-shaped servers).
     #[serde(default)]
     pub reasoning: Option<String>,

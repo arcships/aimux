@@ -53,11 +53,13 @@ const TEXT_CHUNKS: &str = include_str!("fixtures/deepseek-text.chunks.txt");
 const REASONING_CHUNKS: &str = include_str!("fixtures/deepseek-reasoning.chunks.txt");
 const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/deepseek-tool-call.chunks.txt");
 
+// #478: the unreported reasoning count stays unknown (the AI SDK fills 0).
 const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
 const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
 const SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT: &str =
     include_str!("snapshots/do_generate_json_response_format.json");
 const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
+// #478: the unreported reasoning count stays unknown (the AI SDK fills 0).
 const SNAPSHOT_DO_STREAM_TEXT: &str = include_str!("snapshots/do_stream_text.json");
 const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
 const SNAPSHOT_DO_STREAM_TOOL_CALL: &str = include_str!("snapshots/do_stream_tool_call.json");
@@ -1897,6 +1899,56 @@ async fn stream_rejects_a_usage_count_that_is_not_a_number() {
         parts
             .iter()
             .any(|part| matches!(part, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+}
+
+/// A chunk with `"error": null` is a normal chunk (#397): upstream's chunk
+/// schema is a union with the error schema, and a chunk with `choices` takes
+/// the first branch, which drops the unknown key.
+#[tokio::test]
+async fn a_null_error_member_is_not_an_error_frame() {
+    let chunks = vec![
+        data_event(&json!({
+            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
+            "model": "deepseek-chat",
+            "choices": [{ "index": 0, "delta": { "role": "assistant", "content": "Hello" }, "finish_reason": null }],
+            "error": null
+        })),
+        data_event(&json!({
+            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
+            "model": "deepseek-chat",
+            "choices": [{ "index": 0, "delta": { "content": "" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+            "error": null
+        })),
+    ];
+    let server = sse_server(chunks).await;
+    let parts = collect(
+        chat(&server, "deepseek-chat")
+            .do_stream(&options())
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+    assert!(
+        parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::TextDelta { delta, .. } if delta == "Hello")),
+        "{parts:?}"
+    );
+    assert!(
+        matches!(
+            parts.last(),
+            Some(StreamPart::Finish { finish_reason, .. })
+                if finish_reason.unified == FinishReasonUnified::Stop
+        ),
         "{parts:?}"
     );
 }

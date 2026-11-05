@@ -1,5 +1,9 @@
 # aimux Python binding
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 top-level provider and
+> text helpers are removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 PyO3 calls `aimux_ops::dispatch` directly. Provider selection, wire validation,
 retries, recording, replay and operation lifecycle run in the shared Rust layer.
 The package requires CPython 3.9 or newer. Install `arcships-aimux[typed]` for
