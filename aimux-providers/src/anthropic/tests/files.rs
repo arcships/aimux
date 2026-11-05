@@ -140,7 +140,7 @@ mod anthropic_files {
 
 mod older_files {
 
-    use crate::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
+    use crate::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
     use aimux_core::files_model::{UploadFileCallOptions, UploadFileData};
     use aimux_core::provider::Provider;
     use aimux_core::shared::FileBytes;

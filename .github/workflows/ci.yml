@@ -236,6 +236,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy without the realtime feature (deny warnings)
+        run: cargo clippy -p aimux-providers --no-default-features -- -D warnings
       - name: Rustdoc (deny warnings)
         run: cargo doc --workspace --no-deps
         env:
@@ -836,6 +838,8 @@ jobs:
         run: python3 scripts/gen_providers_doc.py --check
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
+      - name: Release asset list self-test (scripts/stage_release_assets.py)
+        run: python3 scripts/tests/test_stage_release_assets.py
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

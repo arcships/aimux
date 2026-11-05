@@ -407,6 +407,7 @@ fn redirect_error(
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status.as_u16()),
         cause,
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
         ..api_call_error(request, message)
     }))
 }
@@ -544,6 +545,15 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
     unreachable!("redirect loop returns on response or error")
 }
 
+/// Whether a media type is `multipart/*`, whose boundary parameter is part of
+/// the body it describes.
+fn is_multipart(media_type: &str) -> bool {
+    media_type
+        .trim_start()
+        .get(..10)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("multipart/"))
+}
+
 /// Materialise one prepared request for a [`Fetch`]: validated URL, final body
 /// bytes and an ordered-by-name header map. Headers are *inserted*, so a
 /// later entry for the same (case-insensitive) name replaces an earlier one —
@@ -609,13 +619,19 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             )
         }
         HttpBody::Bytes(bytes, content_type) => {
-            let content_type = http::HeaderValue::try_from(content_type).map_err(|error| {
+            let value = http::HeaderValue::try_from(content_type).map_err(|error| {
                 AiMuxError::InvalidArgument {
                     message: format!("invalid content type: {content_type}"),
                     cause: Some(ErrorCause::source(&error)),
                 }
             })?;
-            headers.insert(http::header::CONTENT_TYPE, content_type);
+            // A caller's `content-type` wins, as for JSON bodies above and as
+            // the AI SDK's `postToApi` leaves the caller's headers alone. A
+            // multipart body is the exception: its boundary is generated with
+            // the body, so only the body's own media type describes the bytes.
+            if is_multipart(content_type) || !headers.contains_key(http::header::CONTENT_TYPE) {
+                headers.insert(http::header::CONTENT_TYPE, value);
+            }
             Bytes::copy_from_slice(bytes)
         }
         HttpBody::Empty => Bytes::new(),
@@ -991,7 +1007,41 @@ pub(crate) fn sanitized_request_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitized_request_url;
+    use super::{HttpBody, HttpMethod, HttpRequest, RequestCredentials, sanitized_request_url};
+
+    /// AI SDK `credentialedOrigin`: the caller headers go only to that
+    /// origin. Anywhere else only the `user-agent` is sent, with the
+    /// credentials omitted, from the first request on (fal's video status
+    /// poll, #441).
+    #[test]
+    fn prepare_sends_caller_headers_only_to_the_credentialed_origin() {
+        let origin = "https://queue.fal.run/fal-ai/luma-dream-machine";
+        let prepare = |url: &str| {
+            HttpRequest {
+                url: url.into(),
+                headers: vec![
+                    ("authorization".into(), "Key test-api-key".into()),
+                    ("user-agent".into(), "ai-sdk/fal/3.0.54".into()),
+                ],
+                validate_url: true,
+                trusted_origin: Some(origin.into()),
+                credentialed_origin: Some(origin.into()),
+                ..HttpRequest::default()
+            }
+            .prepare(HttpMethod::Get, HttpBody::Empty)
+        };
+
+        let same_origin = prepare("https://queue.fal.run/fal-ai/luma-dream-machine/requests/1");
+        assert_eq!(same_origin.headers.len(), 2);
+        assert_eq!(same_origin.credentials, RequestCredentials::Include);
+
+        let other_origin = prepare("https://elsewhere.example/requests/1");
+        assert_eq!(
+            other_origin.headers,
+            vec![("user-agent".to_string(), "ai-sdk/fal/3.0.54".to_string())]
+        );
+        assert_eq!(other_origin.credentials, RequestCredentials::Omit);
+    }
 
     #[test]
     fn sanitized_request_url_drops_userinfo_and_query() {
