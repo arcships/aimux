@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'aimux'
-  s.version          = '0.6.0'
+  s.version          = '0.6.1'
   s.summary          = 'Flutter binding for aimux — unified LLM service layer (Rust core, 327 providers, dart:ffi C ABI)'
   s.description      = <<-DESC
 Aimux is a Rust alternative to the Vercel AI SDK: a unified provider
