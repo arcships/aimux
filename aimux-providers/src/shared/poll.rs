@@ -3,8 +3,9 @@
 //! A vendor whose API answers a submit with a job id polls that job until it
 //! finishes, then downloads the result. Both stages are safe to repeat; the
 //! submit is not, so nothing here (or in the callers) ever sends it a second
-//! time. The budgets are fixed constants of each package: an attempt count
-//! nobody can configure, and a poll interval that `providerOptions` may
+//! time. The budgets are constants of each package: an attempt count that
+//! only Luma lets `providerOptions` change (`maxPollAttempts`, as
+//! `@ai-sdk/luma` does), and a poll interval that `providerOptions` may
 //! shorten or lengthen (`pollIntervalMs`, the same key the Google Files
 //! package reads). There is no call-level retry count in this module and no
 //! use of Core's operation-level retry: a poll that fails with a transient error
@@ -45,9 +46,8 @@ pub(crate) const POLL_INTERVAL_MILLIS_KEY: &str = "pollIntervalMillis";
 /// Whether a providerOptions field is pacing control rather than request data.
 ///
 /// These four keys are never forwarded to a vendor, in any package, whether or
-/// not the package reads them: only the interval key of the package is read,
-/// the rest (`pollTimeoutMillis`, `maxPollAttempts`) are ignored because the
-/// attempt budget is a package constant.
+/// not the package reads them: a package reads its interval key, Luma also
+/// `maxPollAttempts`, and the rest are ignored.
 pub(crate) fn is_poll_control_key(key: &str) -> bool {
     matches!(
         key,

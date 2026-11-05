@@ -105,7 +105,10 @@ fn stringifies_content_parts_as_upstream_serializes_them() {
     ]);
     assert_eq!(tool_result_content_value(&content), expected);
     assert_eq!(
-        tool_result_to_content(&ToolResultOutput::Content { value: content }),
+        tool_result_to_content(&ToolResultOutput::Content {
+            value: content,
+            is_error: None,
+        }),
         json!(expected.to_string())
     );
 }

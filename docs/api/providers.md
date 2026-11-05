@@ -9,7 +9,7 @@
 
 | category | count |
 |----------|-------|
-| Registry-backed OpenAI-compatible (`provider(name, ...)`) | 282 |
+| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | 282 |
 | Non-registry: Native protocol providers | 14 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
@@ -24,7 +24,7 @@
 | Non-registry: Search-only providers (web search modality) | 11 |
 | **Total providers** | **327** |
 
-**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider(name, ...)`) + **45 non-registry providers** (construct via the typed factories listed below).
+**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 282
 

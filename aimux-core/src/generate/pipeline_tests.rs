@@ -25,9 +25,9 @@ use crate::types::{FinishReason, Usage};
 
 #[derive(Clone, Copy)]
 enum Behavior {
-    /// One text delta, then the stream ends.
+    /// A text start and one delta, then the stream ends.
     Normal,
-    /// A text delta at t=0, another part at t=600ms (a delta when `true`,
+    /// A text start and delta at t=0, another part at t=600ms (a delta when `true`,
     /// a non-output `TextStart` otherwise), then silence.
     Probe(bool),
     /// A finish part, then silence.
@@ -58,6 +58,13 @@ impl PipelineModel {
             behavior,
             calls: AtomicUsize::new(0),
         }
+    }
+}
+
+fn start() -> StreamPart {
+    StreamPart::TextStart {
+        id: "1".into(),
+        provider_metadata: None,
     }
 }
 
@@ -119,19 +126,23 @@ impl LanguageModel for PipelineModel {
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let attempt = self.calls.fetch_add(1, Ordering::SeqCst);
         match self.behavior {
-            Behavior::Normal => Ok(stream_result(futures::stream::iter([Ok(delta("hello"))]))),
+            Behavior::Normal => Ok(stream_result(futures::stream::iter([
+                Ok(start()),
+                Ok(delta("hello")),
+            ]))),
             Behavior::Probe(second_is_output) => Ok(stream_result(async_stream::stream! {
+                yield Ok(start());
                 yield Ok(delta("first"));
                 tokio::time::sleep(Duration::from_millis(600)).await;
                 if second_is_output {
                     yield Ok(delta("second"));
                 } else {
-                    yield Ok(StreamPart::TextStart { id: "1".into(), provider_metadata: None });
+                    yield Ok(start());
                 }
                 futures::future::pending::<()>().await;
             })),
             Behavior::FinishThenPending => Ok(stream_result(
-                futures::stream::iter([Ok(delta("done")), Ok(finish())])
+                futures::stream::iter([Ok(start()), Ok(delta("done")), Ok(finish())])
                     .chain(futures::stream::pending()),
             )),
             Behavior::ProviderErrorThenFinish => Ok(stream_result(
@@ -144,6 +155,7 @@ impl LanguageModel for PipelineModel {
                 .chain(futures::stream::pending()),
             )),
             Behavior::ParseErrorThenDelta => Ok(stream_result(futures::stream::iter([
+                Ok(start()),
                 Err(AiMuxError::json_parse("malformed SSE data")),
                 Ok(delta("after-error")),
             ]))),
@@ -153,9 +165,10 @@ impl LanguageModel for PipelineModel {
             )),
             Behavior::NeverReturns => std::future::pending().await,
             Behavior::RetryableFirstError if attempt == 0 => Err(api_error(429, true)),
-            Behavior::RetryableFirstError => {
-                Ok(stream_result(futures::stream::iter([Ok(delta("hello"))])))
-            }
+            Behavior::RetryableFirstError => Ok(stream_result(futures::stream::iter([
+                Ok(start()),
+                Ok(delta("hello")),
+            ]))),
             Behavior::NonRetryableFirstError => Err(api_error(400, false)),
         }
     }
@@ -338,7 +351,14 @@ async fn the_finish_part_ends_the_stream() {
         .collect();
     assert_eq!(
         kinds,
-        ["start", "start-step", "text-delta", "finish-step", "finish"]
+        [
+            "start",
+            "start-step",
+            "text-start",
+            "text-delta",
+            "finish-step",
+            "finish"
+        ]
     );
 }
 

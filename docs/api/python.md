@@ -1,532 +1,111 @@
 # aimux · Python API
 
-> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
-> which V4 removed: errors are now the shared `ErrorEnvelope`
-> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
-> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
-> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
-> AI SDK. The current API is in [bindings/python/README.md](../../bindings/python/README.md).
-> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 top-level
+> `openai(...)` / `generate_text(...)` helpers are removed. See the
+> [0.6 upgrade guide](../upgrading-to-0.6.md).
 
-> Unified LLM service access layer — one API to access AI providers
+The Python binding is the native PyO3 path: it calls
+`aimux_ops::dispatch` directly. It requires CPython 3.9 or newer. Install
+`arcships-aimux[typed]` for optional Pydantic schemas and text helpers.
 
-Shared reference — parameter tables, result shapes, factory functions, and the
-feature coverage matrix — lives in the [API overview](../API.md).
-
-## Quick Start
+## Install
 
 ```bash
 pip install arcships-aimux
+# optional typed schemas and helpers
+pip install "arcships-aimux[typed]"
 ```
+
+The wheel ships the native extension; no Rust toolchain is needed.
+
+## Quick start
 
 ```python
-from aimux import openai, generate_text
+from aimux import Client
 
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "What is Rust?")
-print(result["text"])
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "openai",
+    "settings": {"apiKey": "your-api-key"},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "languageModel",
+        "modelId": "gpt-4o-mini",
+    })["handle"]) as model:
+        result = model.call("text.generate", {
+            "prompt": "Hello",
+            "options": {},
+        })
+        print(result["text"])
+
+        with model.stream("text.stream", {
+            "prompt": "Hello",
+            "options": {},
+        }) as events:
+            for frame in events:
+                print(frame["seq"], frame["event"])
 ```
 
-## Providers
+`Client.call(op, params=None, *, handle="0", abort=None)` returns parsed JSON.
+`Client.stream` / `Handle.stream` return synchronous context-managed iterators
+over `{type, seq, event}` frames.
+
+## Handles and streams
+
+- Adopt every returned handle with `client.adopt(...)`; `close()` cancels,
+  joins and clears the queue.
+- Handles are decimal strings, including values above 2^53.
+- A stream produces business event frames plus one terminal. Validation errors
+  raise before acceptance; terminal failures raise typed errors.
+- The bridge holds at most 64 events / 8 MiB, with at most 1 MiB per event.
+  Slow consumers apply backpressure.
+- `Abort.cancel()` from another thread interrupts a call or stream. Blocking
+  native waits release the GIL.
+
+## Transcription and binary operations
 
 ```python
-from aimux import provider, generate_text
-
-# Key from the provider's env var (GROQ_API_KEY etc.):
-model = provider("groq", None, "llama-3.3-70b")
-# Explicit key + base URL override:
-model = provider("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
-# Full ProviderOptions via config dict:
-model = provider("groq", "sk-...", "llama-3.3-70b",
-                 config={"headers": {"X-Custom": "1"}})
-# A preset with template parameters:
-model = provider("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instruct",
-                 config={"params": {"account_id": "acct123"}})
-result = generate_text(model, "Hello")
+with client.adopt(model.call("transcription.start")) as operation:
+    operation.push(b"\x00\x00")
+    operation.call("operation.inputDone")
+    part = operation.call("operation.next", {"timeoutMs": 500})
 ```
 
-`provider(name, api_key, model_id, base_url=None, config=None)` covers the vendor packages and
-282 registry-backed OpenAI-compatible providers. `config` takes the full
-`ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
-`params`); the `base_url` parameter wins over `config["base_url"]`.
-`max_retries` (a per-call option) and `body_overrides` (removed) in `config`
-raise `InvalidArgumentError`. A missing key or setting raises (on the first call) `LoadAPIKeyError`
-(`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
-remain; DeepSeek now uses its own vendor chat model. `openai` and by-name
-`provider("openai", …)` select the Responses API.
+`push` accepts `bytes`, `bytearray` and `memoryview`; a full input queue raises
+`ResourceLimit` (protocol code 305). Use the binary method, not a JSON
+`operation.push` call.
 
-> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
-> typed factories remain available. Custom endpoints use the `base_url` param.
-> Full list: [providers.md](providers.md).
-
-## Text Generation
-
-Non-streaming text generation; returns the complete result.
+## Errors
 
 ```python
-from aimux import openai, generate_text
-
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "Explain Rust ownership.", {
-    "maxOutputTokens": 100,
-    "temperature": 0.7,
-})
-
-print(result["text"])
-print(result["usage"])
-print(result["finishReason"])
-```
-
-> Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
-
-## Streaming Generation
-
-Returns generated content as a stream, output chunk by chunk.
-
-```python
-from aimux import openai, stream_text
-
-model = openai("sk-...", "gpt-4o")
-for part in stream_text(model, "Write a haiku about Rust."):
-    if part["type"] == "text-delta":
-        print(part["text"], end="")
-    if part["type"] == "finish":
-        print(f"\n[done: {part['finishReason']}]")
-```
-
-> Stream part variants are documented in the [API overview](../API.md#streaming-generation).
-
-## Tool Calling
-
-Tool definitions are language-agnostic data descriptions (JSON Schema) that require no macros.
-
-### Defining Tools
-
-```python
-# Python — the same data shape via the options dict
-tools = [{
-    "type": "function",
-    "name": "get_weather",
-    "description": "Get current weather",
-    "inputSchema": {
-        "type": "object",
-        "properties": {"location": {"type": "string", "description": "City name"}},
-        "required": ["location"]
-    }
-}]
-
-result = generate_text(model, "What's the weather in Tokyo?", {"tools": tools})
-if len(result["toolCalls"]) > 0:
-    call = result["toolCalls"][0]
-    print(call["type"])          # tool-call (the AI SDK's TypedToolCall)
-    print(call["toolName"])      # get_weather
-    print(call["input"])          # {"location": "Tokyo"}
-```
-
-Each `toolCalls` entry carries `"type": "tool-call"` and each `sources` entry
-`"type": "source"`, as in the AI SDK; the typed `ToolCall`, `RawToolCall` and
-source models default the field and reject another value.
-
-### Repairing Invalid Tool Calls
-
-A tool call the model got wrong never fails generation: it comes back with
-`invalid: true` and a typed `error`. Pass `repairToolCall` to get one shot at
-fixing it (RFC-0035, the equivalent of the AI SDK `repairToolCall`):
-
-```python
-def repair(ctx):
-    # ctx = {toolCall, error, inputSchema, tools, messages, instructions};
-    # ctx["toolCall"]["input"] is the provider's raw argument text.
-    args = json.loads(ctx["toolCall"]["input"])
-    if "location" not in args:
-        return None                      # None = leave the call invalid
-    return dict(ctx["toolCall"], input=json.dumps({"city": args["location"]}))
-
-result = generate_text(model, "What's the weather in Tokyo?",
-                       {"tools": tools, "repairToolCall": repair})
-print(result["toolCalls"][0]["input"])   # {"city": "Tokyo"}
-```
-
-The function is called once per invalid call, after generation, and its result
-is re-validated against the tool's schema: a call that is still wrong — and one
-whose repair raises — comes back invalid with a `ToolCallRepair` error carrying
-the original one. Returning `None` leaves the call untouched. It runs on the
-Python side, outside any native call, so it may itself call `generate_text` to
-ask a model for better arguments. Both `toolCalls` and `responseMessages` are
-patched, so the next turn replays the repaired arguments.
-
-The same option exists on the typed wrapper's `GenerateTextOptions` (as `repair_tool_call`), where it
-takes a `ToolCallRepairContext` and returns a `RawToolCall`. It applies to
-`generate_text`, `generate_object`, `consume_stream_text` and `stream_text`
-(which yields the repaired `tool-call` part; tool-input deltas are the
-provider's own text and pass through untouched), and to
-`generate_text_as_openai`: a `chat.completion` carries no `invalid` marker, so
-it repairs the native result and converts it
-(`Model.generate_text_result_as_openai`). `stream_text_as_openai` does not
-reflect repair — its argument deltas are the provider's text, as in the AI SDK.
-
-Only an exception raised by the repair function itself means "failed". An
-error in the binding's own decoding or encoding — including a typed hook that
-returns something other than a `RawToolCall` or `None` — propagates as itself.
-
-### Tool Selection Strategy
-
-Pass `toolChoice` through the options dict:
-
-```python
-opts = {
-    "tools": tools,
-    "toolChoice": "auto"   # "auto" | "none" | "required" | {"type": "tool", "toolName": "get_weather"}
-}
-```
-
-## Multi-Role Messages
-
-`prompt` accepts a message array to implement multi-turn conversation; roles support `system` / `user` / `assistant` / `tool`:
-
-```python
-# Python — system + user multi-turn
-result = generate_text(model, [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "What is Rust?"},
-])
-```
-
-## Vector Embedding
-
-Converts text into a vector representation.
-
-```python
-from aimux import openai_embedding
-import json
-
-embedder = openai_embedding("sk-...", "text-embedding-3-small")
-# embed() takes a JSON string, returns a JSON string
-result = json.loads(embedder.embed(json.dumps(["hello", "world"])))
-print(len(result["embeddings"]))      # 2
-print(len(result["embeddings"][0]))   # 1536
-```
-
-## Speech Synthesis (TTS)
-
-Converts text into speech audio.
-
-```python
-from aimux import openai_speech
-import json, base64
-
-speaker = openai_speech("sk-...", "tts-1")
-result = json.loads(speaker.generate(json.dumps({
-    "text": "Hello world!",
-    "voice": "alloy",
-    "outputFormat": "mp3",
-})))
-
-# result["audio"] is a base64 string (bytes are base64 in the JSON)
-audio_bytes = base64.b64decode(result["audio"])
-if audio_bytes:
-    with open("out.mp3", "wb") as f:
-        f.write(audio_bytes)
-```
-
-## Speech to Text (STT)
-
-Converts audio into text (non-streaming).
-
-```python
-from aimux import openai_transcription
-import base64, json
-
-transcriber = openai_transcription("sk-...", "whisper-1")
-audio_b64 = base64.b64encode(open("audio.mp3", "rb").read()).decode()
-result = json.loads(transcriber.generate(audio_b64, "audio/mp3"))
-
-print(result["text"])
-print(result["segments"])
-```
-
-## Image Generation
-
-```python
-from aimux import openai_image
-import json, base64
-
-imager = openai_image("sk-...", "dall-e-3")
-result = json.loads(imager.generate(json.dumps({
-    "prompt": "A cute baby sea otter",
-    "n": 1,
-    "providerOptions": {},
-})))
-
-# result["images"] is a list of base64 strings (bytes are base64 in the JSON)
-with open("out.png", "wb") as f:
-    f.write(base64.b64decode(result["images"][0]))
-```
-
-## Video Generation
-
-Most video models return a URL; `generate` downloads it, as the AI SDK's
-`generateVideo` does, and returns the video's bytes (`Binary`).
-
-```python
-from aimux import google_video
-import base64
-import json
-
-videor = google_video("sk-...", "veo-3.0")
-result = json.loads(videor.generate(json.dumps({
-    "prompt": "A cat playing piano",
-    "n": 1,
-    "providerOptions": {},
-})))
-
-# result["videos"] is usually [{"type": "binary", "data": "<base64>", "mediaType": "..."}]
-if result["videos"][0]["type"] == "binary":
-    with open("video.mp4", "wb") as f:
-        f.write(base64.b64decode(result["videos"][0]["data"]))
-```
-
-## Reranking
-
-Reorders a document list by relevance.
-
-```python
-from aimux import cohere_reranking
-import json
-
-reranker = cohere_reranking("sk-...", "rerank-v3.0")
-# docs_json is the `type`-tagged `RerankingDocuments` enum —
-# {"type": "object", "values": [...]} for JSON documents, {"type": "text", "values": [...]} for strings
-docs = {"type": "object", "values": [
-    {"text": "Rust is a systems programming language."},
-    {"text": "Rust is a chemical element."},
-]}
-result = json.loads(reranker.rerank(
-    "What is Rust?",
-    json.dumps(docs),
-    # opts_json is a whole RerankingCallOptions: only topN and providerOptions
-    # are read from it, but query and documents must be present to deserialize
-    json.dumps({"query": "What is Rust?", "documents": docs, "topN": 3}),
-))
-
-# result["ranking"] sorted by relevanceScore
-for rank in result["ranking"]:
-    print(rank["index"], rank["relevanceScore"])
-```
-
-## Search
-
-```python
-from aimux import tavily_search
-import json
-
-searcher = tavily_search("tvly-...")
-result = json.loads(searcher.search("What is Rust?"))
-
-print(result["results"][0]["title"])  # ordered result list
-print(result["answer"])               # provider's summary, if any
-```
-
-## File Upload
-
-Uploads a file to the provider and returns a file ID.
-
-```python
-from aimux import openai_files
-import base64, json
-
-files = openai_files("sk-...")
-file_b64 = base64.b64encode(open("doc.pdf", "rb").read()).decode()
-result = json.loads(files.upload_file(file_b64, "application/pdf"))
-
-print(result["providerReference"])  # {"openai": "file-xxx"}
-```
-
-## API Surface
-
-The `aimux` package has two layers:
-
-| Layer | Source | Boundary |
-|------|------|------|
-| **Native (PyO3)** | `bindings/python/src/lib.rs` (`aimux.abi3.so`) | JSON strings in / JSON strings out |
-| **Typed wrapper** | `bindings/python/python/aimux/wrapper.py`, DTOs in `_types.py` | pydantic models / Python dicts |
-
-### Native classes and factory functions
-
-| Class | Factory functions | Methods |
-|------|------|------|
-| `Model` | `openai` / `anthropic` / `deepseek` | `generate_text(prompt_json, opts_json=None)`, `stream_text(...)` |
-| `EmbeddingModel` | `openai_embedding` / `cohere_embedding` / `google_embedding` | `embed(values_json, opts_json=None)` |
-| `SpeechModel` | `openai_speech` | `generate(opts_json)` |
-| `TranscriptionModel` | `openai_transcription` | `generate(audio_base64, media_type, opts_json=None)` |
-| `ImageModel` | `openai_image` / `google_image` | `generate(opts_json)` |
-| `VideoModel` | `google_video` | `generate(opts_json)` |
-| `RerankingModel` | `cohere_reranking` | `rerank(query, docs_json, opts_json=None)` |
-| `SearchModel` | `tavily_search(api_key, base_url=None)` | `search(query, opts_json=None)` |
-| `Files` | `openai_files(api_key, base_url=None)` | `upload_file(data_base64, media_type, opts_json=None)` |
-| `StreamIterator` | returned by `Model.stream_text` | `__iter__` / `__next__` of `StreamPart` JSON strings |
-
-Three module-level native functions back tool-call repair (all pure and
-synchronous, JSON in / JSON out): `tool_call_repair_context(tool_call_json,
-prompt_json, opts_json=None)`, `apply_tool_call_repair(tool_call_json,
-opts_json, reply_json)` and `apply_tool_call_repair_to_result(result_json,
-opts_json, tool_call_id, reply_json)`. The `repairToolCall` option drives
-them for you; call them directly only to build your own loop.
-
-All factories accept an optional `base_url` and return instances synchronously
-(no `await`). The typed wrapper adds five functions: `generate_text` (returns a
-pydantic `GenerateTextResult`), `stream_text` (yields parsed `StreamPart`
-dicts), and `parse_stream_part` (validates a dict into a typed `StreamPart`),
-plus `generate_text_as_openai` / `stream_text_as_openai`, which return OpenAI
-`ChatCompletion` / `ChatCompletionChunk` models.
-
-## Types
-
-The wrapper's types are pydantic models that `aimux-codegen` generates from the
-Rust types into `bindings/python/python/aimux/_types.py` (with the error payloads
-in `_error_payloads.py`; do not edit them, run `cargo run -p aimux-codegen`).
-`aimux.wrapper` re-exports all of them:
-
-```python
-from aimux.wrapper import (
-    # unions and aliases
-    ContentPart, Tool, ToolChoice, TextStreamPart, FileData, FilePartData,
-    FileBytes, FinishReasonUnified, ReasoningEffort, Warning,
-    # pydantic models
-    GenerateTextOptions, GenerateTextResult, StepResult, GenerateObjectResult,
-    ModelMessage, ToolCall, RawToolCall, LanguageModelUsage, GeneratedFile,
-    TextRequest,
-    # functions
-    generate_text, stream_text, parse_stream_part,
-)
-```
-
-A file content part is the AI SDK `FilePart`: `{"type": "file", "data": ...,
-"mediaType": ...}` where `data` (`FilePartData`) is a tagged `FileData`, a
-string (base64 or a URL; `bytes` are encoded as base64) or a bare
-`{provider: id}` reference. There is no `file-base64` / `file-url` /
-`file-reference` part.
-
-A generated file is a `GeneratedFile`, the AI SDK's `{"base64": ...,
-"mediaType": ...}` (`to_bytes()` decodes it); a `file` / `reasoning-file` content or stream part wraps
-it as `{"type": "file", "file": {...}}`. The provider-level `GenerateResult.content`
-keeps a `LanguageModelFile` (`mediaType` and tagged `data`).
-
-`AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
-OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
-
-```text
-Exception
- └── AimuxError
-      ├── APICallError              # provider call/transport failure; status when observed
-      ├── RetryError                # the retry loop gave up; reason, errors (oldest first), last_error
-      ├── JSONParseError / InvalidResponseDataError / ToolError
-      ├── JSONParseError / InvalidResponseDataError
-      ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  # tool-contract errors
-      ├── InvalidArgumentError / InvalidPromptError
-      ├── LoadAPIKeyError / LoadSettingError   # no API key / required setting: env_var (+ description / setting_name)
-      ├── TokenExpiredError
-      ├── UnsupportedFunctionalityError
-      ├── NoSuchModelError / NoSuchProviderError
-      ├── APITimeoutError
-      ├── RequestAbortedError
-      └── OtherError
-
-Exception                          # the recorder's own failure type — not an AimuxError
- └── RecordingError                # init_recording(): code "Init" | "OpenFile" | "Spawn"; recording_try_flush(): "WriterGone" | "FlushTimeout" | "Write"
-```
-
-`AimuxError` subclasses carry only their own payload. There is no common string
-discriminator and no JSON companion.
-`RecordingError` mirrors the core's separate `RecordingError` type: it carries
-its own `code`, and is not caught by `except AimuxError`.
-Failures of the pyo3 bridge itself are not aimux types — they surface the way
-pyo3 does, as Python builtins, never disguised as an `AimuxError`:
-
-| scenario | raises |
-|---|---|
-| a JSON *text* you passed (`prompt_json` / `opts_json` / `config_json` / …) does not parse | `ValueError("prompt_json: invalid JSON: …")` — the message names the argument |
-| closed / ended session handed back to the binding | `ValueError("… is closed")` |
-| binding could not serialize a result | `RuntimeError("serialize result: …")` |
-| a bridge invariant broke | `RuntimeError` |
-| argument *type* errors | pyo3's own `TypeError` |
-| panic in native code | `pyo3_runtime.PanicException` |
-
-JSON that parses but has a bad value is still `InvalidArgumentError`.
-
-Payload attributes belong to the class that carries them and are absent on the
-others. `APICallError` has `status` / `retryable` / `retry_ms` / `url` /
-`request_body_values` / `response_headers` / `provider_code` /
-`provider_message` / `response_body` / `data`; optional values use Python's
-normal `None`. `RetryError` has `reason` (`"maxRetriesExceeded"` — every
-permitted attempt failed with a retryable error — or `"errorNotRetryable"` —
-a later attempt failed non-retryably), `errors` — the per-attempt history,
-oldest first, each itself an exception from this hierarchy — and
-`last_error`. `TokenExpiredError` has `status == 401`, `NoSuchModelError` has
-`model_id` / `model_type`, `NoSuchProviderError` has `provider_id`,
-`model_id`, `model_type` and `available_providers`, and
-`LoadAPIKeyError` / `LoadSettingError` have `env_var` (the environment variable
-consulted) plus `description` / `setting_name`.
-
-```python
-from aimux import (
-    generate_text,
-    AimuxError,
-    APICallError,
-)
+from aimux import AimuxError
 
 try:
-    generate_text(model, "hi")
-except APICallError as e:
-    # classify on status:
-    if e.status == 429:
-        ...  # rate limited — e.retry_ms
-    elif e.status == 401:
-        ...  # auth failure
-    elif e.status == 404:
-        ...  # model not found
-except AimuxError:
-    ...  # any AiMuxError failure
+    model.call("text.generate", {"prompt": "Hello", "options": {}})
+except AimuxError as error:
+    print(error.kind, error.code, error.message, error.error)
 ```
 
-(The pydantic wire type named `AiMuxErrorValue` in `aimux.wrapper` is only for
-stream/payload shapes, not the raised exception.)
+- `AimuxError` subclasses expose `envelope`, `error`, `kind` and `code`.
+- Payload attributes use snake_case; `error.cause` is `__cause__`.
+- Read a retry delay from `error.response_headers` (`retry-after-ms`, then
+  `retry-after`), not from a dedicated retry field.
+- Retry errors retain typed attempts; `last_error` is the last attempt.
 
-The wire format is the AI SDK's: JSON keys are camelCase and unions are tagged
-by `type`. The raw dict API exchanges that JSON as-is (`result["finishReason"]`,
-`{"type": "text-delta", ...}`). The typed wrapper's models keep `snake_case`
-Python attributes and map them to the camelCase keys through a pydantic alias
-generator (both spellings validate; serialization uses camelCase). A field left
-unset is omitted; an `Any` field (`body`, `input_schema_input`) set to `None`
-is written as JSON `null`, as the AI SDK's JSON keeps `null` apart from a
-missing value. A response `timestamp` is a JavaScript `Date` in the AI SDK's
-JSON: a `toISOString()` string, UTC with milliseconds
-(`"2025-03-06T13:50:19.000Z"`), which `datetime.fromisoformat` reads.
+## Breaking changes in 0.6
 
-Key shapes (mirroring the shared JSON schema):
+- Top-level provider/model helpers are removed; use `Client` / `Handle`.
+- Provider-specific constructors are replaced by `provider.create` and
+  `provider.model`.
+- Errors are the shared envelope; `retry_ms` and the old serialized error
+  companion are gone.
+- DTOs are generated from the Rust types; hand-written 0.5 wire types are
+  removed.
 
-```python
-class GenerateTextResult(BaseModel):
-    content: list[TextContent]          # the final step's parts
-    text: str
-    tool_calls: list[ToolCall]
-    finish_reason: FinishReasonUnified  # "stop", "tool-calls", ...
-    raw_finish_reason: Optional[str]
-    usage: LanguageModelUsage           # summed over the steps
-    warnings: list[Warning]
-    steps: list[StepResult]
-    response_messages: list[ModelMessage]
-    output: Optional[Any]               # the value parsed by options.output
-    ...
-```
+## See also
 
-`stream_text` emits the Rust call-layer `TextStreamPart` JSON, the AI SDK's
-full stream (`start`, `start-step` … `finish-step`, `finish`): a dict tagged by
-`type`, e.g. `{"type": "text-delta", "id": ..., "text": ...}`. Iterate dicts with
-`if part["type"] == "text-delta":` (as in [Streaming Generation](#streaming-generation))
-or validate them with `parse_stream_part(part)` for attribute access (the
-wrapper's `StreamPart` is a pydantic discriminated union on `type`).
-
-Provider-layer `StreamPart::ResponseMetadata` events are consumed internally
-and are not emitted by `stream_text`.
+- [bindings/python/README.md](../../bindings/python/README.md) — limits, GIL
+  behavior, test commands and typed helpers.
+- [docs/api/ops.md](ops.md) — operation names.
+- [docs/error-model.md](../error-model.md) — error codes and cause chains.
+- [Python provider list](providers.md).

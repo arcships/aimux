@@ -437,11 +437,32 @@ mod convert_groq_usage {
 
         assert_eq!(
             serde_json::to_value(&result.usage).unwrap(),
+            // #478: unreported counts stay unknown (the AI SDK fills 0).
             json!({
-                "inputTokens": { "total": 0, "noCache": 0 },
-                "outputTokens": { "total": 0, "text": 0 },
+                "inputTokens": {},
+                "outputTokens": {},
                 "raw": {}
             })
         );
+    }
+
+    #[test]
+    fn keeps_unreported_counts_unknown() {
+        // #478 (beyond the AI SDK): a count the provider did not report, absent
+        // or null, stays unknown; a reported zero stays zero.
+        for (usage, mut expected) in [
+            (json!({}), json!({ "inputTokens": {}, "outputTokens": {} })),
+            (
+                json!({ "prompt_tokens": 2, "completion_tokens": null }),
+                json!({ "inputTokens": { "total": 2, "noCache": 2 }, "outputTokens": {} }),
+            ),
+            (
+                json!({ "completion_tokens": 0 }),
+                json!({ "inputTokens": {}, "outputTokens": { "total": 0, "text": 0 } }),
+            ),
+        ] {
+            expected["raw"] = usage.clone();
+            assert_eq!(convert_json(usage.clone()), expected, "{usage}");
+        }
     }
 }

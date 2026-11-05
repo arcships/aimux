@@ -1127,7 +1127,7 @@ fn convert_assistant_tool_result(
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             json!(reason.as_deref().unwrap_or("Tool call execution denied."))
         }
-        ToolResultOutput::Content { value } => json!(value),
+        ToolResultOutput::Content { value, .. } => json!(value),
     };
     let provider_tool_name = tool_names.to_provider_tool_name(tool_name);
     let allowed = match output {
@@ -1516,7 +1516,7 @@ fn extract_tool_result_output_provider_options(
         | ToolResultOutput::ExecutionDenied {
             provider_options, ..
         } => provider_options.as_ref(),
-        ToolResultOutput::Content { value } => value.iter().find_map(|part| match part {
+        ToolResultOutput::Content { value, .. } => value.iter().find_map(|part| match part {
             ToolResultContent::Text(part) => part.provider_options.as_ref(),
             ToolResultContent::File(part) => part.provider_options.as_ref(),
             ToolResultContent::Custom { provider_options } => provider_options.as_ref(),
@@ -1716,7 +1716,7 @@ fn resolve_tool_result_output(
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             json!(reason.as_deref().unwrap_or("Tool call execution denied."))
         }
-        ToolResultOutput::Content { value } => {
+        ToolResultOutput::Content { value, .. } => {
             let mut content = Vec::new();
             for part in value {
                 match part {
@@ -1778,7 +1778,12 @@ fn resolve_tool_result_output(
         value,
         matches!(
             output,
-            ToolResultOutput::ErrorText { .. } | ToolResultOutput::ErrorJson { .. }
+            ToolResultOutput::ErrorText { .. }
+                | ToolResultOutput::ErrorJson { .. }
+                | ToolResultOutput::Content {
+                    is_error: Some(true),
+                    ..
+                }
         ),
     ))
 }

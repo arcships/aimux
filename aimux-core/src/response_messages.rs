@@ -71,23 +71,19 @@ impl ResponseMessageBuilder {
     }
 
     pub fn text_start(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
-        self.text_delta(id, "", metadata);
+        self.text_indexes.insert(id, self.content.len());
+        self.content.push(ContentPart::Text {
+            text: String::new(),
+            provider_metadata: metadata,
+        });
     }
 
-    pub fn text_delta(
-        &mut self,
-        id: String,
-        delta: &str,
-        metadata: Option<SharedProviderMetadata>,
-    ) {
-        let index = *self.text_indexes.entry(id).or_insert_with(|| {
-            let index = self.content.len();
-            self.content.push(ContentPart::Text {
-                text: String::new(),
-                provider_metadata: None,
-            });
-            index
-        });
+    /// A delta of a text part that was never started is not recorded; the
+    /// stream carries an error part for it (stream-text.ts:1550-1567).
+    pub fn text_delta(&mut self, id: &str, delta: &str, metadata: Option<SharedProviderMetadata>) {
+        let Some(&index) = self.text_indexes.get(id) else {
+            return;
+        };
         if let ContentPart::Text {
             text,
             provider_metadata,
@@ -100,29 +96,30 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn text_end(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
-        self.text_delta(id.clone(), "", metadata);
-        self.text_indexes.remove(&id);
+    pub fn text_end(&mut self, id: &str, metadata: Option<SharedProviderMetadata>) {
+        self.text_delta(id, "", metadata);
+        self.text_indexes.remove(id);
     }
 
     pub fn reasoning_start(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
-        self.reasoning_delta(id, "", metadata);
+        self.reasoning_indexes.insert(id, self.content.len());
+        self.content.push(ContentPart::Reasoning(ReasoningOutput {
+            text: String::new(),
+            provider_metadata: metadata,
+        }));
     }
 
+    /// A delta of a reasoning part that was never started is not recorded;
+    /// the stream carries an error part for it (stream-text.ts:1599-1616).
     pub fn reasoning_delta(
         &mut self,
-        id: String,
+        id: &str,
         delta: &str,
         metadata: Option<SharedProviderMetadata>,
     ) {
-        let index = *self.reasoning_indexes.entry(id).or_insert_with(|| {
-            let index = self.content.len();
-            self.content.push(ContentPart::Reasoning(ReasoningOutput {
-                text: String::new(),
-                provider_metadata: None,
-            }));
-            index
-        });
+        let Some(&index) = self.reasoning_indexes.get(id) else {
+            return;
+        };
         if let ContentPart::Reasoning(reasoning) = &mut self.content[index] {
             reasoning.text.push_str(delta);
             if metadata.is_some() {
@@ -131,9 +128,9 @@ impl ResponseMessageBuilder {
         }
     }
 
-    pub fn reasoning_end(&mut self, id: String, metadata: Option<SharedProviderMetadata>) {
-        self.reasoning_delta(id.clone(), "", metadata);
-        self.reasoning_indexes.remove(&id);
+    pub fn reasoning_end(&mut self, id: &str, metadata: Option<SharedProviderMetadata>) {
+        self.reasoning_delta(id, "", metadata);
+        self.reasoning_indexes.remove(id);
     }
 
     pub fn text(&mut self, text: &str, metadata: Option<&SharedProviderMetadata>) {
@@ -496,8 +493,8 @@ mod tests {
         let mut builder = ResponseMessageBuilder::new();
         builder.text("hi", Some(&metadata));
         builder.reasoning_start("r1".into(), None);
-        builder.reasoning_delta("r1".into(), "thinking", None);
-        builder.reasoning_end("r1".into(), Some(metadata.clone()));
+        builder.reasoning_delta("r1", "thinking", None);
+        builder.reasoning_end("r1", Some(metadata.clone()));
         let messages = builder.finish().messages;
 
         let expected = serde_json::to_string(&metadata).unwrap();

@@ -200,8 +200,15 @@ pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxErr
             AuthScheme::Scheme("Key"),
             Vec::new(),
             settings.headers,
+        )
+        .with_user_agent(
+            crate::shared::aisdk_pins::FAL.name,
+            crate::shared::aisdk_pins::FAL.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::FAL,
+        )),
     })
 }
 
