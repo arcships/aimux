@@ -56,6 +56,37 @@ async fn should_extract_generated_images() {
     }
 }
 
+/// `createFal` adds `ai-sdk-fal/<version>` to the user-agent
+/// (fal-provider.ts getHeaders, withUserAgentSuffix), and the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/fal@3.0.54` depends on.
+#[tokio::test]
+async fn should_include_the_package_user_agent() {
+    let server = MockServer::start().await;
+    mock_fal(&server, fal_response(&server.uri())).await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("fal-ai/flux/schnell");
+    model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(user_agent.contains("ai-sdk-fal/3.0.54"), "{user_agent}");
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}
+
 /// partial: `should pass the correct parameters including size`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_prompt_and_n() {

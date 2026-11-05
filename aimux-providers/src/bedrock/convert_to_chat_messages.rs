@@ -289,12 +289,31 @@ fn push_tool_result(
     is_mistral: bool,
 ) {
     let result_content = resolve_tool_result_output(&part.output, doc_counter);
+    // The Converse API carries the outcome beside the content; the AI SDK
+    // never writes it (#470).
+    let status = if tool_result_is_error(&part.output) {
+        "error"
+    } else {
+        "success"
+    };
     content.push(json!({
         "toolResult": {
             "toolUseId": normalize_tool_call_id(&part.tool_call_id, is_mistral),
             "content": result_content,
+            "status": status,
         }
     }));
+}
+
+/// Whether a tool result reports a failure, independent of its content form.
+fn tool_result_is_error(output: &ToolResultOutput) -> bool {
+    match output {
+        ToolResultOutput::ErrorText { .. }
+        | ToolResultOutput::ErrorJson { .. }
+        | ToolResultOutput::ExecutionDenied { .. } => true,
+        ToolResultOutput::Content { is_error, .. } => is_error == &Some(true),
+        ToolResultOutput::Text { .. } | ToolResultOutput::Json { .. } => false,
+    }
 }
 
 fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u32) {
@@ -430,7 +449,7 @@ fn resolve_tool_result_output(output: &ToolResultOutput, doc_counter: &mut u32) 
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             vec![json!({ "text": reason.as_deref().unwrap_or("Tool call execution denied.") })]
         }
-        ToolResultOutput::Content { value } => {
+        ToolResultOutput::Content { value, .. } => {
             let mut content = Vec::new();
             for part in value {
                 match part {
@@ -745,7 +764,7 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
 }
 
 fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiMuxError> {
-    if let ToolResultOutput::Content { value } = result {
+    if let ToolResultOutput::Content { value, .. } = result {
         for part in value {
             match part {
                 ToolResultContent::Text(_) => {}

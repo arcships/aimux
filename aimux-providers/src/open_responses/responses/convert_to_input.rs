@@ -372,7 +372,7 @@ pub(super) fn validate_file_media(prompt: &LanguageModelPrompt) -> Result<(), Ai
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
                     let ToolPart::ToolResult(ToolResultPart {
-                        output: ToolResultOutput::Content { value },
+                        output: ToolResultOutput::Content { value, .. },
                         ..
                     }) = part
                     else {
@@ -400,7 +400,7 @@ fn resolve_tool_result_output(
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
 ) -> Value {
-    let ToolResultOutput::Content { value } = output else {
+    let ToolResultOutput::Content { value, .. } = output else {
         return aimux_provider_utils::tool_result_to_content(output);
     };
     let mut parts = Vec::new();

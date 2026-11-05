@@ -1,537 +1,221 @@
 # aimux API Documentation
 
-> Unified LLM service access layer — one API to access every provider
-> ([providers.md](api/providers.md) carries the count)
+> **Current release: 0.6.0.** 0.6 is a breaking release: every binding now uses
+> the shared operations ABI (ABI 1 / ops 1.0), and the public JSON follows the
+> Vercel AI SDK V4. Start with the [0.6 upgrade guide](upgrading-to-0.6.md) if
+> you are coming from 0.5.
 
-## Table of Contents
+aimux is a Rust LLM access layer. Providers are reached through one object-safe
+language-model interface, or through the shared operations dispatcher that the
+language bindings use.
 
-- [Language Guides](#language-guides)
-- [Quick Start](#quick-start)
-- [Features](#features)
-  - [Text Generation](#text-generation)
-  - [Streaming Generation](#streaming-generation)
-  - [Tool Calling](#tool-calling)
-  - [Multi-Role Messages](#multi-role-messages)
-  - [Vector Embedding](#vector-embedding)
-  - [Speech Synthesis (TTS)](#speech-synthesis-tts)
-  - [Speech to Text (STT)](#speech-to-text-stt)
-  - [Image Generation](#image-generation)
-  - [Video Generation](#video-generation)
-  - [Reranking](#reranking)
-  - [Search](#search)
-  - [File Upload](#file-upload)
-- [Provider Factory Functions](#provider-factory-functions)
-- [Feature Coverage](#feature-coverage)
-- [Construction and base_url Support](#construction-and-base_url-support)
-- [Design Documents](#design-documents)
-- [License](#license)
+## Architecture
 
-## Language Guides
+```text
+Rust callers ──→ aimux-core + aimux-providers
+                        │
+                        ├─ aimux-ops: shared operation dispatcher (ops 1.0)
+                        │
+bindings ───────────────┼─→ native path: Node (napi-rs), Python (PyO3)
+                        └─→ C ABI path: Swift, Kotlin, Flutter, Go, Java, C/C++
+```
 
-> **Legacy (0.5 API).** The language guides below still describe the 0.5
-> binding API, which V4 removed; each binding's `README.md` under
-> [bindings/](../bindings/) describes the current API. V4 errors are the shared
-> `ErrorEnvelope` `{kind, code, message, error}` with no retry hint: read a
-> retry delay from `error.responseHeaders` (`retry-after-ms`, then
-> `retry-after`), as with the AI SDK. The rewrite is tracked in
-> [#277](https://github.com/arcships/aimux/issues/277).
+- **Rust core** — typed providers, traits, stream parts, errors and recording.
+- **aimux-ops** — operation names, request/response DTOs, handle lifecycle,
+  manifest and versions. Every binding calls the same dispatcher.
+- **C ABI** — 14 primitives in `aimux-ffi/include/aimux.h`; opaque handles,
+  JSON results and one owned `aimux_error_t *`.
+- **Native bindings** — Node and Python link the Rust crates directly.
 
-Each language has its own guide with that language's examples:
+## Language guides
 
-| Language | Guide | Coverage |
-|------|------|------|
-| Node.js | [api/node.md](api/node.md) | Full multimodal surface (native path) |
-| Python | [api/python.md](api/python.md) | Full multimodal surface (native path) |
-| Rust | [api/rust.md](api/rust.md) | Full multimodal surface (core) |
-| Go | [api/go.md](api/go.md) | Full multimodal surface (C ABI path, typed wrappers) |
-| C/C++ | [api/c.md](api/c.md) | Full multimodal surface (C ABI) |
-| Swift | [api/swift.md](api/swift.md) | Full multimodal surface (C ABI path) |
-| Kotlin | [api/kotlin.md](api/kotlin.md) | Full multimodal surface (C ABI path) |
-| Flutter/Dart | [api/flutter.md](api/flutter.md) | Full multimodal surface (C ABI path) |
-| Java | [api/java.md](api/java.md) | Full multimodal surface (C ABI path) |
+| Language | Path | Current guide |
+|---|---|---|
+| Rust | native | [api/rust.md](api/rust.md) |
+| Node.js | native (napi-rs) | [api/node.md](api/node.md) · [README](../bindings/node/README.md) |
+| Python | native (PyO3) | [api/python.md](api/python.md) · [README](../bindings/python/README.md) |
+| Go | C ABI (cgo, static `.a`) | [api/go.md](api/go.md) · [README](../bindings/go/README.md) |
+| Java | C ABI (JNA) | [api/java.md](api/java.md) · [README](../bindings/java/README.md) |
+| Kotlin | C ABI (JNA, Java artifact + coroutines) | [api/kotlin.md](api/kotlin.md) · [README](../bindings/kotlin/README.md) |
+| Swift | C ABI (Swift Package) | [api/swift.md](api/swift.md) · [README](../bindings/swift/README.md) |
+| Flutter / Dart | C ABI (dart:ffi plugin) | [api/flutter.md](api/flutter.md) · [README](../bindings/flutter/README.md) |
+| C / C++ | C ABI (direct link) | [api/c.md](api/c.md) · [README](../bindings/c/README.md) |
 
-## Quick Start
+The per-language pages are orientation guides. The maintained implementation
+notes, limits and test commands live in each binding's `README.md`.
 
-All bindings share the same API shape — only the syntax differs. Pick your
-language guide and follow its Quick Start:
+## Quick start
 
-[Node.js](api/node.md#quick-start) · [Python](api/python.md#quick-start) ·
-[Rust](api/rust.md#quick-start) · [Go](api/go.md#quick-start) ·
-[C/C++](api/c.md#quick-start) · [Swift](api/swift.md#quick-start) ·
-[Kotlin](api/kotlin.md#quick-start) · [Flutter/Dart](api/flutter.md#quick-start)
+Every binding uses the same three-step shape:
+
+```text
+provider.create  →  provider.model  →  call an operation (text.generate, text.stream, …)
+```
+
+Node.js:
+
+```ts
+import { Client, LanguageModel } from '@arcships/aimux'
+
+const client = new Client()
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: process.env.OPENAI_API_KEY },
+})
+const model = await provider.model('gpt-4o-mini', 'languageModel')
+if (!(model instanceof LanguageModel)) throw new Error('Expected LanguageModel')
+try {
+  console.log((await model.generate('Hello')).text)
+} finally {
+  await model.close()
+  await provider.close()
+}
+```
+
+Rust:
+
+```rust
+use aimux_core::prelude::*;
+use aimux_providers::openai::openai;
+
+#[tokio::main]
+async fn main() -> Result<(), AiMuxError> {
+    let model = openai().chat("gpt-4o-mini");
+    let result = generate_text(
+        &model,
+        "Hello",
+        GenerateTextOptions::default(),
+    ).await?;
+    println!("{}", result.text);
+    Ok(())
+}
+```
+
+The other languages' shortest complete examples are in their guides and
+binding READMEs.
 
 ## Providers
 
-### Native protocols
+There are 327 provider names: 282 registry-backed OpenAI-compatible presets and
+45 vendor packages. The generated catalogue is
+[api/providers.md](api/providers.md).
 
-OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
-Anthropic-AWS — one constructor per provider: `openai(apiKey, model, baseUrl?)`
-/ `anthropic(apiKey, model, baseUrl?)` (Node, Python), `NewOpenAI(apiKey,
-model)` (Go), `Model.openai(apiKey, modelId)` (Java, Kotlin, Flutter),
-`Aimux.openai(apiKey:modelId:)` (Swift), `create_openai(..)` (Rust).
-Multimodal, local-inference and search providers have their own constructors
-too — full list: [reference.md](api/reference.md).
+Rust:
 
-### OpenAI-compatible (registry-backed)
+- `create_provider(name, PresetSettings)` covers presets and vendor packages.
+- Vendor packages expose `create_xxx(XxxProviderSettings { .. })` plus a
+  default `xxx()` where the package provides one.
+- `provider_names()` lists accepted names; `Provider::discovery()` exposes
+  runtime model listing where supported.
 
-Rust uses `aimux_providers::create_provider(name, PresetSettings)` for vendor
-packages and all 282 presets, then `Provider::language_model(model_id)`.
-`default_providers()` supplies a map for
-`aimux_core::provider_registry::create_provider_registry(providers, options)`,
-whose model ids default to `provider:model`. `provider_names()` lists accepted
-names; `Provider::discovery()` exposes runtime model listing.
+Bindings:
 
-The language bindings retain:
+- Use `provider.create` with `{ "package": "<name>", "settings": { ... } }`.
+- Use `provider.model` with `method` (`languageModel`, `embeddingModel`,
+  `imageModel`, `speechModel`, `transcriptionModel`, `rerankingModel`,
+  `videoModel`, `searchModel`, `decision`) and `modelId`.
+- Provider-specific constructors from 0.5 were removed. See the
+  [upgrade guide](upgrading-to-0.6.md).
 
-```text
-provider(name, api_key?, model_id, config?)   // language bindings
-  name     — vendor package or registry preset name as a string
-  api_key  — optional; omitted/None reads the provider's env var
-  config   — optional overrides (base_url / headers / organization / project / params)
-             `maxRetries` (a per-call option) and `bodyOverrides` (removed) are
-             rejected with InvalidArgument, not ignored
+## Operations
+
+The authoritative operation list is [api/ops.md](api/ops.md) and
+`runtime.describe`. Families include:
+
+| Family | Examples |
+|---|---|
+| runtime | `runtime.describe`, `runtime.configure` |
+| provider | `provider.create`, `provider.model`, `provider.files`, `provider.invoke`, `provider.wrap` |
+| text | `text.generate`, `text.stream`, `text.generateObject`, `text.consume` |
+| embedding | `embedding.embed`, `embedding.embedMany` |
+| speech / transcription | `speech.generate`, `transcription.start`, `operation.push`, `operation.next` |
+| image / video | `image.generate`, `video.generate` |
+| reranking / search | `reranking.rerank`, `search.search` |
+| files | `files.upload` |
+| decision | `decision.decide`, `decision.capabilities` |
+| recording / replay | `recorder.*`, `replay.*` |
+| sessions / trace | `sessionStore.*`, `trace.*` |
+| composite / middleware | `composite.router`, `composite.moa`, `middleware.create`, `model.wrap` |
+| tools | `toolRepair.context`, `toolRepair.apply`, `toolRepair.applyResult` |
+| transport | `transport.create` |
+
+Operation request and response DTOs are generated from the Rust types and
+published in each binding. Use the generated types rather than hand-written
+JSON when the binding offers them.
+
+## Handles and streams
+
+- Handles are decimal strings, including values above 2^53.
+- Adopt each returned handle exactly once; `close()` is idempotent.
+- A provider keeps its models alive; closing a provider does not invalidate an
+  already-created model.
+- Streams deliver business event frames plus one explicit end frame. Data
+  errors stay data; the end frame carries the terminal outcome.
+- Queue limits are binding-specific and documented in each binding README.
+  Slow consumers apply backpressure; cancellation must wake a full queue.
+- Do not adopt a handle twice or move a handle between processes/isolates
+  unless the binding explicitly supports it.
+
+## Errors
+
+All public errors use the shared envelope:
+
+```json
+{ "kind": "aimux", "code": 1, "message": "...", "error": { "name": "..." } }
 ```
 
-- Full list (name / env var / base URL): [providers.md](api/providers.md)
-- Custom endpoint: registry name + `base_url` override, or the OpenAI
-  constructor with a base URL
-
-## Features
-
-### Text Generation
-
-Non-streaming text generation; returns the complete result.
-
-Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-generation) · [Rust](api/rust.md#text-generation) · [Go](api/go.md#text-generation) · [Swift](api/swift.md#text-generation) · [Kotlin](api/kotlin.md#text-generation) · [Flutter](api/flutter.md#text-generation) · [C ABI](api/c.md#language-model)
-
-#### Parameters
-
-| Parameter | Type | Description |
-|------|------|------|
-| `prompt` | `string` / `Message[]` | Prompt or message array |
-| `max_output_tokens` | `number?` | Maximum number of generated tokens |
-| `temperature` | `number?` | Sampling temperature |
-| `top_p` | `number?` | Nucleus sampling |
-| `stop_sequences` | `string[]?` | Stop sequences |
-| `tools` | `Tool[]?` | List of available tools |
-| `tool_choice` | `ToolChoice?` | Tool selection strategy |
-| `instructions` | `string?` | System instructions |
-| `reasoning` | `ReasoningEffort?` | Reasoning effort |
-| `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = 2) |
-| `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / step / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
-| `provider_options` | `object?` | Per-provider options keyed by namespace; for OpenAI-compatible providers, unknown fields of the provider's own namespace go to the request body as given |
-| `headers` | `object?` | Extra HTTP headers |
-
-Node.js additionally accepts an `AbortSignal` as the 4th argument of
-`generateText` / `streamText` (see [Request Cancellation](#request-cancellation)).
-
-#### Return Value
-
-The result is a structured object with these fields (the exact type
-declaration differs per language — see each [language guide](#language-guides)
-for its own declaration):
-
-| Field | Description |
-|------|------|
-| `text` | Generated text of the final step (all Text parts concatenated) |
-| `content` | The final step's content parts — see [Structured content](#structured-content-content) |
-| `tool_calls` | The final step's tool calls, parsed and validated |
-| `tool_results` | The final step's tool results (provider-executed tools) |
-| `finish_reason` | Unified finish reason: `stop`, `length`, `content-filter`, `tool-calls`, `error` or `other` |
-| `raw_finish_reason` | The provider's own finish reason |
-| `usage` | Token usage (`LanguageModelUsage`) summed over the steps |
-| `warnings` | Warnings of the final step |
-| `steps` | Every model call of the generation (`StepResult`: content, finish reason, usage, performance, request, response with its messages, …) |
-| `response_messages` | Assistant and tool messages to append to the next prompt |
-| `output` | The value parsed by the `output` option (absent when not parsed) |
-
-`reasoning`, `reasoning_text`, `files`, `sources`, `request`, `response`,
-`provider_metadata` and `total_usage` are also present: the final step's
-values (`total_usage` equals `usage`), deprecated in the AI SDK.
-
-`LanguageModelUsage` is flat and camelCase, as in the AI SDK's JSON:
-`inputTokens`, `inputTokenDetails { noCacheTokens, cacheReadTokens,
-cacheWriteTokens }`, `outputTokens`, `outputTokenDetails { textTokens,
-reasoningTokens }`, `totalTokens` and the provider's `raw` usage object.
-An unknown count is absent (the AI SDK's `undefined`), never zero; the two
-detail objects are always present. `steps` entries are camelCase as well
-(`stepNumber`, `callId`, `model { provider, modelId }`, `performance`,
-`response { id, timestamp, modelId, headers?, body?, messages }`), and each
-`toolResults` entry carries `type: "tool-result"`.
-
-> **Note**: `text`, `tool_calls` and the other top-level fields are read from
-> the final step's `content`. Tool calls are parsed and validated per the
-> AI SDK `parseToolCall` / `repairToolCall` contract: a `tool_calls` entry
-> carries the parsed `input` plus `provider_metadata?`, `invalid?` (`true`
-> when tool lookup, input parse, or schema validation failed) and `error?`
-> (the serialized `AiMuxError` — `NoSuchTool` / `InvalidToolInput` /
-> `ToolCallRepair`).
-
-> **Type declarations are per-language.** Every binding declares these types in
-> its own syntax: TypeScript `interface`/`type` in [node.md](api/node.md#types),
-> Python pydantic models in [python.md](api/python.md#types), Rust `struct`/`enum`
-> in [rust.md](api/rust.md#types), Kotlin `data class` in
-> [kotlin.md](api/kotlin.md#types), Dart classes in [flutter.md](api/flutter.md#types),
-> Swift `struct` in [swift.md](api/swift.md#types), Go `struct` in
-> [go.md](api/go.md#types). The tables below describe the shared **JSON shape**
-> that crosses the binding boundary — the field names and variant tags are
-> identical in every language.
-
-#### Structured content (`content`)
-
-`content` is an array of tagged parts:
-
-| Variant | Fields | Description |
-|------|------|------|
-| `Text` | `text`, `provider_metadata?` | Generated text |
-| `ToolCall` | `tool_call_id`, `tool_name`, `input`, `provider_executed?`, `dynamic?`, `provider_metadata?`, `invalid?`, `error?` | Tool call requested by the model, `input` parsed (same shape as a `tool_calls` entry) |
-| `Source` | `source_type`, `id`, `url?`, `title?`, … | Reference/source |
-| `Reasoning` | `text`, `provider_metadata?` | Reasoning/thinking segment |
-| `File` / `ReasoningFile` | `data`, `media_type`, `provider_metadata?` | File generated by the model (or as part of reasoning) |
-| `ToolResult` | `tool_call_id`, `tool_name`, `result`, `is_error?`, `preliminary?`, `dynamic?`, `provider_metadata?` | Tool result executed by the provider |
-| `ToolApprovalRequest` | `approval_id`, `tool_call`, … | Approval request for a provider-executed tool call |
-| `Custom` | `kind`, `provider_metadata?` | Provider-specific content |
-
-### Streaming Generation
-
-Returns generated content as a stream, output chunk by chunk.
-
-Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#streaming-generation) · [Rust](api/rust.md#streaming-generation) · [Go](api/go.md#streaming-generation) · [Swift](api/swift.md#streaming-generation) · [Kotlin](api/kotlin.md#streaming-generation) · [Flutter](api/flutter.md#streaming-generation) · [C ABI](api/c.md#language-model)
-
-#### Stream part types
-
-`streamText` yields the AI SDK's full stream (`TextStreamPart`): `Start`,
-then for each step `StartStep` … `FinishStep`, then `Finish` — or `Abort`
-when the call is aborted.
-
-| Variant | Description |
-|------|------|
-| `Start` | Stream start |
-| `StartStep` | Step start (carries `request` and the provider's `warnings`) |
-| `TextStart` / `TextDelta` / `TextEnd` | Text segment lifecycle (`TextDelta.text`) |
-| `ToolInputStart` / `ToolInputDelta` / `ToolInputEnd` | Tool calling input stream |
-| `ToolCall` | Complete tool call (same shape as a `tool_calls` entry, incl. `invalid?` / `error?`) |
-| `ToolResult` | Result of a provider-executed tool: `tool_call_id`, `tool_name`, `input?` (the call's input; absent for a deferred result), `output`, `provider_executed`, `dynamic?`, `provider_metadata?` |
-| `ToolError` | `tool_call_id`, `tool_name`, `input?`, `error`, `provider_executed?`, `dynamic?`, `provider_metadata?`: a provider-executed tool's error result (`provider_executed: true`), or the error that follows an invalid client tool call (its error message, `dynamic: true`) |
-| `ToolApprovalRequest` | Approval request for a provider-executed tool call |
-| `ToolOutputDenied` / `ToolApprovalResponse` | Part of the AI SDK's set for denied tools and answered approvals; aimux's stream does not produce them yet |
-| `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | Reasoning segment lifecycle (`ReasoningDelta.text`) |
-| `Source` / `File` / `ReasoningFile` / `Custom` | Content parts, as in `content` |
-| `FinishStep` | Step end: `response` (id, timestamp, model_id, headers), `usage`, `performance`, `finish_reason`, `raw_finish_reason`, `provider_metadata` |
-| `Finish` | Stream end: `finish_reason`, `raw_finish_reason`, `total_usage` |
-| `Abort` | The call was aborted (`reason?`) |
-| `Error` | Stream error |
-| `Raw` | Provider raw chunk (for debugging, when `include_raw_chunks` is set) |
-
-`stream_text` emits the call-layer `TextStreamPart` type. Provider-layer
-`StreamPart::ResponseMetadata` events are consumed internally and do not
-appear in this stream.
-
-### Request Cancellation (abort)
-
-Calls can be cancelled mid-flight. Cancellation covers the whole request
-lifecycle — connect, response headers, non-streaming body reads, and the
-streaming body (including while waiting between chunks and during retry
-backoff). An abort is reported as `AiMuxError::Aborted` (not retryable; a
-pre-aborted signal fails fast without sending).
-
-- **Node.js** — pass an `AbortSignal` as the last argument; the typed wrapper
-  bridges it internally:
-
-  ```ts
-  import { openai, generateText, streamText } from '@arcships/aimux'
-
-  const controller = new AbortController()
-  const model = await openai('sk-...', 'gpt-4o')
-
-  const result = await generateText(model, 'Explain Rust.', {}, controller.signal)
-
-  const gen = streamText(model, 'Write a haiku.', {}, controller.signal)
-  controller.abort() // cancels the stream promptly
-  ```
-
-  Under the hood the wrapper constructs an `AbortBridge` (also exported, for
-  the raw napi surface and multimodal calls). `AbortBridge` is one-shot: it
-  shares the signal's cancellation state, so aborting once aborts every call
-  that uses the same bridge, and reusing an aborted bridge fails fast.
-
-- **Rust** — set `abort_signal` directly on the options (a runtime handle, it
-  never crosses the JSON boundary):
-
-  ```rust
-  let signal = aimux_core::AbortSignal::new();
-  let opts = GenerateTextOptions { abort_signal: Some(signal.clone()), ..Default::default() };
-  let task = tokio::spawn(generate_text(&model, "Explain Rust.", opts));
-  signal.abort(); // cancels the call
-  ```
-
-- **C ABI** — cancellation rides a separate abort handle, not the JSON
-  boundary: `aimux_abort_signal_new()` / `aimux_abort_signal_abort()` /
-  `aimux_abort_signal_drop()`, plus the `*_with_abort` entry points
-  (`aimux_stream_text_with_abort`, `aimux_stream_text_as_openai_with_abort`)
-  and `aimux_transcription_session_new`'s `abort_handle`.
-
-- **Go** — idiomatic: `StreamTextContext` / `StreamTextAsOpenAIContext` take a
-  `context.Context` and drive that abort handle for you (`GenerateText` has no
-  context variant yet).
-
-- **Python / Swift / Kotlin / Java / Flutter** — not yet exposed for
-  generate/stream (tracked in RFC-0016 §7.3). Python's transcription session
-  `close()` aborts its driver, and the Swift / Kotlin / Java / Flutter
-  `startStream` takes an `abortHandle` — but only the C ABI exposes a way to
-  create one (Go builds one internally from a `context.Context` and exposes
-  none, so its `StartTranscriptionSessionWithAbort` has no usable caller).
-
-### Timeouts
-
-Per-call timeout limits, JSON-serializable in every binding:
-
-| Field | Type | Description |
-|------|------|------|
-| `total_ms` | `number?` | Overall deadline for the whole call — includes retries and, for streaming, the entire stream. `0` fails immediately |
-| `first_chunk_ms` | `number?` | Streaming only: time allowed from request start until the first chunk |
-| `chunk_ms` | `number?` | Streaming only: max idle time **between** chunks (sliding window, reset on every chunk) |
-
-`None`/absent disables the corresponding limit. On expiry the call fails with
-`AiMuxError::Timeout` (not retryable); streaming timeouts surface as a
-`TextStreamPart::Error` item (`"first chunk timeout"` / `"chunk idle timeout"` /
-`"total timeout"`). Unrepresentable values (e.g. `u64::MAX` ms on narrower
-platforms) are rejected with `AiMuxError::InvalidArgument` instead of
-panicking. When both abort and a deadline are in play, abort wins.
-
-```ts
-// Node.js — timeouts ride inside the options object
-await generateText(model, 'Explain Rust.', {
-  timeout: { total_ms: 30_000, first_chunk_ms: 5_000, chunk_ms: 2_000 },
-})
-```
-
-```rust
-// Rust
-let opts = GenerateTextOptions {
-    timeout: Some(aimux_core::options::TimeoutConfiguration {
-        total_ms: Some(30_000),
-        first_chunk_ms: Some(5_000),
-        chunk_ms: Some(2_000),
-    }),
-    ..Default::default()
-};
-```
-
-> Vercel's `stepMs`/`toolMs` are intentionally absent — they serve the
-> multi-step tool loop (H4), which aimux does not implement (RFC-0016 §7.5).
-
-### Tool Calling
-
-Tool definitions are language-agnostic data descriptions (JSON Schema) that require no macros.
-
-Examples: [Node.js](api/node.md#tool-calling) · [Python](api/python.md#tool-calling) · [Rust](api/rust.md#tool-calling)
-
-### Multi-Role Messages
-
-`prompt` accepts a message array to implement multi-turn conversation; roles support `system` / `user` / `assistant` / `tool`.
-
-Examples: [Node.js](api/node.md#multi-role-messages) · [Python](api/python.md#multi-role-messages) · [Rust](api/rust.md#multi-role-messages)
-
-### Vector Embedding
-
-Converts text into a vector representation.
-
-Examples: [Node.js](api/node.md#vector-embedding) · [Python](api/python.md#vector-embedding) · [Rust](api/rust.md#vector-embedding) · [Go](api/go.md#vector-embedding) · [C ABI](api/c.md#vector-embedding)
-
-#### Supported Providers
-
-| Factory function | Provider | Representative model |
-|---------|---------|---------|
-| `openaiEmbedding` | OpenAI | text-embedding-3-small/large |
-| `cohereEmbedding` | Cohere | embed-english-v3.0 |
-| `googleEmbedding` | Google | gemini-embedding-001 |
-
-### Speech Synthesis (TTS)
-
-Converts text into speech audio.
-
-Examples: [Node.js](api/node.md#speech-synthesis-tts) · [Python](api/python.md#speech-synthesis-tts) · [Rust](api/rust.md#speech-synthesis-tts) · [Go](api/go.md#speech-synthesis-tts) · [C ABI](api/c.md#speech)
-
-#### Supported Providers
-
-| Factory function | Provider | Representative model |
-|---------|---------|---------|
-| `openaiSpeech` | OpenAI | tts-1, tts-1-hd |
-
-### Speech to Text (STT)
-
-Converts audio into text (non-streaming).
-
-Examples: [Node.js](api/node.md#speech-to-text-stt) · [Python](api/python.md#speech-to-text-stt) · [Rust](api/rust.md#speech-to-text-stt) · [Go](api/go.md#speech-to-text-stt) · [C ABI](api/c.md#speech)
-
-### Image Generation
-
-Examples: [Node.js](api/node.md#image-generation) · [Python](api/python.md#image-generation) · [Rust](api/rust.md#image-generation) · [Go](api/go.md#image-generation) · [C ABI](api/c.md#image)
-
-#### Supported Providers
-
-| Factory function | Provider | Representative model |
-|---------|---------|---------|
-| `openaiImage` | OpenAI | dall-e-3 |
-| `googleImage` | Google | gemini-2.5-flash-image |
-
-### Video Generation
-
-Most video models return a URL; the video operation downloads it, as the AI SDK's `generateVideo` does, and returns the bytes.
-
-Examples: [Node.js](api/node.md#video-generation) · [Python](api/python.md#video-generation) · [Rust](api/rust.md#video-generation) · [Go](api/go.md#video-generation) · [C ABI](api/c.md#video-generation)
-
-### Reranking
-
-Reorders a document list by relevance.
-
-Examples: [Node.js](api/node.md#reranking) · [Python](api/python.md#reranking) · [Rust](api/rust.md#reranking) · [Go](api/go.md#reranking) · [C ABI](api/c.md#reranking)
-
-### Search
-
-Calls a search provider to obtain results.
-
-Examples: [Node.js](api/node.md#search) · [Python](api/python.md#search) · [Rust](api/rust.md#search) · [Go](api/go.md#search) · [C ABI](api/c.md#search)
-
-> ⚠️ The `SearchModel` class is exported in Node.js / Python but there is **no factory function** in those bindings yet — use Rust, Go, or the C ABI.
-
-### File Upload
-
-Uploads a file to the provider and returns a file ID.
-
-Examples: [Node.js](api/node.md#file-upload) · [Python](api/python.md#file-upload) · [Rust](api/rust.md#file-upload) · [Go](api/go.md#file-upload) · [C ABI](api/c.md#file)
-
-## Provider Factory Functions
-
-### Text Generation
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `openai(apiKey, modelId, baseUrl?)` | OpenAI | gpt-4o |
-| `anthropic(apiKey, modelId, baseUrl?)` | Anthropic | claude-3-5-sonnet-20241022 |
-| `deepseek(apiKey, modelId, baseUrl?)` | DeepSeek | deepseek-chat |
-
-### Vector Embedding
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `openaiEmbedding(apiKey, modelId, baseUrl?)` | OpenAI | text-embedding-3-small |
-| `cohereEmbedding(apiKey, modelId, baseUrl?)` | Cohere | embed-english-v3.0 |
-| `googleEmbedding(apiKey, modelId, baseUrl?)` | Google | gemini-embedding-001 |
-
-### Speech Synthesis
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `openaiSpeech(apiKey, modelId, baseUrl?)` | OpenAI | tts-1 |
-
-### Speech to Text
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `openaiTranscription(apiKey, modelId, baseUrl?)` | OpenAI | whisper-1 |
-
-### Image Generation
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `openaiImage(apiKey, modelId, baseUrl?)` | OpenAI | dall-e-3 |
-| `googleImage(apiKey, modelId, baseUrl?)` | Google | gemini-2.5-flash-image |
-
-### Video Generation
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `googleVideo(apiKey, modelId, baseUrl?)` | Google | veo-3.0 |
-
-### Reranking
-
-| Function | Provider | Example modelId |
-|---------|---------|-------------|
-| `cohereReranking(apiKey, modelId, baseUrl?)` | Cohere | rerank-v3.0 |
-
-### File Upload
-
-| Function | Provider |
-|---------|---------|
-| `openaiFiles(apiKey, baseUrl?)` | OpenAI |
-
-> The `baseUrl?` parameter of all factory functions is optional; by default each provider's official API address is used. When testing, pass a local mock server URL.
-
-> **Per-language naming.** The tables above use the Node.js (camelCase) names. Each binding has its own naming convention for the same factories: Python uses snake_case (`openai_embedding`, `google_video`), Go uses `NewXxx` constructors returning `(T, error)` (`NewOpenAIEmbedding`, `NewGoogleVideo`), and the C ABI uses `aimux_<provider>_<feature>_new` (`aimux_openai_embedding_new`). Swift/Kotlin/Flutter/Java expose the multimodal models as their own classes (`EmbeddingModel.openai(...)`, `SpeechModel.openai(...)`, …). See [Feature Coverage](#feature-coverage) for the full matrix and each [language guide](#language-guides) for examples.
-
----
-
-## Feature Coverage
-
-Coverage verified against the current binding implementations (2026-08-01):
-
-| Feature | Rust (core) | Node.js | Python | Swift | Kotlin | Flutter | Go | C/C++ | Java |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Text generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Streaming generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Vector embedding | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Speech synthesis (TTS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Speech to text (STT) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Image generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Video generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Reranking | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Search | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| File upload | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-- ✅ — available. All bindings now expose the full multimodal surface.
-- **Node.js / Python** (native path): full multimodal surface — every factory in the [Provider Factory Functions](#provider-factory-functions) section.
-- **Go** (C ABI path): full multimodal surface with typed wrappers — `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding`, `NewOpenAISpeech`, `NewOpenAITranscription`, `NewOpenAIImage` / `NewGoogleImage`, `NewOpenAIFiles`, `NewCohereReranking`, `NewGoogleVideo`, `NewTavilySearch`, plus `DeepSeek`/`NewDeepSeek` and the typed `Generate`/`Stream` API. All multimodal constructors support `WithBase` variants.
-- **C/C++** (C ABI path): full multimodal surface via the [C ABI function list](api/c.md#function-list).
-- **Swift / Kotlin / Flutter / Java** (C ABI path): each now wraps all 8 multimodal model types alongside text generation and streaming. See each [language guide](#language-guides) for the API surface.
-
-**How this table was derived** — every cell was checked against the binding's
-own source (not inferred from another language). A feature counts as ✅ only
-when the binding exposes a public factory **and** an invocable method for it;
-⚠️ means the class exists but no factory function was found, so it cannot be
-instantiated. Evidence per binding:
-
-| Binding | Evidence (source of truth) |
-|------|------|
-| Rust | `aimux-core/src/` — one trait per feature: `language_model.rs`, `embedding_model.rs`, `speech_model.rs`, `transcription_model.rs`, `image_model.rs`, `video_model.rs`, `reranking_model.rs`, `search_model.rs`, `files_model.rs`; plus `generate.rs` (`generate_text` / `stream_text`) |
-| Node.js | `bindings/node/index.d.ts` — 9 model classes plus a factory for every model type on the `./raw` entry, `tavilySearch` (L499) included |
-| Python | `bindings/python/src/lib.rs` — 8 multimodal classes registered via `add_class`, 11 multimodal factories via `add_function`, `tavily_search` included |
-| Swift | `bindings/swift/Sources/Aimux/Aimux.swift` — `Model` (4 constructors) + `generateText` / `streamText` / `streamTextAsync` / `generate`; `Multimodal.swift` — 8 multimodal classes (EmbeddingModel, SpeechModel, TranscriptionModel, ImageModel, VideoModel, RerankingModel, SearchModel, Files) with factory constructors + methods + 19 Codable types |
-| Kotlin | `bindings/kotlin/src/main/kotlin/ai/arcships/aimux/Model.kt` — JNA interface declares all 97 ABI functions; `Multimodal.kt` — 8 multimodal Closeable classes with factory methods; the DTOs come from the Java artifact's generated `ai.arcships.aimux.types` package |
-| Flutter | `bindings/flutter/lib/aimux.dart` — `Model` (text); `multimodal.dart` — 8 multimodal classes with dart:ffi lookups for all 35 C ABI multimodal symbols (incl. the five RFC-0028 session entry points) |
-| Go | `bindings/go/multimodal.go` — `NewOpenAIEmbedding` / `NewOpenAISpeech` / `NewOpenAITranscription` / `NewOpenAIImage` / `NewGoogleVideo` / `NewCohereReranking` / `NewTavilySearch` / `NewOpenAIFiles` + matching `ParseXxxResult`; embedding & image are OpenAI-only (no Cohere/Google constructors) |
-| C/C++ | `aimux-ffi/src/lib.rs` — 113 exported `extern "C"` functions; full mapping in [c.md](api/c.md#function-list) |
-
-> The ❌ / ⚠️ cells are tracked as actionable work items in
-> [Binding API Gaps](api/gaps.md) — each gap lists the required C ABI
-> functions and a reference implementation.
-
-## Construction and base_url Support
-
-| Binding | FFI method | base_url support | Construction example |
-|------|---------|:---:|---------|
-| **Node.js** | napi-rs (calls Rust directly) | ✅ 3rd parameter | `await openai(key, model, 'http://localhost:3000')` |
-| **Python** | PyO3 (calls Rust directly) | ✅ 3rd parameter | `openai(key, model, "http://localhost:3000")` |
-| **Swift** | C ABI (CAimuxFFI) | ✅ `baseUrl:` parameter | `try Model.openai(apiKey: key, modelId: model, baseUrl: url)` |
-| **Kotlin** | C ABI (JNA) | ✅ 3rd parameter | `Model.openai(key, model, baseUrl)` |
-| **Flutter/Dart** | C ABI (dart:ffi) | ✅ `baseUrl:` named parameter | `Model.openai(key, model, baseUrl: url)` |
-| **Go** | C ABI (cgo static linking) | ✅ `OpenAIWithBase` | `aimux.OpenAIWithBase(key, model, url)` |
-| **C/C++** | C ABI (direct linking) | ✅ `_with_base` function | `aimux_openai_new_with_base(key, model, url)` |
-
-> The Node/Python bindings bypass the C ABI and call `aimux-providers` directly; Swift/Kotlin/Flutter/Go/C go through the `aimux-ffi` C ABI. Go uses cgo to statically link `libaimux_ffi.a`, producing a single binary (see [RFC-0011](../rfc/0011-golang-bindings.md) for details).
-
----
-
-## Design Documents
-
-| Document | Content |
-|------|------|
-| [RFC-0001](../rfc/0001-multilang-bindings.md) | Multi-language binding design |
-| [RFC-0003](../rfc/0003-test-cassette.md) | Cassette testing design |
-| [RFC-0008](../rfc/0008-multimodal-bindings.md) | Multimodal binding design |
-
----
+| Range | Domain |
+|---|---|
+| `1..20` | core `AiMuxError` |
+| `100..105` | recording |
+| `200..206` | C ABI / binding boundary |
+| `300..306` | ops protocol |
+
+`error` is the typed AI SDK-shaped payload. `cause` is either a nested aimux
+error or an underlying OS/TLS/parser error; the native cause chain follows it.
+Retry delays are read from `error.responseHeaders` (`retry-after-ms`, then
+`retry-after`), not from a dedicated retry field. See
+[error-model.md](error-model.md).
+
+## Recording and replay
+
+Recording is opt-in and explicit: create a recorder, attach it, then flush it
+before closing. 0.6 records schema 2; schema 3 and transport replay are a
+follow-up. Recorded business JSON follows the same AI SDK V4 shapes as live
+calls. See [api/ops.md](api/ops.md), [RFC-0023](../rfc/0023-runtime-request-recording.md)
+and the `aimux-replay` tool.
+
+## Feature coverage
+
+The shared ops manifest is the single capability source. All bindings expose
+the same operations; a provider may support only a subset of methods, which
+`runtime.describe`, `provider.discovery()` or `model.info` reports. The
+per-language guides document binding-specific wrappers (for example Node's
+`LanguageModel` class or Kotlin's Flow helpers).
+
+High-level surface:
+
+- text generation, streaming, tools, structured output, middleware;
+- embeddings, reranking, search, files;
+- speech, transcription, realtime transcription operations;
+- image and video generation;
+- decision models;
+- composite router / MoA;
+- recording, replay, sessions and tracing.
+
+## Breaking changes
+
+0.6.0 removes the 0.5 constructors, error getters and hand-written DTOs. The
+central checklist is [upgrading-to-0.6.md](upgrading-to-0.6.md). The exhaustive
+itemized list is the `Breaking` section of [CHANGELOG.md](../CHANGELOG.md).
+
+## Design documents
+
+- [Project overview](PROJECT-OVERVIEW.md)
+- [Error model](error-model.md)
+- [Ops ABI upgrade](upgrading-to-ops-abi.md)
+- [AI SDK alignment](aisdk-architecture-alignment.md)
+- [RFC index](../rfc/)
 
 ## License
 
