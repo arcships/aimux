@@ -262,13 +262,16 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
                 ..OpenAICompatibleCompletionStream::default()
             },
         );
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(RequestInfo { body: Some(body) }),
-            response: Some(StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(RequestInfo { body: Some(body) }),
+                response: Some(StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -305,7 +308,7 @@ impl Transformer for OpenAICompatibleCompletionStream {
             Err(error) => return self.report_error(error, controller),
         };
         self.ctx.raw(&event, controller);
-        if let Some(error) = event.get("error") {
+        if let Some(error) = event.get("error").filter(|error| !error.is_null()) {
             // Passed on as it is
             // (openai-compatible-completion-language-model.ts:320-325).
             let error = crate::openai_compatible::chat::stream_error(
@@ -338,6 +341,13 @@ impl Transformer for OpenAICompatibleCompletionStream {
     }
 
     fn flush(self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         if self.started {
             controller.text_end("0");
         }

@@ -813,9 +813,10 @@ mod do_generate {
 
         assert_eq!(
             serde_json::to_value(&result.usage).unwrap(),
+            // #478: unreported counts stay unknown (the AI SDK fills 0).
             json!({
                 "inputTokens": { "total": 20, "noCache": 20 },
-                "outputTokens": { "total": 0, "text": 0 },
+                "outputTokens": {},
                 "raw": { "prompt_tokens": 20, "total_tokens": 20 }
             })
         );
@@ -2063,6 +2064,47 @@ async fn error_chunk_is_an_error_part_with_status() {
     match parts.last().unwrap() {
         StreamPart::Finish { finish_reason, .. } => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+        }
+        other => panic!("expected Finish, got {other:?}"),
+    }
+}
+
+/// A chunk with `"error": null` is a normal chunk (#397): upstream's chunk
+/// schema is a union with `groqErrorDataSchema`, and a chunk with `choices`
+/// takes the first branch, which drops the unknown key.
+#[tokio::test]
+async fn a_null_error_member_is_not_an_error_frame() {
+    let server = MockServer::start().await;
+    let body = sse_body(&[
+        &sse_event(
+            r#"{"id":"c","model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}],"error":null}"#,
+        ),
+        &sse_event(
+            r#"{"id":"c","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"error":null}"#,
+        ),
+    ]);
+    mock_sse(&server, body).await;
+    let model = make_provider(&server);
+
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let parts = collect_stream(result).await;
+
+    assert!(
+        !parts.iter().any(|p| matches!(p, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+    assert!(
+        parts
+            .iter()
+            .any(|p| matches!(p, StreamPart::TextDelta { delta, .. } if delta == "Hi")),
+        "{parts:?}"
+    );
+    match parts.last().unwrap() {
+        StreamPart::Finish { finish_reason, .. } => {
+            assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
         }
         other => panic!("expected Finish, got {other:?}"),
     }

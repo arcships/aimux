@@ -77,8 +77,15 @@ pub fn create_luma(settings: LumaProviderSettings) -> Result<LumaProvider, AiMux
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Luma"),
             Vec::new(),
             settings.headers,
+        )
+        .with_user_agent(
+            crate::shared::aisdk_pins::LUMA.name,
+            crate::shared::aisdk_pins::LUMA.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::LUMA,
+        )),
     })
 }
 

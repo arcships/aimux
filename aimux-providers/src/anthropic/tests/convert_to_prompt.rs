@@ -1589,6 +1589,38 @@ mod tool_messages {
         );
     }
 
+    /// An error result that carries an image keeps `is_error` (#470).
+    #[test]
+    fn error_tool_result_with_an_image_keeps_is_error() {
+        let result = convert(
+            json!([{
+                "role": "tool",
+                "content": [{
+                    "type": "tool-result",
+                    "toolName": "echo",
+                    "toolCallId": "call-1",
+                    "output": {
+                        "type": "content",
+                        "value": [
+                            { "type": "text", "text": "result text" },
+                            {
+                                "type": "file",
+                                "data": { "type": "data", "data": "aGVsbG8=" },
+                                "mediaType": "image/png",
+                            },
+                        ],
+                        "isError": true,
+                    },
+                }],
+            }]),
+            true,
+        );
+
+        let block = &messages(&result)[0]["content"][0];
+        assert_eq!(block["is_error"], json!(true));
+        assert_eq!(block["content"][1]["type"], json!("image"));
+    }
+
     /// upstream: @ai-sdk/anthropic src/convert-to-anthropic-prompt.test.ts › tool messages › should handle tool result with PDF content
     #[test]
     fn should_handle_tool_result_with_pdf_content() {

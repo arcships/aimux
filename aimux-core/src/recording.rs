@@ -192,6 +192,28 @@ impl Recording {
                         .is_some_and(|q| !q.is_empty())))
             && self.exchanges.iter().all(|e| e.finalized)
     }
+
+    /// Whether an `InputRecord` has arrived for this recording (distinguishing
+    /// real calls from out-of-order `entry_or_init` placeholders whose
+    /// `prompt` is empty and `options` is `Value::Null`).
+    fn has_input(&self) -> bool {
+        !self.input.prompt.is_empty() || !self.input.options.is_null()
+    }
+
+    /// Tier-1 eviction candidate: an out-of-order placeholder with neither
+    /// `InputRecord` nor any recorded `HttpExchange`.
+    fn is_empty_placeholder(&self) -> bool {
+        !self.has_input() && self.exchanges.is_empty()
+    }
+
+    /// Tier-2 eviction candidate: an entry missing `InputRecord` (e.g. layer-B
+    /// orphan exchange) or whose transport/outcome has already terminated while
+    /// waiting on an unmatched barrier condition. Active in-flight calls
+    /// (`has_input() && !transport_closed && outcome.status == Pending`) return
+    /// `false` so they are protected ahead of placeholders and stalled entries.
+    fn is_inactive_or_missing_input(&self) -> bool {
+        !self.has_input() || self.transport_closed || self.outcome.status != OutcomeStatus::Pending
+    }
 }
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
@@ -779,57 +801,85 @@ pub(crate) fn new_call_id() -> String {
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
 ///
 /// 这是 recording、logging 和 public error context 的唯一敏感键策略。
-/// 覆盖 `authorization`/`api-key`/`apikey`/`key`/`cookie`/`set-cookie`。
-/// 其中 `key` 取 **exact** 匹配
-/// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
-/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
+/// 名字先 lowercase,再去掉 `-`/`_` 后匹配:以 `key`/`token`/`auth` 结尾
+/// (`x-api-key`、`X-Prodia-Key`、`Ocp-Apim-Subscription-Key`、
+/// `x-portkey-virtual-key`、`helicone-auth`),含 `apikey`/`secret`
+/// (`x-api-secret`),含 `authorization`,以及 `cookie`/`set-cookie`。
+/// 调用方可经 `ProviderHeaders.user`/`CallOptions.headers` 配置任意名字的
+/// 凭据头,故按后缀宽匹配(#459);代价是 `X-Key`、`monkey` 以及缓存路由键
+/// `prompt_cache_key`/`promptCacheKey` 这类非凭据名字也会被脱敏。
 ///
-/// **token 不再用 contains**——教训:`contains("token")` 会误伤
+/// **token 不用 contains**——教训:`contains("token")` 会误伤
 /// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
-/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为
-/// 精确匹配常见 bearer-token 字段和 AWS Bedrock sigv4 的
-/// `x-amz-security-token`(name 已 lowercase 归一化)。其余 needle 维持 contains,以覆盖
-/// `x-goog-api-key`/`proxy-authorization` 等变体。
-///
-/// Provider auth headers whose names match none of these are listed by name:
-/// Prodia's `X-Prodia-Key` and the Azure `Ocp-Apim-Subscription-Key`.
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
+    // Fast stack-only ASCII path for normal header / JSON key lengths (<= 128 B).
+    let bytes = name.as_bytes();
+    if bytes.len() <= 128 {
+        let mut n_buf = [0u8; 128];
+        let mut sq_buf = [0u8; 128];
+        let mut sq_len = 0usize;
+        for (i, &b) in bytes.iter().enumerate() {
+            let low = b.to_ascii_lowercase();
+            n_buf[i] = low;
+            if low != b'-' && low != b'_' {
+                sq_buf[sq_len] = low;
+                sq_len += 1;
+            }
+        }
+        let n = &n_buf[..bytes.len()];
+        let squashed = &sq_buf[..sq_len];
+        return n == b"cookie"
+            || n == b"set-cookie"
+            || squashed.ends_with(b"key")
+            || squashed.ends_with(b"token")
+            || squashed.ends_with(b"auth")
+            || contains_subslice(squashed, b"secret")
+            || contains_subslice(n, b"authorization")
+            || contains_subslice(squashed, b"apikey");
+    }
     let n = name.to_ascii_lowercase();
-    // Separator-insensitive form so `accessToken`, `access-token`, and
-    // `x-access-token` all classify like `access_token`. A `token` SUFFIX is
-    // the credential shape; plural usage fields (`max_tokens`,
-    // `input_tokens`) end in `tokens` and stay loggable.
     let squashed: String = n.chars().filter(|c| *c != '-' && *c != '_').collect();
     n == "cookie"
         || n == "set-cookie"
-        || n == "key"
-        || squashed == "xprodiakey"
-        || squashed.ends_with("subscriptionkey")
+        || squashed.ends_with("key")
         || squashed.ends_with("token")
+        || squashed.ends_with("auth")
+        || squashed.contains("secret")
         || n.contains("authorization")
         || squashed.contains("apikey")
 }
 
+#[inline]
+fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len() && haystack.windows(needle.len()).any(|w| w == needle)
+}
+
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
 /// 覆盖 `CallOptions.headers`/`provider_options` 任意层级。
-pub(crate) fn redact_json(value: serde_json::Value) -> serde_json::Value {
+pub(crate) fn redact_json(mut value: serde_json::Value) -> serde_json::Value {
+    redact_json_in_place(&mut value);
+    value
+}
+
+fn redact_json_in_place(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
-            let mut out = serde_json::Map::with_capacity(map.len());
-            for (k, v) in map {
-                if is_sensitive_key(&k) {
-                    out.insert(k, serde_json::Value::String("[REDACTED]".into()));
+            for (k, v) in map.iter_mut() {
+                if is_sensitive_key(k) {
+                    *v = serde_json::Value::String("[REDACTED]".into());
                 } else {
-                    out.insert(k, redact_json(v));
+                    redact_json_in_place(v);
                 }
             }
-            serde_json::Value::Object(out)
         }
         serde_json::Value::Array(items) => {
-            serde_json::Value::Array(items.into_iter().map(redact_json).collect())
+            for item in items.iter_mut() {
+                redact_json_in_place(item);
+            }
         }
-        other => other,
+        _ => {}
     }
 }
 
@@ -906,10 +956,13 @@ pub struct JsonlRecorder {
     tx: Option<SyncSender<RecordEvent>>,
     dir: PathBuf,
     thread: Option<std::thread::JoinHandle<()>>,
-    /// 有界通道满 / writer 断开时丢弃的事件计数(drop-newest,可查)。
-    dropped: AtomicU64,
-    /// Calls that lost an event to `dropped`. Shared with the writer, which
-    /// never marks such a call `complete` (RFC-0023 completion barrier).
+    /// 有界通道满 / writer 断开或被淘汰 call 的尾随事件被丢弃时的总计数(可查)。
+    dropped: Arc<AtomicU64>,
+    /// writer 端因超过 `JSONL_PENDING_MAX` 提前以 `Incomplete` 落盘淘汰的调用计数。
+    pending_evicted: Arc<AtomicU64>,
+    /// Calls that lost an event to `dropped` or were evicted from `pending`.
+    /// Shared with the writer, which never marks such a call `complete`
+    /// (RFC-0023 completion barrier).
     lossy: Arc<Mutex<HashSet<String>>>,
     /// 被标记为不一致的 call_id(C4-7:重复 attempt / update 未命中或歧义)。
     /// 存于 recorder 侧而非 `Recording` 字段——后者被 `replay.rs` 以全字段
@@ -946,11 +999,15 @@ impl JsonlRecorder {
             })?;
         let w = BufWriter::new(file);
         let (tx, rx) = sync_channel::<RecordEvent>(JSONL_CHANNEL_CAPACITY);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let pending_evicted = Arc::new(AtomicU64::new(0));
         let inconsistent = Arc::new(Mutex::new(HashSet::new()));
         let lossy = Arc::new(Mutex::new(HashSet::new()));
         let damaged = DamagedCalls {
             inconsistent: inconsistent.clone(),
             lossy: lossy.clone(),
+            dropped: dropped.clone(),
+            pending_evicted: pending_evicted.clone(),
         };
         let write_error = Arc::new(Mutex::new(None));
         let writer_write_error = write_error.clone();
@@ -962,7 +1019,8 @@ impl JsonlRecorder {
             tx: Some(tx),
             dir,
             thread: Some(handle),
-            dropped: AtomicU64::new(0),
+            dropped,
+            pending_evicted,
             lossy,
             inconsistent,
             write_error,
@@ -984,7 +1042,8 @@ impl JsonlRecorder {
             tx: None,
             dir,
             thread: None,
-            dropped: AtomicU64::new(0),
+            dropped: Arc::new(AtomicU64::new(0)),
+            pending_evicted: Arc::new(AtomicU64::new(0)),
             lossy: Arc::new(Mutex::new(HashSet::new())),
             inconsistent: Arc::new(Mutex::new(HashSet::new())),
             write_error: Arc::new(Mutex::new(None)),
@@ -998,12 +1057,28 @@ impl JsonlRecorder {
         }
     }
 
-    /// 有界通道溢出 / writer 断开时丢弃的事件总数(A4,drop-newest 可查)。
+    /// 有界通道溢出 / writer 断开或已淘汰 call 的后续事件被丢弃的总数(A4,可查)。
+    #[must_use]
     pub fn dropped_count(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
 
+    /// writer 端因超过 `JSONL_PENDING_MAX` 被提前淘汰并以 `Incomplete` 落盘的调用总数。
+    #[must_use]
+    pub fn pending_evicted_count(&self) -> u64 {
+        self.pending_evicted.load(Ordering::Relaxed)
+    }
+
+    /// 因丢事件或被提前从 `pending` 淘汰而标记为有损 (`lossy`) 的 `call_id`(排序以稳定测试)。
+    #[must_use]
+    pub fn lossy_call_ids(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.lossy.lock().unwrap().iter().cloned().collect();
+        v.sort();
+        v
+    }
+
     /// 被标记为不一致的 call_id(C4-7,诊断用;排序以稳定测试)。
+    #[must_use]
     pub fn inconsistent_call_ids(&self) -> Vec<String> {
         let mut v: Vec<String> = self.inconsistent.lock().unwrap().iter().cloned().collect();
         v.sort();
@@ -1042,11 +1117,13 @@ impl JsonlRecorder {
 
     /// recorder 侧可见的 writer 粘性首错(如 ENOSPC),无则 `None`。
     /// 与 writer 线程共享;首次写行/flush 失败时写入。
+    #[must_use]
     pub fn last_write_error(&self) -> Option<String> {
         self.write_error.lock().unwrap().clone()
     }
 
     /// 录制文件路径。
+    #[must_use]
     pub fn path(&self) -> PathBuf {
         self.dir.join("recordings.jsonl")
     }
@@ -1150,22 +1227,160 @@ impl Recorder for JsonlRecorder {
     }
 }
 
-/// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位。
+/// JsonlRecorder writer 端未完成分片上限:防止异常未终结调用无界驻留内存。
+/// 超限时将最旧未完成条目以 `complete=false` (`OutcomeStatus::Incomplete`) 落盘淘汰。
+const JSONL_PENDING_MAX: usize = 128;
+const JSONL_EVICTED_TRACK_MAX: usize = 2048;
+
+#[derive(Default)]
+struct EvictedCallTracker {
+    set: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl EvictedCallTracker {
+    fn contains(&self, call_id: &str) -> bool {
+        self.set.contains(call_id)
+    }
+
+    fn insert(
+        &mut self,
+        call_id: String,
+        damaged: &DamagedCalls,
+        pending: &HashMap<String, Recording>,
+    ) {
+        if self.set.contains(&call_id) {
+            return;
+        }
+        while self.order.front().is_some_and(|id| !self.set.contains(id)) {
+            self.order.pop_front();
+        }
+        if self.order.len() > JSONL_EVICTED_TRACK_MAX.saturating_mul(2) {
+            self.order.retain(|id| self.set.contains(id));
+            if self.order.capacity() > JSONL_EVICTED_TRACK_MAX.saturating_mul(4) {
+                self.order
+                    .shrink_to(JSONL_EVICTED_TRACK_MAX.saturating_mul(2));
+            }
+        }
+        while self.set.len() >= JSONL_EVICTED_TRACK_MAX {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            if self.set.remove(&old) && !pending.contains_key(&old) {
+                damaged.unmark_lossy(&old);
+            }
+        }
+        self.order.push_back(call_id.clone());
+        self.set.insert(call_id);
+    }
+}
+
+/// Select the next pending `call_id` to evict when `pending` reaches capacity:
+/// 1. Oldest empty placeholder (`!has_input() && exchanges.is_empty()`).
+/// 2. Oldest entry missing `InputRecord` or whose transport/outcome has already
+///    terminated (`!has_input() || transport_closed || outcome.status != Pending`).
+/// 3. Oldest active in-flight call (FIFO fallback when all entries are active).
+fn pop_next_pending_eviction_id(
+    pending: &HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
+) -> Option<String> {
+    while pending_order
+        .front()
+        .is_some_and(|id| !pending.contains_key(id))
+    {
+        pending_order.pop_front();
+    }
+    if let Some(pos) = pending_order
+        .iter()
+        .position(|id| pending.get(id).is_some_and(Recording::is_empty_placeholder))
+    {
+        return pending_order.remove(pos);
+    }
+    if let Some(pos) = pending_order.iter().position(|id| {
+        pending
+            .get(id)
+            .is_some_and(Recording::is_inactive_or_missing_input)
+    }) {
+        return pending_order.remove(pos);
+    }
+    while let Some(id) = pending_order.pop_front() {
+        if pending.contains_key(&id) {
+            return Some(id);
+        }
+    }
+    pending.keys().next().cloned()
+}
+
+/// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位,并受 `JSONL_PENDING_MAX` 约束。
 fn entry_or_init<'a>(
+    w: &mut impl Write,
     pending: &'a mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
+    evicted_calls: &mut EvictedCallTracker,
     call_id: &str,
+    damaged: &DamagedCalls,
+    write_error: &Mutex<Option<String>>,
 ) -> &'a mut Recording {
-    pending.entry(call_id.to_string()).or_insert_with(|| {
-        Recording::new(
-            call_id,
-            InputRecord {
-                operation: Default::default(),
-                prompt: Vec::new(),
-                options: serde_json::Value::Null,
-            },
-            ProviderRecord::from_model("", ""),
-        )
-    })
+    if !pending.contains_key(call_id) {
+        evict_jsonl_pending_if_needed(
+            w,
+            pending,
+            pending_order,
+            evicted_calls,
+            damaged,
+            write_error,
+        );
+        pending_order.push_back(call_id.to_string());
+        pending.insert(
+            call_id.to_string(),
+            Recording::new(
+                call_id,
+                InputRecord {
+                    operation: Default::default(),
+                    prompt: Vec::new(),
+                    options: serde_json::Value::Null,
+                },
+                ProviderRecord::from_model("", ""),
+            ),
+        );
+    }
+    pending.get_mut(call_id).expect("just inserted or present")
+}
+
+fn evict_jsonl_pending_if_needed(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
+    evicted_calls: &mut EvictedCallTracker,
+    damaged: &DamagedCalls,
+    write_error: &Mutex<Option<String>>,
+) {
+    while pending_order
+        .front()
+        .is_some_and(|id| !pending.contains_key(id))
+    {
+        pending_order.pop_front();
+    }
+    if pending_order.len() > JSONL_PENDING_MAX.saturating_mul(2) {
+        pending_order.retain(|id| pending.contains_key(id));
+        if pending_order.capacity() > JSONL_PENDING_MAX.saturating_mul(4) {
+            pending_order.shrink_to(JSONL_PENDING_MAX.saturating_mul(2));
+        }
+    }
+    while pending.len() >= JSONL_PENDING_MAX {
+        let Some(old) = pop_next_pending_eviction_id(pending, pending_order) else {
+            break;
+        };
+        if let Some(mut rec) = pending.remove(&old) {
+            damaged.note_pending_evicted(&old);
+            evicted_calls.insert(old, damaged, pending);
+            rec.complete = false;
+            if rec.outcome.status == OutcomeStatus::Pending {
+                rec.outcome.status = OutcomeStatus::Incomplete;
+            }
+            write_line(w, rec, write_error);
+        }
+    }
 }
 
 /// writer 线程:按 call_id 合并分片;completion barrier 后写一行。
@@ -1181,6 +1396,8 @@ fn writer_loop(
     write_error: Arc<Mutex<Option<String>>>,
 ) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
+    let mut pending_order: VecDeque<String> = VecDeque::new();
+    let mut evicted_calls = EvictedCallTracker::default();
 
     while let Ok(ev) = rx.recv() {
         match ev {
@@ -1189,38 +1406,111 @@ fn writer_loop(
                 input,
                 provider,
             } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
                 // C4-6:Input 仅在当前 provider 仍为空占位时填充最小 provider,
                 // 避免乱序(Provider 先到)时把已写入的完整快照覆盖回最小值。
-                let rec = pending
-                    .entry(call_id.clone())
-                    .or_insert_with(|| Recording::new(&call_id, input.clone(), provider.clone()));
-                rec.input = input;
-                if rec.provider.provider.is_empty() {
-                    rec.provider = provider;
+                if let Some(rec) = pending.get_mut(&call_id) {
+                    rec.input = input;
+                    if rec.provider.provider.is_empty() {
+                        rec.provider = provider;
+                    }
+                } else {
+                    evict_jsonl_pending_if_needed(
+                        &mut w,
+                        &mut pending,
+                        &mut pending_order,
+                        &mut evicted_calls,
+                        &damaged,
+                        &write_error,
+                    );
+                    pending_order.push_back(call_id.clone());
+                    pending.insert(call_id.clone(), Recording::new(&call_id, input, provider));
                 }
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Session {
                 call_id,
                 session_id,
                 step,
             } => {
-                let rec = entry_or_init(&mut pending, &call_id);
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &mut evicted_calls,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 rec.session_id = Some(session_id);
                 rec.step = Some(step);
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
             RecordEvent::Provider { call_id, provider } => {
-                entry_or_init(&mut pending, &call_id).provider = provider;
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
+                entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &mut evicted_calls,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                )
+                .provider = provider;
             }
             RecordEvent::Exchange { call_id, exchange } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
                 // C4-7:同 (call_id, attempt) 重复 → 合并骨架并标记 inconsistent。
-                let rec = entry_or_init(&mut pending, &call_id);
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &mut evicted_calls,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 if insert_exchange(rec, exchange) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -1229,27 +1519,88 @@ fn writer_loop(
                 response,
                 error,
             } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
                 // C4-7:要求恰好一个匹配 attempt;0 或 >1 → 标记 inconsistent,
                 // 不静默 patch 第一条。
-                let rec = entry_or_init(&mut pending, &call_id);
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &mut evicted_calls,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 if !matches!(
                     apply_exchange_update(rec, attempt, exchange_index, response, error),
                     UpdateMatch::Patched
                 ) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::TransportClosed { call_id } => {
-                entry_or_init(&mut pending, &call_id).transport_closed = true;
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
+                // RecordingOutcomeStream 与 HTTP 层各发一次;已写出的 call 不再
+                // 建空占位(#460)。
+                let Some(rec) = pending.get_mut(&call_id) else {
+                    continue;
+                };
+                rec.transport_closed = true;
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Outcome { call_id, outcome } => {
-                entry_or_init(&mut pending, &call_id).outcome = outcome;
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    damaged.note_dropped_evicted_event(&call_id);
+                    continue;
+                }
+                entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &mut evicted_calls,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                )
+                .outcome = outcome;
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Flush { ack } => {
-                write_ready_all(&mut w, &mut pending, &damaged, &write_error);
+                write_ready_all(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &damaged,
+                    &write_error,
+                );
                 if let Err(e) = w.flush() {
                     note_write_error(&write_error, &e);
                 }
@@ -1280,13 +1631,44 @@ fn writer_loop(
 
 /// Calls whose recording cannot be complete, shared between a
 /// [`JsonlRecorder`] and its writer: `inconsistent` (C4-7, marked by the
-/// writer) and `lossy` (an event was dropped, marked by the sender).
+/// writer), `lossy` (an event was dropped or the call was evicted from
+/// `pending`), and counters for dropped events and pending evictions.
 struct DamagedCalls {
     inconsistent: Arc<Mutex<HashSet<String>>>,
     lossy: Arc<Mutex<HashSet<String>>>,
+    dropped: Arc<AtomicU64>,
+    pending_evicted: Arc<AtomicU64>,
 }
 
 impl DamagedCalls {
+    /// Record that `call_id` was evicted from `pending` before completion:
+    /// mark it `lossy` and increment `pending_evicted`.
+    fn note_pending_evicted(&self, call_id: &str) {
+        self.pending_evicted.fetch_add(1, Ordering::Relaxed);
+        self.mark_lossy(call_id);
+    }
+
+    /// Record that a trailing event for an already-evicted `call_id` was dropped:
+    /// increment `dropped` and ensure `call_id` stays marked `lossy`.
+    fn note_dropped_evicted_event(&self, call_id: &str) {
+        self.dropped.fetch_add(1, Ordering::Relaxed);
+        self.mark_lossy(call_id);
+    }
+
+    fn mark_lossy(&self, call_id: &str) {
+        if let Ok(mut set) = self.lossy.lock()
+            && !set.contains(call_id)
+        {
+            set.insert(call_id.to_string());
+        }
+    }
+
+    fn unmark_lossy(&self, call_id: &str) {
+        if let Ok(mut set) = self.lossy.lock() {
+            set.remove(call_id);
+        }
+    }
+
     /// Whether `call_id` lost an event or was marked inconsistent. Its
     /// `lossy` mark is cleared: the call is being written now.
     fn take(&self, call_id: &str) -> bool {
@@ -1309,6 +1691,7 @@ impl DamagedCalls {
 fn try_finalize(
     w: &mut impl Write,
     pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
     call_id: &str,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
@@ -1316,6 +1699,18 @@ fn try_finalize(
     if pending.get(call_id).map(Recording::ready).unwrap_or(false)
         && let Some(mut rec) = pending.remove(call_id)
     {
+        while pending_order
+            .front()
+            .is_some_and(|id| !pending.contains_key(id))
+        {
+            pending_order.pop_front();
+        }
+        if pending_order.len() > JSONL_PENDING_MAX.saturating_mul(2) {
+            pending_order.retain(|id| pending.contains_key(id));
+            if pending_order.capacity() > JSONL_PENDING_MAX.saturating_mul(4) {
+                pending_order.shrink_to(JSONL_PENDING_MAX.saturating_mul(2));
+            }
+        }
         if !rec.exchanges.is_empty() || rec.transport_closed {
             rec.complete = !damaged.take(call_id);
         }
@@ -1327,6 +1722,7 @@ fn try_finalize(
 fn write_ready_all(
     w: &mut impl Write,
     pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
 ) {
@@ -1341,14 +1737,17 @@ fn write_ready_all(
             write_line(w, rec, write_error);
         }
     }
+    pending_order.retain(|id| pending.contains_key(id));
 }
 
 fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
     match serde_json::to_string(&rec) {
-        Ok(line) => {
+        Ok(mut line) => {
             // 每行落盘,保证崩溃前已写行可见;失败记入粘性错误槽,
-            // 由 try_flush 显式暴露。
-            if let Err(e) = writeln!(w, "{line}").and_then(|()| w.flush()) {
+            // 由 try_flush 显式暴露。记录连同换行一次写出:超过 BufWriter
+            // 容量的行若分两次写,同目录上重叠的 recorder 会插进中间(#465)。
+            line.push('\n');
+            if let Err(e) = w.write_all(line.as_bytes()).and_then(|()| w.flush()) {
                 note_write_error(write_error, &e);
             }
         }
@@ -1696,8 +2095,17 @@ impl RingInner {
         {
             self.pending_order.pop_front();
         }
+        if self.pending_order.len() > self.pending_max.saturating_mul(2) {
+            self.pending_order
+                .retain(|id| self.pending.contains_key(id));
+            if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
+                self.pending_order
+                    .shrink_to(self.pending_max.saturating_mul(2));
+            }
+        }
         while self.pending.len() >= self.pending_max {
-            let Some(old) = self.pending_order.pop_front() else {
+            let Some(old) = pop_next_pending_eviction_id(&self.pending, &mut self.pending_order)
+            else {
                 break;
             };
             if let Some(mut rec) = self.pending.remove(&old) {
@@ -1717,6 +2125,21 @@ impl RingInner {
         if self.pending.get(call_id).is_some_and(Recording::ready)
             && let Some(mut rec) = self.pending.remove(call_id)
         {
+            while self
+                .pending_order
+                .front()
+                .is_some_and(|id| !self.pending.contains_key(id))
+            {
+                self.pending_order.pop_front();
+            }
+            if self.pending_order.len() > self.pending_max.saturating_mul(2) {
+                self.pending_order
+                    .retain(|id| self.pending.contains_key(id));
+                if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
+                    self.pending_order
+                        .shrink_to(self.pending_max.saturating_mul(2));
+                }
+            }
             if !rec.exchanges.is_empty() || rec.transport_closed {
                 rec.complete = !self.inconsistent.contains(call_id);
             }
@@ -1727,7 +2150,17 @@ impl RingInner {
     /// FIFO ring 追加;超容淘汰最旧并计数。
     fn push(&mut self, rec: Recording) {
         if self.completed.len() >= self.cap {
-            self.completed.pop_front();
+            if let Some(evicted) = self.completed.pop_front()
+                && !self.pending.contains_key(&evicted.call_id)
+                && !self.completed.iter().any(|r| r.call_id == evicted.call_id)
+            {
+                self.inconsistent.remove(&evicted.call_id);
+                if self.inconsistent.capacity() > self.cap.saturating_mul(4)
+                    && self.inconsistent.len() <= self.cap
+                {
+                    self.inconsistent.shrink_to(self.cap.saturating_mul(2));
+                }
+            }
             self.dropped += 1;
         }
         self.completed.push_back(rec);
@@ -1823,8 +2256,11 @@ impl Recorder for RingRecorder {
 
     fn record_transport_closed(&self, call_id: &str) {
         let mut inner = self.inner.lock().unwrap();
-        inner.entry_or_init_bounded(call_id).transport_closed = true;
-        inner.finalize(call_id);
+        // 同 JSONL writer:已收进 completed 的 call 不再建空占位(#460)。
+        if let Some(rec) = inner.pending.get_mut(call_id) {
+            rec.transport_closed = true;
+            inner.finalize(call_id);
+        }
     }
 
     /// 内存模式:把 barrier 已满足的 pending 全部收进 completed(对应
@@ -2270,6 +2706,10 @@ mod tests {
             "X-Prodia-Key",
             "Ocp-Apim-Subscription-Key",
             "ocp_apim_subscription_key",
+            // #459: configured gateway credential headers.
+            "x-portkey-virtual-key",
+            "helicone-auth",
+            "x-api-secret",
         ] {
             assert!(is_sensitive_key(key), "{key} must be redacted");
         }
@@ -2284,7 +2724,7 @@ mod tests {
         let v = serde_json::json!({
             "headers": {
                 "Authorization": "Bearer sk-abc",
-                "X-Key": "ok",
+                "X-Request-Id": "ok",
                 "x-goog-api-key": "gkey",
                 "x-amz-security-token": "sts-tok"
             },
@@ -2308,7 +2748,7 @@ mod tests {
         assert_eq!(r["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
         assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
-        assert_eq!(r["headers"]["X-Key"], "ok");
+        assert_eq!(r["headers"]["X-Request-Id"], "ok");
         assert_eq!(r["providerOptions"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["api_key"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["token"], "[REDACTED]");
@@ -2550,6 +2990,72 @@ mod tests {
         );
         assert!(parsed.input.prompt.is_empty());
         assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #460: the HTTP layer closes the transport again after
+    /// `RecordingOutcomeStream` has finalized the call; that must not write a
+    /// second, empty line.
+    #[test]
+    fn a_second_transport_close_writes_no_extra_line() {
+        let dir =
+            std::env::temp_dir().join(format!("aimux-rec-second-close-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        rec.record_outcome("call-twice", &success_outcome());
+        rec.record_transport_closed("call-twice");
+        rec.record_transport_closed("call-twice");
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 1, "{content}");
+
+        let ring = RingRecorder::new();
+        ring.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        ring.record_outcome("call-twice", &success_outcome());
+        ring.record_transport_closed("call-twice");
+        ring.record_transport_closed("call-twice");
+        assert_eq!(ring.pending_count(), 0);
+        assert_eq!(ring.completed().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #465: two recorders on one directory write records larger than the
+    /// `BufWriter` capacity; no line may be split by the other's writes.
+    #[test]
+    fn overlapping_recorders_never_interleave_large_records() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-overlap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recorders: Vec<_> = (0..2)
+            .map(|_| JsonlRecorder::try_new(&dir).unwrap())
+            .collect();
+        let options = CallOptions::new(
+            crate::language_model_message::convert_to_language_model_prompt(
+                &[crate::message::ModelMessage::user("x".repeat(16_384))],
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        for index in 0..128 {
+            for (writer, recorder) in recorders.iter().enumerate() {
+                let id = format!("writer-{writer}-{index}");
+                recorder.record_input(&id, &options, "openai", "test-model");
+                recorder.record_outcome(&id, &success_outcome());
+                recorder.record_transport_closed(&id);
+            }
+        }
+        for recorder in &recorders {
+            recorder.try_flush().unwrap();
+        }
+        drop(recorders);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 256);
+        for line in content.lines() {
+            serde_json::from_str::<Recording>(line).unwrap();
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3128,6 +3634,8 @@ mod tests {
         DamagedCalls {
             inconsistent: Arc::new(Mutex::new(HashSet::new())),
             lossy: Arc::new(Mutex::new(HashSet::new())),
+            dropped: Arc::new(AtomicU64::new(0)),
+            pending_evicted: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -3660,5 +4168,112 @@ mod tests {
         replacement.join().unwrap();
         assert!(unlocked_in_drop);
         assert!(concurrent_snapshot_unlocked);
+    }
+
+    #[test]
+    fn jsonl_pending_overflow_evicts_placeholders_before_active_calls() {
+        let dir =
+            std::env::temp_dir().join(format!("aimux-rec-priority-evict-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        // Start an active in-flight streaming call FIRST (oldest in pending_order).
+        rec.record_input("active-1", &sample_options(), "openai", "gpt-4o");
+        let mut inflight_ex = sample_exchange();
+        inflight_ex.finalized = false;
+        inflight_ex.response = None;
+        rec.record_exchange("active-1", &inflight_ex);
+
+        // Flood with JSONL_PENDING_MAX + 5 orphan placeholder events (no Input, no Exchange).
+        let orphan_total = JSONL_PENDING_MAX + 5;
+        for i in 0..orphan_total {
+            rec.record_session(&format!("orphan-{i}"), "sess-1", i as u32);
+        }
+
+        // Now complete active-1. Because placeholders were evicted ahead of active-1,
+        // active-1 must still be in pending and finalize as complete=true.
+        rec.record_exchange_update("active-1", 0, 0, &resp_status(200), None);
+        rec.record_outcome("active-1", &success_outcome());
+        rec.record_transport_closed("active-1");
+        rec.flush();
+
+        // 1 active + (JSONL_PENDING_MAX + 5) orphans = JSONL_PENDING_MAX + 6 -> 6 orphans evicted.
+        assert_eq!(rec.pending_evicted_count(), 6);
+        assert_eq!(rec.dropped_count(), 0);
+        let lossy = rec.lossy_call_ids();
+        assert!(!lossy.contains(&"active-1".to_string()));
+        for i in 0..6 {
+            assert!(
+                lossy.contains(&format!("orphan-{i}")),
+                "orphan-{i} should be marked lossy on eviction"
+            );
+        }
+
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        let rows: Vec<Recording> = content
+            .lines()
+            .map(|l| serde_json::from_str::<Recording>(l).unwrap())
+            .collect();
+        let active_rows: Vec<&Recording> =
+            rows.iter().filter(|r| r.call_id == "active-1").collect();
+        assert_eq!(active_rows.len(), 1, "active-1 written exactly once");
+        assert!(active_rows[0].complete, "active-1 must complete intact");
+        assert_eq!(active_rows[0].outcome.status, OutcomeStatus::Success);
+
+        drop(rec);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn jsonl_late_events_including_input_for_evicted_call_are_dropped_and_counted() {
+        let dir = std::env::temp_dir().join(format!(
+            "aimux-rec-evicted-late-input-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        // Create an out-of-order placeholder for "evicted-0", then overflow JSONL_PENDING_MAX
+        // with active calls so "evicted-0" is evicted to disk as Incomplete.
+        rec.record_session("evicted-0", "sess-0", 0);
+        for i in 0..JSONL_PENDING_MAX {
+            rec.record_input(&format!("call-{i}"), &sample_options(), "openai", "gpt-4o");
+        }
+        rec.flush();
+        assert_eq!(rec.pending_evicted_count(), 1);
+        assert!(rec.lossy_call_ids().contains(&"evicted-0".to_string()));
+
+        // Now send late Input + Exchange + Outcome + TransportClosed for "evicted-0".
+        // None of them may re-insert "evicted-0" or write a duplicate row, and all 4
+        // must be counted in dropped_count().
+        rec.record_input("evicted-0", &sample_options(), "openai", "gpt-4o");
+        rec.record_exchange("evicted-0", &sample_exchange());
+        rec.record_outcome("evicted-0", &success_outcome());
+        rec.record_transport_closed("evicted-0");
+        rec.flush();
+
+        assert_eq!(
+            rec.dropped_count(),
+            4,
+            "all 4 late events (including Input) for evicted-0 must be counted as dropped"
+        );
+        assert!(rec.lossy_call_ids().contains(&"evicted-0".to_string()));
+
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        let evicted_rows: Vec<Recording> = content
+            .lines()
+            .map(|l| serde_json::from_str::<Recording>(l).unwrap())
+            .filter(|r| r.call_id == "evicted-0")
+            .collect();
+        assert_eq!(
+            evicted_rows.len(),
+            1,
+            "late Input must not produce a second partial row for evicted-0"
+        );
+        assert!(!evicted_rows[0].complete);
+        assert_eq!(evicted_rows[0].outcome.status, OutcomeStatus::Incomplete);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

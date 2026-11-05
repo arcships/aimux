@@ -194,6 +194,9 @@ pub(crate) async fn execute_generate(
         .message
         .content
         .filter(|text| !text.is_empty())
+        // aimux extension (#461): the AI SDK does not read `refusal`.
+        .or(choice.message.refusal)
+        .filter(|text| !text.is_empty())
         .or_else(|| choice.message.audio.and_then(|audio| audio.transcript))
         && !text.is_empty()
     {
@@ -354,7 +357,7 @@ pub(crate) async fn execute_stream(
         first_event => first_event,
     };
     if let Some(Ok(ref event)) = first_event
-        && let Some(err_obj) = event.get("error")
+        && let Some(err_obj) = event.get("error").filter(|error| !error.is_null())
     {
         return Err(crate::openai::stream_error::openai_stream_error(
             err_obj,
@@ -372,13 +375,16 @@ pub(crate) async fn execute_stream(
     let events = futures::stream::iter(first_event).chain(sse_stream);
     let stream = pipe_through(events, transformer);
 
-    Ok(StreamResult {
-        stream: Box::pin(stream),
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::shared::StreamResponseInfo {
-            headers: Some(response_headers),
-        }),
-    })
+    Ok(crate::stream::strict_guard(
+        StreamResult {
+            stream: Box::pin(stream),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
+                headers: Some(response_headers),
+            }),
+        },
+        options,
+    ))
 }
 
 const TEXT_ID: &str = "0";
@@ -450,7 +456,7 @@ impl Transformer for OpenAIChatStream {
         self.ctx.raw(&parsed, controller);
 
         // Check for mid-stream error.
-        if let Some(err_obj) = parsed.get("error") {
+        if let Some(err_obj) = parsed.get("error").filter(|error| !error.is_null()) {
             controller.enqueue(StreamPart::Error {
                 error: crate::openai::stream_error::openai_stream_error(
                     err_obj,
@@ -528,7 +534,13 @@ impl Transformer for OpenAIChatStream {
             }
 
             // Text delta; an active reasoning block ends before text starts.
-            if let Some(content) = choice.delta.content {
+            // aimux extension (#461): a refusal delta is text too.
+            let refusal = choice.delta.refusal.filter(|text| !text.is_empty());
+            let text = match choice.delta.content {
+                Some(content) if content.is_empty() => refusal.or(Some(content)),
+                content => content.or(refusal),
+            };
+            if let Some(content) = text {
                 self.end_reasoning(controller);
                 if !self.text_started {
                     self.text_started = true;
@@ -593,6 +605,13 @@ impl Transformer for OpenAIChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some() || self.stream_errored,
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         // Close any remaining open reasoning and text segments.
         self.end_reasoning(controller);
         if self.text_started {
@@ -894,10 +913,14 @@ fn apply_service_tier(
 ) {
     let service_tier = openai_option(provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string));
+    // aimux extension (#462): `forceServiceTier` declares the tier support of
+    // a model id the capability table cannot know, such as a deployment alias.
+    let force = openai_option(provider_opts, "forceServiceTier")
+        .is_some_and(|v| v.as_bool().unwrap_or(false));
     if let Some(ref st) = service_tier {
         match st.as_str() {
             "flex" => {
-                if caps.supports_flex_processing {
+                if caps.supports_flex_processing || force {
                     body["service_tier"] = json!(st);
                 } else {
                     warnings.push(Warning::Unsupported {
@@ -910,7 +933,7 @@ fn apply_service_tier(
                 }
             }
             "priority" | "fast" => {
-                if caps.supports_priority_processing {
+                if caps.supports_priority_processing || force {
                     body["service_tier"] = json!(st);
                 } else {
                     warnings.push(Warning::Unsupported {

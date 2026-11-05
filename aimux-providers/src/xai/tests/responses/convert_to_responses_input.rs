@@ -334,6 +334,83 @@ mod convert_to_xai_responses_input {
             );
         }
 
+        /// #472: the text parts of one message item replay as one input
+        /// item with one `output_text` per part, not one item per part.
+        #[test]
+        fn groups_text_parts_of_one_item() {
+            let part = |text: &str, index: u64| {
+                json!({
+                    "type": "text",
+                    "text": text,
+                    "providerOptions": { (NAMESPACE): { "itemId": "msg_1", "contentIndex": index } },
+                })
+            };
+            let (input, _) = convert(&parse_prompt(json!([
+                {
+                    "role": "assistant",
+                    "content": [part("before", 0), part("after", 1), part("only-in-done", 2)],
+                },
+            ])));
+
+            assert_eq!(
+                input,
+                json!([
+                    { "role": "assistant", "content": "beforeafteronly-in-done", "id": "msg_1" },
+                ])
+            );
+        }
+
+        /// #472: a tool call between two parts of one message item keeps its
+        /// place; parts with another or no `itemId` are not merged.
+        #[test]
+        fn keeps_the_order_of_text_parts_around_other_items() {
+            let part = |text: &str, item_id: &str| {
+                json!({
+                    "type": "text",
+                    "text": text,
+                    "providerOptions": { (NAMESPACE): { "itemId": item_id } },
+                })
+            };
+            let (input, _) = convert(&parse_prompt(json!([
+                {
+                    "role": "assistant",
+                    "content": [
+                        part("first", "msg_1"),
+                        {
+                            "type": "tool-call",
+                            "toolCallId": "call_1",
+                            "toolName": "weather",
+                            "input": { "location": "SF" },
+                            "providerOptions": { (NAMESPACE): { "itemId": "fc_1" } },
+                        },
+                        part("second", "msg_1"),
+                        part("other", "msg_2"),
+                        { "type": "text", "text": "plain" },
+                        part("third", "msg_2"),
+                    ],
+                },
+            ])));
+
+            assert_eq!(
+                input,
+                json!([
+                    { "role": "assistant", "content": "first", "id": "msg_1" },
+                    {
+                        "type": "function_call",
+                        "id": "fc_1",
+                        "call_id": "call_1",
+                        "name": "weather",
+                        "arguments": "{\"location\":\"SF\"}",
+                        "status": "completed",
+                    },
+                    { "role": "assistant", "content": "second", "id": "msg_1" },
+                    { "role": "assistant", "content": "other", "id": "msg_2" },
+                    { "role": "assistant", "content": "plain" },
+                    { "role": "assistant", "content": "third", "id": "msg_2" },
+                ])
+            );
+        }
+
         /// upstream: @ai-sdk/xai src/responses/convert-to-xai-responses-input.test.ts › convertToXaiResponsesInput › assistant messages › should handle client-side tool-call parts
         #[test]
         fn should_handle_client_side_tool_call_parts() {

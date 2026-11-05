@@ -25,6 +25,7 @@ use aimux_core::transcription_model::{
     TranscriptionStreamResult,
 };
 
+#[cfg(feature = "realtime")]
 const LIVE_WEB_SOCKET_PATH: &str =
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
