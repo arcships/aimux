@@ -3570,8 +3570,12 @@ public indirect enum LanguageModelToolResultOutput: Codable, Equatable, Sendable
     case executionDenied(providerOptions: [String: [String: JSONValue]]?, reason: String?)
     case errorText(providerOptions: [String: [String: JSONValue]]?, value: String)
     case errorJson(providerOptions: [String: [String: JSONValue]]?, value: JSONValue)
-    case content(value: [ToolResultContent])
+    /// isError: Whether the tool call failed. Beyond the AI SDK's `content` output,
+    /// so a result that carries an image or a file can still be an
+    /// error (#470).
+    case content(isError: Bool?, value: [ToolResultContent])
     private enum CodingKeys: String, CodingKey {
+        case isError = "isError"
         case providerOptions = "providerOptions"
         case reason = "reason"
         case type = "type"
@@ -3582,7 +3586,7 @@ public indirect enum LanguageModelToolResultOutput: Codable, Equatable, Sendable
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "content":
-            self = .content(value: try c.decode([ToolResultContent].self, forKey: .value))
+            self = .content(isError: try c.decodeIfPresent(Bool.self, forKey: .isError), value: try c.decode([ToolResultContent].self, forKey: .value))
             return
         case "error-json":
             self = .errorJson(providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), value: try c.decode(JSONValue.self, forKey: .value))
@@ -3625,9 +3629,10 @@ public indirect enum LanguageModelToolResultOutput: Codable, Equatable, Sendable
             try c.encode("error-json", forKey: .type)
             try c.encodeIfPresent(v0, forKey: .providerOptions)
             try c.encode(v1, forKey: .value)
-        case .content(let v0):
+        case .content(let v0, let v1):
             try c.encode("content", forKey: .type)
-            try c.encode(v0, forKey: .value)
+            try c.encodeIfPresent(v0, forKey: .isError)
+            try c.encode(v1, forKey: .value)
         }
     }
 }

@@ -817,11 +817,15 @@ fn apply_responses_service_tier(
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
+    // aimux extension (#462): `forceServiceTier` declares the tier support of
+    // a model id the capability table cannot know, such as a deployment alias.
+    let force = openai_option(ns, provider_opts, "forceServiceTier")
+        .is_some_and(|v| v.as_bool().unwrap_or(false));
     if let Some(st) = openai_option(ns, provider_opts, "serviceTier")
         .and_then(|v| v.as_str().map(std::string::ToString::to_string))
     {
         match st.as_str() {
-            "flex" if !caps.supports_flex_processing => {
+            "flex" if !caps.supports_flex_processing && !force => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some(
@@ -830,7 +834,7 @@ fn apply_responses_service_tier(
                     ),
                 });
             }
-            "priority" | "fast" if !caps.supports_priority_processing => {
+            "priority" | "fast" if !caps.supports_priority_processing && !force => {
                 warnings.push(Warning::Unsupported {
                     feature: "serviceTier".to_string(),
                     details: Some("priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string()),
@@ -1535,6 +1539,9 @@ const MODELED_CHUNK_TYPES: &[&str] = &[
     "response.reasoning_summary_part.added",
     "response.reasoning_summary_part.done",
     "response.reasoning_summary_text.delta",
+    // aimux extension (#466): refusal events are modeled, not dropped.
+    "response.refusal.delta",
+    "response.refusal.done",
 ];
 
 /// How long to keep looking for an error frame once `response.in_progress`
@@ -1719,6 +1726,35 @@ fn resolve_output_item_id(event: &Value, output_ids: &HashMap<usize, String>) ->
 fn reasoning_item_metadata(provider_key: &str, item_id: &str) -> ProviderMetadata {
     provider_namespace(provider_key, json!({ "itemId": item_id }))
         .expect("provider metadata must be an object")
+}
+
+/// The open text block of a message item, else the item id itself.
+fn text_block_id(text_blocks: &HashMap<String, (u64, String)>, item_id: String) -> String {
+    text_blocks
+        .get(&item_id)
+        .map_or(item_id, |(_, block)| block.clone())
+}
+
+/// aimux extension (#468): the AI SDK starts a function call without
+/// metadata; the item id is sent here too, not only on the tool call.
+fn tool_input_start(
+    controller: &mut Controller,
+    provider_key: &str,
+    item: &Value,
+    call_id: String,
+    tool_name: String,
+) {
+    controller.enqueue(StreamPart::ToolInputStart {
+        id: call_id,
+        tool_name,
+        provider_executed: None,
+        dynamic: None,
+        title: None,
+        provider_metadata: Some(
+            provider_namespace(provider_key, tool_metadata(item))
+                .expect("provider metadata must be an object"),
+        ),
+    });
 }
 
 fn tool_metadata(item: &Value) -> Value {
@@ -2033,6 +2069,10 @@ struct OpenAIResponsesStream {
     response_id: Option<String>,
     stream_errored: bool,
     text_states: HashMap<String, Value>,
+    /// Refusal parts (item id, content index) that streamed a delta.
+    refusal_deltas: HashSet<(String, u64)>,
+    /// The open text block of each message item: its content index and id.
+    text_blocks: HashMap<String, (u64, String)>,
     output_ids: HashMap<usize, String>,
     text_annotations: HashMap<String, Vec<Value>>,
     logprobs: Vec<Value>,
@@ -2078,6 +2118,8 @@ impl Transformer for OpenAIResponsesStream {
             ref mut response_id,
             ref mut stream_errored,
             ref mut text_states,
+            ref mut refusal_deltas,
+            ref mut text_blocks,
             ref mut output_ids,
             ref mut text_annotations,
             ref mut logprobs,
@@ -2177,6 +2219,7 @@ impl Transformer for OpenAIResponsesStream {
                                         .to_string();
                                     output_ids.insert(output_index, id.clone());
                                     text_states.insert(id.clone(), item.clone());
+                                    text_blocks.insert(id.clone(), (0, id.clone()));
                                     controller.enqueue(StreamPart::TextStart {
                                         id,
                                         provider_metadata: Some(
@@ -2205,7 +2248,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.tool_input_start(call_id, name);
+                                    tool_input_start(controller, provider_key, item, call_id, name);
                                 }
                                 "custom_tool_call" => {
                                     let call_id = item
@@ -2224,7 +2267,7 @@ impl Transformer for OpenAIResponsesStream {
                                             tool_call_id: call_id.clone(),
                                         },
                                     );
-                                    controller.tool_input_start(call_id, name);
+                                    tool_input_start(controller, provider_key, item, call_id, name);
                                 }
                                 "reasoning" => {
                                     let id = item
@@ -2375,7 +2418,61 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.text_delta(id, delta);
+                        controller.text_delta(text_block_id(text_blocks, id), delta);
+                    }
+
+                    // ── response.content_part.added → a new text block ────────
+                    // aimux extension (#468): the AI SDK merges the content
+                    // parts of a message into one text block; each part after
+                    // the first opens its own, marked with its `contentIndex`.
+                    "response.content_part.added" => {
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
+                        let content_index = parsed["content_index"].as_u64().unwrap_or_default();
+                        if parsed["part"]["type"] == "output_text"
+                            && let Some((index, block)) = text_blocks.get_mut(&item_id)
+                            && content_index > *index
+                        {
+                            controller.text_end(std::mem::take(block));
+                            *index = content_index;
+                            *block = format!("{item_id}:{content_index}");
+                            let mut metadata = text_states.get(&item_id).map_or_else(
+                                || json!({ "itemId": item_id }),
+                                |item| text_metadata(item, None),
+                            );
+                            metadata["contentIndex"] = json!(content_index);
+                            controller.enqueue(StreamPart::TextStart {
+                                id: block.clone(),
+                                provider_metadata: Some(
+                                    provider_namespace(provider_key, metadata)
+                                        .expect("provider metadata must be an object"),
+                                ),
+                            });
+                        }
+                    }
+
+                    // ── response.refusal.delta/done → TextDelta ───────────────
+                    // aimux extension (#466): the AI SDK drops refusal events,
+                    // so a refusal would end as an empty answer. `done` carries
+                    // the whole refusal, sent only for a part without deltas.
+                    "response.refusal.delta" | "response.refusal.done" => {
+                        let id = resolve_output_item_id(&parsed, output_ids);
+                        let part = (
+                            id.clone(),
+                            parsed["content_index"].as_u64().unwrap_or_default(),
+                        );
+                        let text = if etype == "response.refusal.delta" {
+                            parsed["delta"].as_str().filter(|text| !text.is_empty())
+                        } else if refusal_deltas.contains(&part) {
+                            None
+                        } else {
+                            parsed["refusal"].as_str().filter(|text| !text.is_empty())
+                        };
+                        if let Some(text) = text {
+                            if etype == "response.refusal.delta" {
+                                refusal_deltas.insert(part);
+                            }
+                            controller.text_delta(text_block_id(text_blocks, id), text.to_owned());
+                        }
                     }
 
                     // ── function_call_arguments.delta → ToolInputDelta ────────
@@ -2514,8 +2611,9 @@ impl Transformer for OpenAIResponsesStream {
                                         metadata_item["phase"] = phase.clone();
                                     }
                                     let annotations = text_annotations.remove(&id);
+                                    let block = text_blocks.remove(&id).map(|(_, block)| block);
                                     controller.enqueue(StreamPart::TextEnd {
-                                        id,
+                                        id: block.unwrap_or(id),
                                         provider_metadata: Some(
                                             provider_namespace(
                                                 provider_key,

@@ -37,4 +37,24 @@ mod convert_open_ai_chat_usage {
             })
         );
     }
+
+    #[test]
+    fn keeps_unreported_counts_unknown() {
+        // #478 (beyond the AI SDK): a count the provider did not report, absent
+        // or null, stays unknown; a reported zero stays zero.
+        for (usage, mut expected) in [
+            (json!({}), json!({ "inputTokens": {}, "outputTokens": {} })),
+            (
+                json!({ "prompt_tokens": 2, "completion_tokens": null }),
+                json!({ "inputTokens": { "total": 2, "noCache": 2 }, "outputTokens": {} }),
+            ),
+            (
+                json!({ "completion_tokens": 0 }),
+                json!({ "inputTokens": {}, "outputTokens": { "total": 0, "text": 0 } }),
+            ),
+        ] {
+            expected["raw"] = usage.clone();
+            assert_eq!(convert_openai_chat_usage(&usage), expected, "{usage}");
+        }
+    }
 }

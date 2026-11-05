@@ -4590,7 +4590,11 @@ func (v LanguageModelToolResultOutputVariantErrorJSON) MarshalJSON() ([]byte, er
 }
 
 type LanguageModelToolResultOutputVariantContent struct {
-	Value []ToolResultContent `json:"value"`
+	// Whether the tool call failed. Beyond the AI SDK's `content` output,
+	// so a result that carries an image or a file can still be an
+	// error (#470).
+	IsError *bool               `json:"isError,omitzero"`
+	Value   []ToolResultContent `json:"value"`
 }
 
 func (LanguageModelToolResultOutputVariantContent) isLanguageModelToolResultOutput() {}

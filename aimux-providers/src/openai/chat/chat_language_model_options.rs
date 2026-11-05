@@ -55,6 +55,9 @@ struct OpenAIChatOptions {
     system_message_mode: Option<SystemMessageMode>,
     #[serde(default, deserialize_with = "optional_field")]
     force_reasoning: Option<bool>,
+    /// aimux extension (#462).
+    #[serde(default, deserialize_with = "optional_field")]
+    force_service_tier: Option<bool>,
 }
 
 /// `logprobs`: `z.union([z.boolean(), z.number()])`.
@@ -225,7 +228,8 @@ pub(crate) fn parse_chat_options(options: &JsonObject) -> Result<JsonObject, AiM
             | "parallelToolCalls"
             | "store"
             | "strictJsonSchema"
-            | "forceReasoning" => value.clone(),
+            | "forceReasoning"
+            | "forceServiceTier" => value.clone(),
             // A nested `z.object`: only its declared keys are kept.
             "promptCacheOptions" => Value::Object(
                 value

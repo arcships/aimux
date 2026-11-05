@@ -236,6 +236,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy without the realtime feature (deny warnings)
+        run: cargo clippy -p aimux-providers --no-default-features -- -D warnings
       - name: Rustdoc (deny warnings)
         run: cargo doc --workspace --no-deps
         env:

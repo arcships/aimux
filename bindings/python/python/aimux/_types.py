@@ -2163,7 +2163,12 @@ class LanguageModelToolResultOutputErrorJson(_Wire):
 
 class LanguageModelToolResultOutputContent(_Wire):
     type: Literal["content"] = Field(default="content", alias="type")
+    #: Whether the tool call failed. Beyond the AI SDK's `content` output,
+    #: so a result that carries an image or a file can still be an
+    #: error (#470).
+    is_error: Optional[bool] = Field(default=None, alias="isError")
     value: List["_dto.ToolResultContent"] = Field(alias="value")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["is_error"])
 
 
 #: The provider-facing result of a tool call.
