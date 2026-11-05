@@ -5,6 +5,62 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-05
+
+Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,
+but the manifest digest changes, so every binding in a process must come from
+0.6.1.
+
+### Added
+
+- `forceServiceTier` for OpenAI Chat and Responses: send the caller's service
+  tier for a deployment alias without the capability warning (#485).
+- `ToolResultOutput::Content` gains optional `isError` (wire `isError`, omitted
+  when `None`), so a tool result that carries text, an image or a file can also
+  be a failure. Anthropic and Bedrock map it (#486).
+
+### Fixed
+
+- OpenAI: Chat and Responses refusal text streams as visible text; Responses
+  content parts stream as separate blocks and replay references a message item
+  once; the chat converter replays `reasoning_content`; the capability helpers
+  are public as `aimux_providers::openai::language_model_capabilities`
+  (#485, #492).
+- xAI: a reasoning summary delta opens its block before
+  `reasoning_summary_part.added`; each Responses `output_text` part keeps its
+  own text block; a late delta reopens it; replay groups one item's adjacent
+  text parts (#482).
+- Google and Vertex: a differently signed text part starts a new text block,
+  empty signed text is replayed, and the stream finishes at the chunk carrying
+  the finish reason and usage instead of waiting for EOF (#488).
+- Bedrock: a Converse `contentBlockDelta` without exactly one known member
+  fails the stream; strict mode rejects unopened or unclosed content blocks;
+  a non-error `messageStop` plus `metadata` finishes the stream (#489).
+- Core: text and reasoning deltas for parts that were never started now yield
+  the upstream error part instead of creating the part; retry hints round
+  fractional milliseconds up; `parse_tool_call::parse_json_input` is public
+  (#479, #481).
+- Strict stream: a completed tool call rejects later tool-input events, and the
+  OpenAI-compatible chat stream enforces one candidate index, one tool-call
+  identity shape and one finish reason (#484).
+- Recording: credential-like header names are redacted, a second transport
+  close writes no duplicate line, and JSONL lines are written atomically
+  (#483).
+- Usage: chat and completion converters keep counts the provider did not report
+  as unknown instead of filling 0 (#487).
+- SigV4: caller-supplied `x-amz-content-sha256` and `x-amz-security-token` are
+  kept and signed as aws4fetch does (#480).
+- Providers: the realtime-only items compile under `--no-default-features`, and
+  CI lints that configuration (#497).
+
+### Breaking
+
+- The generated `LanguageModelToolResultOutput.Content` gains `isError`:
+  Java/Kotlin `Content` constructors take it as the first positional argument,
+  Swift's `.content` case becomes `.content(isError:value:)`, and Rust struct
+  literals or exhaustive patterns need the new field. The wire JSON is
+  additive.
+
 ## [0.6.0] - 2026-11-03
 
 **Breaking release.** 0.6.0 moves every binding onto the shared operations ABI
@@ -2726,7 +2782,8 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
-[Unreleased]: https://github.com/arcships/aimux/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/arcships/aimux/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/arcships/aimux/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arcships/aimux/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
