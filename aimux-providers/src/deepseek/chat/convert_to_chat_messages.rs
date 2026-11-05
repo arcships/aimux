@@ -331,7 +331,7 @@ fn convert_tool_result_content(
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
-    let ToolResultOutput::Content { value } = output else {
+    let ToolResultOutput::Content { value, .. } = output else {
         return Ok(aimux_provider_utils::tool_result_to_content(output));
     };
     let is_image = |part: &ToolResultContent| {

@@ -174,8 +174,15 @@ pub fn create_elevenlabs(
             AuthScheme::Header("xi-api-key"),
             Vec::new(),
             settings.headers,
+        )
+        .with_user_agent(
+            crate::shared::aisdk_pins::ELEVENLABS.name,
+            crate::shared::aisdk_pins::ELEVENLABS.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::ELEVENLABS,
+        )),
         transform_request_body: settings.transform_request_body,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
@@ -1288,7 +1295,8 @@ impl ElevenLabsTranscriptionModel {
                                         "realtime transcription socket closed before the committed transcript",
                                         error_url.clone(),
                                         serde_json::json!({}),
-                                    ),
+                                    )
+                                    .with_origin(aimux_core::ApiCallErrorOrigin::Transport),
                                 )));
                                 break;
                             }
@@ -1410,6 +1418,7 @@ impl ElevenLabsTranscriptionModel {
                                             aimux_core::error::ApiCallError {
                                                 is_retryable,
                                                 response_body: Some(value.to_string()),
+                                                origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
                                                 ..aimux_core::error::ApiCallError::new(
                                                     format!("elevenlabs realtime: {message}"),
                                                     error_url.clone(),

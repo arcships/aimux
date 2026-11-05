@@ -3,7 +3,7 @@ package aimux
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../aimux-ffi/include
 #cgo linux LDFLAGS: -L${SRCDIR}/../../target/staticlib-release -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lpthread -ldl -lm
-#cgo darwin LDFLAGS: -L${SRCDIR}/../../target/staticlib-release -L${SRCDIR}/../../target/release -laimux_ffi
+#cgo darwin LDFLAGS: -L${SRCDIR}/../../target/staticlib-release -L${SRCDIR}/../../target/release -laimux_ffi -framework CoreFoundation
 #cgo windows LDFLAGS: -L${SRCDIR}/../../target/staticlib-release -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lws2_32 -lbcrypt -lntdll -luserenv
 #include <stdlib.h>
 #include <stdint.h>

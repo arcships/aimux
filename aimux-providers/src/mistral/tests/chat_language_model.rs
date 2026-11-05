@@ -1521,4 +1521,97 @@ mod in_stream_error {
         assert_eq!(api_error.data, Some(error.clone()));
         assert_eq!(api_error.response_body, Some(error.to_string()));
     }
+
+    /// Strict stream mode (#403): the error chunk is the only error. The
+    /// body then ends without a finish_reason, and the strict check does not
+    /// add a second error after the one already reported.
+    #[tokio::test]
+    async fn strict_stream_reports_an_error_chunk_as_the_only_error() {
+        let chunk = json!({
+            "error": {
+                "message": "Rate limit exceeded",
+                "type": "rate_limit_error",
+                "status_code": 429,
+            }
+        })
+        .to_string();
+        let fetch = stream_fetch(&[&chunk]);
+        let mut options = options();
+        options.strict_stream = Some(true);
+
+        let items: Vec<Result<StreamPart, AiMuxError>> = provider(&fetch)
+            .chat(MODEL)
+            .do_stream(&options)
+            .await
+            .expect("doStream succeeds")
+            .stream
+            .collect()
+            .await;
+
+        let errors: Vec<_> = items
+            .iter()
+            .filter(|item| matches!(item, Err(_) | Ok(StreamPart::Error { .. })))
+            .collect();
+        assert_eq!(errors.len(), 1, "{items:?}");
+        assert!(
+            matches!(
+                errors[0],
+                Ok(StreamPart::Error {
+                    error: AiMuxError::ApiCall(_)
+                })
+            ),
+            "{items:?}"
+        );
+    }
+
+    /// A chunk with `"error": null` is a normal chunk (#397), not an error
+    /// frame; a gateway in front of Mistral may add the null member.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let first = json!({
+            "id": "x", "object": "chat.completion.chunk", "created": 1, "model": MODEL,
+            "choices": [{ "index": 0, "delta": { "role": "assistant", "content": "Hello" }, "finish_reason": null }],
+            "error": null,
+        })
+        .to_string();
+        let last = json!({
+            "id": "x", "object": "chat.completion.chunk", "created": 1, "model": MODEL,
+            "choices": [{ "index": 0, "delta": { "content": "" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+            "error": null,
+        })
+        .to_string();
+        let fetch = stream_fetch(&[&first, &last]);
+
+        let parts: Vec<StreamPart> = provider(&fetch)
+            .chat(MODEL)
+            .do_stream(&options())
+            .await
+            .expect("doStream succeeds")
+            .stream
+            .map(|part| part.expect("stream part"))
+            .collect()
+            .await;
+
+        assert!(
+            !parts
+                .iter()
+                .any(|part| matches!(part, StreamPart::Error { .. })),
+            "{parts:?}"
+        );
+        assert!(
+            parts.iter().any(
+                |part| matches!(part, StreamPart::TextDelta { delta, .. } if delta == "Hello")
+            ),
+            "{parts:?}"
+        );
+        assert!(
+            matches!(
+                parts.last(),
+                Some(StreamPart::Finish { finish_reason, .. })
+                    if finish_reason.unified == aimux_core::types::FinishReasonUnified::Stop
+            ),
+            "{parts:?}"
+        );
+    }
 }

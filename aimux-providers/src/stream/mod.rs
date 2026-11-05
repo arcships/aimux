@@ -8,6 +8,9 @@
 mod chat_tool_calls;
 #[cfg(test)]
 mod chat_tool_calls_tests;
+mod strict;
+#[cfg(test)]
+mod strict_tests;
 mod tool_call_arguments;
 
 use std::collections::HashMap;
@@ -21,6 +24,7 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 use aimux_provider_utils::TransformStreamController;
 
 pub(crate) use chat_tool_calls::{ChatToolCalls, ToolCallDelta};
+pub(crate) use strict::{guard as strict_guard, strict_error};
 
 /// The request a stream answers, fixed before the first chunk: the
 /// warnings `start` hands out, whether raw chunks are forwarded, what an
@@ -37,6 +41,8 @@ pub(crate) struct StreamContext {
     /// The model's `generateId`; [`aimux_provider_utils::generate_id`] unless
     /// the provider settings replace it.
     pub(crate) generate_id: GenerateId,
+    /// Strict stream mode (`CallOptions.strict_stream`).
+    pub(crate) strict: bool,
 }
 
 /// A model's id generator.
@@ -51,6 +57,7 @@ impl Default for StreamContext {
             request_body: Value::Null,
             response_headers: HashMap::new(),
             generate_id: Arc::new(aimux_provider_utils::generate_id),
+            strict: false,
         }
     }
 }
@@ -66,6 +73,7 @@ impl StreamContext {
         Self {
             warnings,
             include_raw_chunks: options.include_raw_chunks == Some(true),
+            strict: options.strict_stream == Some(true),
             url,
             request_body: request_body.clone(),
             response_headers: response_headers.clone(),
@@ -78,6 +86,26 @@ impl StreamContext {
         controller.enqueue(StreamPart::StreamStart {
             warnings: std::mem::take(&mut self.warnings),
         });
+    }
+
+    /// In strict stream mode, fail a stream that ended without the protocol's
+    /// terminal event, named by `terminal` (`"a finish_reason"`), instead of
+    /// finishing it. Returns whether the stream failed; the caller's flush
+    /// then emits nothing more. A stream that reported an error of its own
+    /// already finishes with an error and is left alone.
+    pub(crate) fn fail_without_terminal(
+        &self,
+        terminal_seen: bool,
+        terminal: &str,
+        controller: &mut Controller,
+    ) -> bool {
+        if self.strict && !terminal_seen {
+            controller.error(strict::strict_error(format!(
+                "the stream ended without {terminal}"
+            )));
+            return true;
+        }
+        false
     }
 
     /// Forward `chunk` as a `raw` part when raw chunks were asked for.
