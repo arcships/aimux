@@ -107,8 +107,15 @@ pub fn create_elevenlabs(
             AuthScheme::Header("xi-api-key"),
             Vec::new(),
             settings.headers,
+        )
+        .with_user_agent(
+            crate::shared::aisdk_pins::ELEVENLABS.name,
+            crate::shared::aisdk_pins::ELEVENLABS.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::ELEVENLABS,
+        )),
         transform_request_body: settings.transform_request_body,
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
