@@ -500,6 +500,87 @@ impl Fetch for SigV4Fetch {
     }
 }
 
+/// The transport of an AI SDK AWS provider (`amazon-bedrock-sigv4-fetch.ts`,
+/// `anthropic-aws-fetch.ts`): add the package's user-agent part, then send a
+/// request that carries `api_key_header` to `inner` as it is and sign every
+/// other one with [`SigV4Fetch`].
+///
+/// Upstream picks `createApiKeyFetchFunction` or `createSigV4FetchFunction`
+/// once, when the provider is created. Here the provider headers put the
+/// key on the request when the key is used, so the transport decides per
+/// request, from that header alone.
+pub struct SigV4AuthFetch {
+    signing: SigV4Fetch,
+    inner: FetchFunction,
+    api_key_header: http::HeaderName,
+    provider_utils: Option<String>,
+    user_agent: Option<String>,
+}
+
+impl SigV4AuthFetch {
+    /// Sign with `signing`, unless the request carries `api_key_header`
+    /// (`authorization` for Bedrock, `x-api-key` for Anthropic on AWS): then
+    /// it goes to `inner` unsigned.
+    #[must_use]
+    pub fn new(
+        signing: SigV4Fetch,
+        inner: FetchFunction,
+        api_key_header: http::HeaderName,
+    ) -> Self {
+        Self {
+            signing,
+            inner,
+            api_key_header,
+            provider_utils: None,
+            user_agent: None,
+        }
+    }
+
+    /// Before the API-key decision, on both paths, rewrite the
+    /// `ai-sdk-provider-utils/<v>` part to `provider_utils` and append
+    /// `user_agent` (`ai-sdk-<package>/<v>`), as [`transport_user_agent`]
+    /// does: the package's `withUserAgentSuffix` around both of its fetch
+    /// functions.
+    ///
+    /// [`transport_user_agent`]: crate::transport_user_agent
+    #[must_use]
+    pub fn with_user_agent(
+        mut self,
+        provider_utils: impl Into<String>,
+        user_agent: impl Into<String>,
+    ) -> Self {
+        self.provider_utils = Some(provider_utils.into());
+        self.user_agent = Some(user_agent.into());
+        self
+    }
+}
+
+impl fmt::Debug for SigV4AuthFetch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SigV4AuthFetch")
+            .field("signing", &self.signing)
+            .field("api_key_header", &self.api_key_header)
+            .field("user_agent", &self.user_agent)
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl Fetch for SigV4AuthFetch {
+    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        crate::user_agent_fetch::transport_user_agent(
+            &mut request.headers,
+            self.provider_utils.as_deref(),
+            self.user_agent.as_deref(),
+        );
+        if request.headers.contains_key(&self.api_key_header) {
+            self.inner.fetch(request).await
+        } else {
+            self.signing.fetch(request).await
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -1024,5 +1105,99 @@ mod tests {
             .unwrap_err();
         assert!(matches!(&error, FetchError::Other(m) if m.message.contains("AWS_ACCESS_KEY_ID")));
         assert!(capture.0.lock().unwrap().is_none());
+    }
+
+    /// A provider transport over a capturing inner fetch: Bedrock's pins,
+    /// with `api_key_header` naming the key.
+    fn auth_fetch(api_key_header: &'static str) -> (SigV4AuthFetch, Arc<Capture>) {
+        let capture = Arc::new(Capture::default());
+        let signing = SigV4Fetch::new(
+            capture.clone(),
+            Resolvable::from(creds()),
+            "bedrock",
+            SigV4Signing::Aws4Fetch,
+        )
+        .with_clock(fixed_time);
+        let fetch = SigV4AuthFetch::new(
+            signing,
+            capture.clone(),
+            http::HeaderName::from_static(api_key_header),
+        )
+        .with_user_agent("5.0.51", "ai-sdk-amazon-bedrock/5.0.100");
+        (fetch, capture)
+    }
+
+    /// A POST with the helper's user-agent part and, when given, the key.
+    fn provider_request(api_key: Option<(&'static str, &'static str)>) -> FetchRequest {
+        let mut request = FetchRequest::new(Method::POST, URL.parse().unwrap());
+        request.body = Bytes::from(BODY);
+        request.headers.insert(
+            http::header::USER_AGENT,
+            http::HeaderValue::from_static("ai-sdk-provider-utils/5.0.53"),
+        );
+        if let Some((name, value)) = api_key {
+            request.headers.insert(
+                http::HeaderName::from_static(name),
+                http::HeaderValue::from_static(value),
+            );
+        }
+        request
+    }
+
+    #[tokio::test]
+    async fn auth_fetch_sends_a_request_with_the_api_key_header_unsigned() {
+        let (fetch, capture) = auth_fetch("authorization");
+        fetch
+            .fetch(provider_request(Some(("authorization", "Bearer key"))))
+            .await
+            .unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        assert_eq!(sent.headers[http::header::AUTHORIZATION], "Bearer key");
+        assert!(!sent.headers.contains_key("x-amz-date"));
+        assert_eq!(
+            sent.headers[http::header::USER_AGENT],
+            "ai-sdk-provider-utils/5.0.51 ai-sdk-amazon-bedrock/5.0.100"
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_fetch_signs_a_request_without_the_api_key_header() {
+        let (fetch, capture) = auth_fetch("x-api-key");
+        fetch.fetch(provider_request(None)).await.unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        let authorization = sent.headers[http::header::AUTHORIZATION].to_str().unwrap();
+        assert!(
+            authorization.starts_with(
+                "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20240102/us-east-1/bedrock/aws4_request"
+            ),
+            "{authorization}"
+        );
+        assert_eq!(sent.headers["x-amz-date"], "20240102T030405Z");
+        // The user-agent part is added before signing, and aws4fetch does not
+        // sign `user-agent`.
+        assert_eq!(
+            sent.headers[http::header::USER_AGENT],
+            "ai-sdk-provider-utils/5.0.51 ai-sdk-amazon-bedrock/5.0.100"
+        );
+        assert!(!authorization.contains("user-agent"), "{authorization}");
+    }
+
+    /// Only the named header counts as a key: Anthropic on AWS signs a
+    /// request that carries an `Authorization` of the caller's.
+    #[tokio::test]
+    async fn auth_fetch_reads_only_its_own_api_key_header() {
+        let (fetch, capture) = auth_fetch("x-api-key");
+        fetch
+            .fetch(provider_request(Some(("authorization", "Bearer key"))))
+            .await
+            .unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        assert!(sent.headers.contains_key("x-amz-date"));
+        assert!(
+            sent.headers[http::header::AUTHORIZATION]
+                .to_str()
+                .unwrap()
+                .starts_with("AWS4-HMAC-SHA256 ")
+        );
     }
 }
