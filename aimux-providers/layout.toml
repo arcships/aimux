@@ -3281,6 +3281,97 @@ upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
 
+[deepgram]
+package = "@ai-sdk/deepgram"
+
+[[deepgram.files]]
+upstream = "src/deepgram-api-types.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/deepgram-config.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/deepgram-error.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/deepgram-provider.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/deepgram-speech-api-types.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Deepgram speech (TTS) model; the provider offers transcription only"
+
+[[deepgram.files]]
+upstream = "src/deepgram-speech-model-options.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Deepgram speech (TTS) model; the provider offers transcription only"
+
+[[deepgram.files]]
+upstream = "src/deepgram-speech-model.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Deepgram speech (TTS) model; the provider offers transcription only"
+
+[[deepgram.files]]
+upstream = "src/deepgram-speech-options.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Deepgram speech (TTS) model; the provider offers transcription only"
+
+[[deepgram.files]]
+upstream = "src/deepgram-transcription-model-options.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/deepgram-transcription-model.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+sub-feature = [
+  { case = "doGenerate › transcription › should return audio duration as usage in seconds", issue = 275, reason = "TranscriptionResult has no usage field; the duration is returned as duration_in_seconds" },
+]
+
+[[deepgram.files]]
+upstream = "src/deepgram-transcription-options.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/index.ts"
+rust = "deepgram.rs"
+status = "mapped"
+
+[deepgram.files.tests]
+
+[[deepgram.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
 [luma]
 package = "@ai-sdk/luma"
 
