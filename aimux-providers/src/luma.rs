@@ -534,3 +534,6 @@ impl ImageModel for LumaImageModel {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
