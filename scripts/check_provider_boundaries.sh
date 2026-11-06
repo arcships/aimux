@@ -348,7 +348,8 @@ violation 'prepare_retries / aimux_core::retry used in aimux-providers/src (exce
 single_family='serper prodia deepgram you_com luma lmnt klingai dataforseo replicate fal recraft aws_polly jina_ai gladia tavily linkup tinyfish black_forest_labs assemblyai revai hume cartesia searxng parallel_ai firecrawl runwayml exa_ai stability google_pse'
 single_paths=''
 for name in $single_family; do
-    single_paths="$single_paths aimux-providers/src/$name.rs"
+    # A moved package is a directory with a mod.rs, not a `<name>.rs`.
+    [[ -f "aimux-providers/src/$name.rs" ]] && single_paths="$single_paths aimux-providers/src/$name.rs"
     [[ -d "aimux-providers/src/$name" ]] && single_paths="$single_paths aimux-providers/src/$name"
 done
 # shellcheck disable=SC2086
