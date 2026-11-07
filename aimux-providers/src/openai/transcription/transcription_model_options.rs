@@ -32,6 +32,13 @@ pub(crate) struct OpenAITranscriptionOptions {
     #[serde(default, deserialize_with = "optional_field")]
     pub(crate) chunking_strategy: Option<ChunkingStrategy>,
     /// The options of the realtime (streaming) session.
+    #[cfg_attr(
+        not(feature = "realtime"),
+        allow(
+            dead_code,
+            reason = "validated always; read only by the realtime session"
+        )
+    )]
     #[serde(default, deserialize_with = "optional_field")]
     pub(crate) streaming: Option<StreamingOptions>,
 }
@@ -136,6 +143,13 @@ impl ChunkingStrategy {
 }
 
 /// `streaming`: `{ delay?, include? }`.
+#[cfg_attr(
+    not(feature = "realtime"),
+    allow(
+        dead_code,
+        reason = "validated always; read only by the realtime session"
+    )
+)]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StreamingOptions {
