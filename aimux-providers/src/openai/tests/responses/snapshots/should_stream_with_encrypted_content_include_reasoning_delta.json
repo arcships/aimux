@@ -351,6 +351,11 @@
   },
   {
     "id": "call_AB6AaRZ1FYZB2RwS6A5vbdqn",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "fc_01830d662ab3856501693c32151234819091cfca267e98cc5f"
+      }
+    },
     "toolName": "calculator",
     "type": "tool-input-start"
   },
@@ -442,6 +447,11 @@
   },
   {
     "id": "call_Q6pW65MUgW9vF59BmItYGos3",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "fc_01830d662ab3856501693c32165be4819098c08f205f8932ef"
+      }
+    },
     "toolName": "calculator",
     "type": "tool-input-start"
   },
@@ -533,6 +543,11 @@
   },
   {
     "id": "call_Zl5vIMnD7dVAjgU6FkhmiCZh",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "fc_01830d662ab3856501693c32173d5081908f2121e1c3ff2901"
+      }
+    },
     "toolName": "calculator",
     "type": "tool-input-start"
   },

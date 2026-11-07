@@ -248,6 +248,7 @@ where
                 response_body: Some(String::from_utf8_lossy(&body).into_owned()),
                 response_headers: Some(headers.clone()),
                 cause: Some(ErrorCause::source(&error)),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     url,
@@ -326,6 +327,7 @@ pub fn invalid_response_api_call(
         response_headers: Some(response_headers),
         data: Some(crate::logging::redact_error_context(response_body)),
         cause: Some(ErrorCause::source(error)),
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
         ..ApiCallError::new(
             error.to_string(),
             crate::http::sanitized_request_url(url),
@@ -380,6 +382,7 @@ where
             response_headers: Some(headers.clone()),
             data: parsed_data.map(crate::logging::redact_error_context),
             is_retryable: aimux_core::error::is_retryable_status(status),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
@@ -456,6 +459,7 @@ where
                     response_headers: Some(headers.clone()),
                     is_retryable: true,
                     cause: Some(ErrorCause::source(&error)),
+                    origin: aimux_core::ApiCallErrorOrigin::Transport,
                     ..ApiCallError::new(
                         error.to_string(),
                         body_url.clone(),
@@ -503,6 +507,7 @@ where
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: true,
                             cause: Some(ErrorCause::source(error.as_ref())),
+                            origin: aimux_core::ApiCallErrorOrigin::Transport,
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
@@ -519,6 +524,7 @@ where
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: false,
                             cause: Some(ErrorCause::source(&error)),
+                            origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
@@ -565,6 +571,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
             response_body: Some(error_body_string(&body, truncated)),
             response_headers: Some(headers.clone()),
             is_retryable: aimux_core::error::is_retryable_status(status),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {

@@ -1,5 +1,8 @@
 # Session Affinity 集成指南
 
+> **0.6.0 更新**：示例已改用 `Client` / `Handle` 和 ops API。文末证据链接
+> 指向已归档的内部审计快照，个别文件可能不再随仓库发布，不影响本节结论。
+
 > **适用版本**: aimux 0.x(2026-08-03 定稿,[RFC-0019](../rfc/0019-session-affinity.md))
 > **结论先行**: aimux **不预置、不自动注入**任何会话头——会话头是"你的网关"的属性,不是 provider 的属性。
 > 机制已存在(`headers` 参数),本文档告诉你**传什么、怎么传、何时别传**。
@@ -18,12 +21,12 @@ LLM 网关/上游普遍提供"会话亲和":同一会话的请求带上稳定标
 |---|---|---|---|---|
 | **OpenRouter** | `session_id`(body 顶层,≤256 字符)或 `x-session-id` 头,body 优先 | header 或 body | **粘性路由键**(默认按首条消息哈希识别会话;显式传则直接用);兜底 `prompt_cache_key`;按 账户×模型×会话 粒度跟踪 | [OpenRouter prompt-caching 指南](https://openrouter.ai/docs/guides/best-practices/prompt-caching) |
 | **Cloudflare Workers AI** | `x-session-affinity` | header | 路由到同一模型实例,提升前缀缓存命中 | [Workers AI prompt-caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) |
-| **Anthropic 自托管**(dynamo/SGLang 等) | `x-claude-code-session-id` / `x-claude-code-agent-id` / `x-claude-code-parent-agent-id` | header | Claude Code harness → 自托管会话路由(子 agent KV 隔离);**对 Anthropic 托管 API 的缓存不参与** | [dynamo.md](../reference/audit/dynamo.md#L102-L107) |
-| **ChatGPT 订阅(Codex)** | `session_id`/`originator` 私有头 + `x-codex-turn-state`(服务端回传) | header | 私有约定、无文档;属 [RFC-0018](../rfc/0018-codex-subscription.md) 通道,只透传白名单头 | [plano.md](../reference/audit/plano.md#L88)、[uni-api.md](../reference/audit/uni-api.md#L57-L61) |
-| **Kimi / Z.AI** | `prompt_cache_key`(透传不生成) | header/body | 缓存标识;值由你的上游体系决定 | [opencodex.md](../reference/audit/opencodex.md)、[cc-switch.md](../reference/audit/cc-switch.md) |
-| **LiteLLM** | `x-litellm-session-id` / `x-litellm-trace-id` / `x-<vendor>-session-id` | header/body | 网关亲和/固定 deployment | [litellm.md](../reference/audit/litellm.md#L113-L120) |
-| **TokenHub** | `x-tokenhub-session-id` / `session-id` / `thread-id` | header | rendezvous 缓存亲和 | [TokenHub.md](../reference/audit/TokenHub.md#L113-L131) |
-| **llmgateway** | `x-session-id` → `prompt_cache_key` → `user`(解析优先级) | header/body | 钉 provider+region 保上游 prompt cache | [llmgateway.md](../reference/audit/llmgateway.md#L156-L160) |
+| **Anthropic 自托管**(dynamo/SGLang 等) | `x-claude-code-session-id` / `x-claude-code-agent-id` / `x-claude-code-parent-agent-id` | header | Claude Code harness → 自托管会话路由(子 agent KV 隔离);**对 Anthropic 托管 API 的缓存不参与** | `dynamo.md#L102-L107` |
+| **ChatGPT 订阅(Codex)** | `session_id`/`originator` 私有头 + `x-codex-turn-state`(服务端回传) | header | 私有约定、无文档;属 [RFC-0018](../rfc/0018-codex-subscription.md) 通道,只透传白名单头 | `plano.md#L88`、`uni-api.md#L57-L61` |
+| **Kimi / Z.AI** | `prompt_cache_key`(透传不生成) | header/body | 缓存标识;值由你的上游体系决定 | `opencodex.md`、`cc-switch.md` |
+| **LiteLLM** | `x-litellm-session-id` / `x-litellm-trace-id` / `x-<vendor>-session-id` | header/body | 网关亲和/固定 deployment | `litellm.md#L113-L120` |
+| **TokenHub** | `x-tokenhub-session-id` / `session-id` / `thread-id` | header | rendezvous 缓存亲和 | `TokenHub.md#L113-L131` |
+| **llmgateway** | `x-session-id` → `prompt_cache_key` → `user`(解析优先级) | header/body | 钉 provider+region 保上游 prompt cache | `llmgateway.md#L156-L160` |
 | **OpenAI 官方 API** | **无 session id** | — | 会话用 `previous_response_id`/`conversation.id`(与本文档无关) | OpenAI conversation-state 指南 |
 | 其他自建网关 | 看你的网关文档 | — | 无统一标准 | — |
 
@@ -34,11 +37,12 @@ LLM 网关/上游普遍提供"会话亲和":同一会话的请求带上稳定标
 ### Rust —— `GenerateTextOptions.headers`
 
 ```rust
-use aimux_providers::openai;
-use aimux_core::{generate::generate_text, options::GenerateTextOptions};
+use aimux_providers::openai::openai;
+use aimux_core::{generate::generate_text, generate::GenerateTextOptions};
 use std::collections::HashMap;
 
-let model = openai("sk-...", "gpt-4o", None);
+// 0.6: package default instance; the key is read when a request is made.
+let model = openai().chat("gpt-4o");
 
 // 会话标识:由你(集成方)持有——agent 循环里生成一次,复用整轮
 let session_id = "conv_abc123".to_string();
@@ -46,37 +50,52 @@ let session_id = "conv_abc123".to_string();
 let mut headers = HashMap::new();
 headers.insert("x-session-id".to_string(), session_id.clone());
 
-let result = generate_text(model, "你好", GenerateTextOptions {
+let result = generate_text(&model, "你好", GenerateTextOptions {
     headers: Some(headers),
     ..Default::default()
 }).await?;
 ```
 
-### Node —— 工厂级(所有请求)或调用级
+### Node —— 调用级(推荐)或 provider 级
 
 ```ts
-import { openai, generateText } from '@arcships/aimux';
+import { Client } from '@arcships/aimux';
 
-// 工厂级:整个 provider 实例都带
-const model = openai('sk-...', 'gpt-4o', {
-  headers: JSON.stringify({ 'x-session-id': 'conv_abc123' }),
+const client = new Client();
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: 'sk-...' },
 });
+const model = await provider.model('gpt-4o', 'languageModel');
 
 // 调用级:仅本次调用(推荐——会话是调用级概念)
-const result = await generateText(model, '你好', {
-  headers: JSON.stringify({ 'x-session-id': 'conv_abc123' }),
+const result = await model.generate('你好', {
+  headers: { 'x-session-id': 'conv_abc123' },
 });
+
+await model.close();
+await provider.close();
 ```
+
+provider 级头由 `provider.create` 的 settings 提供;调用级头只覆盖本次调用。
 
 ### Python —— options 字典透传
 
 ```python
-from aimux import openai, generate_text
+from aimux import Client
 
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "你好", {
-    "headers": {"x-session-id": "conv_abc123"},
-})
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "openai",
+    "settings": {"apiKey": "sk-..."},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "languageModel", "modelId": "gpt-4o",
+    })["handle"]) as model:
+        result = model.call("text.generate", {
+            "prompt": "你好",
+            "options": {"headers": {"x-session-id": "conv_abc123"}},
+        })
 ```
 
 ### FFI 语言(Swift/Kotlin/C/Go/Java/Flutter)

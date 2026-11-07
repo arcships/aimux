@@ -289,6 +289,14 @@ type AiMuxErrorVariantAIAPICallError struct {
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
 	Message string `json:"message"`
+	// The boundary this error was built at: before a response arrived, from
+	// an HTTP response, from an event inside an accepted stream, or locally.
+	// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+	// could replay output it already delivered cannot tell an HTTP 429 from
+	// an in-stream 429 frame by the status and response body. Omitted from
+	// the JSON when `unknown`, which is also what an error serialized
+	// without the field reads back as.
+	Origin *APICallErrorOrigin `json:"origin,omitzero"`
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
@@ -871,6 +879,14 @@ type AiMuxErrorInputVariantAIAPICallError struct {
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
 	Message string `json:"message"`
+	// The boundary this error was built at: before a response arrived, from
+	// an HTTP response, from an event inside an accepted stream, or locally.
+	// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+	// could replay output it already delivered cannot tell an HTTP 429 from
+	// an in-stream 429 frame by the status and response body. Omitted from
+	// the JSON when `unknown`, which is also what an error serialized
+	// without the field reads back as.
+	Origin *APICallErrorOrigin `json:"origin,omitzero"`
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
@@ -1282,6 +1298,14 @@ type APICallError struct {
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
 	Message string `json:"message"`
+	// The boundary this error was built at: before a response arrived, from
+	// an HTTP response, from an event inside an accepted stream, or locally.
+	// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+	// could replay output it already delivered cannot tell an HTTP 429 from
+	// an in-stream 429 frame by the status and response body. Omitted from
+	// the JSON when `unknown`, which is also what an error serialized
+	// without the field reads back as.
+	Origin *APICallErrorOrigin `json:"origin,omitzero"`
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
@@ -1342,6 +1366,14 @@ type APICallErrorInput struct {
 	// locally detected transport/parse failures include their source detail.
 	// Never includes an HTTP status prefix.
 	Message string `json:"message"`
+	// The boundary this error was built at: before a response arrived, from
+	// an HTTP response, from an event inside an accepted stream, or locally.
+	// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+	// could replay output it already delivered cannot tell an HTTP 429 from
+	// an in-stream 429 frame by the status and response body. Omitted from
+	// the JSON when `unknown`, which is also what an error serialized
+	// without the field reads back as.
+	Origin *APICallErrorOrigin `json:"origin,omitzero"`
 	// Provider's machine-readable code (OpenAI's `code`/`type`,
 	// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
 	// status. Our normalized take on `APICallError.data`.
@@ -1365,6 +1397,18 @@ type APICallErrorInput struct {
 	// Sanitized request URL. Required for every API-derived failure.
 	URL string `json:"url"`
 }
+
+// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+// says what the underlying error was.
+type APICallErrorOrigin string
+
+const (
+	APICallErrorOriginTransport    APICallErrorOrigin = "transport"
+	APICallErrorOriginHTTPResponse APICallErrorOrigin = "httpResponse"
+	APICallErrorOriginStreamEvent  APICallErrorOrigin = "streamEvent"
+	APICallErrorOriginLocal        APICallErrorOrigin = "local"
+	APICallErrorOriginUnknown      APICallErrorOrigin = "unknown"
+)
 
 // Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
 //
@@ -3861,7 +3905,13 @@ type GenerateTextOptions struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	Temperature   *float64 `json:"temperature,omitzero"`
+	// Strict stream mode: end the stream with a terminal error when
+	// the protocol's evidence of a complete reply is missing (the stream
+	// ends without its terminal event, a block delta arrives outside a
+	// started block, a block starts twice). Client tool calls are delivered
+	// only right before the finish. Off by default, as in the AI SDK.
+	StrictStream *bool    `json:"strictStream,omitzero"`
+	Temperature  *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
 	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
 	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`
@@ -4540,7 +4590,11 @@ func (v LanguageModelToolResultOutputVariantErrorJSON) MarshalJSON() ([]byte, er
 }
 
 type LanguageModelToolResultOutputVariantContent struct {
-	Value []ToolResultContent `json:"value"`
+	// Whether the tool call failed. Beyond the AI SDK's `content` output,
+	// so a result that carries an image or a file can still be an
+	// error (#470).
+	IsError *bool               `json:"isError,omitzero"`
+	Value   []ToolResultContent `json:"value"`
 }
 
 func (LanguageModelToolResultOutputVariantContent) isLanguageModelToolResultOutput() {}
@@ -5294,7 +5348,13 @@ type Options struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	Temperature   *float64 `json:"temperature,omitzero"`
+	// Strict stream mode: end the stream with a terminal error when
+	// the protocol's evidence of a complete reply is missing (the stream
+	// ends without its terminal event, a block delta arrives outside a
+	// started block, a block starts twice). Client tool calls are delivered
+	// only right before the finish. Off by default, as in the AI SDK.
+	StrictStream *bool    `json:"strictStream,omitzero"`
+	Temperature  *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
 	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
 	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`
@@ -10254,6 +10314,8 @@ func NewDTO(name string) (any, error) {
 		return new(APICallError), nil
 	case "ApiCallErrorInput":
 		return new(APICallErrorInput), nil
+	case "ApiCallErrorOrigin":
+		return new(APICallErrorOrigin), nil
 	case "AspectRatio":
 		return new(AspectRatio), nil
 	case "AssistantContent":

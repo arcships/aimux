@@ -66,6 +66,7 @@ pub async fn read_response_with_size_limit_lazy(
             status_code: Some(status),
             response_headers: Some(response_headers),
             is_retryable: aimux_core::error::is_retryable_status(status),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
                 format!("Response exceeded maximum size of {max_bytes} bytes"),
                 url,
@@ -97,6 +98,7 @@ pub async fn read_response_with_size_limit_lazy(
                     response_headers: Some(response_headers.clone()),
                     is_retryable: true,
                     cause: Some(ErrorCause::source(&error)),
+                    origin: aimux_core::ApiCallErrorOrigin::Transport,
                     ..ApiCallError::new(
                         format!("Failed to read response body: {error}"),
                         url,
@@ -110,6 +112,7 @@ pub async fn read_response_with_size_limit_lazy(
                 status_code: Some(status),
                 response_headers: Some(response_headers),
                 is_retryable: aimux_core::error::is_retryable_status(status),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Response exceeded maximum size of {max_bytes} bytes"),
                     url,

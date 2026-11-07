@@ -137,6 +137,7 @@ where
                 provider_code,
                 response_body: Some(raw.to_string()),
                 response_headers: Some(headers),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..aimux_core::ApiCallError::new(message, url, body_source.materialize())
             })));
         }
@@ -149,6 +150,7 @@ where
                 response_body: Some(raw.to_string()),
                 response_headers: Some(headers.clone()),
                 cause: Some(aimux_core::ErrorCause::source(&error)),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..aimux_core::ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     url,
@@ -214,6 +216,7 @@ where
             provider_code,
             response_body: Some(raw.to_string()),
             response_headers: Some(headers),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..aimux_core::ApiCallError::new(message, url, body_source.materialize())
         })))
     })

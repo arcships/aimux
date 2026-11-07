@@ -24,7 +24,7 @@ use aimux_core::shared::{
 };
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
-use aimux_core::types::{FinishReason, Usage, Warning};
+use aimux_core::types::{FinishReason, FinishReasonUnified, Usage, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -35,10 +35,11 @@ use crate::openai_compatible::error::{ErrorStructure, default_error_structure};
 use crate::openai_compatible::utils::to_camel_case;
 use crate::stream::{
     ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+    strict_error,
 };
 
 use super::api_types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-use super::chat_language_model_options::{SCHEMA_KEYS, option_string, validate_options};
+use super::chat_language_model_options::{ChatOptions, SCHEMA_KEYS};
 use super::convert_chat_usage::usage_from_raw;
 use super::convert_to_chat_messages::{MessageSpec, convert_messages};
 use super::map_finish_reason::parse_finish_reason;
@@ -235,22 +236,16 @@ pub(crate) fn build_request_body(
     let chat = spec.chat;
     let mut warnings = Vec::new();
 
-    // Resolved provider options: the generic namespace, then the provider's
-    // own, then its camelCase form; later wins per key.
-    let mut merged = Map::new();
-    if let Some(deprecated) = namespace(options, "openai-compatible") {
-        validate_options(deprecated, "openai-compatible")?;
+    // Resolved provider options (`Object.assign` of the parsed namespaces):
+    // the deprecated generic namespace, the generic one, the provider's own,
+    // then its camelCase form; a field a later namespace sets wins.
+    let provider_options = options.provider_options.as_ref();
+    let deprecated = ChatOptions::parse("openai-compatible", provider_options)?;
+    if deprecated.is_some() {
         warnings.push(Warning::Deprecated {
             setting: "providerOptions key 'openai-compatible'".to_string(),
             message: "Use 'openaiCompatible' instead.".to_string(),
         });
-        merged.extend(deprecated.iter().map(|(k, v)| (k.clone(), v.clone())));
-    }
-    for key in ["openaiCompatible", name, camel.as_str()] {
-        if let Some(object) = namespace(options, key) {
-            validate_options(object, key)?;
-            merged.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
-        }
     }
     if camel != name && namespace(options, name).is_some() {
         warnings.push(Warning::Deprecated {
@@ -258,19 +253,22 @@ pub(crate) fn build_request_body(
             message: format!("Use '{camel}' instead."),
         });
     }
+    let mut compatible = deprecated.unwrap_or_default();
+    for key in ["openaiCompatible", name, camel.as_str()] {
+        if let Some(parsed) = ChatOptions::parse(key, provider_options)? {
+            compatible = compatible.assign(parsed);
+        }
+    }
 
-    let user = option_string(&merged, name, "user")?;
-    let reasoning_effort = option_string(&merged, name, "reasoningEffort")?.or_else(|| {
+    let user = compatible.user;
+    let reasoning_effort = compatible.reasoning_effort.or_else(|| {
         options
             .reasoning
             .filter(|effort| effort.is_custom())
             .map(|effort| effort.to_string())
     });
-    let verbosity = option_string(&merged, name, "textVerbosity")?;
-    let strict_json_schema = merged
-        .get("strictJsonSchema")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+    let verbosity = compatible.text_verbosity;
+    let strict_json_schema = compatible.strict_json_schema.unwrap_or(true);
 
     let metadata_key = resolve_metadata_key(name, options);
     let mut body = Map::new();
@@ -520,6 +518,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 
         let mut content = Vec::new();
         content.extend(content_parts(choice.message.content.as_ref()));
+        content.extend(refusal_text(choice.message.refusal));
         let reasoning = choice
             .message
             .reasoning_content
@@ -654,13 +653,16 @@ impl LanguageModel for OpenAICompatibleChatModel {
         };
         let stream = pipe_through(sse_stream, transformer);
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(RequestInfo { body: Some(body) }),
-            response: Some(StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(RequestInfo { body: Some(body) }),
+                response: Some(StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -684,6 +686,9 @@ struct OpenAICompatibleChatStream {
     final_usage_raw: Option<Value>,
     final_usage_parsed: Option<UsageResponse>,
     final_finish_reason: Option<FinishReason>,
+    /// The first wire `finish_reason`; strict stream mode fails a later
+    /// delta or a different `finish_reason` (#473).
+    first_finish_reason: Option<String>,
     response_metadata_emitted: bool,
     tool_calls: ChatToolCalls,
     /// Some compatible servers send the first delta of a call without
@@ -789,7 +794,15 @@ impl Transformer for OpenAICompatibleChatStream {
             self.final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
         }
 
-        for choice in chunk.choices.into_iter().take(1) {
+        // The AI SDK reads the first choice; strict stream mode reads only
+        // candidate 0, an omitted index being 0 (#473).
+        let strict = self.ctx.strict;
+        for choice in chunk
+            .choices
+            .into_iter()
+            .filter(|choice| !strict || choice.index.unwrap_or(0) == 0)
+            .take(1)
+        {
             let reasoning_delta = choice
                 .delta
                 .reasoning_content
@@ -803,6 +816,28 @@ impl Transformer for OpenAICompatibleChatStream {
                 }));
             }
             delta_content.extend(content_parts(choice.delta.content.as_ref()));
+            delta_content.extend(refusal_text(choice.delta.refusal));
+            if strict && let Some(first) = &self.first_finish_reason {
+                let problem = if !delta_content.is_empty()
+                    || choice
+                        .delta
+                        .tool_calls
+                        .as_ref()
+                        .is_some_and(|d| !d.is_empty())
+                {
+                    Some(format!("a delta after finish_reason `{first}`"))
+                } else {
+                    choice
+                        .finish_reason
+                        .as_ref()
+                        .filter(|reason| *reason != first)
+                        .map(|reason| format!("finish_reason `{reason}` after `{first}`"))
+                };
+                if let Some(problem) = problem {
+                    controller.error(strict_error(problem));
+                    return;
+                }
+            }
             for part in delta_content {
                 match part {
                     GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
@@ -844,7 +879,9 @@ impl Transformer for OpenAICompatibleChatStream {
                     let arguments = function.and_then(|f| f.arguments.as_deref());
                     let buffered;
                     let delta = match dtc.index {
-                        Some(index) if !self.forwarded.contains(&index) => {
+                        // Strict stream mode wants the id and name on the
+                        // first delta of a call.
+                        Some(index) if !strict && !self.forwarded.contains(&index) => {
                             let entry = self.pending.entry(index).or_default();
                             if entry.id.is_none() {
                                 entry.id.clone_from(&dtc.id);
@@ -878,7 +915,12 @@ impl Transformer for OpenAICompatibleChatStream {
                             ..ToolCallDelta::default()
                         },
                     };
-                    if !self.tool_calls.delta(delta, controller) {
+                    let applied = if strict {
+                        self.tool_calls.strict_delta(delta, controller)
+                    } else {
+                        self.tool_calls.delta(delta, controller)
+                    };
+                    if !applied {
                         return;
                     }
                 }
@@ -908,11 +950,38 @@ impl Transformer for OpenAICompatibleChatStream {
 
             if let Some(reason) = choice.finish_reason {
                 self.final_finish_reason = Some(parse_finish_reason(&reason));
+                self.first_finish_reason.get_or_insert(reason);
             }
         }
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
+        // Strict stream mode: the finish_reason agrees with the tool calls
+        // (#473).
+        if self.ctx.strict
+            && let Some(reason) = &self.final_finish_reason
+        {
+            let problem = match reason.unified {
+                FinishReasonUnified::ToolCalls if self.tool_calls.is_empty() => {
+                    Some("finish_reason `tool_calls` without a tool call")
+                }
+                FinishReasonUnified::Stop if !self.tool_calls.is_empty() => {
+                    Some("finish_reason `stop` with a tool call")
+                }
+                _ => None,
+            };
+            if let Some(problem) = problem {
+                controller.error(strict_error(problem));
+                return;
+            }
+        }
         if self.reasoning_started {
             controller.reasoning_end(REASONING_ID);
         }
@@ -968,6 +1037,17 @@ struct PendingToolCall {
     id: Option<String>,
     arguments: String,
     extra: Value,
+}
+
+/// A refusal as visible text. aimux extension (#461): the AI SDK does not
+/// read `refusal`.
+fn refusal_text(refusal: Option<String>) -> Option<GenerateContent> {
+    refusal
+        .filter(|text| !text.is_empty())
+        .map(|text| GenerateContent::Text {
+            text,
+            provider_metadata: None,
+        })
 }
 
 /// Normalize text and thinking parts, preserving their order.

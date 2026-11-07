@@ -1,5 +1,8 @@
 # Shared operations
 
+> **0.6.0 / ops 1.0.** Every binding calls these operations. For the 0.5
+> constructor/error migration, see [Upgrading to 0.6](../upgrading-to-0.6.md).
+
 `aimux-ops` exposes the following registered operation names. Use
 `runtime.describe` for versions, manifest digest and available names. The Rust
 `manifest::manifest()` and C `aimux_manifest_json` provide authoritative modes,

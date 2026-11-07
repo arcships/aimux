@@ -209,8 +209,8 @@ fn completion_prompt(options: &CallOptions) -> Result<String, AiMuxError> {
 }
 
 /// `convertOpenAICompletionUsage`: only the three counts the response schema
-/// keeps; a missing count leaves its total unset.
-fn usage(raw: Option<Map<String, Value>>) -> Usage {
+/// keeps; a missing count stays unknown.
+pub(crate) fn usage(raw: Option<Map<String, Value>>) -> Usage {
     let Some(mut raw) = raw else {
         return Usage::default();
     };
@@ -228,15 +228,17 @@ fn usage(raw: Option<Map<String, Value>>) -> Usage {
         .get("completion_tokens")
         .and_then(Value::as_u64)
         .map(|n| n as u32);
+    // #478: a count the provider did not report stays unknown (the AI SDK
+    // fills 0); a reported zero stays zero.
     Usage {
         input_tokens: InputTokenUsage {
             total: input,
-            no_cache: Some(input.unwrap_or(0)),
+            no_cache: input,
             ..Default::default()
         },
         output_tokens: OutputTokenUsage {
             total: output,
-            text: Some(output.unwrap_or(0)),
+            text: output,
             ..Default::default()
         },
         raw: Some(raw),
@@ -444,13 +446,16 @@ impl LanguageModel for OpenAICompletionModel {
                 ..OpenAICompletionStream::default()
             },
         );
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(RequestInfo { body: Some(body) }),
-            response: Some(StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(RequestInfo { body: Some(body) }),
+                response: Some(StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -522,6 +527,13 @@ impl Transformer for OpenAICompletionStream {
     }
 
     fn flush(self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         if self.started {
             controller.text_end("0");
         }
