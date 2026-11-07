@@ -334,6 +334,7 @@ impl Files for GoogleFiles {
                 provider_code: Some("FAILED".to_string()),
                 message: format!("File processing failed for {}", file.name),
                 response_body: last_poll_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("File processing failed for {}", file.name),
                     last_poll_url,

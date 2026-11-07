@@ -591,6 +591,7 @@ impl VideoModel for ReplicateVideoModel {
                     status_code: Some(200),
                     provider_code: Some(status_str.to_string()),
                     response_body,
+                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                     ..ApiCallError::new(
                         format!("Replicate prediction {status_str}"),
                         poll_url,

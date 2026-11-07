@@ -1,5 +1,9 @@
 # Decision API
 
+> **0.6.0.** Decision resources are obtained with `provider.model` and
+> `method: "decision"`; call `decision.capabilities` / `decision.decide`.
+> See [Upgrading to 0.6](../upgrading-to-0.6.md) for the binding-wide changes.
+
 `decide` 对同一个文本或 JSON state 回答多道 typed questions，结果按问题 ID
 索引。模型契约是 AI SDK 的 `DecisionModelV4`（`@ai-sdk/provider@4.0.22
 src/decision-model/v4/`），操作对应 `ai@7.0.128 src/decide/decide.ts`。

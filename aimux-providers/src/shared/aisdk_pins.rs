@@ -136,6 +136,31 @@ pub(crate) const XAI: Package = Package {
     provider_utils: "5.0.51",
 };
 
+/// `@ai-sdk/deepgram@3.1.24` package.json: `"@ai-sdk/provider-utils": "5.0.53"`.
+pub(crate) const DEEPGRAM: Package = Package {
+    name: "deepgram",
+    version: "3.1.24",
+    provider_utils: "5.0.53",
+};
+/// `@ai-sdk/elevenlabs@3.0.54` package.json: `"@ai-sdk/provider-utils": "5.0.53"`.
+pub(crate) const ELEVENLABS: Package = Package {
+    name: "elevenlabs",
+    version: "3.0.54",
+    provider_utils: "5.0.53",
+};
+/// `@ai-sdk/fal@3.0.54` package.json: `"@ai-sdk/provider-utils": "5.0.53"`.
+pub(crate) const FAL: Package = Package {
+    name: "fal",
+    version: "3.0.54",
+    provider_utils: "5.0.53",
+};
+/// `@ai-sdk/luma@3.0.54` package.json: `"@ai-sdk/provider-utils": "5.0.53"`.
+pub(crate) const LUMA: Package = Package {
+    name: "luma",
+    version: "3.0.54",
+    provider_utils: "5.0.53",
+};
+
 #[cfg(test)]
 #[path = "../../../fixtures/aisdk/pinned_versions.rs"]
 mod pinned_versions;
@@ -145,7 +170,7 @@ mod tests {
     use super::{Package, pinned_versions};
 
     /// Every top-level package (not the nested google-vertex copy).
-    const PACKAGES: [Package; 15] = [
+    const PACKAGES: [Package; 19] = [
         super::ANTHROPIC,
         super::GOOGLE,
         super::OPENAI,
@@ -161,6 +186,10 @@ mod tests {
         super::MISTRAL,
         super::OPEN_RESPONSES,
         super::XAI,
+        super::DEEPGRAM,
+        super::ELEVENLABS,
+        super::FAL,
+        super::LUMA,
     ];
 
     #[test]

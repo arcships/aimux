@@ -8008,6 +8008,215 @@ mod older_upstream_e2e {
     }
 }
 
+// Not an upstream case: Gemini signs the last part of each text block (the
+// recordings end a block with an empty signed part), so a signed part closes
+// its block, the next part opens a new one, and text closes before a function
+// call (#467).
+mod signed_text_parts {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_signed_part_closes_its_text_block() {
+        let chunk = json!({
+            "candidates": [{
+                "content": { "role": "model", "parts": [
+                    { "text": "first" },
+                    { "text": " block", "thoughtSignature": "sig-1" },
+                    { "text": "second" },
+                    { "text": "", "thoughtSignature": "sig-2" },
+                    {
+                        "functionCall": { "id": "call-1", "name": "echo", "args": {} },
+                        "thoughtSignature": "sig-tool",
+                    },
+                    { "text": "after", "thoughtSignature": "sig-3" },
+                ]},
+                "finishReason": "STOP",
+                "index": 0,
+            }],
+        });
+        let mock = sse_stream_mock(vec![sse_data_chunk(&chunk)]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+        let trace: Vec<String> = stream_events_of_type(
+            &events,
+            &["text-start", "text-delta", "text-end", "tool-call"],
+        )
+        .iter()
+        .map(|event| {
+            let signature = event["providerMetadata"]["google"]["thoughtSignature"]
+                .as_str()
+                .unwrap_or("-");
+            let id = event["id"].as_str().unwrap_or_default();
+            match event["type"].as_str().unwrap() {
+                "text-delta" => format!("delta {id} {} {signature}", event["delta"]),
+                "tool-call" => format!("tool-call {}", event["toolCallId"].as_str().unwrap()),
+                kind => format!("{kind} {id} {signature}"),
+            }
+        })
+        .collect();
+
+        assert_eq!(
+            trace,
+            [
+                "text-start 0 -",
+                r#"delta 0 "first" -"#,
+                r#"delta 0 " block" sig-1"#,
+                "text-end 0 -",
+                "text-start 1 -",
+                r#"delta 1 "second" -"#,
+                r#"delta 1 "" sig-2"#,
+                "text-end 1 -",
+                "tool-call call-1",
+                "text-start 2 sig-3",
+                r#"delta 2 "after" sig-3"#,
+                "text-end 2 -",
+            ]
+        );
+    }
+}
+
+// Not an upstream case: the stream ends at the finish reason and its usage,
+// whether or not the body ends with them (#469).
+mod terminal_chunk {
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    fn terminal_chunk(text: &str) -> Value {
+        json!({
+            "candidates": [{
+                "content": { "role": "model", "parts": [{ "text": text }] },
+                "finishReason": "STOP",
+                "index": 0,
+            }],
+            "usageMetadata": { "promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2 },
+        })
+    }
+
+    #[tokio::test]
+    async fn the_terminal_chunk_finishes_while_the_body_stays_open() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+            }
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
+            let body = sse_data_chunk(&terminal_chunk("done"));
+            socket
+                .write_all(format!("{head}{body}").as_bytes())
+                .await
+                .unwrap();
+            socket.flush().await.unwrap();
+            // Keep the body open past the wait below.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+        let model = create_google(GoogleProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(format!("http://{address}/v1beta")),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat("gemini-pro");
+
+        let result = model
+            .do_stream(&stream_call_options_with(json!({})))
+            .await
+            .expect("doStream succeeds");
+        let parts = tokio::time::timeout(Duration::from_secs(2), stream_parts_of(result)).await;
+        server.abort();
+
+        let parts = parts.expect("the stream ends at the terminal chunk");
+        assert_eq!(parts.last().unwrap()["type"], "finish");
+    }
+
+    #[tokio::test]
+    async fn the_stream_ends_at_the_usage_after_the_finish_reason() {
+        let mut finish_without_usage = terminal_chunk("done");
+        finish_without_usage
+            .as_object_mut()
+            .unwrap()
+            .remove("usageMetadata");
+        let usage =
+            json!({ "promptTokenCount": 1, "candidatesTokenCount": 3, "totalTokenCount": 4 });
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&finish_without_usage),
+            sse_data_chunk(&json!({ "usageMetadata": usage })),
+            sse_data_chunk(&terminal_chunk("late")),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        let deltas = stream_events_of_type(&events, &["text-delta"]);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0]["delta"], "done");
+        let finishes = stream_events_of_type(&events, &["finish"]);
+        assert_eq!(finishes.len(), 1);
+        assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+
+    #[tokio::test]
+    async fn the_stream_ends_at_the_finish_reason_after_the_usage() {
+        let mut finish_without_usage = terminal_chunk("done");
+        finish_without_usage
+            .as_object_mut()
+            .unwrap()
+            .remove("usageMetadata");
+        let usage =
+            json!({ "promptTokenCount": 1, "candidatesTokenCount": 3, "totalTokenCount": 4 });
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&json!({ "usageMetadata": usage })),
+            sse_data_chunk(&finish_without_usage),
+            sse_data_chunk(&terminal_chunk("late")),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        let deltas = stream_events_of_type(&events, &["text-delta"]);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0]["delta"], "done");
+        let finishes = stream_events_of_type(&events, &["finish"]);
+        assert_eq!(finishes.len(), 1);
+        assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+
+    // An error event after the terminal chunk is not read. Upstream reads on
+    // but parses the event as an empty chunk (its `chunkSchema` has only
+    // optional fields) and ignores it, so it surfaces nothing either.
+    #[tokio::test]
+    async fn an_error_event_after_the_terminal_chunk_is_not_surfaced() {
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&terminal_chunk("done")),
+            sse_data_chunk(&json!({
+                "error": { "code": 429, "message": "late", "status": "RESOURCE_EXHAUSTED" }
+            })),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        assert_eq!(
+            stream_events_of_type(&events, &["error"]),
+            Vec::<Value>::new()
+        );
+        let finish = stream_finish_event(&events);
+        assert_eq!(finish["finishReason"]["unified"], "stop");
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+}
+
 // Not an upstream case: the shape of the error an in-stream `{"error": ...}`
 // event becomes (`google_stream_error` through `create_provider_stream_error`).
 mod in_stream_error {
@@ -8024,8 +8233,14 @@ mod in_stream_error {
                 "status": "RESOURCE_EXHAUSTED",
             }
         });
+        // The text chunk carries no finish reason: the error arrives before
+        // the terminal chunk (an error after it is not read, see
+        // `terminal_chunk`).
+        let text_chunk = json!({
+            "candidates": [{ "content": { "parts": [{ "text": "Hello" }], "role": "model" } }],
+        });
         let mock = sse_stream_mock(vec![
-            sse_text_chunks(&["Hello"], None, None).concat(),
+            sse_data_chunk(&text_chunk),
             sse_data_chunk(&error_event),
         ]);
         let model = stream_test_provider(&mock).chat("gemini-pro");

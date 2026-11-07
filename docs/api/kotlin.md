@@ -1,326 +1,90 @@
 # aimux · Kotlin API
 
-> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
-> which V4 removed: errors are now the shared `ErrorEnvelope`
-> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
-> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
-> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
-> AI SDK. The current API is in [bindings/kotlin/README.md](../../bindings/kotlin/README.md).
-> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+> **0.6.0.** Kotlin now depends on the matching Java artifact and uses
+> ABI 1 / ops 1.0. The former independent Kotlin JNA implementation is
+> removed. See the [0.6 upgrade guide](../upgrading-to-0.6.md).
 
-> Unified LLM service access layer — one API to access AI providers
-
-Kotlin wraps the Rust core through the `aimux-ffi` C ABI (via JNA).
+The Kotlin artifact adds coroutines, bounded Flow collection and a sealed
+exception facade in `ai.arcships.aimux.kotlin`. Java owns native loading,
+ABI/ops validation, resources, wire DTOs and error decoding.
 
 ## Install
 
-Maven Central (publishing):
-
 ```kotlin
-implementation("ai.arcships:aimux-kotlin:0.3.0")
+implementation("ai.arcships:aimux-kotlin:0.6.0")
 ```
 
-JNA loads `aimux_ffi` by name — provide the native library
-(`libaimux_ffi.so` on Linux, `libaimux_ffi.dylib` on macOS, `aimux_ffi.dll` on
-Windows) from [GitHub Releases](https://github.com/arcships/aimux/releases) on
-the JNA search path: `java.library.path`, `LD_LIBRARY_PATH`, or next to the JAR.
+This pulls in `ai.arcships:aimux-java` at the same version. Provide the native
+`aimux_ffi` library on the JNA search path as for Java.
 
-## Quick Start
+## Quick start
 
 ```kotlin
-Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
-    val result = model.generateText("\"What is Rust?\"")
-}
-```
+import ai.arcships.aimux.Aimux
+import ai.arcships.aimux.types.StreamFrame
+import ai.arcships.aimux.kotlin.aimuxCall
+import ai.arcships.aimux.kotlin.aimuxFlow
+import kotlinx.coroutines.flow.collect
 
-## Providers
-
-The vendor packages and 282 registry-backed OpenAI-compatible providers are reachable by string name:
-
-> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
-> typed factories remain available. Custom endpoints use the base-URL variant.
-> Full list: [providers.md](providers.md).
-
-```kotlin
-Model.provider(name = "groq", modelId = "llama-3.3-70b").use { model ->
-    val result = model.generateText("\"Hello\"")
-}
-
-// Optional config JSON: baseUrl, headers, organization, project, params.
-Model.provider(
-    name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b",
-    configJson = """{"baseUrl": "https://proxy.example.com/v1"}""",
-).use { model ->
-    val result = model.generateText("\"Hello\"")
-}
-```
-
-`configJson` (also for `Model.createProvider`) rejects unknown keys as an invalid
-argument; per-call settings such as `maxRetries` belong in `GenerateTextOptions`.
-There is no `registerProviders` / overlay API: providers come from the built-in
-factories and the preset rows only.
-
-Unknown names throw `NoSuchProviderError` naming the requested provider.
-
-## Errors
-
-Two aimux exception types, each mirroring its own Rust type — **AiMux**
-(`AimuxException`) and **recorder** (`RecordingException`). They share no base
-beyond `RuntimeException`; catch each on its own. Every fallible C call returns
-an `aimux_error_t *` (null = success, result in the out-parameter). The
-binding reads one unified code: 1..20 restores an `AimuxException` subclass,
-100..105 restores `RecordingException`, and 200..206 becomes
-`IllegalStateException("aimux ffi: …")`. Payload getters are read only under
-their owning AiMuxError code.
-Each helper frees every string and frees the returned error once
-(`aimux_error_free`) — **not** a JSON error envelope on the primary path,
-and never a handle. Kotlin does not add a third aimux error type for C ABI
-failures.
-
-`AiMuxError` values throw the **`AimuxException` sealed hierarchy** (exhaustive
-`when` in Kotlin; Java callers can still `catch (AimuxException e)`). It reads
-`code`, `message`, `retryable` for every code and the payload getters only under
-their owning code.
-
-```text
-RuntimeException
- └── AimuxException          // code, status, retryMs, retryable
-      ├── JSONParseError / InvalidResponseDataError
-      ├── InvalidArgumentError / InvalidPromptError
-      ├── TokenExpiredError          // 401, refresh and retry
-      ├── UnsupportedFunctionalityError
-      ├── NoSuchModelError / NoSuchProviderError   // modelId + modelType / providerId
-      ├── APICallError               // every HTTP-shaped failure; classify on status
-      │                              // + providerCode, providerMessage, responseBody, url, requestBodyValues, responseHeaders, data (null when absent)
-      ├── RetryError                 // the retry loop gave up; reason, errors (oldest first), lastError
-      ├── TimeoutError / RequestAbortedError
-      ├── NoSuchToolError            // toolName + availableTools (null = no tool set supplied)
-      ├── InvalidToolInputError      // toolName + toolInput (the raw argument text)
-      ├── ToolCallRepairError        // originalError (name-tagged AiMuxError JSON, same encoding as ToolCall.error)
-      ├── NoOutputGeneratedError     // code 18: no output was generated
-      ├── LoadAPIKeyError            // code 19: no API key, fallback env var unset (envVar)
-      ├── LoadSettingError           // code 20: a required setting is missing (envVar)
-      └── OtherError
-```
-
-A code outside the enum is a header/library mismatch and fails with `IllegalStateException`, not an error type.
-
-```kotlin
-import ai.arcships.aimux.*
-
-try {
-    model.generateText("\"hi\"")
-} catch (e: TokenExpiredError) {
-    // 401 — refresh the token and retry
-} catch (e: APICallError) {
-    // Classify on status: 429 → rate limited (e.retryMs),
-    // 401 → auth, 404 → model not found, -1 → no HTTP response observed
-} catch (e: AimuxException) {
-    // e.code (AIMUX_E_*), e.status, e.retryMs
-}
-```
-
-| Field | Meaning |
-|-------|---------|
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..20; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant; 14 = `Retry`) |
-| `status` | HTTP status when known; otherwise `-1` |
-| `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
-
-`RetryError` preserves the per-attempt history: `reason`
-(`RetryErrorReason.MAX_RETRIES_EXCEEDED` — every permitted attempt failed
-with a retryable error — or `ERROR_NOT_RETRYABLE` — a later attempt failed
-non-retryably), `errors` (oldest first, each itself an `AimuxException` —
-typically `APICallError` with its full detail), and `lastError`.
-
-Recording errors are a separate type, mirroring Rust's `recording::RecordingError`
-(C codes 100..105): `initRecording()` and `recordingTryFlush()` throw
-`RecordingException(code: RecordingErrorCode, message)` — a plain `RuntimeException`,
-**not** an `AimuxException` — with `code` one of `INIT, OPEN_FILE, SPAWN,
-WRITER_GONE, FLUSH_TIMEOUT, WRITE`. `initRecording()` reports `INIT` (dir could not
-be created), `OPEN_FILE`, `SPAWN` and leaves any previous recorder in place; a flush
-reports the last three. The legacy `recordingFlush()` stays and never reports.
-
-**C ABI failures.** The binding validates what only the caller can get
-wrong *before* the C call: malformed raw JSON text (`promptJson`, `optsJson`,
-`configJson`, `valuesJson`; required arguments reject empty, optional empty =
-default, JSONL by line) throws `IllegalArgumentException` naming the Kotlin
-parameter; any method on a closed `Model` / `ProviderHandle` / multimodal model
-/ `TranscriptionSession` throws `IllegalStateException("X is closed")`. Anything
-the C layer itself reports as 200..206 (dead or type-mismatched handle,
-re-entrant call, NULL / non-UTF-8 string, unserializable
-result, panicking callback, internal) is a binding or library invariant and
-surfaces as `IllegalStateException("aimux ffi: …")`. None of these are
-`AimuxException`.
-
-| Failure | Kotlin / Java |
-|---------|---------------|
-| bad raw JSON argument | `IllegalArgumentException("promptJson: …")` (before C) |
-| use-after-close | `IllegalStateException("Model is closed")` |
-| C code 200..206 | `IllegalStateException("aimux ffi: …")` (binding/library invariant) |
-
-Local decode failures in `TypedModel` throw `InvalidArgumentError`. Stream
-setup and terminal failures throw the typed hierarchy; the raw `Model.streamText`
-has no `onError` parameter (the C ABI has no `on_error` callback), and
-`TypedModel.streamText`'s `onError` reports local decode failures only.
-
-## Text Generation
-
-```kotlin
-Model.openai("sk-...", "gpt-4o").use { model ->
-    val result = model.generateText("\"What is Rust?\"")
-}
-```
-
-> Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
-
-## Streaming Generation
-
-```kotlin
-// streaming
-Model.openai("sk-...", "gpt-4o").use { model ->
-    // Raw Model has no onError: stream failures throw AimuxException from streamText.
-    model.streamText("\"Write a haiku\"", onPart = { println(it) }, onDone = {})
-}
-```
-
-> Stream part variants are documented in the [API overview](../API.md#streaming-generation).
-
-## TypedModel
-
-The raw `Model` speaks JSON strings. `TypedModel` wraps it with typed objects:
-
-```kotlin
-val model = TypedModel.openai("sk-...", "gpt-4o")
-val result = model.generateText("What is Rust?")
-println(result.text)          // typed GenerateTextResult
-println(result.usage.inputTokens.total)
-```
-
-| API | Signature |
-|------|------|
-| `TypedModel.openai` / `TypedModel.anthropic` | `fun openai(apiKey: String, modelId: String): TypedModel` (+ `baseUrl` overload) |
-| `TypedModel.of` | `fun of(model: Model): TypedModel` — wrap an existing raw `Model` |
-| `generateText` | `fun generateText(prompt: String, options: GenerateTextOptions? = null): GenerateTextResult` |
-| `generateText` | `fun generateText(messages: List<ModelMessage>, options: GenerateTextOptions? = null): GenerateTextResult` |
-| `streamText` | callback-based streaming (`onPart: (StreamPart) -> Unit`, `onDone`, `onError`) |
-| `streamTextSequence` | `fun streamTextSequence(...): Sequence<StreamPart>` — pull-based streaming |
-
-`TypedModel` is `Closeable` (use `use { }`); `AiMuxError` values surface as
-typed `AimuxException` subclasses (see [Errors](#errors)).
-
-## Tool-Call Repair
-
-A tool call whose arguments do not parse or do not match the schema never fails
-generation — it comes back as `ToolCall(invalid = true, error = …)`. Set
-`GenerateTextOptions.repairToolCall` to get one repair attempt per invalid call
-(RFC-0035, the AI SDK's `repairToolCall`). It runs on the JVM after the call
-returns, so it may block and may itself call aimux:
-
-```kotlin
-val options = GenerateTextOptions(
-    tools = listOf(weatherTool),
-    repairToolCall = { context ->
-        // context.toolCall.input is the RAW argument text the model emitted;
-        // context.error, .inputSchema, .tools, .messages, .instructions describe the failure.
-        val fixed = repairModel.generateText("Fix these arguments: ${context.toolCall.input}")
-        context.toolCall.copy(input = fixed.text)   // null = leave the call invalid
-    },
-)
-val result = typedModel.generateText("weather in Singapore?", options)
-```
-
-| Return / throw | Result |
-|---|---|
-| a `RawToolCall` | re-parsed and re-validated; a still-invalid repair carries `ToolCallRepair` |
-| `null` | the call stays invalid with its original error |
-| throws | the call carries `ToolCallRepair` with the exception's message as cause |
-
-Honoured by `generateText`, `generateObject`, `consumeStreamText` and
-`streamText` / `streamTextSequence` (the invalid `StreamPart.ToolCall` is
-replaced; tool-input deltas are the provider's text and pass through
-untouched). On the streaming path the function runs on a worker thread rather
-than the stream-callback thread — the native re-entrancy guard is thread-local,
-so a hook calling aimux from the callback thread would fail; the stream simply
-waits for it, so part order is unaffected. That worker is lent the stream's
-read hold on the streaming model, so the hook may call that same model even
-while another thread calls `close()`; the lend is valid only while the stream
-thread blocks holding the read lock, and only on the thread the hook is invoked
-on — extra threads the hook starts itself take the lock normally and would
-deadlock against a concurrent `close()`, so call the model from the thread the
-hook is invoked on. Do not call `close()` on the streaming model from inside
-the hook (it deadlocks, as from a stream callback); the stream waits for the
-hook without a timeout. `generateTextAsOpenAI` honours it by repairing the
-native result and converting it (`Model.generateTextResultAsOpenAI`), since a
-`ChatCompletion` carries no `invalid` marker; `streamTextAsOpenAI` does not
-reflect repair. The raw JSON-string `Model` never
-sees typed options; to drive repair from it, call `toolCallRepairContext`,
-`applyToolCallRepair` and `applyToolCallRepairToResult` directly — they are
-pure JSON-in / JSON-out functions.
-
-## Streaming Transcription (STT)
-
-Realtime transcription models (e.g. OpenAI `gpt-realtime-whisper`) support
-streaming sessions (RFC-0028): push audio chunks, then pull transcription
-parts. `TranscriptionModel.startStream` returns a `TranscriptionSession`
-(`Closeable`):
-
-```kotlin
-TranscriptionModel.openai("sk-...", "gpt-realtime-whisper").use { model ->
-    model.startStream().use { session ->
-        session.pushAudio(chunk)          // blocking (backpressure)
-        session.inputDone()               // end-of-audio (idempotent)
-        while (true) {
-            try {
-                val part = session.nextPart(timeoutMs = 500)
-                println(part)             // JSON TranscriptionStreamPart
-            } catch (e: TranscriptionSession.AimuxTranscriptionEndedException) {
-                break                     // stream finished normally
-            } catch (e: TranscriptionSession.AimuxTranscriptionTimeoutException) {
-                // No part within timeoutMs — retryable: the session stays
-                // live, just call nextPart again.
-            }
+suspend fun generate() {
+    val aimux = Aimux.load()
+    aimux.createProvider("""{"package":"openai","settings":{}}""").use { provider ->
+        provider.languageModel("gpt-4o-mini").use { model ->
+            val params = """{"prompt":"Hello","options":{"maxRetries":0}}"""
+            val result = aimuxCall { executor -> model.generateAsync(params, executor) }
+            println(result)
+            aimuxFlow<StreamFrame> { executor, consumer ->
+                model.streamAsync(params, consumer, executor)
+            }.collect { frame -> println("${frame.type}: ${frame.event ?: frame.outcome}") }
         }
     }
 }
 ```
 
-`nextPart(timeoutMs)`: `timeoutMs > 0` waits at most that long; `0` polls
-immediately; `< 0` waits indefinitely. Outcomes:
+Use the Java provider/model and generated `ai.arcships.aimux.types` classes
+directly. They pass unchanged between Java and Kotlin; Java retains ownership
+and `close()` semantics. Generic resource operations expose all registered
+ops, including Decision.
 
-| Exception | Meaning |
-|-----------|---------|
-| returns a `String` | the next part (JSON `TranscriptionStreamPart`) |
-| `AimuxTranscriptionEndedException` | the stream finished normally |
-| `AimuxTranscriptionTimeoutException` | no part in time — **retryable**, the session stays live |
-| `AimuxException` subclasses | the stream failed (typed hierarchy) |
+## Coroutines and streams
 
-The timeout sentinel is deliberately **not** an `AimuxException` / `TimeoutError`
-— a timeout is not a stream failure, so catch it explicitly (same shape as the
-Go / Java / Swift / Flutter bindings). `close()` aborts and releases the
-session (idempotent).
+- `aimuxCall` starts and awaits Java Futures on `Dispatchers.IO`.
+- `Future.awaitAimux()` adapts an already started Java operation.
+- Coroutine cancellation invokes `Future.cancel(true)`, which signals the
+  Java-owned Abort. Java retains native resources until its work returns.
+- `aimuxFlow` is cold; each collection starts its own Java operation. The
+  supplied executor must run all callback work.
+- The Flow channel holds 64 frames by default (1–256 configurable). A full
+  channel blocks callbacks without dropping frames; cancellation, `take(n)`
+  and collector failures release blocked callbacks.
+- Java callbacks include both Event and End frames. Buffered frames precede a
+  terminal exception; a business error event remains ordinary data.
 
-## Types
+## Errors
 
-Kotlin declares no DTO classes of its own. It uses the Java artifact's DTOs,
-which `aimux-codegen` generates from the Rust types into the package
-`ai.arcships.aimux.types` (`bindings/java/generated/ai/arcships/aimux/types/`;
-do not edit them, run `cargo run -p aimux-codegen`). They pass unchanged between
-Java and Kotlin. The wire JSON is the AI SDK's and equals the generated
-TypeScript types in `bindings/node/src/generated/types.ts`; the shapes, the
-`null` versus missing rules and the multimodal types are described in the
-[Java API](java.md#types).
+`AimuxException` delegates `code`, `kind`, `errorName`, `error`, `envelope` to
+Java. All 22 known core subtypes have Kotlin variants. `javaError` is the
+cause, so the Java `ErrorCause` chain follows it. Kotlin performs no JSON error
+decoding.
 
-## Native library in tests
+Read a retry delay from `error.responseHeaders`, not from a dedicated retry
+field.
 
-`build.gradle.kts` points `jna.library.path` at `../../target/release`;
-set `AIMUX_FFI_LIB_DIR` to use a library built elsewhere (for example
-`$CARGO_TARGET_DIR/debug`).
+## Breaking changes in 0.6
 
-## Coverage
+- The independent Kotlin implementation in `ai.arcships.aimux` is removed,
+  including its JNA declarations, native loader, provider constructors, DTO
+  copies and callback/Sequence streams.
+- Import Java objects from `ai.arcships.aimux` and Kotlin additions from
+  `ai.arcships.aimux.kotlin`. No compatibility aliases are provided.
+- Pass the canonical request DTO shape described by the native manifest.
+- Errors are the shared envelope; the old Kotlin error hierarchy is replaced
+  by the Java-backed sealed facade.
 
-Full multimodal surface — text generation, streaming, embedding, TTS, STT
-(incl. streaming `TranscriptionSession`), image, video, rerank, search, and
-file upload (through the Java artifact and its generated DTOs), verified by
-mock-server end-to-end tests (no real network). See the
-[coverage matrix](../API.md#feature-coverage).
+## See also
+
+- [bindings/kotlin/README.md](../../bindings/kotlin/README.md) — coroutine,
+  Flow and test details.
+- [docs/api/ops.md](ops.md) — operation names.
+- [docs/error-model.md](../error-model.md) — error codes and cause chains.
+- [Kotlin provider list](providers.md).

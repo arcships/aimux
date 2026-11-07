@@ -804,17 +804,13 @@ mod do_generate {
 
         assert_eq!(
             result_json(&result)["usage"],
+            // #478: unreported counts stay unknown (the AI SDK fills 0).
             json!({
                 "inputTokens": {
-                    "cacheRead": 0,
                     "noCache": 20,
                     "total": 20
                 },
-                "outputTokens": {
-                    "reasoning": 0,
-                    "text": 0,
-                    "total": 0
-                },
+                "outputTokens": {},
                 "raw": {
                     "prompt_tokens": 20,
                     "total_tokens": 20
@@ -2607,12 +2603,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -2733,12 +2728,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -2816,12 +2810,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -2926,12 +2919,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -3020,12 +3012,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 10,
                             "total": 10
                         },
@@ -3338,12 +3329,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -3460,12 +3450,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 226,
                             "total": 226
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 20,
                             "total": 20
                         },
@@ -3534,12 +3523,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -3617,12 +3605,11 @@ mod do_stream {
                     "type": "finish",
                     "usage": {
                         "inputTokens": {
-                            "cacheRead": 0,
+                            // #478: unreported counts stay unknown (the AI SDK fills 0).
                             "noCache": 18,
                             "total": 18
                         },
                         "outputTokens": {
-                            "reasoning": 0,
                             "text": 439,
                             "total": 439
                         },
@@ -3639,6 +3626,39 @@ mod do_stream {
                 }
             ])
         );
+    }
+
+    /// A chunk with `"error": null` is a normal chunk (#397). Upstream's
+    /// chunk schema is a union of the chunk object and the error schema; a
+    /// chunk with `choices` takes the first branch, which drops the unknown
+    /// `error` key. Gateways send the null member on healthy chunks.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let fetch = stream_mock(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"error":null}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"id":"x","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"error":null}"#,
+        ]);
+
+        let result = model(&fetch)
+            .do_stream(&stream_options(json!({})))
+            .await
+            .unwrap();
+        let parts = stream_parts(result).await;
+
+        assert!(
+            parts.iter().all(|part| part["type"] != "error"),
+            "{parts:?}"
+        );
+        assert!(
+            parts.contains(&json!({ "delta": "hello", "id": "txt-0", "type": "text-delta" })),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
     }
 
     /// upstream: @ai-sdk/openai-compatible src/chat/openai-compatible-chat-language-model.test.ts › doStream › should preserve structured error stream parts
@@ -4866,10 +4886,11 @@ mod upstream_e2e {
         assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
         assert_eq!(usage.input_tokens.total, Some(18));
         assert_eq!(usage.input_tokens.no_cache, Some(18));
-        assert_eq!(usage.input_tokens.cache_read, Some(0));
+        // #478: unreported counts stay unknown (the AI SDK fills 0).
+        assert_eq!(usage.input_tokens.cache_read, None);
         assert_eq!(usage.output_tokens.total, Some(439));
         assert_eq!(usage.output_tokens.text, Some(439));
-        assert_eq!(usage.output_tokens.reasoning, Some(0));
+        assert_eq!(usage.output_tokens.reasoning, None);
         assert_eq!(
             provider_metadata.as_ref().unwrap(),
             &provider_namespace("test-provider", json!({}))
@@ -5039,7 +5060,10 @@ mod upstream_e2e {
                 content: vec![ToolPart::ToolResult(ToolResultPart {
                     tool_call_id: "call-1".into(),
                     tool_name: "weather".into(),
-                    output: ToolResultOutput::Content { value },
+                    output: ToolResultOutput::Content {
+                        value,
+                        is_error: None,
+                    },
                     provider_options: None,
                 })],
                 provider_options: None,
@@ -5137,5 +5161,73 @@ mod upstream_e2e {
             "{error:?}"
         );
         assert!(fetch.seen().is_empty());
+    }
+}
+
+/// aimux's own: every namespace is parsed against
+/// `openaiCompatibleLanguageModelChatOptions` with `parseProviderOptions`
+/// (openai-compatible-chat-language-model.ts:197-235). A wrong type or an
+/// explicit `null` (zod `.optional()`) fails with the upstream message and
+/// nothing is sent; a field a later namespace sets wins (`Object.assign`).
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_wrong_type_or_null_fails_with_the_upstream_message() {
+        for (provider_options, namespace) in [
+            (
+                json!({ "openaiCompatible": { "user": 1 } }),
+                "openaiCompatible",
+            ),
+            (
+                json!({ "testProvider": { "strictJsonSchema": "yes" } }),
+                "testProvider",
+            ),
+            (
+                json!({ "test-provider": { "reasoningEffort": null } }),
+                "test-provider",
+            ),
+            (
+                json!({ "openai-compatible": { "textVerbosity": false } }),
+                "openai-compatible",
+            ),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let error = model(&fetch)
+                .do_generate(&call_options(
+                    json!({ "providerOptions": provider_options }),
+                ))
+                .await
+                .unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_later_namespace_wins_and_unknown_own_keys_pass_through() {
+        let fetch = MockFetch::new(vec![prepare_json_response(json!({}))]);
+        model(&fetch)
+            .do_generate(&call_options(json!({ "providerOptions": {
+                "openaiCompatible": { "user": "generic", "reasoningEffort": "low", "generic": 1 },
+                "testProvider": { "user": "own", "extra": true },
+            } })))
+            .await
+            .unwrap();
+
+        let body = request_body(&fetch);
+        assert_eq!(body["user"], "own");
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["extra"], true);
+        assert!(body.get("generic").is_none(), "{body}");
     }
 }
