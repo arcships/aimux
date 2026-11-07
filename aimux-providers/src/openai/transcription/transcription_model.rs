@@ -597,7 +597,8 @@ impl OpenAITranscriptionModel {
                                         "realtime transcription socket closed before completion",
                                         error_url.clone(),
                                         error_request.clone(),
-                                    ))));
+                                    )
+                                    .with_origin(aimux_core::ApiCallErrorOrigin::Transport))));
                                 break;
                             }
                             Some(Err(e)) => {
@@ -661,6 +662,7 @@ impl OpenAITranscriptionModel {
                                         yield Err(AiMuxError::ApiCall(Box::new(
                                             aimux_core::error::ApiCallError {
                                                 response_body: Some(value.to_string()),
+                                                origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
                                                 ..aimux_core::error::ApiCallError::new(
                                                     msg,
                                                     error_url.clone(),

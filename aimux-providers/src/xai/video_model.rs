@@ -839,6 +839,7 @@ impl VideoModel for XaiVideoModel {
             AiMuxError::ApiCall(Box::new(ApiCallError {
                 status_code: Some(200),
                 is_retryable: false,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(message, url.clone(), json!({}))
             }))
         };

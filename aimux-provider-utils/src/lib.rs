@@ -62,8 +62,9 @@ pub use create_tool_name_mapping::{ToolNameMapping, create_tool_name_mapping};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
-    RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch,
+    ProcessDefaultFetch, ProxyConfig, RequestCredentials, ReqwestFetch, default_fetch,
+    set_default_transport,
 };
 pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
@@ -96,7 +97,7 @@ pub use response_handler::{
     create_json_error_response_handler, create_json_response_handler,
     create_status_code_error_response_handler, invalid_response_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+pub use sigv4_fetch::{AwsCredentials, SigV4AuthFetch, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;
 pub use tool_result_to_content::{tool_result_content_value, tool_result_to_content};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};

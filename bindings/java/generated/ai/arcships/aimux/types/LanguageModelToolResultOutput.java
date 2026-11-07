@@ -29,6 +29,7 @@ public abstract class LanguageModelToolResultOutput {
     public abstract String getType();
     public Map<String, Map<String, JsonNode>> getProviderOptions() { return null; }
     public String getReason() { return null; }
+    public Boolean getIsError() { return null; }
     public final boolean isContent() { return "content".equals(getType()); }
     public final boolean isErrorJson() { return "error-json".equals(getType()); }
     public final boolean isErrorText() { return "error-text".equals(getType()); }
@@ -267,12 +268,21 @@ public abstract class LanguageModelToolResultOutput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Content extends LanguageModelToolResultOutput {
+        /**
+         * Whether the tool call failed. Beyond the AI SDK's `content` output,
+         * so a result that carries an image or a file can still be an
+         * error (#470).
+         */
+        @JsonProperty("isError")
+        private final Boolean isError;
         @JsonProperty("value")
         private final List<ToolResultContent> value;
 
         @JsonCreator
         public Content(
+            @JsonProperty(value = "isError") Boolean isError,
             @JsonProperty(value = "value", required = true) List<ToolResultContent> value) {
+            this.isError = isError;
             this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value));
         }
 
@@ -281,17 +291,24 @@ public abstract class LanguageModelToolResultOutput {
         @Override
         @JsonProperty("type")
         public String getType() { return "content"; }
+        public Boolean getIsError() { return isError; }
         public List<ToolResultContent> getValue() { return value; }
 
         public static final class Builder {
+            private Boolean isError;
             private List<ToolResultContent> value;
+
+            public Builder isError(Boolean value) {
+                this.isError = value;
+                return this;
+            }
 
             public Builder value(List<ToolResultContent> value) {
                 this.value = value;
                 return this;
             }
 
-            public Content build() { return new Content(value); }
+            public Content build() { return new Content(isError, value); }
         }
     }
 }

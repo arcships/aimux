@@ -1,5 +1,12 @@
 # aimux vs Vercel AI SDK: Node.js Experience Comparison
 
+> **Historical analysis (2026-07-29, 0.5 era).** The Node binding changed in
+> 0.6.0: the top-level `openai`/`generateText` helpers are replaced by
+> `Client` / `Handle` and the shared operations ABI. The API snippets and
+> performance numbers below describe the earlier binding; see
+> [bindings/node/README.md](../bindings/node/README.md) and
+> [Upgrading to 0.6](upgrading-to-0.6.md) for the current surface.
+
 > **Date**: 2026-07-29
 > **Scope**: User experience of the Node.js binding layer, compared based on code facts
 > **Comparison baseline**: aimux `bindings/node` (napi-rs + JSON string boundary) vs Vercel AI SDK V5 (`ai` + `@ai-sdk/openai`, native TS + Zod)

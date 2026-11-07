@@ -124,6 +124,9 @@ pub(crate) fn convert_responses_input_with_conversation(
                 // message, as `reasoningMessages` upstream).
                 let mut reasoning_items: std::collections::HashMap<String, Option<usize>> =
                     std::collections::HashMap::new();
+                // The text parts of one message item reference it once (#468:
+                // each content part streams as its own text part).
+                let mut text_items = std::collections::HashSet::new();
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -135,7 +138,9 @@ pub(crate) fn convert_responses_input_with_conversation(
                                 continue;
                             }
                             if store && let Some(ref id) = id {
-                                input.push(json!({ "type": "item_reference", "id": id }));
+                                if text_items.insert(id.clone()) {
+                                    input.push(json!({ "type": "item_reference", "id": id }));
+                                }
                                 continue;
                             }
                             let phase = phase_from_provider_options(ns, provider_options);
@@ -729,7 +734,7 @@ fn convert_tool_result_output(
     custom: bool,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
-    let ToolResultOutput::Content { value } = output else {
+    let ToolResultOutput::Content { value, .. } = output else {
         return Ok(aimux_provider_utils::tool_result_to_content(output));
     };
     let mut parts = Vec::new();

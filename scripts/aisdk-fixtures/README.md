@@ -20,8 +20,10 @@ Each `fixtures/aisdk/VERSIONS.json` entry is `{version, integrity}`: `node recor
 integrity of an unchanged version and takes a new one from `package-lock.json`, and
 `bash scripts/fetch-aisdk.sh` fetches exactly those sources into `target/aisdk`.
 The vendor packages without cases (`PINNED_ONLY` in `record.mjs`) are pinned for the
-user-agent versions aimux sends; a bump changes `package.json`, `package-lock.json`,
-`VERSIONS.json` and `aimux-providers/src/shared/aisdk_pins.rs` together.
+upstream tests aimux's port follows (RFC-0045) and for the `ai-sdk-<pkg>/<version>` user
+agent aimux sends, each with a `Package` in `aimux-providers/src/shared/aisdk_pins.rs`;
+a bump changes `package.json`, `package-lock.json`, `VERSIONS.json` and `aisdk_pins.rs`
+together.
 
 No network is used. The mock `fetch` (`mock-fetch.mjs`) throws on any URL other than the
 case's expected one and on a second request.
