@@ -25,7 +25,7 @@ pub fn tool_result_to_content(output: &ToolResultOutput) -> Value {
         ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
             value.to_string()
         }
-        ToolResultOutput::Content { value } => tool_result_content_value(value).to_string(),
+        ToolResultOutput::Content { value, .. } => tool_result_content_value(value).to_string(),
     })
 }
 

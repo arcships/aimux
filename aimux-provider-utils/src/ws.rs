@@ -181,10 +181,12 @@ fn ws_error(
     url: &str,
     msg: impl std::fmt::Display,
     source: Option<&(dyn std::error::Error + 'static)>,
+    origin: aimux_core::ApiCallErrorOrigin,
 ) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
         is_retryable: true,
         cause: source.map(ErrorCause::source),
+        origin,
         ..ApiCallError::new(
             msg.to_string(),
             crate::http::sanitized_request_url(url),
@@ -626,6 +628,7 @@ async fn connect_tungstenite(
                     } else {
                         aimux_core::error::is_retryable_status(status)
                     },
+                    origin: aimux_core::ApiCallErrorOrigin::Transport,
                     ..ApiCallError::new(
                         format!("proxy rejected websocket CONNECT: {reason}"),
                         crate::http::sanitized_request_url(&req.url),
@@ -647,6 +650,7 @@ async fn connect_tungstenite(
                         .body()
                         .as_ref()
                         .map(|body| String::from_utf8_lossy(body).into_owned()),
+                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                     ..ApiCallError::new(
                         format!("websocket connect rejected: HTTP {status}"),
                         crate::http::sanitized_request_url(&req.url),
@@ -659,6 +663,7 @@ async fn connect_tungstenite(
                     &req.url,
                     format!("websocket connect failed: {e}"),
                     Some(&e),
+                    aimux_core::ApiCallErrorOrigin::Transport,
                 ));
             }
         },
@@ -726,7 +731,14 @@ impl WsConnection {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Text(text.to_string())) => {
-                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}"), Some(&e)))
+                res.map_err(|e| {
+                    ws_error(
+                        &self.url,
+                        format!("websocket send failed: {e}"),
+                        Some(&e),
+                        aimux_core::ApiCallErrorOrigin::Transport,
+                    )
+                })
             }
         }
     }
@@ -746,7 +758,14 @@ impl WsConnection {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Binary(bytes.to_vec())) => {
-                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}"), Some(&e)))
+                res.map_err(|e| {
+                    ws_error(
+                        &self.url,
+                        format!("websocket send failed: {e}"),
+                        Some(&e),
+                        aimux_core::ApiCallErrorOrigin::Transport,
+                    )
+                })
             }
         }
     }
@@ -796,10 +815,13 @@ impl WsConnection {
                         let detail = frame
                             .map(|f| format!(" (code {}: {})", u16::from(f.code), f.reason))
                             .unwrap_or_default();
+                        // The peer's close frame is an event on the accepted
+                        // socket, not a transport failure.
                         return Some(Err(ws_error(
                             &self.url,
                             format!("{PEER_CLOSE}{detail}"),
                             None,
+                            aimux_core::ApiCallErrorOrigin::StreamEvent,
                         )));
                     }
                     Some(Err(e)) => {
@@ -807,6 +829,7 @@ impl WsConnection {
                             &self.url,
                             format!("websocket error: {e}"),
                             Some(&e),
+                            aimux_core::ApiCallErrorOrigin::Transport,
                         )));
                     }
                 },

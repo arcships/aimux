@@ -1929,6 +1929,7 @@ mod responses {
                     .do_stream(&test_prompt())
                     .await
                     .unwrap();
+                // #468: tool-input-start carries the item id in this snapshot.
                 let expected: Value =
                     serde_json::from_str(include_str!("snapshots/tool_call_stream.json")).unwrap();
                 assert_eq!(stream_json(result).await, expected);
@@ -2085,6 +2086,7 @@ mod responses {
                 })
                 .await
                 .unwrap();
+            // #468: tool-input-start carries the item id in this snapshot.
             let expected: Value =
                 serde_json::from_str(include_str!("snapshots/reasoning_stream.json")).unwrap();
             assert_eq!(stream_json(result).await, expected);

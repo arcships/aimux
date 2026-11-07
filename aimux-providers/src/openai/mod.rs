@@ -21,7 +21,7 @@ mod error;
 pub mod files;
 pub mod image;
 pub(crate) mod internal;
-mod language_model_capabilities;
+pub mod language_model_capabilities;
 mod normalize_json_schema;
 mod provider;
 pub mod responses;
