@@ -3286,28 +3286,28 @@ package = "@ai-sdk/deepgram"
 
 [[deepgram.files]]
 upstream = "src/deepgram-api-types.ts"
-rust = "deepgram.rs"
+rust = "deepgram/transcription_model.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
 upstream = "src/deepgram-config.ts"
-rust = "deepgram.rs"
+rust = "deepgram/provider.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
 upstream = "src/deepgram-error.ts"
-rust = "deepgram.rs"
+rust = "deepgram/error.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
 upstream = "src/deepgram-provider.ts"
-rust = "deepgram.rs"
+rust = "deepgram/provider.rs"
 status = "mapped"
 
 [deepgram.files.tests]
@@ -3338,14 +3338,14 @@ reason = "aimux has no Deepgram speech (TTS) model; the provider offers transcri
 
 [[deepgram.files]]
 upstream = "src/deepgram-transcription-model-options.ts"
-rust = "deepgram.rs"
+rust = "deepgram/options.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
 upstream = "src/deepgram-transcription-model.ts"
-rust = "deepgram.rs"
+rust = "deepgram/transcription_model.rs"
 status = "mapped"
 
 [deepgram.files.tests]
@@ -3355,19 +3355,62 @@ sub-feature = [
 
 [[deepgram.files]]
 upstream = "src/deepgram-transcription-options.ts"
-rust = "deepgram.rs"
+rust = "deepgram/transcription_model.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
 upstream = "src/index.ts"
-rust = "deepgram.rs"
+rust = "deepgram/mod.rs"
 status = "mapped"
 
 [deepgram.files.tests]
 
 [[deepgram.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[luma]
+package = "@ai-sdk/luma"
+
+[[luma.files]]
+upstream = "src/index.ts"
+rust = "luma/mod.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-model-options.ts"
+rust = "luma/options.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-model.ts"
+rust = "luma/image_model.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-settings.ts"
+rust = "luma/image_model.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-provider.ts"
+rust = "luma/provider.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"

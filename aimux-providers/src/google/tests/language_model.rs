@@ -8008,28 +8008,27 @@ mod older_upstream_e2e {
     }
 }
 
-// Not an upstream case: a part signed differently from the open text block
-// starts its own, an unsigned or same-signed part (Gemini streams a part's
-// signature on its last fragment) continues it, and text closes before a
-// function call (#467).
+// Not an upstream case: Gemini signs the last part of each text block (the
+// recordings end a block with an empty signed part), so a signed part closes
+// its block, the next part opens a new one, and text closes before a function
+// call (#467).
 mod signed_text_parts {
     use super::*;
 
     #[tokio::test]
-    async fn a_differently_signed_part_opens_its_own_text_block() {
+    async fn a_signed_part_closes_its_text_block() {
         let chunk = json!({
             "candidates": [{
                 "content": { "role": "model", "parts": [
-                    { "text": "plain" },
-                    { "text": "before", "thoughtSignature": "sig-before" },
-                    { "text": " more" },
-                    { "text": "", "thoughtSignature": "sig-before" },
-                    { "text": "after", "thoughtSignature": "sig-after" },
+                    { "text": "first" },
+                    { "text": " block", "thoughtSignature": "sig-1" },
+                    { "text": "second" },
+                    { "text": "", "thoughtSignature": "sig-2" },
                     {
                         "functionCall": { "id": "call-1", "name": "echo", "args": {} },
                         "thoughtSignature": "sig-tool",
                     },
-                    { "text": "", "thoughtSignature": "sig-end" },
+                    { "text": "after", "thoughtSignature": "sig-3" },
                 ]},
                 "finishReason": "STOP",
                 "index": 0,
@@ -8061,17 +8060,16 @@ mod signed_text_parts {
             trace,
             [
                 "text-start 0 -",
-                r#"delta 0 "plain" -"#,
-                r#"delta 0 "before" sig-before"#,
-                r#"delta 0 " more" -"#,
-                r#"delta 0 "" sig-before"#,
+                r#"delta 0 "first" -"#,
+                r#"delta 0 " block" sig-1"#,
                 "text-end 0 -",
-                "text-start 1 sig-after",
-                r#"delta 1 "after" sig-after"#,
+                "text-start 1 -",
+                r#"delta 1 "second" -"#,
+                r#"delta 1 "" sig-2"#,
                 "text-end 1 -",
                 "tool-call call-1",
-                "text-start 2 sig-end",
-                r#"delta 2 "" sig-end"#,
+                "text-start 2 sig-3",
+                r#"delta 2 "after" sig-3"#,
                 "text-end 2 -",
             ]
         );
@@ -8166,6 +8164,57 @@ mod terminal_chunk {
         assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
         assert_eq!(events.last().unwrap()["type"], "finish");
     }
+
+    #[tokio::test]
+    async fn the_stream_ends_at_the_finish_reason_after_the_usage() {
+        let mut finish_without_usage = terminal_chunk("done");
+        finish_without_usage
+            .as_object_mut()
+            .unwrap()
+            .remove("usageMetadata");
+        let usage =
+            json!({ "promptTokenCount": 1, "candidatesTokenCount": 3, "totalTokenCount": 4 });
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&json!({ "usageMetadata": usage })),
+            sse_data_chunk(&finish_without_usage),
+            sse_data_chunk(&terminal_chunk("late")),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        let deltas = stream_events_of_type(&events, &["text-delta"]);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0]["delta"], "done");
+        let finishes = stream_events_of_type(&events, &["finish"]);
+        assert_eq!(finishes.len(), 1);
+        assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+
+    // An error event after the terminal chunk is not read. Upstream reads on
+    // but parses the event as an empty chunk (its `chunkSchema` has only
+    // optional fields) and ignores it, so it surfaces nothing either.
+    #[tokio::test]
+    async fn an_error_event_after_the_terminal_chunk_is_not_surfaced() {
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&terminal_chunk("done")),
+            sse_data_chunk(&json!({
+                "error": { "code": 429, "message": "late", "status": "RESOURCE_EXHAUSTED" }
+            })),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        assert_eq!(
+            stream_events_of_type(&events, &["error"]),
+            Vec::<Value>::new()
+        );
+        let finish = stream_finish_event(&events);
+        assert_eq!(finish["finishReason"]["unified"], "stop");
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
 }
 
 // Not an upstream case: the shape of the error an in-stream `{"error": ...}`
@@ -8184,8 +8233,9 @@ mod in_stream_error {
                 "status": "RESOURCE_EXHAUSTED",
             }
         });
-        // The text chunk carries no finish reason, which would end the
-        // stream before the error event (#469).
+        // The text chunk carries no finish reason: the error arrives before
+        // the terminal chunk (an error after it is not read, see
+        // `terminal_chunk`).
         let text_chunk = json!({
             "candidates": [{ "content": { "parts": [{ "text": "Hello" }], "role": "model" } }],
         });
