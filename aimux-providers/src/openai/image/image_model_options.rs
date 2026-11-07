@@ -1,8 +1,9 @@
 //! Model limits and provider options of the OpenAI image model
 //! (openai-image-model-options.ts).
 
+use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
-use serde_json::Value;
+use aimux_provider_utils::{optional_field, parse_provider_options};
 
 /// Models that default to `b64_json` response format and therefore do NOT need
 /// the explicit `response_format` field. Identified by prefix.
@@ -42,52 +43,199 @@ pub(crate) fn get_max_images_per_call(model_id: &str) -> u32 {
     }
 }
 
-/// OpenAI generation provider options (camelCase → snake_case mapping).
-pub(crate) struct GenerationOptions {
-    pub(crate) quality: Option<Value>,
-    pub(crate) style: Option<Value>,
-    pub(crate) background: Option<Value>,
-    pub(crate) moderation: Option<Value>,
-    pub(crate) output_format: Option<Value>,
-    pub(crate) output_compression: Option<Value>,
-    pub(crate) user: Option<Value>,
+/// `baseImageModelOptionsObject`. Every key is `.optional()`: absent is
+/// `None`, `null` fails.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BaseImageOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) quality: Option<Quality>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) background: Option<Background>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) output_format: Option<OutputFormat>,
+    /// `z.number().int().min(0).max(100)`.
+    #[serde(default, deserialize_with = "output_compression")]
+    pub(crate) output_compression: Option<u8>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) user: Option<String>,
 }
 
-/// Parse generation provider options from the `"openai"` key.
+/// `openaiImageModelGenerationOptions`.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GenerationOptions {
+    #[serde(flatten)]
+    pub(crate) base: BaseImageOptions,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) style: Option<Style>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) moderation: Option<Moderation>,
+}
+
+/// `openaiImageModelEditOptions`.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EditOptions {
+    #[serde(flatten)]
+    pub(crate) base: BaseImageOptions,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) input_fidelity: Option<InputFidelity>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Quality {
+    Standard,
+    Hd,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+    Auto,
+}
+
+impl Quality {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Hd => "hd",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+            Self::Auto => "auto",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Background {
+    Transparent,
+    Opaque,
+    Auto,
+}
+
+impl Background {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Transparent => "transparent",
+            Self::Opaque => "opaque",
+            Self::Auto => "auto",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum OutputFormat {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+impl OutputFormat {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Webp => "webp",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Style {
+    Vivid,
+    Natural,
+}
+
+impl Style {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Vivid => "vivid",
+            Self::Natural => "natural",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Moderation {
+    Auto,
+    Low,
+}
+
+impl Moderation {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Low => "low",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum InputFidelity {
+    High,
+    Low,
+}
+
+impl InputFidelity {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Low => "low",
+        }
+    }
+}
+
+/// `outputCompression`: an integer from 0 to 100 (`null` fails). Read as a
+/// number, so `80.0` passes as zod's `int()` lets it.
+fn output_compression<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u8>, D::Error> {
+    use serde::Deserialize as _;
+    let value = f64::deserialize(deserializer)?;
+    if (0.0..=100.0).contains(&value) && value.fract() == 0.0 {
+        // An integer from 0 to 100: the cast is exact.
+        Ok(Some(value as u8))
+    } else {
+        Err(serde::de::Error::custom(
+            "expected an integer from 0 to 100",
+        ))
+    }
+}
+
+/// `parseProviderOptions` with `openaiImageModelGenerationOptions`
+/// (openai-image-model.ts:226-231); every key `None` without an `openai`
+/// namespace.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid openai provider options" when the namespace
+/// does not match the schema, with the serde error as its cause.
 pub(crate) fn parse_generation_provider_options(
     provider_options: &SharedProviderOptions,
-) -> GenerationOptions {
-    let openai = provider_options.get("openai");
-    GenerationOptions {
-        quality: openai.and_then(|o| o.get("quality")).cloned(),
-        style: openai.and_then(|o| o.get("style")).cloned(),
-        background: openai.and_then(|o| o.get("background")).cloned(),
-        moderation: openai.and_then(|o| o.get("moderation")).cloned(),
-        output_format: openai.and_then(|o| o.get("outputFormat")).cloned(),
-        output_compression: openai.and_then(|o| o.get("outputCompression")).cloned(),
-        user: openai.and_then(|o| o.get("user")).cloned(),
-    }
+) -> Result<GenerationOptions, AiMuxError> {
+    Ok(parse_provider_options("openai", Some(provider_options))?.unwrap_or_default())
 }
 
-/// OpenAI edit provider options.
-pub(crate) struct EditOptions {
-    pub(crate) quality: Option<Value>,
-    pub(crate) background: Option<Value>,
-    pub(crate) output_format: Option<Value>,
-    pub(crate) output_compression: Option<Value>,
-    pub(crate) input_fidelity: Option<Value>,
-    pub(crate) user: Option<Value>,
-}
-
-/// Parse edit provider options from the `"openai"` key.
-pub(crate) fn parse_edit_provider_options(provider_options: &SharedProviderOptions) -> EditOptions {
-    let openai = provider_options.get("openai");
-    EditOptions {
-        quality: openai.and_then(|o| o.get("quality")).cloned(),
-        background: openai.and_then(|o| o.get("background")).cloned(),
-        output_format: openai.and_then(|o| o.get("outputFormat")).cloned(),
-        output_compression: openai.and_then(|o| o.get("outputCompression")).cloned(),
-        input_fidelity: openai.and_then(|o| o.get("inputFidelity")).cloned(),
-        user: openai.and_then(|o| o.get("user")).cloned(),
-    }
+/// `parseProviderOptions` with `openaiImageModelEditOptions`
+/// (openai-image-model.ts:135-141); every key `None` without an `openai`
+/// namespace.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid openai provider options" when the namespace
+/// does not match the schema, with the serde error as its cause.
+pub(crate) fn parse_edit_provider_options(
+    provider_options: &SharedProviderOptions,
+) -> Result<EditOptions, AiMuxError> {
+    Ok(parse_provider_options("openai", Some(provider_options))?.unwrap_or_default())
 }

@@ -2198,6 +2198,26 @@ detailed sections below.
   instead of aimux's own per-field messages (`` `user` must be a string ``,
   `invalid <namespace> provider option echo`, `invalid
   providerOptions.<namespace>.dimensions`). The body is unchanged
+
+- OpenAI's completion, image, speech, transcription and files models parse
+  `providerOptions.openai` with `parse_provider_options` against the
+  upstream schemas (`openaiLanguageModelCompletionOptions` under `openai`
+  and the provider's own key, `openaiImageModelGenerationOptions` /
+  `openaiImageModelEditOptions`, `openaiSpeechModelOptionsSchema`,
+  `openAITranscriptionModelOptions`, `openaiFilesOptionsSchema`). A value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid openai provider options` and the serde error as
+  its cause, and nothing is sent. Completion, image and speech used to fail
+  with their own messages (`invalid openai provider option <key>`, `invalid
+  openai image option: <key>`, `invalid openai speech option: <key>`);
+  transcription and files dropped a value of the wrong type (transcription
+  also the non-string entries of `include` and `timestampGranularities`)
+  and forwarded an unknown `responseFormat`, `chunkingStrategy` or
+  `streaming.delay`. The requests for valid options are unchanged but for
+  two: files used to leave out an `expiresAfter` that is not a non-negative
+  integer (fractional, negative, or written with a decimal point) and now
+  send it as written, as upstream's `String(value)` does; image sends an
+  `outputCompression` written as `80.0` as `80`, as `JSON.stringify` does
   (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
