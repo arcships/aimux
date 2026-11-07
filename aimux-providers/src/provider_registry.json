@@ -322,6 +322,13 @@
     "profile": {}
   },
   {
+    "name": "cheaper_inference",
+    "display": "Cheaper Inference",
+    "base_url": "https://api.cheaperinference.com/v1",
+    "env_var": "CHEAPER_INFERENCE_API_KEY",
+    "profile": {}
+  },
+  {
     "name": "cherryin",
     "display": "cherryin",
     "base_url": "https://open.cherryin.net",
