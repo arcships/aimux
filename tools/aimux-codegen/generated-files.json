@@ -12,6 +12,7 @@
     "bindings/java/generated/ai/arcships/aimux/types/AiMuxErrorInput.java",
     "bindings/java/generated/ai/arcships/aimux/types/ApiCallError.java",
     "bindings/java/generated/ai/arcships/aimux/types/ApiCallErrorInput.java",
+    "bindings/java/generated/ai/arcships/aimux/types/ApiCallErrorOrigin.java",
     "bindings/java/generated/ai/arcships/aimux/types/AspectRatio.java",
     "bindings/java/generated/ai/arcships/aimux/types/AssistantContent.java",
     "bindings/java/generated/ai/arcships/aimux/types/AssistantContentPart.java",
@@ -327,6 +328,7 @@
     "schema/types/AnyValue.json",
     "schema/types/ApiCallError.json",
     "schema/types/ApiCallErrorInput.json",
+    "schema/types/ApiCallErrorOrigin.json",
     "schema/types/AspectRatio.json",
     "schema/types/AssistantContent.json",
     "schema/types/AssistantContentPart.json",
@@ -632,5 +634,5 @@
     "tools/aimux-web/web/src/types/generated/WireOptions.ts",
     "tools/aimux-web/web/src/types/generated/WireTool.ts"
   ],
-  "manifestDigest": "195a3f916c37502a7534f95beee6a3f75b3ef152a2f73595d7390a750f94b94b"
+  "manifestDigest": "2c06887e117851bc776b2ecf801caa23e82324d4b906b7764d7f6319a1577284"
 }

@@ -163,3 +163,64 @@ async fn should_ignore_unknown_streamed_content_parts() {
         })]
     );
 }
+
+/// aimux #461: a refusal is text in a generated response too.
+#[tokio::test]
+async fn should_extract_refusal_as_text() {
+    let mock = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "application/json".into())],
+        body: json!({
+            "choices": [
+                {
+                    "index": 0,
+                    "message": { "role": "assistant", "content": null, "refusal": "I cannot help with that." },
+                    "finish_reason": "stop",
+                },
+            ],
+        })
+        .to_string()
+        .into_bytes(),
+    }]);
+    let model = create_openai_compatible(OpenAICompatibleProviderSettings {
+        base_url: "https://my.api.com/v1".to_string(),
+        name: "test-provider".to_string(),
+        fetch: Some(mock.transport()),
+        ..Default::default()
+    })
+    .expect("provider")
+    .chat("test-model");
+    let result = model.do_generate(&prompt()).await.expect("generate");
+    assert_eq!(
+        serde_json::to_value(&result.content).expect("content serializes"),
+        json!([{ "type": "text", "text": "I cannot help with that." }])
+    );
+}
+
+/// aimux #461: a refusal delta streams as text, as `content` does.
+#[tokio::test]
+async fn should_stream_refusal_deltas_as_text() {
+    let events = do_stream(&[
+        data(&json!({
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": { "role": "assistant", "refusal": "I cannot help with that." },
+                    "finish_reason": null,
+                },
+            ],
+        })),
+        data(&json!({ "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }] })),
+        "data: [DONE]\n\n".to_string(),
+    ])
+    .await;
+
+    assert_eq!(
+        of_type(&events, |t| t == "text-delta"),
+        vec![json!({
+            "type": "text-delta",
+            "id": "txt-0",
+            "delta": "I cannot help with that.",
+        })]
+    );
+}

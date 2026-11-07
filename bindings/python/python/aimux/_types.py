@@ -95,6 +95,14 @@ class AiMuxErrorAIAPICallError(_Wire):
     #: locally detected transport/parse failures include their source detail.
     #: Never includes an HTTP status prefix.
     message: str = Field(alias="message")
+    #: The boundary this error was built at: before a response arrived, from
+    #: an HTTP response, from an event inside an accepted stream, or locally.
+    #: Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    #: could replay output it already delivered cannot tell an HTTP 429 from
+    #: an in-stream 429 frame by the status and response body. Omitted from
+    #: the JSON when `unknown`, which is also what an error serialized
+    #: without the field reads back as.
+    origin: Optional["_dto.ApiCallErrorOrigin"] = Field(default=None, alias="origin")
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
@@ -117,7 +125,7 @@ class AiMuxErrorAIAPICallError(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "provider_code", "response_body", "response_headers", "status_code"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "origin", "provider_code", "response_body", "response_headers", "status_code"])
 
 
 class AiMuxErrorAIRetryError(_Wire):
@@ -299,6 +307,14 @@ class AiMuxErrorInputAIAPICallError(_Wire):
     #: locally detected transport/parse failures include their source detail.
     #: Never includes an HTTP status prefix.
     message: str = Field(alias="message")
+    #: The boundary this error was built at: before a response arrived, from
+    #: an HTTP response, from an event inside an accepted stream, or locally.
+    #: Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    #: could replay output it already delivered cannot tell an HTTP 429 from
+    #: an in-stream 429 frame by the status and response body. Omitted from
+    #: the JSON when `unknown`, which is also what an error serialized
+    #: without the field reads back as.
+    origin: Optional["_dto.ApiCallErrorOrigin"] = Field(default=None, alias="origin")
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
@@ -321,7 +337,7 @@ class AiMuxErrorInputAIAPICallError(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "is_retryable", "provider_code", "response_body", "response_headers", "status_code"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "is_retryable", "origin", "provider_code", "response_body", "response_headers", "status_code"])
 
 
 class AiMuxErrorInputAIRetryError(_Wire):
@@ -523,6 +539,14 @@ class ApiCallError(_Wire):
     #: locally detected transport/parse failures include their source detail.
     #: Never includes an HTTP status prefix.
     message: str = Field(alias="message")
+    #: The boundary this error was built at: before a response arrived, from
+    #: an HTTP response, from an event inside an accepted stream, or locally.
+    #: Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    #: could replay output it already delivered cannot tell an HTTP 429 from
+    #: an in-stream 429 frame by the status and response body. Omitted from
+    #: the JSON when `unknown`, which is also what an error serialized
+    #: without the field reads back as.
+    origin: Optional["_dto.ApiCallErrorOrigin"] = Field(default=None, alias="origin")
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
@@ -545,7 +569,7 @@ class ApiCallError(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "provider_code", "response_body", "response_headers", "status_code"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "origin", "provider_code", "response_body", "response_headers", "status_code"])
 
 
 #: What a failed API call observed — the field set of the AI SDK's
@@ -584,6 +608,14 @@ class ApiCallErrorInput(_Wire):
     #: locally detected transport/parse failures include their source detail.
     #: Never includes an HTTP status prefix.
     message: str = Field(alias="message")
+    #: The boundary this error was built at: before a response arrived, from
+    #: an HTTP response, from an event inside an accepted stream, or locally.
+    #: Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    #: could replay output it already delivered cannot tell an HTTP 429 from
+    #: an in-stream 429 frame by the status and response body. Omitted from
+    #: the JSON when `unknown`, which is also what an error serialized
+    #: without the field reads back as.
+    origin: Optional["_dto.ApiCallErrorOrigin"] = Field(default=None, alias="origin")
     #: Provider's machine-readable code (OpenAI's `code`/`type`,
     #: e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     #: status. Our normalized take on `APICallError.data`.
@@ -606,8 +638,12 @@ class ApiCallErrorInput(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "is_retryable", "provider_code", "response_body", "response_headers", "status_code"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["cause", "is_retryable", "origin", "provider_code", "response_body", "response_headers", "status_code"])
 
+
+#: Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+#: says what the underlying error was.
+ApiCallErrorOrigin = TypeAliasType("ApiCallErrorOrigin", Literal["transport", "httpResponse", "streamEvent", "local", "unknown"])
 
 #: Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
 #:
@@ -1734,6 +1770,12 @@ class GenerateTextOptions(_Wire):
     #: may be inferred from prompt-prefix continuation.
     session_id: Optional[str] = Field(default=None, alias="sessionId")
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    #: Strict stream mode: end the stream with a terminal error when
+    #: the protocol's evidence of a complete reply is missing (the stream
+    #: ends without its terminal event, a block delta arrives outside a
+    #: started block, a block starts twice). Client tool calls are delivered
+    #: only right before the finish. Off by default, as in the AI SDK.
+    strict_stream: Optional[bool] = Field(default=None, alias="strictStream")
     temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
@@ -1741,7 +1783,7 @@ class GenerateTextOptions(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 #: Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -2121,7 +2163,12 @@ class LanguageModelToolResultOutputErrorJson(_Wire):
 
 class LanguageModelToolResultOutputContent(_Wire):
     type: Literal["content"] = Field(default="content", alias="type")
+    #: Whether the tool call failed. Beyond the AI SDK's `content` output,
+    #: so a result that carries an image or a file can still be an
+    #: error (#470).
+    is_error: Optional[bool] = Field(default=None, alias="isError")
     value: List["_dto.ToolResultContent"] = Field(alias="value")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["is_error"])
 
 
 #: The provider-facing result of a tool call.
@@ -2510,6 +2557,12 @@ class Options(_Wire):
     #: may be inferred from prompt-prefix continuation.
     session_id: Optional[str] = Field(default=None, alias="sessionId")
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stopSequences")
+    #: Strict stream mode: end the stream with a terminal error when
+    #: the protocol's evidence of a complete reply is missing (the stream
+    #: ends without its terminal event, a block delta arrives outside a
+    #: started block, a block starts twice). Client tool calls are delivered
+    #: only right before the finish. Off by default, as in the AI SDK.
+    strict_stream: Optional[bool] = Field(default=None, alias="strictStream")
     temperature: Optional[float] = Field(default=None, alias="temperature")
     #: Per-call timeout configuration (total / first-chunk / chunk idle).
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
@@ -2517,7 +2570,7 @@ class Options(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 Outcome = TypeAliasType("Outcome", Literal["success", "error", "cancelled"])
@@ -5665,6 +5718,7 @@ DTO_TYPES = {
     "AiMuxErrorInput": AiMuxErrorInput,
     "ApiCallError": ApiCallError,
     "ApiCallErrorInput": ApiCallErrorInput,
+    "ApiCallErrorOrigin": ApiCallErrorOrigin,
     "AspectRatio": AspectRatio,
     "AssistantContent": AssistantContent,
     "AssistantContentPart": AssistantContentPart,
@@ -6014,6 +6068,7 @@ __all__ = [
     "AiMuxErrorInputAIError",
     "ApiCallError",
     "ApiCallErrorInput",
+    "ApiCallErrorOrigin",
     "AspectRatio",
     "AssistantContent",
     "AssistantContentPart",
