@@ -232,6 +232,38 @@ mod thought_signatures {
     }
 }
 
+// Not an upstream case: an empty text part is replayed when it carries a
+// signature, as the stream keeps it (#467); an unsigned one is still skipped.
+mod empty_signed_text {
+    use super::*;
+
+    #[test]
+    fn an_empty_signed_text_part_is_replayed_and_an_unsigned_one_skipped() {
+        let result = convert(json!([
+            {
+                "role": "assistant",
+                "content": [
+                    { "type": "text", "text": "answer" },
+                    {
+                        "type": "text",
+                        "text": "",
+                        "providerOptions": { "google": { "thoughtSignature": "sig1" } },
+                    },
+                    { "type": "text", "text": "" },
+                ],
+            },
+        ]));
+
+        assert_eq!(
+            result["contents"][0]["parts"],
+            json!([
+                { "text": "answer" },
+                { "text": "", "thoughtSignature": "sig1" },
+            ])
+        );
+    }
+}
+
 mod thought_signatures_with_vertex_provider_options_name {
     use super::*;
 

@@ -301,7 +301,44 @@ fn parse_and_validate_tool_call(
     Ok((input, None))
 }
 
-fn parse_json_input(tool_call: &RawToolCall) -> Result<Value, AiMuxError> {
+/// Parse a raw tool call's argument text into JSON, as `stream_text` does.
+///
+/// For hosts that drive `do_stream` and execute tools themselves (#463).
+/// Empty or whitespace-only input is a zero-argument call and parses to `{}`.
+/// No schema validation or repair runs here.
+///
+/// # Errors
+///
+/// [`AiMuxError::InvalidToolInput`], whose cause is the JSON parse error, when
+/// the text is not valid JSON or holds a `__proto__` key or a `constructor`
+/// object with a `prototype` key at any depth.
+///
+/// ```
+/// use aimux_core::error::AiMuxError;
+/// use aimux_core::parse_tool_call::parse_json_input;
+/// use aimux_core::tool::RawToolCall;
+/// use serde_json::json;
+///
+/// let call = |input: &str| RawToolCall {
+///     tool_call_id: "call_1".into(),
+///     tool_name: "weather".into(),
+///     input: input.into(),
+///     provider_executed: None,
+///     dynamic: None,
+///     provider_metadata: None,
+/// };
+/// assert_eq!(parse_json_input(&call(r#"{"city":"Paris"}"#)).unwrap(), json!({"city": "Paris"}));
+/// assert_eq!(parse_json_input(&call("  ")).unwrap(), json!({}));
+/// assert!(matches!(
+///     parse_json_input(&call("{")),
+///     Err(AiMuxError::InvalidToolInput { .. })
+/// ));
+/// assert!(matches!(
+///     parse_json_input(&call(r#"{"__proto__":{}}"#)),
+///     Err(AiMuxError::InvalidToolInput { .. })
+/// ));
+/// ```
+pub fn parse_json_input(tool_call: &RawToolCall) -> Result<Value, AiMuxError> {
     if tool_call.input.trim().is_empty() {
         return Ok(Value::Object(serde_json::Map::new()));
     }

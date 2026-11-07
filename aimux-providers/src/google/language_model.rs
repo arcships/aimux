@@ -282,13 +282,16 @@ impl LanguageModel for GoogleModel {
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -413,33 +416,15 @@ impl GoogleLanguageModelStream {
 
                 // text part
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    if text.is_empty() {
-                        // Empty-text part may carry a thoughtSignature
-                        // (upstream :784-794): emit as a zero-length
-                        // delta with the signature metadata on
-                        // whichever block is open — text or
-                        // reasoning (mirrors the non-streaming
-                        // path, which attaches to the last
-                        // content item regardless of type).
-                        if let Some(meta) = &thought_sig_meta
-                            && let Some(id) = &self.text_id
-                        {
-                            controller.enqueue(StreamPart::TextDelta {
-                                id: id.clone(),
-                                delta: String::new(),
-                                provider_metadata: Some(meta.clone()),
-                            });
-                        }
-                    } else {
+                    // An empty part is kept when it carries a signature (#467).
+                    if !text.is_empty() || thought_sig_meta.is_some() {
                         let is_thought = part
                             .get("thought")
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false);
                         if is_thought {
                             // Close any open text block before starting reasoning
-                            if let Some(id) = self.text_id.take() {
-                                controller.text_end(id);
-                            }
+                            self.end_text(controller);
                             // Start a reasoning block if not already active
                             if self.reasoning_id.is_none() {
                                 let id = format!("{}", self.block_counter);
@@ -477,6 +462,14 @@ impl GoogleLanguageModelStream {
                                     delta: text.to_string(),
                                     provider_metadata: thought_sig_meta.clone(),
                                 });
+                            }
+                            // Gemini signs the last part of a text block (the
+                            // recordings end each block with an empty signed
+                            // part), so a signed part closes its block and
+                            // the next part opens a new one. Upstream appends
+                            // every part to one block (#467).
+                            if thought_sig_meta.is_some() {
+                                self.end_text(controller);
                             }
                         }
                     }
@@ -580,9 +573,7 @@ impl GoogleLanguageModelStream {
                 } else if let Some(inline) = part.get("inlineData") {
                     // File output — upstream :847-877.
                     // Close any open text/reasoning block before file.
-                    if let Some(id) = self.text_id.take() {
-                        controller.text_end(id);
-                    }
+                    self.end_text(controller);
                     if let Some(id) = self.reasoning_id.take() {
                         controller.reasoning_end(id);
                     }
@@ -609,14 +600,17 @@ impl GoogleLanguageModelStream {
                             },
                         );
                     }
-                }
-            }
-            // Function calls come after the other parts, as upstream.
-            for part in parts {
-                if let Some(call) = part.get("functionCall")
-                    && !self.function_call(call, part, controller)
-                {
-                    return;
+                } else if let Some(call) = part.get("functionCall") {
+                    // Text and reasoning close before the call, in part
+                    // order, so text after the call starts its own block.
+                    // Upstream handles the calls after the other parts (#467).
+                    self.end_text(controller);
+                    if let Some(id) = self.reasoning_id.take() {
+                        controller.reasoning_end(id);
+                    }
+                    if !self.function_call(call, part, controller) {
+                        return;
+                    }
                 }
             }
         }
@@ -628,6 +622,13 @@ impl GoogleLanguageModelStream {
 }
 
 impl GoogleLanguageModelStream {
+    /// Close the open text block, if any.
+    fn end_text(&mut self, controller: &mut Controller) {
+        if let Some(id) = self.text_id.take() {
+            controller.text_end(id);
+        }
+    }
+
     /// One `functionCall` part: a chunk of streamed arguments (`partialArgs`,
     /// or a name with `willContinue`), the empty chunk that ends a streamed
     /// call, or a complete call. `false` when the arguments cannot be
@@ -780,7 +781,17 @@ impl Transformer for GoogleLanguageModelStream {
         };
 
         match event {
-            Ok(GoogleStreamEvent::Chunk(chunk)) => self.transform_chunk(chunk, controller),
+            Ok(GoogleStreamEvent::Chunk(chunk)) => {
+                self.transform_chunk(chunk, controller);
+                // The turn is complete once it has both a finish reason (or a
+                // confirmed prompt block) and usage, in either order and
+                // possibly from separate chunks; the body itself may stay open
+                // (keep-alive, proxies). Upstream waits for its end (#469).
+                if self.last_usage_metadata_value.is_some() && self.final_finish_reason.is_some() {
+                    self.finish(controller);
+                    controller.terminate();
+                }
+            }
             Ok(GoogleStreamEvent::Error(error)) => {
                 controller.enqueue(StreamPart::Error {
                     error: super::error::google_stream_error(
@@ -806,18 +817,23 @@ impl Transformer for GoogleLanguageModelStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some() || self.stream_errored,
+            "a candidate finishReason",
+            controller,
+        ) {
+            return;
+        }
         self.finish(controller);
     }
 }
 
 impl GoogleLanguageModelStream {
-    /// Close the open segments and emit `Finish`: at the end of the body, or
-    /// right after an error event.
+    /// Close the open segments and emit `Finish`: at the terminal chunk, at
+    /// the end of the body, or right after an error event.
     fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text/reasoning segment.
-        if let Some(id) = self.text_id.take() {
-            controller.text_end(id);
-        }
+        self.end_text(controller);
         if let Some(id) = self.reasoning_id.take() {
             controller.reasoning_end(id);
         }
@@ -1579,7 +1595,7 @@ pub(crate) fn validate_call_options_for_namespace(
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
                     if let ToolPart::ToolResult(part) = part
-                        && let ToolResultOutput::Content { value } = &part.output
+                        && let ToolResultOutput::Content { value, .. } = &part.output
                     {
                         for part in value {
                             if let ToolResultContent::File(file) = part

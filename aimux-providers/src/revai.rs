@@ -289,6 +289,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                 status_code: Some(200),
                 provider_code: Some("failed".to_string()),
                 response_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     "Failed to submit transcription job to Rev.ai",
                     submit_url,
@@ -330,6 +331,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                         status_code: Some(200),
                         provider_code: Some("failed".to_string()),
                         response_body,
+                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                         ..ApiCallError::new(
                             "Transcription job failed",
                             poll_url.clone(),

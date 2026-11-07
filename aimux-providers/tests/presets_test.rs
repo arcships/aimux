@@ -304,6 +304,55 @@ async fn chat_server() -> MockServer {
     server
 }
 
+/// The token limit field a row sends for `max_output_tokens`.
+async fn sent_token_limit(name: &str) -> serde_json::Value {
+    let server = chat_server().await;
+    let preset = create_provider(
+        name,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut options = hello();
+    options.max_output_tokens = Some(64);
+    preset
+        .language_model("m")
+        .unwrap()
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let received = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+    json!({
+        "max_tokens": body.get("max_tokens"),
+        "max_completion_tokens": body.get("max_completion_tokens"),
+    })
+}
+
+/// Moonshot (platform.moonshot.cn and the international platform behind
+/// `kimi`) documents `max_tokens` as deprecated in favor of
+/// `max_completion_tokens`, and ZenMux does not support `max_tokens`
+/// (#401): their rows send `max_completion_tokens` only.
+#[tokio::test]
+async fn moonshot_and_zenmux_send_max_completion_tokens() {
+    for name in ["moonshotai", "kimi", "zenmux"] {
+        assert_eq!(
+            sent_token_limit(name).await,
+            json!({ "max_tokens": null, "max_completion_tokens": 64 }),
+            "{name}"
+        );
+    }
+    // A row without `max_tokens_key` keeps `max_tokens`.
+    assert_eq!(
+        sent_token_limit("openrouter").await,
+        json!({ "max_tokens": 64, "max_completion_tokens": null })
+    );
+}
+
 /// The row's `base_url_env` (`OLLAMA_BASE_URL`, provider_registry.json
 /// :1303-1310) is read when a request is made, not when the provider is
 /// created (preset.rs:375-384 builds a lazy base URL; :468-477 reads the
