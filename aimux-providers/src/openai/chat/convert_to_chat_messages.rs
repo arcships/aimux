@@ -251,6 +251,7 @@ fn convert_message_to_openai(
             let mut text = String::new();
             let mut text_parts = Vec::new();
             let mut has_cache_breakpoint = false;
+            let mut reasoning = String::new();
             let mut tool_calls = Vec::new();
             for part in content {
                 match part {
@@ -260,6 +261,11 @@ fn convert_message_to_openai(
                             get_prompt_cache_breakpoint(&part.provider_options).is_some();
                         text_parts.push(convert_text_part_to_openai(part));
                     }
+                    // Not in upstream @ai-sdk/openai: replayed as `reasoning_content`
+                    // like the openai-compatible converter, for OpenAI-shaped
+                    // thinking endpoints (DeepSeek, DashScope, ...) that require
+                    // it back. OpenAI itself ignores the field (#491).
+                    AssistantPart::Reasoning(part) => reasoning.push_str(&part.text),
                     AssistantPart::ToolCall(part) => {
                         // Upstream `serializeToolCallArguments` (@ai-sdk/openai
                         // 4.0.49+) replays any non-object input as `{}` on
@@ -285,6 +291,9 @@ fn convert_message_to_openai(
                 json!(text)
             };
             let mut message = json!({ "role": "assistant", "content": content });
+            if !reasoning.is_empty() {
+                message["reasoning_content"] = json!(reasoning);
+            }
             if !tool_calls.is_empty() {
                 message["tool_calls"] = json!(tool_calls);
             }

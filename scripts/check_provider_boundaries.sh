@@ -348,7 +348,8 @@ violation 'prepare_retries / aimux_core::retry used in aimux-providers/src (exce
 single_family='serper prodia deepgram you_com luma lmnt klingai dataforseo replicate fal recraft aws_polly jina_ai gladia tavily linkup tinyfish black_forest_labs assemblyai revai hume cartesia searxng parallel_ai firecrawl runwayml exa_ai stability google_pse'
 single_paths=''
 for name in $single_family; do
-    single_paths="$single_paths aimux-providers/src/$name.rs"
+    # A moved package is a directory with a mod.rs, not a `<name>.rs`.
+    [[ -f "aimux-providers/src/$name.rs" ]] && single_paths="$single_paths aimux-providers/src/$name.rs"
     [[ -d "aimux-providers/src/$name" ]] && single_paths="$single_paths aimux-providers/src/$name"
 done
 # shellcheck disable=SC2086
@@ -362,7 +363,7 @@ violation 'single-modality vendor packages read builder-era config state' "$rule
 rule10b_hits="$(
     # Non-test, non-comment lines of every file but the options helpers.
     # shellcheck disable=SC2086
-    find $single_paths -name '*.rs' ! -name options.rs -print0 |
+    find $single_paths -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }

@@ -689,6 +689,41 @@ mod tool_calls {
         );
     }
 
+    /// Not in upstream @ai-sdk/openai (its chat converter drops reasoning parts);
+    /// mirrors @ai-sdk/openai-compatible `convertToOpenAICompatibleChatMessages`.
+    /// Reproduction from arcships/aimux#491.
+    #[test]
+    fn should_replay_assistant_reasoning_as_reasoning_content() {
+        let result = convert(&prompt(json!([{
+            "role": "assistant",
+            "content": [
+                { "type": "reasoning", "text": "plan" },
+                { "type": "text", "text": "searching" },
+                {
+                    "type": "tool-call",
+                    "toolCallId": "call-1",
+                    "toolName": "search",
+                    "input": { "query": "recent" },
+                },
+            ],
+        }])))
+        .unwrap();
+
+        assert_eq!(
+            result,
+            json!([{
+                "role": "assistant",
+                "content": "searching",
+                "reasoning_content": "plan",
+                "tool_calls": [{
+                    "type": "function",
+                    "id": "call-1",
+                    "function": { "name": "search", "arguments": "{\"query\":\"recent\"}" },
+                }],
+            }])
+        );
+    }
+
     /// upstream: @ai-sdk/openai src/chat/convert-to-openai-chat-messages.test.ts › tool calls › should send empty string content for assistant messages with no tool calls
     #[test]
     fn should_send_empty_string_content_for_assistant_messages_with_no_tool_calls() {
