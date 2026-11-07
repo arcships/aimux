@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Deserialize;
+#[cfg(feature = "realtime")]
 use serde_json::Value;
 
 use aimux_core::ErrorCause;
