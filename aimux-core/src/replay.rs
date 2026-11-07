@@ -1141,6 +1141,7 @@ fn generate_options_from_call_options(
         session_id: settings.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
+        strict_stream: o.strict_stream,
         repair_tool_call: None,
         download: None,
     }

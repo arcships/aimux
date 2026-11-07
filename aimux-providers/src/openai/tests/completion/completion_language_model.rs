@@ -510,6 +510,34 @@ mod do_stream {
         );
     }
 
+    /// A chunk with `"error": null` is a normal chunk (#397): upstream's
+    /// chunk schema is a union with `openaiErrorDataSchema`, and a chunk with
+    /// `choices` takes the first branch, which drops the unknown key. On the
+    /// first chunk the null member used to fail the call before any output.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let chunks = sse(&[
+            r#"{"id":"cmpl-x","object":"text_completion","created":1711363440,"choices":[{"text":"hello","index":0,"logprobs":null,"finish_reason":null}],"model":"gpt-3.5-turbo-instruct","error":null}"#.to_string(),
+            r#"{"id":"cmpl-x","object":"text_completion","created":1711363440,"choices":[{"text":"","index":0,"logprobs":null,"finish_reason":"stop"}],"model":"gpt-3.5-turbo-instruct"}"#.to_string(),
+            r#"{"id":"cmpl-x","object":"text_completion","created":1711363440,"model":"gpt-3.5-turbo-instruct","usage":{"prompt_tokens":1,"total_tokens":2,"completion_tokens":1},"choices":[],"error":null}"#.to_string(),
+        ]);
+
+        let parts = stream_parts("gpt-3.5-turbo-instruct", stream_chunks(&chunks), no_raw()).await;
+
+        assert!(
+            parts.iter().all(|part| part["type"] != "error"),
+            "{parts:?}"
+        );
+        assert!(
+            parts.contains(&json!({ "delta": "hello", "id": "0", "type": "text-delta" })),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
+    }
+
     /// upstream: @ai-sdk/openai src/completion/openai-completion-language-model.test.ts › doStream › should throw an api error when the first stream chunk is an error
     #[tokio::test]
     async fn should_throw_an_api_error_when_the_first_stream_chunk_is_an_error() {

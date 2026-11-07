@@ -794,14 +794,27 @@ mod tests {
     /// The core guarantee of the do_start/do_status split: a transient poll
     /// failure retries the status check against the same operation and never
     /// re-creates the billed task.
-    #[tokio::test]
+    ///
+    /// The status retry waits the jittered exponential backoff, anywhere in
+    /// 0..=2 s, and that wait is bounded by the poll timeout. With the 2 s
+    /// timeout of `fast_poll_options` on the wall clock, a draw near 2 s
+    /// timed the generation out on a slow runner. Paused time keeps the test
+    /// from waiting, and a poll budget above the largest backoff keeps the
+    /// retry from racing the timeout (that race has its own test,
+    /// `status_retries_race_the_remaining_poll_timeout`).
+    #[tokio::test(start_paused = true)]
     async fn transient_status_failure_never_restarts_the_task() {
         let model = ScriptedVideoModel::new(vec![
             StatusStep::Pending,
             StatusStep::RetryableFailure,
             StatusStep::Complete,
         ]);
-        let result = generate_video(&model, fast_poll_options()).await.unwrap();
+        let mut options = fast_poll_options();
+        options.poll = Some(VideoPollOptions {
+            interval_ms: Some(1),
+            timeout_ms: Some(60_000),
+        });
+        let result = generate_video(&model, options).await.unwrap();
         assert_eq!(model.starts.load(Ordering::SeqCst), 1);
         assert_eq!(model.statuses.load(Ordering::SeqCst), 3);
         assert!(
