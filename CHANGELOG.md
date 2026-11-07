@@ -2200,6 +2200,16 @@ detailed sections below.
   providerOptions.<namespace>.dimensions`). The body is unchanged
   (RFC-0046 R1).
 
+- Hugging Face's responses model parses `providerOptions.huggingface` with
+  `parse_provider_options` against `huggingfaceLanguageModelResponsesOptions`:
+  a value outside the schema (`metadata` with a non-string value,
+  `instructions: 42`, `strictJsonSchema: "true"`, `reasoningEffort: null`)
+  fails with `Invalid argument for parameter providerOptions: invalid
+  huggingface provider options` and the serde error as its cause, and nothing
+  is sent. It used to be read key by key, so a value of the wrong type was
+  dropped (or, for `metadata`, sent as given). The requests for valid options
+  are unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
