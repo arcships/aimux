@@ -62,6 +62,17 @@ public final class ApiCallError {
     @JsonProperty("message")
     private final String message;
     /**
+     * The boundary this error was built at: before a response arrived, from
+     * an HTTP response, from an event inside an accepted stream, or locally.
+     * Not in the AI SDK's `APICallError`: a host deciding whether a retry
+     * could replay output it already delivered cannot tell an HTTP 429 from
+     * an in-stream 429 frame by the status and response body. Omitted from
+     * the JSON when `unknown`, which is also what an error serialized
+     * without the field reads back as.
+     */
+    @JsonProperty("origin")
+    private final ApiCallErrorOrigin origin;
+    /**
      * Provider's machine-readable code (OpenAI's `code`/`type`,
      * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
      * status. Our normalized take on `APICallError.data`.
@@ -108,6 +119,7 @@ public final class ApiCallError {
         @JsonProperty(value = "data") FieldPresence<JsonNode> data,
         @JsonProperty(value = "isRetryable", required = true) Boolean isRetryable,
         @JsonProperty(value = "message", required = true) String message,
+        @JsonProperty(value = "origin") ApiCallErrorOrigin origin,
         @JsonProperty(value = "providerCode") String providerCode,
         @JsonProperty(value = "requestBodyValues", required = true) JsonNode requestBodyValues,
         @JsonProperty(value = "responseBody") String responseBody,
@@ -118,6 +130,7 @@ public final class ApiCallError {
         this.data = data == null ? FieldPresence.absent() : data;
         this.isRetryable = isRetryable;
         this.message = message;
+        this.origin = origin;
         this.providerCode = providerCode;
         this.requestBodyValues = requestBodyValues == null ? null : requestBodyValues.deepCopy();
         this.responseBody = responseBody;
@@ -132,6 +145,7 @@ public final class ApiCallError {
     public boolean hasData() { return data.isPresent(); }
     public Boolean getIsRetryable() { return isRetryable; }
     public String getMessage() { return message; }
+    public ApiCallErrorOrigin getOrigin() { return origin; }
     public String getProviderCode() { return providerCode; }
     public JsonNode getRequestBodyValues() { return requestBodyValues == null ? null : requestBodyValues.deepCopy(); }
     public String getResponseBody() { return responseBody; }
@@ -144,6 +158,7 @@ public final class ApiCallError {
         private FieldPresence<JsonNode> data = FieldPresence.absent();
         private Boolean isRetryable;
         private String message;
+        private ApiCallErrorOrigin origin;
         private String providerCode;
         private JsonNode requestBodyValues;
         private String responseBody;
@@ -173,6 +188,11 @@ public final class ApiCallError {
 
         public Builder message(String value) {
             this.message = value;
+            return this;
+        }
+
+        public Builder origin(ApiCallErrorOrigin value) {
+            this.origin = value;
             return this;
         }
 
@@ -206,6 +226,6 @@ public final class ApiCallError {
             return this;
         }
 
-        public ApiCallError build() { return new ApiCallError(cause, data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
+        public ApiCallError build() { return new ApiCallError(cause, data, isRetryable, message, origin, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
     }
 }

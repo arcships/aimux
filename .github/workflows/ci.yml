@@ -51,7 +51,8 @@ jobs:
   #   live there.
   # - aimux-ffi/: the Rust jobs and every binding that links the C ABI. Node
   #   and Python link the Rust crates directly, not the C ABI. Go is tested
-  #   inside ffi-build, Java and Kotlin share one job.
+  #   inside ffi-build; the sanitizers, Java, Kotlin and Flutter share one
+  #   job and one cdylib build, each run only when it is needed.
   # - Anything else (the Rust crates, tools, scripts, contract fixtures,
   #   Cargo manifests, workflows): every job.
   # Generator drift checks run for any code change: they check generated
@@ -69,6 +70,11 @@ jobs:
   # job hit.
   #
   # Pushes to master, and runs with no base to compare with, run everything.
+  #
+  # The account runs about 20 jobs at once, and a burst of pushes to a PR
+  # stack queues well over a hundred, so wall time follows the runner minutes
+  # a run spends: work that one build can serve shares a job, and nothing is
+  # built or tested twice.
   changes:
     name: Detect code changes
     runs-on: ubuntu-latest
@@ -142,13 +148,17 @@ jobs:
             fi
             printf '"%s": %s,' "$name" "$run"
           }
+          # ffi-sanitizers, jvm-bindings, flutter-binding and web-typecheck
+          # are not jobs: they gate the steps of c-abi-bindings and
+          # contract-tests.
           run="{
             $(job rust-test aimux-ffi)
             $(job node-binding bindings/node)
             $(job python-binding bindings/python)
             $(job ffi-build aimux-ffi bindings/go)
-            $(job ffi-sanitizers aimux-ffi)
             $(job ffi-linux-arm aimux-ffi)
+            $(job c-abi-bindings aimux-ffi bindings/java bindings/kotlin bindings/flutter)
+            $(job ffi-sanitizers aimux-ffi)
             $(job jvm-bindings aimux-ffi bindings/java bindings/kotlin)
             $(job flutter-binding aimux-ffi bindings/flutter)
             $(job flutter-example-build aimux-ffi bindings/flutter)
@@ -236,12 +246,13 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy without the realtime feature (deny warnings)
+        run: cargo clippy -p aimux-providers --no-default-features -- -D warnings
       - name: Rustdoc (deny warnings)
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
-      - name: Ops contract tests (matrix, lifecycle, streams, envelopes, manifest)
-        run: cargo test -p aimux-ops
+      # Includes aimux-ops (matrix, lifecycle, streams, envelopes, manifest).
       - name: Test workspace
         run: cargo test --workspace
 
@@ -284,13 +295,32 @@ jobs:
         working-directory: bindings/node
         run: npm ci
       - name: Build Linux (glibc 2.17 baseline)
-        if: contains(matrix.settings.target, 'unknown-linux-gnu')
+        if: contains(matrix.settings.target, 'unknown-linux-gnu') && !matrix.settings.test
         working-directory: bindings/node
         shell: bash
         env:
           TARGET_CC: clang
           TARGET_CXX: clang++
         run: npx napi build --platform --target ${{ matrix.settings.target }} --use-napi-cross
+      # The Linux test leg builds only what ships: bindings/node/Cargo.toml's
+      # [profile.release] (opt-level "s", fat LTO, one codegen unit, strip;
+      # RFC-0043 B-profile). This workflow's env pins CARGO_PROFILE_RELEASE_*
+      # to the fast CI values above, so the step restores the manifest's
+      # values and builds exactly as release.yml does. Every check below runs
+      # on this build, and it is the uploaded artifact; the Windows x64 leg
+      # tests a debug build.
+      - name: Build Linux with the shipped profile (glibc 2.17 baseline)
+        if: contains(matrix.settings.target, 'unknown-linux-gnu') && matrix.settings.test
+        working-directory: bindings/node
+        shell: bash
+        env:
+          TARGET_CC: clang
+          TARGET_CXX: clang++
+          CARGO_PROFILE_RELEASE_LTO: "true"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
+          CARGO_PROFILE_RELEASE_STRIP: "true"
+        run: npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
       - name: Build
         if: ${{ !contains(matrix.settings.target, 'unknown-linux-gnu') }}
         working-directory: bindings/node
@@ -349,25 +379,11 @@ jobs:
         if: matrix.settings.test && runner.os == 'Linux'
         working-directory: bindings/node
         run: git diff --exit-code -- index.js index.d.ts
-      # The shipped build: bindings/node/Cargo.toml's [profile.release]
-      # (opt-level "s", fat LTO, one codegen unit, strip; RFC-0043 B-profile).
-      # This workflow's env pins CARGO_PROFILE_RELEASE_* to the fast CI values
-      # above, so the step restores the manifest's values, builds exactly as
-      # release.yml does, loads the result and prints its size. The uploaded
-      # artifact is this build.
-      - name: Build with the shipped profile, load it, print its size
+      - name: Load the shipped build, print its size
         if: matrix.settings.test && runner.os == 'Linux'
         working-directory: bindings/node
         shell: bash
-        env:
-          TARGET_CC: clang
-          TARGET_CXX: clang++
-          CARGO_PROFILE_RELEASE_LTO: "true"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
-          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
-          CARGO_PROFILE_RELEASE_STRIP: "true"
         run: |
-          npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
           node -e "const m = require('./index.js'); const n = Object.keys(m).length; if (!n) throw new Error('the binding loaded with no exports'); console.log(n, 'exports')"
           python3 ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
       - name: Upload artifact
@@ -405,26 +421,14 @@ jobs:
       # not a member of the main workspace, so rust-test does not run them.
       - name: Rust unit tests
         run: cargo test --lib --manifest-path bindings/python/Cargo.toml
-      - name: Build
-        working-directory: bindings/python
-        shell: bash
-        run: |
-          maturin build --release
-          pip install --force-reinstall target/wheels/*.whl
-      - name: Test Python binding and shared contract vectors
-        working-directory: bindings/python
-        run: |
-          pip install pytest pydantic
-          python -m pytest tests/ -v
-      - name: DTO vector codecs
-        run: python3 scripts/check_dto_vectors.py python
-      # The shipped build: bindings/python/Cargo.toml's [profile.release]
-      # (opt-level "s", fat LTO, one codegen unit, strip; RFC-0043 B-profile).
-      # This workflow's env pins CARGO_PROFILE_RELEASE_* to the fast CI values
-      # above, so the step restores the manifest's values, builds the wheel as
-      # release.yml's maturin publish does, imports it, prints the extension's
-      # size and runs the suite against it.
-      - name: Build the wheel with the shipped profile, import it, test it
+      # The one wheel this job builds is the shipped build:
+      # bindings/python/Cargo.toml's [profile.release] (opt-level "s", fat
+      # LTO, one codegen unit, strip; RFC-0043 B-profile). This workflow's env
+      # pins CARGO_PROFILE_RELEASE_* to the fast CI values above, so the step
+      # restores the manifest's values, builds the wheel as release.yml's
+      # maturin publish does, imports it and prints the extension's size. The
+      # suite and the DTO codecs below run against it.
+      - name: Build the wheel with the shipped profile, import it, print its size
         working-directory: bindings/python
         shell: bash
         env:
@@ -433,10 +437,16 @@ jobs:
           CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
           CARGO_PROFILE_RELEASE_STRIP: "true"
         run: |
-          maturin build --release -o target/wheels-shipped
-          pip install --force-reinstall target/wheels-shipped/*.whl
+          maturin build --release
+          pip install --force-reinstall target/wheels/*.whl
           python -c "import aimux, pathlib; so = next(pathlib.Path(aimux.__file__).parent.glob('*.so')); print('size', so, so.stat().st_size, 'bytes')"
-          python -m pytest tests/ -q
+      - name: Test Python binding and shared contract vectors
+        working-directory: bindings/python
+        run: |
+          pip install pytest pydantic
+          python -m pytest tests/ -v
+      - name: DTO vector codecs
+        run: python3 scripts/check_dto_vectors.py python
 
   # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts), test Go on it ──
   ffi-build:
@@ -545,11 +555,18 @@ jobs:
           CGO_LDFLAGS: -L${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release
         run: python3 scripts/check_dto_vectors.py go
 
-  ffi-sanitizers:
-    name: C ABI (ASan + LSan)
+  # ── C ABI on Linux: sanitizers, Java + Kotlin, Flutter (Dart tests) ──────
+  # One host cdylib serves them all. Each part runs when "changes" says its
+  # code needs it: the sanitizers for aimux-ffi or shared code, Java and
+  # Kotlin also for bindings/java and bindings/kotlin, Flutter also for
+  # bindings/flutter.
+  c-abi-bindings:
+    name: C ABI bindings (ASan + LSan, Java, Kotlin, Flutter)
     runs-on: ubuntu-latest
     needs: changes
-    if: fromJSON(needs.changes.outputs.run)['ffi-sanitizers']
+    if: fromJSON(needs.changes.outputs.run)['c-abi-bindings']
+    env:
+      LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -561,12 +578,128 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Build FFI library
         run: cargo rustc -p aimux-ffi --release --crate-type cdylib
+
       - name: Run C11 and C++17 ABI tests with ASan and LSan
+        if: fromJSON(needs.changes.outputs.run)['ffi-sanitizers']
         env:
           CC: clang
           CXX: clang++
           AIMUX_C_LIB_DIR: ${{ github.workspace }}/target/release
         run: bash scripts/test-c-abi.sh --asan-lsan
+
+      # Flutter: plugin structure and Dart tests on the host library.
+      # The Flutter SDK cache is 1.5-2.2 GB per OS and a pull request can only
+      # restore caches saved on its own branch or on master, so the action's
+      # own cache (which restores and saves together) stays off: restore it on
+      # every run, save it from master only, at the end of the job so the
+      # engine artifacts the build downloads are in it.
+      - uses: subosito/flutter-action@v2
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        id: flutter-key
+        with:
+          channel: stable
+          cache: false
+          dry-run: true
+      - uses: actions/cache/restore@v4
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        id: flutter-cache
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
+      - uses: subosito/flutter-action@v2
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        with:
+          channel: ${{ steps.flutter-key.outputs.CHANNEL }}
+          flutter-version: ${{ steps.flutter-key.outputs.VERSION }}
+          cache: false
+      - name: Flutter dependencies, ABI test fixtures and Dart bridge
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        working-directory: bindings/flutter
+        run: |
+          flutter pub get
+          python3 tool/build_test_fixture.py
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
+            -o .dart_tool/native/libaimux_dart.so
+      - name: Test Flutter binding
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        working-directory: bindings/flutter
+        env:
+          AIMUX_NATIVE_LIBRARY: ${{ github.workspace }}/target/release/libaimux_ffi.so
+          AIMUX_DART_BRIDGE: ${{ github.workspace }}/bindings/flutter/.dart_tool/native/libaimux_dart.so
+        run: flutter test
+      - name: Analyze Flutter binding
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        working-directory: bindings/flutter
+        run: flutter analyze
+      - name: DTO vector codecs (Dart)
+        if: fromJSON(needs.changes.outputs.run)['flutter-binding']
+        run: python3 scripts/check_dto_vectors.py dart
+
+      # Java + Kotlin: every JDK in turn. Gradle 8.14.3 runs on JDK 8+; the
+      # Java build script only sets --release on JDK 9+, so JDK 8 compiles
+      # with plain source/target compatibility. The Kotlin build.gradle.kts
+      # points jna.library.path at target/release.
+      - uses: gradle/actions/setup-gradle@v4
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        with:
+          gradle-version: "8.14.3"
+      - uses: actions/setup-java@v4
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            11
+            17
+            21
+      - name: Java tests (JDK 8)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_8_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 11)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_11_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 17)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Java tests (JDK 21)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/java
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: gradle test --rerun-tasks
+      - name: DTO vector codecs (Java)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: python3 scripts/check_dto_vectors.py java
+      # The Kotlin binding is published to Maven Central by release.yml.
+      - name: Kotlin tests (JDK 17)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/kotlin
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        run: gradle test --rerun-tasks
+      - name: Kotlin tests (JDK 21)
+        if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
+        working-directory: bindings/kotlin
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: gradle test --rerun-tasks
+
+      - uses: actions/cache/save@v4
+        if: always() && github.ref == 'refs/heads/master' && fromJSON(needs.changes.outputs.run)['flutter-binding'] && steps.flutter-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
+          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
   ffi-linux-arm:
     name: aimux-ffi (aarch64-unknown-linux-gnu)
@@ -585,140 +718,6 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Build Linux ARM64 FFI library
         run: cargo build -p aimux-ffi --release --target aarch64-unknown-linux-gnu
-
-  # ── Java + Kotlin bindings: one FFI build, every JDK in turn ─────────────
-  # Gradle 8.14.3 runs on JDK 8+; the Java build script only sets --release on
-  # JDK 9+, so JDK 8 compiles with plain source/target compatibility. The
-  # Kotlin build.gradle.kts points jna.library.path at target/release.
-  jvm-bindings:
-    name: Java + Kotlin bindings
-    runs-on: ubuntu-latest
-    needs: changes
-    if: fromJSON(needs.changes.outputs.run)['jvm-bindings']
-    env:
-      LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ffi-test"
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-      - name: Build FFI library
-        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.14.3"
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: |
-            8
-            11
-            17
-            21
-      - name: Java tests (JDK 8)
-        working-directory: bindings/java
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_8_X64 }}
-        run: gradle test --rerun-tasks
-      - name: Java tests (JDK 11)
-        working-directory: bindings/java
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_11_X64 }}
-        run: gradle test --rerun-tasks
-      - name: Java tests (JDK 17)
-        working-directory: bindings/java
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
-        run: gradle test --rerun-tasks
-      - name: Java tests (JDK 21)
-        working-directory: bindings/java
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
-        run: gradle test --rerun-tasks
-      - name: DTO vector codecs
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
-        run: python3 scripts/check_dto_vectors.py java
-      # The Kotlin binding is published to Maven Central by release.yml.
-      - name: Kotlin tests (JDK 17)
-        working-directory: bindings/kotlin
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
-        run: gradle test --rerun-tasks
-      - name: Kotlin tests (JDK 21)
-        working-directory: bindings/kotlin
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
-        run: gradle test --rerun-tasks
-
-  # ── Flutter binding: plugin structure + Dart tests (host FFI lib) ─────────
-  flutter-binding:
-    name: Flutter binding
-    runs-on: ubuntu-latest
-    needs: changes
-    if: fromJSON(needs.changes.outputs.run)['flutter-binding']
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ffi-test"
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-      # The Flutter SDK cache is 1.5-2.2 GB per OS and a pull request can only
-      # restore caches saved on its own branch or on master, so the action's
-      # own cache (which restores and saves together) stays off: restore it on
-      # every run, save it from master only, at the end of the job so the
-      # engine artifacts the build downloads are in it.
-      - uses: subosito/flutter-action@v2
-        id: flutter-key
-        with:
-          channel: stable
-          cache: false
-          dry-run: true
-      - uses: actions/cache/restore@v4
-        id: flutter-cache
-        with:
-          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
-          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: ${{ steps.flutter-key.outputs.CHANNEL }}
-          flutter-version: ${{ steps.flutter-key.outputs.VERSION }}
-          cache: false
-      - name: Build host FFI library
-        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
-      - name: Get dependencies
-        working-directory: bindings/flutter
-        run: flutter pub get
-      - name: Build the ABI test fixtures and the Dart bridge
-        working-directory: bindings/flutter
-        run: |
-          python3 tool/build_test_fixture.py
-          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
-            -o .dart_tool/native/libaimux_dart.so
-      - name: Test Flutter binding
-        working-directory: bindings/flutter
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-          AIMUX_NATIVE_LIBRARY: ${{ github.workspace }}/target/release/libaimux_ffi.so
-          AIMUX_DART_BRIDGE: ${{ github.workspace }}/bindings/flutter/.dart_tool/native/libaimux_dart.so
-        run: flutter test
-      - name: Analyze
-        working-directory: bindings/flutter
-        run: flutter analyze
-      - name: DTO vector codecs
-        run: python3 scripts/check_dto_vectors.py dart
-      - uses: actions/cache/save@v4
-        if: always() && github.ref == 'refs/heads/master' && steps.flutter-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
-          key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
   # ── Flutter example: real iOS/Android builds validate plugin integration ──
   # iOS build uses the default SwiftPM integration (Flutter 3.44+) and checks
@@ -822,7 +821,8 @@ jobs:
           path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
           key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
-  # Generated files must match their generators.
+  # Generated files must match their generators, and the web console must
+  # still type-check against the generated DTOs.
   contract-tests:
     name: Generator drift checks
     runs-on: ubuntu-latest
@@ -836,6 +836,8 @@ jobs:
         run: python3 scripts/gen_providers_doc.py --check
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
+      - name: Release asset list self-test (scripts/stage_release_assets.py)
+        run: python3 scripts/tests/test_stage_release_assets.py
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -849,6 +851,17 @@ jobs:
           node-version: 24
       - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers, upstream test inventory)
         run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs
+      # Web console typecheck: every @aimux/types import must still resolve.
+      # The console imports the generated DTOs from bindings/node/src/generated.
+      # The drift check above only compares files; this type-checks every
+      # import, so a renamed or removed Rust type fails here (RFC-0036 §13.1
+      # A4). It runs when shared code or bindings/node changed.
+      - name: Type-check the web console (vue-tsc --noEmit)
+        if: fromJSON(needs.changes.outputs.run)['web-typecheck']
+        working-directory: tools/aimux-web/web
+        run: |
+          npm ci
+          npm run typecheck
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
@@ -876,26 +889,6 @@ jobs:
       - name: DTO vector codecs
         run: python3 scripts/check_dto_vectors.py swift
 
-  # ── Web console typecheck: every @aimux/types import must still resolve ──
-  # The console imports the generated DTOs from bindings/node/src/generated. The
-  # generator check above only compares files; this type-checks every import,
-  # so a renamed or removed Rust type fails here (RFC-0036 §13.1 A4).
-  web-typecheck:
-    name: Web console typecheck
-    runs-on: ubuntu-latest
-    needs: changes
-    if: fromJSON(needs.changes.outputs.run)['web-typecheck']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Type-check the web console (vue-tsc --noEmit)
-        working-directory: tools/aimux-web/web
-        run: |
-          npm ci
-          npm run typecheck
-
   # The one check to require in branch protection. It runs whatever happened
   # above: a job may be skipped only because "changes" decided it is not
   # needed; any other skip, failure or cancellation fails it. A new job goes
@@ -910,14 +903,11 @@ jobs:
       - node-binding
       - python-binding
       - ffi-build
-      - ffi-sanitizers
+      - c-abi-bindings
       - ffi-linux-arm
-      - jvm-bindings
-      - flutter-binding
       - flutter-example-build
       - contract-tests
       - swift-contract-tests
-      - web-typecheck
     runs-on: ubuntu-latest
     steps:
       - env:

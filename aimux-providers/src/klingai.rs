@@ -337,6 +337,7 @@ impl VideoModel for KlingAIVideoModel {
                 status_code: Some(200),
                 provider_code: Some(task.code.to_string()),
                 response_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     task.message
                         .unwrap_or_else(|| format!("KlingAI error code: {}", task.code)),
@@ -411,6 +412,7 @@ impl VideoModel for KlingAIVideoModel {
                 status_code: Some(200),
                 provider_code: Some(result.code.to_string()),
                 response_body: response_body.clone(),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     result
                         .message
@@ -460,6 +462,7 @@ impl VideoModel for KlingAIVideoModel {
                     status_code: Some(200),
                     provider_code: Some("failed".to_string()),
                     response_body,
+                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                     ..ApiCallError::new(
                         "KlingAI video generation failed",
                         poll_url,

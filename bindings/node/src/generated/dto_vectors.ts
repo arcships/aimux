@@ -6,6 +6,7 @@ export interface DtoTypes {
   "AiMuxErrorInput": T.AiMuxErrorInput
   "ApiCallError": T.ApiCallError
   "ApiCallErrorInput": T.ApiCallErrorInput
+  "ApiCallErrorOrigin": T.ApiCallErrorOrigin
   "AspectRatio": T.AspectRatio
   "AssistantContent": T.AssistantContent
   "AssistantContentPart": T.AssistantContentPart
@@ -352,6 +353,7 @@ export const dtoTypeNames = [
   "AiMuxErrorInput",
   "ApiCallError",
   "ApiCallErrorInput",
+  "ApiCallErrorOrigin",
   "AspectRatio",
   "AssistantContent",
   "AssistantContentPart",

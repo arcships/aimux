@@ -1,5 +1,9 @@
 # aimux for Flutter / Dart
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 constructors and
+> per-feature native exports are removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 The binding uses the versioned C ops ABI. `Aimux.open()` checks the ABI
 major, ops major, manifest structure and any required operations before use.
 The previous unversioned constructors and per-feature native exports are removed.

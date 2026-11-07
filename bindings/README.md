@@ -2,6 +2,10 @@
 
 Multi-language bindings for aimux. All bindings share the same Rust core (aimux-core + aimux-providers), accessed via two paths:
 
+> **0.6.0.** Every binding uses ABI 1 / ops 1.0. Provider-specific
+> constructors and the 0.5 error getters are removed. See the
+> [0.6 upgrade guide](../docs/upgrading-to-0.6.md) and each binding's README.
+
 ```
                   ┌─ Native path ──→ aimux-core + aimux-providers (directly maps Rust types + async)
 Binding layer ────┤
@@ -12,12 +16,12 @@ Binding layer ────┤
 |------|------|------|------|------|
 | **Node.js** | Native | napi-rs v3 | ✅ Available | [node/](node/) |
 | **Python** | Native | PyO3 + maturin | ✅ Available | [python/](python/) |
-| **Swift** | C ABI | Swift Package (module.modulemap) | ✅ PoC | [swift/](swift/) |
-| **Kotlin** | C ABI | JNA | ✅ PoC | [kotlin/](kotlin/) |
-| **Flutter** | C ABI | dart:ffi handwritten | ✅ PoC | [flutter/](flutter/) |
-| **Go** | C ABI | cgo (static linking `libaimux_ffi.a`) | ✅ PoC | [go/](go/) |
-| **Java** | C ABI | JNA | ✅ PoC | [java/](java/) |
-| **C / C++** | C ABI | direct link to aimux-ffi.h | ✅ PoC | [c/](c/) |
+| **Swift** | C ABI | Swift Package (module.modulemap) | ✅ Available | [swift/](swift/) |
+| **Kotlin** | C ABI | JNA + coroutines | ✅ Available | [kotlin/](kotlin/) |
+| **Flutter** | C ABI | dart:ffi handwritten | ✅ Available | [flutter/](flutter/) |
+| **Go** | C ABI | cgo (static linking `libaimux_ffi.a`) | ✅ Available | [go/](go/) |
+| **Java** | C ABI | JNA | ✅ Available | [java/](java/) |
+| **C / C++** | C ABI | direct link to `aimux.h` | ✅ Available | [c/](c/) |
 
 ## Build
 
@@ -79,11 +83,11 @@ cargo build -p aimux-ffi --release
 
 # C
 gcc -o example bindings/c/example.c \
-    -I aimux-ffi -L target/release -laimux_ffi -lpthread -ldl -lm
+    -I aimux-ffi/include -L target/release -laimux_ffi -lpthread -ldl -lm
 
 # C++
 g++ -std=c++17 -o example_cpp bindings/c/example.cpp \
-    -I aimux-ffi -L target/release -laimux_ffi -lpthread -ldl -lm
+    -I aimux-ffi/include -L target/release -laimux_ffi -lpthread -ldl -lm
 ```
 
 ### Go
@@ -109,6 +113,7 @@ export LD_LIBRARY_PATH="$(pwd)/../../target/release:${LD_LIBRARY_PATH}"
 gradle test
 ```
 
-The Java binding uses JNA (no native toolchain needed at build time); the
-native library ships as per-platform classifier JARs. See
+The Java binding uses JNA (no native toolchain needed at build time). The
+native `aimux_ffi` library comes from the matching GitHub Release and is loaded
+from the JNA search path. See
 [RFC-0013](../rfc/0013-java-bindings.md) for details.

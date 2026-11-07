@@ -181,7 +181,7 @@ def build_page():
     w("")
     w("| category | count |")
     w("|----------|-------|")
-    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)`) | {len(registry)} |")
+    w(f"| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | {len(registry)} |")
     for title, mods in sections:
         # First sentence only — some lib.rs section comments run on; the full
         # title stays on the section heading below. The lookahead keeps
@@ -192,7 +192,7 @@ def build_page():
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
-        f"(create presets by name via `provider(name, ...)`) + "
+        f"(create presets by name via `provider.create` + `provider.model`) + "
         f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )

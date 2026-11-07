@@ -58,6 +58,7 @@ async fn should_extract_generated_image() {
     }
 }
 
+/// partial: `should pass the correct parameters including aspect ratio`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_prompt_and_model() {
     let server = MockServer::start().await;
@@ -75,6 +76,7 @@ async fn should_pass_prompt_and_model() {
     assert_eq!(body["model"], "ray2");
 }
 
+/// partial: `should pass the correct parameters including aspect ratio`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
@@ -93,6 +95,7 @@ async fn should_pass_aspect_ratio() {
     assert_eq!(body["aspect_ratio"], "16:9");
 }
 
+/// partial: `should return warnings for unsupported parameters`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_warn_for_seed() {
     let server = MockServer::start().await;
@@ -109,6 +112,7 @@ async fn should_warn_for_seed() {
     assert!(result.warnings.iter().any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "seed")));
 }
 
+/// partial: `should return warnings for unsupported parameters`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_warn_for_size() {
     let server = MockServer::start().await;
@@ -125,6 +129,7 @@ async fn should_warn_for_size() {
     assert!(result.warnings.iter().any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "size")));
 }
 
+/// partial: `should pass headers`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
@@ -148,6 +153,7 @@ async fn should_pass_auth_headers() {
     );
 }
 
+/// partial: `should send image by default when URL file is provided`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_support_image_editing_with_urls() {
     let server = MockServer::start().await;
@@ -172,6 +178,7 @@ async fn should_support_image_editing_with_urls() {
     assert_eq!(images[0]["url"], "https://example.com/source.png");
 }
 
+/// partial: `should throw error when mask is provided`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_throw_for_mask() {
     let server = MockServer::start().await;
@@ -187,4 +194,393 @@ async fn should_throw_for_mask() {
         url: "https://example.com/mask.png".into(),
     });
     assert!(model.do_generate(&opts).await.is_err());
+}
+
+fn url_file(url: &str) -> ImageFile {
+    ImageFile::Url {
+        url: url.to_string(),
+    }
+}
+
+/// `referenceType: 'character'` sends the images grouped by identity:
+/// `images[i].id`, default `identity0` (luma-image-model.ts getEditingOptions).
+#[tokio::test]
+async fn should_send_character_references_grouped_by_identity() {
+    for (images, expected) in [
+        (
+            json!(null),
+            json!({ "identity0": { "images": ["https://example.com/a.jpg", "https://example.com/b.jpg"] } }),
+        ),
+        (
+            json!([{ "id": "identity0" }, { "id": "identity1" }]),
+            json!({
+                "identity0": { "images": ["https://example.com/a.jpg"] },
+                "identity1": { "images": ["https://example.com/b.jpg"] },
+            }),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        mock_luma(&server).await;
+        let config = LumaProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        };
+        let model = create_luma(config).unwrap().image("photon-1");
+        let mut opts = options(PROMPT);
+        opts.files = Some(vec![
+            url_file("https://example.com/a.jpg"),
+            url_file("https://example.com/b.jpg"),
+        ]);
+        let mut luma = json!({ "referenceType": "character" });
+        if !images.is_null() {
+            luma["images"] = images;
+        }
+        opts.provider_options = serde_json::from_value(json!({ "luma": luma })).unwrap();
+        model.do_generate(&opts).await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert_eq!(body["character"], expected);
+        assert!(body.get("image").is_none(), "{body}");
+        assert!(body.get("images").is_none(), "{body}");
+        assert!(body.get("referenceType").is_none(), "{body}");
+    }
+}
+
+/// At most 4 images per identity.
+#[tokio::test]
+async fn should_reject_more_than_4_character_images_per_identity() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(
+        (1..=5)
+            .map(|i| url_file(&format!("https://example.com/{i}.jpg")))
+            .collect(),
+    );
+    opts.provider_options =
+        serde_json::from_value(json!({ "luma": { "referenceType": "character" } })).unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI character supports up to 4 images per identity. Identity 'identity0' has 5 images."
+        )
+        .to_string()
+    );
+}
+
+/// A generation that ends `failed`, or `completed` without an image, fails
+/// with `InvalidResponseDataError` (luma-image-model.ts pollForImageUrl), not
+/// an API call error.
+#[tokio::test]
+async fn should_fail_with_invalid_response_data_for_a_failed_or_imageless_generation() {
+    for (poll, message) in [
+        (
+            json!({ "id": "gen-123", "state": "failed", "failure_reason": "Generation failed" }),
+            "Image generation failed.",
+        ),
+        (
+            json!({ "id": "gen-123", "state": "completed", "assets": null }),
+            "Image generation completed but no image was found.",
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/dream-machine/v1/generations/image"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/dream-machine/v1/generations/gen-123"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(poll))
+            .mount(&server)
+            .await;
+        let model = create_luma(LumaProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        })
+        .unwrap()
+        .image("photon-1");
+        let error = model.do_generate(&options(PROMPT)).await.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                aimux_core::error::AiMuxError::InvalidResponseData { message: m, .. } if m == message
+            ),
+            "{error:?}"
+        );
+    }
+}
+
+/// The mask is refused before the files are looked at, so a file Luma could
+/// not take either still fails as a mask (luma-image-model.ts
+/// getEditingOptions); the messages are upstream's.
+#[tokio::test]
+async fn should_refuse_a_mask_before_the_files() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(vec![ImageFile::File {
+        media_type: "image/png".into(),
+        data: aimux_core::image_model::ImageFileData::Binary(vec![137, 80, 78, 71]),
+    }]);
+    opts.mask = Some(url_file("https://example.com/mask.png"));
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI does not support mask-based image editing. Use the prompt to describe the changes you want to make, along with `prompt.images` containing the source image URL."
+        )
+        .to_string()
+    );
+
+    opts.mask = None;
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI only supports URL-based images. Please provide image URLs using `prompt.images` with publicly accessible URLs. Base64 and Uint8Array data are not supported."
+        )
+        .to_string()
+    );
+
+    opts.files = Some(
+        (1..=5)
+            .map(|i| url_file(&format!("https://example.com/{i}.jpg")))
+            .collect(),
+    );
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI image supports up to 4 reference images. You provided 5 images."
+        )
+        .to_string()
+    );
+
+    opts.files.as_mut().unwrap().truncate(2);
+    opts.provider_options =
+        serde_json::from_value(json!({ "luma": { "referenceType": "modify_image" } })).unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI modify_image only supports a single input image. You provided 2 images."
+        )
+        .to_string()
+    );
+}
+
+/// luma-image-model.ts `supportsFileInputs` / `supportsMaskInputs`.
+#[test]
+fn should_advertise_file_and_mask_support_per_model() {
+    let provider = create_luma(LumaProviderSettings::default()).unwrap();
+    for (model_id, files, mask) in [
+        ("photon-1", Some(true), Some(false)),
+        ("photon-flash-1", Some(true), Some(false)),
+        ("custom-image-model", None, None),
+    ] {
+        let model = provider.image(model_id);
+        assert_eq!(model.supports_file_inputs(), files, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask, "{model_id}");
+    }
+}
+
+/// `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
+/// (luma-image-model.ts doGenerate): a value outside it fails with the
+/// upstream message before anything is sent, `null` passes (`.nullish()`).
+#[tokio::test]
+async fn should_parse_the_luma_provider_options() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    for luma in [
+        json!({ "referenceType": "face" }),
+        json!({ "images": [{ "weight": 2 }] }),
+        json!({ "images": [{ "id": 1 }] }),
+        json!({ "pollIntervalMillis": "1000" }),
+        json!({ "maxPollAttempts": true }),
+    ] {
+        let mut opts = options(PROMPT);
+        opts.provider_options = serde_json::from_value(json!({ "luma": luma })).unwrap();
+        let error = model.do_generate(&opts).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {luma}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid luma provider options",
+            "{luma}"
+        );
+        assert!(cause.is_some(), "{luma}");
+    }
+
+    let server = MockServer::start().await;
+    mock_luma(&server).await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(vec![url_file("https://example.com/a.jpg")]);
+    opts.provider_options = serde_json::from_value(json!({ "luma": {
+        "referenceType": null,
+        "images": [{ "weight": null, "id": null }],
+        "pollIntervalMillis": null,
+        "maxPollAttempts": null,
+    } }))
+    .unwrap();
+    model.do_generate(&opts).await.unwrap();
+    let reqs = server.received_requests().await.unwrap();
+    let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
+    assert_eq!(
+        body["image"],
+        json!([{ "url": "https://example.com/a.jpg", "weight": 0.85 }])
+    );
+}
+
+/// The submit and poll answers are parsed against
+/// `lumaGenerationResponseSchema` (luma-image-model.ts): a state outside
+/// `queued | dreaming | completed | failed` fails the call as an invalid JSON
+/// response instead of being polled again until the attempts run out.
+#[tokio::test]
+async fn should_fail_on_a_generation_state_outside_the_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/dream-machine/v1/generations/image"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/dream-machine/v1/generations/gen-123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "id": "gen-123", "state": "processing" })),
+        )
+        .mount(&server)
+        .await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let error = model.do_generate(&options(PROMPT)).await.unwrap_err();
+    assert!(
+        error.to_string().contains("Invalid JSON response"),
+        "{error:?}"
+    );
+    let polls = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 1);
+}
+
+/// `maxPollAttempts` bounds the polls (luma-image-model.ts:183-191): a
+/// generation still `dreaming` after them fails with a timeout, after
+/// exactly that many polls.
+#[tokio::test]
+async fn should_stop_polling_after_max_poll_attempts() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/dream-machine/v1/generations/image"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/dream-machine/v1/generations/gen-123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "id": "gen-123", "state": "dreaming" })),
+        )
+        .mount(&server)
+        .await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.provider_options = serde_json::from_value(json!({ "luma": {
+        "pollIntervalMillis": 0,
+        "maxPollAttempts": 2,
+    } }))
+    .unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert!(
+        matches!(error, aimux_core::error::AiMuxError::Timeout(_)),
+        "{error:?}"
+    );
+    let polls = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 2);
+}
+
+/// `createLuma` adds `ai-sdk-luma/<version>` to the user-agent
+/// (luma-provider.ts getHeaders, withUserAgentSuffix), and the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/luma@3.0.54` depends on.
+#[tokio::test]
+async fn should_include_the_package_user_agent() {
+    let server = MockServer::start().await;
+    mock_luma(&server).await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("ray2");
+    model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(user_agent.contains("ai-sdk-luma/3.0.54"), "{user_agent}");
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
 }
