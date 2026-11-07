@@ -7,7 +7,7 @@ use super::embedding_model_options::AmazonBedrockEmbeddingModelSettings;
 use super::error::bedrock_failed_response_handler;
 use super::image_model::BedrockImageModel;
 use super::reranking::BedrockRerankingModel;
-use super::sigv4_fetch::{Auth, BedrockAuthFetch, ProcessDefaultFetch};
+use super::sigv4_fetch::{Auth, auth_fetch};
 use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint, TransformRequestBody};
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -158,9 +158,9 @@ pub fn create_amazon_bedrock(
     let credentials_auth = auth.clone();
     let inner = settings
         .fetch
-        .unwrap_or_else(|| Arc::new(ProcessDefaultFetch));
-    let fetch: FetchFunction = Arc::new(BedrockAuthFetch {
-        signing: SigV4Fetch::new(
+        .unwrap_or_else(|| Arc::new(aimux_provider_utils::ProcessDefaultFetch));
+    let fetch: FetchFunction = Arc::new(auth_fetch(
+        SigV4Fetch::new(
             inner.clone(),
             Resolvable::from_async_fn(move || {
                 let auth = credentials_auth.clone();
@@ -172,7 +172,7 @@ pub fn create_amazon_bedrock(
             SigV4Signing::Aws4Fetch,
         ),
         inner,
-    });
+    ));
 
     Ok(AmazonBedrockProvider {
         auth,
@@ -242,7 +242,7 @@ impl BedrockEndpoint {
         let mut user = combine_headers(&[&self.user.clone().unwrap_or_default()]);
         // amazon-bedrock-provider.ts:292-295 (getHeaders) appends the pinned
         // package part. The helper then adds `ai-sdk-provider-utils/<v>` and
-        // the transport (`BedrockAuthFetch`) the second occurrence.
+        // the transport (`sigv4_fetch::auth_fetch`) the second occurrence.
         let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
         let suffix = format!("ai-sdk-{}/{}", package.name, package.version);
         let agent = user

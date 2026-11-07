@@ -305,8 +305,6 @@ struct GoogleLanguageModelStream {
     namespace: Namespace,
     code_execution_tool_name: String,
     text_id: Option<String>,
-    /// Signature of the open text block, from its last signed part.
-    text_signature: Option<String>,
     reasoning_id: Option<String>,
     block_counter: usize,
     final_usage: Usage,
@@ -422,11 +420,7 @@ impl GoogleLanguageModelStream {
                 // text part
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                     // An empty part is kept when it carries a signature (#467).
-                    let signature = part
-                        .get("thoughtSignature")
-                        .and_then(Value::as_str)
-                        .filter(|signature| !signature.is_empty());
-                    if !text.is_empty() || signature.is_some() {
+                    if !text.is_empty() || thought_sig_meta.is_some() {
                         let is_thought = part
                             .get("thought")
                             .and_then(serde_json::Value::as_bool)
@@ -456,20 +450,6 @@ impl GoogleLanguageModelStream {
                             if let Some(id) = self.reasoning_id.take() {
                                 controller.reasoning_end(id);
                             }
-                            // Gemini replays each signed part as received, so
-                            // a part signed differently from the open block
-                            // starts its own; an unsigned part continues it.
-                            // Upstream appends every part to one block (#467).
-                            if let Some(signature) = signature {
-                                if self
-                                    .text_signature
-                                    .as_deref()
-                                    .is_some_and(|open| open != signature)
-                                {
-                                    self.end_text(controller);
-                                }
-                                self.text_signature = Some(signature.to_owned());
-                            }
                             if self.text_id.is_none() {
                                 let id = format!("{}", self.block_counter);
                                 self.block_counter += 1;
@@ -485,6 +465,14 @@ impl GoogleLanguageModelStream {
                                     delta: text.to_string(),
                                     provider_metadata: thought_sig_meta.clone(),
                                 });
+                            }
+                            // Gemini signs the last part of a text block (the
+                            // recordings end each block with an empty signed
+                            // part), so a signed part closes its block and
+                            // the next part opens a new one. Upstream appends
+                            // every part to one block (#467).
+                            if thought_sig_meta.is_some() {
+                                self.end_text(controller);
                             }
                         }
                     }
@@ -642,7 +630,6 @@ impl GoogleLanguageModelStream {
         if let Some(id) = self.text_id.take() {
             controller.text_end(id);
         }
-        self.text_signature = None;
     }
 
     /// One `functionCall` part: a chunk of streamed arguments (`partialArgs`,
@@ -798,13 +785,12 @@ impl Transformer for GoogleLanguageModelStream {
 
         match event {
             Ok(GoogleStreamEvent::Chunk(chunk)) => {
-                let has_usage = chunk.usage_metadata.is_some();
                 self.transform_chunk(chunk, controller);
-                // The turn is complete once it has a finish reason (or a
-                // confirmed prompt block) and the usage at or after it, which
-                // may come in a later chunk; the body itself may stay open
+                // The turn is complete once it has both a finish reason (or a
+                // confirmed prompt block) and usage, in either order and
+                // possibly from separate chunks; the body itself may stay open
                 // (keep-alive, proxies). Upstream waits for its end (#469).
-                if has_usage && self.final_finish_reason.is_some() {
+                if self.last_usage_metadata_value.is_some() && self.final_finish_reason.is_some() {
                     self.finish(controller);
                     controller.terminate();
                 }
