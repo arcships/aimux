@@ -230,7 +230,10 @@ impl GroqChatLanguageModel {
         // messages:
         body.insert(
             "messages".into(),
-            Value::Array(convert_to_groq_chat_messages(&options.prompt)?),
+            Value::Array(convert_to_groq_chat_messages(
+                &options.prompt,
+                &mut warnings,
+            )?),
         );
 
         // tools:

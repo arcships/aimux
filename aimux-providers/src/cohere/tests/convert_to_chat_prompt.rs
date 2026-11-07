@@ -57,7 +57,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -94,7 +94,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -130,7 +130,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.documents,
@@ -176,7 +176,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -211,7 +211,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -246,7 +246,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages[0],
@@ -281,7 +281,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             let user_message = &result.messages[0];
             assert_eq!(user_message["role"], "user");
@@ -321,7 +321,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -364,7 +364,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             let part = &result.messages[0]["content"][0];
             assert_eq!(part["type"], "image_url");
@@ -400,7 +400,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             // Upstream `content: undefined` is absent from the message here.
             assert_eq!(
@@ -439,7 +439,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -480,7 +480,7 @@ mod convert_to_cohere_chat_prompt {
                 provider_options: None,
             }];
 
-            let result = convert_prompt_to_cohere(&prompt).unwrap();
+            let result = convert_prompt_to_cohere(&prompt, &mut Vec::new()).unwrap();
 
             assert_eq!(
                 result.messages,
@@ -526,7 +526,7 @@ mod convert_to_cohere_chat_prompt {
             // Upstream's message is "'file parts with provider references'
             // functionality not supported"; the Rust error carries the
             // functionality name, which is what is asserted here.
-            let Err(err) = convert_prompt_to_cohere(&prompt) else {
+            let Err(err) = convert_prompt_to_cohere(&prompt, &mut Vec::new()) else {
                 panic!("expected an error for a file part with a provider reference");
             };
             assert!(

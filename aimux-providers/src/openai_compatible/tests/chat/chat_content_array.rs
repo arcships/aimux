@@ -224,3 +224,58 @@ async fn should_stream_refusal_deltas_as_text() {
         })]
     );
 }
+
+/// aimux #461: a compatible server may send `refusal` as a non-string
+/// (`false`, `{}`); that is no refusal, not a parse failure, in a response
+/// and in a stream chunk.
+#[tokio::test]
+async fn should_ignore_a_non_string_refusal() {
+    let mock = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "application/json".into())],
+        body: json!({
+            "choices": [
+                {
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "391.", "refusal": false },
+                    "finish_reason": "stop",
+                },
+            ],
+        })
+        .to_string()
+        .into_bytes(),
+    }]);
+    let model = create_openai_compatible(OpenAICompatibleProviderSettings {
+        base_url: "https://my.api.com/v1".to_string(),
+        name: "test-provider".to_string(),
+        fetch: Some(mock.transport()),
+        ..Default::default()
+    })
+    .expect("provider")
+    .chat("test-model");
+    let result = model.do_generate(&prompt()).await.expect("generate");
+    assert_eq!(
+        serde_json::to_value(&result.content).expect("content serializes"),
+        json!([{ "type": "text", "text": "391." }])
+    );
+
+    let events = do_stream(&[
+        data(&json!({
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": { "role": "assistant", "content": "391.", "refusal": {} },
+                    "finish_reason": null,
+                },
+            ],
+        })),
+        data(&json!({ "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }] })),
+        "data: [DONE]\n\n".to_string(),
+    ])
+    .await;
+    assert_eq!(of_type(&events, |t| t == "error"), Vec::<Value>::new());
+    assert_eq!(
+        of_type(&events, |t| t == "text-delta"),
+        vec![json!({ "type": "text-delta", "id": "txt-0", "delta": "391." })]
+    );
+}

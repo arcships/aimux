@@ -2069,8 +2069,8 @@ struct OpenAIResponsesStream {
     response_id: Option<String>,
     stream_errored: bool,
     text_states: HashMap<String, Value>,
-    /// Refusal parts (item id, content index) that streamed a delta.
-    refusal_deltas: HashSet<(String, u64)>,
+    /// Refusal parts (item id, content index) that already streamed text.
+    refusal_parts: HashSet<(String, u64)>,
     /// The open text block of each message item: its content index and id.
     text_blocks: HashMap<String, (u64, String)>,
     output_ids: HashMap<usize, String>,
@@ -2118,7 +2118,7 @@ impl Transformer for OpenAIResponsesStream {
             ref mut response_id,
             ref mut stream_errored,
             ref mut text_states,
-            ref mut refusal_deltas,
+            ref mut refusal_parts,
             ref mut text_blocks,
             ref mut output_ids,
             ref mut text_annotations,
@@ -2425,11 +2425,15 @@ impl Transformer for OpenAIResponsesStream {
                     // aimux extension (#468): the AI SDK merges the content
                     // parts of a message into one text block; each part after
                     // the first opens its own, marked with its `contentIndex`.
+                    // A refusal part (#466) is a part like any other, so a
+                    // refusal beside an `output_text` part gets its own block.
                     "response.content_part.added" => {
                         let item_id = resolve_output_item_id(&parsed, output_ids);
                         let content_index = parsed["content_index"].as_u64().unwrap_or_default();
-                        if parsed["part"]["type"] == "output_text"
-                            && let Some((index, block)) = text_blocks.get_mut(&item_id)
+                        if matches!(
+                            parsed["part"]["type"].as_str(),
+                            Some("output_text" | "refusal")
+                        ) && let Some((index, block)) = text_blocks.get_mut(&item_id)
                             && content_index > *index
                         {
                             controller.text_end(std::mem::take(block));
@@ -2453,7 +2457,8 @@ impl Transformer for OpenAIResponsesStream {
                     // ── response.refusal.delta/done → TextDelta ───────────────
                     // aimux extension (#466): the AI SDK drops refusal events,
                     // so a refusal would end as an empty answer. `done` carries
-                    // the whole refusal, sent only for a part without deltas.
+                    // the whole refusal, sent only for a part that has streamed
+                    // nothing yet: no delta, and no earlier `done`.
                     "response.refusal.delta" | "response.refusal.done" => {
                         let id = resolve_output_item_id(&parsed, output_ids);
                         let part = (
@@ -2462,15 +2467,13 @@ impl Transformer for OpenAIResponsesStream {
                         );
                         let text = if etype == "response.refusal.delta" {
                             parsed["delta"].as_str().filter(|text| !text.is_empty())
-                        } else if refusal_deltas.contains(&part) {
+                        } else if refusal_parts.contains(&part) {
                             None
                         } else {
                             parsed["refusal"].as_str().filter(|text| !text.is_empty())
                         };
                         if let Some(text) = text {
-                            if etype == "response.refusal.delta" {
-                                refusal_deltas.insert(part);
-                            }
+                            refusal_parts.insert(part);
                             controller.text_delta(text_block_id(text_blocks, id), text.to_owned());
                         }
                     }

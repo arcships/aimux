@@ -124,7 +124,13 @@ impl LanguageModel for MistralModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(build_request_body(&self.model_id, options, false)?);
+        let mut warnings = request_warnings(options, &self.model_id);
+        let body = exchange.transform_body(build_request_body(
+            &self.model_id,
+            options,
+            false,
+            &mut warnings,
+        )?);
         let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
@@ -206,7 +212,7 @@ impl LanguageModel for MistralModel {
             content,
             finish_reason,
             usage,
-            warnings: request_warnings(options, &self.model_id),
+            warnings,
             provider_metadata: None,
             response: Some(aimux_core::shared::ResponseInfo {
                 headers: Some(response_headers),
@@ -224,7 +230,13 @@ impl LanguageModel for MistralModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let body = exchange.transform_body(build_request_body(&self.model_id, options, true)?);
+        let mut warnings = request_warnings(options, &self.model_id);
+        let body = exchange.transform_body(build_request_body(
+            &self.model_id,
+            options,
+            true,
+            &mut warnings,
+        )?);
         let endpoint = exchange.url("/chat/completions");
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
@@ -240,13 +252,7 @@ impl LanguageModel for MistralModel {
             resp.value,
             MistralChatStream::new(StreamContext {
                 generate_id: self.generate_id.clone(),
-                ..StreamContext::new(
-                    options,
-                    request_warnings(options, &self.model_id),
-                    endpoint,
-                    &body,
-                    &response_headers,
-                )
+                ..StreamContext::new(options, warnings, endpoint, &body, &response_headers)
             }),
         );
 
@@ -472,6 +478,7 @@ pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
     let provider_options = super::chat_language_model_options::validated_mistral_options(
         options.provider_options.as_ref(),
@@ -484,14 +491,17 @@ pub fn build_request_body(
     // (@ai-sdk/mistral@4.0.55 mistral-chat-language-model.ts:171-181).
     let messages = match &options.response_format {
         Some(ResponseFormat::Json { schema, .. }) if !structured_outputs || schema.is_none() => {
-            convert_prompt_to_mistral_messages(&inject_json_instruction_into_messages(
-                &options.prompt,
-                schema.as_ref(),
-                None,
-                None,
-            ))?
+            convert_prompt_to_mistral_messages(
+                &inject_json_instruction_into_messages(
+                    &options.prompt,
+                    schema.as_ref(),
+                    None,
+                    None,
+                ),
+                warnings,
+            )?
         }
-        _ => convert_prompt_to_mistral_messages(&options.prompt)?,
+        _ => convert_prompt_to_mistral_messages(&options.prompt, warnings)?,
     };
 
     let mut body = json!({
