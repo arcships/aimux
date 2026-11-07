@@ -1,4 +1,4 @@
-﻿//! Rust translation of the ElevenLabs transcription model tests.
+//! Rust translation of the ElevenLabs transcription model tests.
 //! Source: `reference/ai/packages/elevenlabs/src/elevenlabs-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -224,4 +224,114 @@ async fn should_handle_no_words() {
     assert_eq!(result.text, "Hello");
     assert!(result.segments.is_empty());
     assert_eq!(result.duration_in_seconds, None);
+}
+
+/// The multipart body a batch transcription sends with `elevenlabs` options.
+async fn form_with(elevenlabs: Value) -> (HashMap<String, String>, String) {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response(), &[]).await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options =
+        Some(serde_json::from_value(json!({ "elevenlabs": elevenlabs })).unwrap());
+    provider
+        .transcription("scribe_v1")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    let raw = String::from_utf8_lossy(&requests[0].body).into_owned();
+    (parse_multipart(&requests[0].body), raw)
+}
+
+/// `providerOptions.elevenlabs` is parsed against
+/// `elevenLabsTranscriptionModelOptionsSchema`
+/// (elevenlabs-transcription-model.ts getArgs): with the namespace present,
+/// a key left out takes the schema's default and is sent (`diarize=false`
+/// after the base `diarize=true`, `tag_audio_events=true`,
+/// `timestamps_granularity=word`, `file_format=other`); `null` stays out.
+#[tokio::test]
+async fn should_send_the_schema_defaults_when_the_namespace_is_present() {
+    let (form, raw) = form_with(json!({ "languageCode": "en" })).await;
+    assert_eq!(form["language_code"], "en");
+    assert_eq!(form["tag_audio_events"], "true");
+    assert_eq!(form["timestamps_granularity"], "word");
+    assert_eq!(form["file_format"], "other");
+    assert_eq!(form["diarize"], "false");
+    assert_eq!(raw.matches("name=\"diarize\"").count(), 2);
+
+    let (form, raw) = form_with(json!({
+        "diarize": null,
+        "tagAudioEvents": null,
+        "timestampsGranularity": null,
+        "fileFormat": null,
+    }))
+    .await;
+    assert_eq!(form["diarize"], "true");
+    assert_eq!(raw.matches("name=\"diarize\"").count(), 1);
+    assert!(!form.contains_key("tag_audio_events"));
+    assert!(!form.contains_key("timestamps_granularity"));
+    assert!(!form.contains_key("file_format"));
+}
+
+/// A value outside the schema fails with the upstream message before
+/// anything is sent.
+#[tokio::test]
+async fn should_reject_transcription_options_outside_the_schema() {
+    let provider = test_provider("test-api-key", "http://127.0.0.1:9", None);
+    let model = provider.transcription("scribe_v1");
+    for elevenlabs in [
+        json!({ "numSpeakers": 33 }),
+        json!({ "numSpeakers": 1.5 }),
+        json!({ "timestampsGranularity": "sentence" }),
+        json!({ "fileFormat": "wav" }),
+        json!({ "tagAudioEvents": "no" }),
+        json!({ "streaming": { "vadThreshold": 1 } }),
+        json!({ "streaming": { "commitStrategy": "auto" } }),
+    ] {
+        let mut call = options(mock_audio(), "audio/wav");
+        call.provider_options =
+            Some(serde_json::from_value(json!({ "elevenlabs": elevenlabs })).unwrap());
+        let error = model.do_generate(&call).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {elevenlabs}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid elevenlabs provider options",
+            "{elevenlabs}"
+        );
+        assert!(cause.is_some(), "{elevenlabs}");
+    }
+}
+
+/// `streaming` options on a batch transcription are reported, not sent
+/// (elevenlabs-transcription-model.ts getArgs).
+#[tokio::test]
+async fn should_warn_about_streaming_options_on_a_batch_transcription() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response(), &[]).await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(
+        serde_json::from_value(
+            json!({ "elevenlabs": { "streaming": { "includeTimestamps": true } } }),
+        )
+        .unwrap(),
+    );
+    let result = provider
+        .transcription("scribe_v1")
+        .do_generate(&call)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.warnings,
+        vec![aimux_core::shared::Warning::Unsupported {
+            feature: "providerOptions.elevenlabs.streaming".to_string(),
+            details: Some(
+                "ElevenLabs batch transcription does not support streaming options.".to_string()
+            ),
+        }]
+    );
 }

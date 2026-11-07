@@ -14,13 +14,10 @@
 //! `auth`, `ANTHROPIC_AWS_API_KEY` when set and SigV4 with the `AWS_*`
 //! credentials otherwise.
 
-use async_trait::async_trait;
-
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
-    AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, default_fetch, is_valid_hostname_part,
-    load_optional_setting, load_setting,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, SigV4AuthFetch, SigV4Fetch,
+    SigV4Signing, combine_headers, is_valid_hostname_part, load_optional_setting, load_setting,
 };
 
 use super::AnthropicAwsAuth;
@@ -181,25 +178,38 @@ pub(super) fn authenticated(
     user_headers: Option<HeaderMapOpt>,
     inner: Option<FetchFunction>,
 ) -> (AwsHeaders, FetchFunction) {
-    let inner = inner.unwrap_or_else(|| std::sync::Arc::new(ProcessDefaultFetch));
+    let inner =
+        inner.unwrap_or_else(|| std::sync::Arc::new(aimux_provider_utils::ProcessDefaultFetch));
     let headers = AwsHeaders {
         auth: auth.clone(),
         user: user_headers,
     };
     let credentials_auth = auth;
-    let fetch: FetchFunction = std::sync::Arc::new(AnthropicAwsFetch {
-        // aws4fetch, like anthropic-aws-fetch.ts:73-83.
-        signing: SigV4Fetch::new(
-            inner.clone(),
-            Resolvable::from_async_fn(move || {
-                let auth = credentials_auth.clone();
-                async move { auth.credentials().await }
-            }),
-            SIGV4_SERVICE,
-            SigV4Signing::Aws4Fetch,
+    // `ai-sdk-anthropic-aws/<v>` after the helper's `ai-sdk-provider-utils/<v>`
+    // and before any signing, on the API-key and SigV4 paths alike
+    // (anthropic-aws-fetch.ts:42-46, :126-130); then the request is signed
+    // unless it carries `x-api-key`.
+    let package = crate::shared::aisdk_pins::ANTHROPIC_AWS;
+    let fetch: FetchFunction = std::sync::Arc::new(
+        SigV4AuthFetch::new(
+            // aws4fetch, like anthropic-aws-fetch.ts:73-83.
+            SigV4Fetch::new(
+                inner.clone(),
+                Resolvable::from_async_fn(move || {
+                    let auth = credentials_auth.clone();
+                    async move { auth.credentials().await }
+                }),
+                SIGV4_SERVICE,
+                SigV4Signing::Aws4Fetch,
+            ),
+            inner,
+            reqwest::header::HeaderName::from_static("x-api-key"),
+        )
+        .with_user_agent(
+            package.provider_utils,
+            format!("ai-sdk-{}/{}", package.name, package.version),
         ),
-        inner,
-    });
+    );
     (headers, fetch)
 }
 
@@ -228,43 +238,5 @@ impl AwsHeaders {
             None => auth.preflight()?,
         }
         Ok(combine_headers(&[&fixed, &user, &key]))
-    }
-}
-
-/// The process default transport, looked up on every request, as upstream
-/// reads `globalThis.fetch` per call (anthropic-aws-fetch.ts:36, :124).
-struct ProcessDefaultFetch;
-
-#[async_trait]
-impl Fetch for ProcessDefaultFetch {
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        default_fetch().fetch(request).await
-    }
-}
-
-/// Adds the transport's user-agent part, then signs the request unless it
-/// carries an `x-api-key`.
-struct AnthropicAwsFetch {
-    signing: SigV4Fetch,
-    inner: FetchFunction,
-}
-
-#[async_trait]
-impl Fetch for AnthropicAwsFetch {
-    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // `ai-sdk-anthropic-aws/<v>` after the helper's
-        // `ai-sdk-provider-utils/<v>` and before any signing, on the API-key
-        // and SigV4 paths alike (anthropic-aws-fetch.ts:42-46, :126-130).
-        let package = crate::shared::aisdk_pins::ANTHROPIC_AWS;
-        aimux_provider_utils::transport_user_agent(
-            &mut request.headers,
-            Some(package.provider_utils),
-            Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
-        );
-        if request.headers.contains_key("x-api-key") {
-            self.inner.fetch(request).await
-        } else {
-            self.signing.fetch(request).await
-        }
     }
 }

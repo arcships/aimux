@@ -136,8 +136,8 @@ fn sign_request_at(
 }
 
 /// [`sign_request_at`] under `signing`: [`SigV4Signing::Aws4Fetch`] neither
-/// sends nor signs `x-amz-content-sha256`, as aws4fetch does for every
-/// service but s3.
+/// sends nor signs `x-amz-content-sha256` unless the caller sent one, as
+/// aws4fetch does for every service but s3.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 fn sign_request_with(
@@ -169,27 +169,44 @@ fn sign_request_with(
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
     let date_stamp = now.format("%Y%m%d").to_string();
 
-    // Body hash
-    let body_hash = hex::encode(Sha256::digest(body));
+    let caller_header = |name: &str| {
+        extra_headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| canonical_header_value(v))
+    };
+
+    // Body hash: a caller's x-amz-content-sha256 is the payload hash and is
+    // signed, as in aws4fetch's `hexBodyHash` and botocore (#464).
+    let caller_body_hash = caller_header("x-amz-content-sha256");
+    let body_hash = caller_body_hash
+        .clone()
+        .unwrap_or_else(|| hex::encode(Sha256::digest(body)));
 
     // Build canonical headers (sorted, lowercased, trimmed).
     // Always include host and x-amz-date; x-amz-content-sha256 only under
-    // `AllHeaders` (aws4fetch adds it for s3 alone).
+    // `AllHeaders` (aws4fetch adds it for s3 alone) or when the caller sent it.
     let mut canonical_headers: Vec<(String, String)> = vec![
         ("host".to_string(), host.to_string()),
         ("x-amz-date".to_string(), amz_date.clone()),
     ];
-    if signing == SigV4Signing::AllHeaders {
+    if signing == SigV4Signing::AllHeaders || caller_body_hash.is_some() {
         canonical_headers.push(("x-amz-content-sha256".to_string(), body_hash.clone()));
     }
 
-    if let Some(ref token) = credentials.session_token {
-        canonical_headers.push(("x-amz-security-token".to_string(), token.clone()));
+    // The signer's own session token replaces a caller's, which is otherwise
+    // kept and signed.
+    if let Some(token) = credentials
+        .session_token
+        .clone()
+        .or_else(|| caller_header("x-amz-security-token"))
+    {
+        canonical_headers.push(("x-amz-security-token".to_string(), token));
     }
 
     for (k, v) in extra_headers {
         let lower = k.to_lowercase();
-        // Don't override the required headers.
+        // Already added above.
         if lower != "host"
             && lower != "x-amz-date"
             && lower != "x-amz-content-sha256"
@@ -358,7 +375,9 @@ type Clock = fn() -> DateTime<Utc>;
 /// final body bytes and the headers [`SigV4Signing`] names; `host`,
 /// `x-amz-date`, `x-amz-content-sha256` (under [`SigV4Signing::AllHeaders`])
 /// and, for temporary credentials, `x-amz-security-token` are set from the
-/// signed values, and `Authorization` is replaced.
+/// signed values, and `Authorization` is replaced. A caller's
+/// `x-amz-content-sha256` (used as the payload hash) and
+/// `x-amz-security-token` are kept and signed instead.
 pub struct SigV4Fetch {
     inner: FetchFunction,
     credentials: Resolvable<AwsCredentials>,
@@ -378,7 +397,8 @@ pub enum SigV4Signing {
     /// aws4fetch 1.0.20, the signer of the AI SDK's AWS providers
     /// (`AwsV4Signer`): the headers in its `UNSIGNABLE_HEADERS`
     /// (user-agent, content-type, ...) are sent but not signed, and
-    /// `x-amz-content-sha256` is neither sent nor signed. (aws4fetch adds it
+    /// `x-amz-content-sha256` is neither sent nor signed unless the caller
+    /// sends one. (aws4fetch adds it
     /// only for service `s3`, as `UNSIGNED-PAYLOAD`; no aimux caller signs
     /// for s3, and this rule does not implement that case.)
     Aws4Fetch,
@@ -477,6 +497,87 @@ impl Fetch for SigV4Fetch {
             request.headers.insert(name, value);
         }
         self.inner.fetch(request).await
+    }
+}
+
+/// The transport of an AI SDK AWS provider (`amazon-bedrock-sigv4-fetch.ts`,
+/// `anthropic-aws-fetch.ts`): add the package's user-agent part, then send a
+/// request that carries `api_key_header` to `inner` as it is and sign every
+/// other one with [`SigV4Fetch`].
+///
+/// Upstream picks `createApiKeyFetchFunction` or `createSigV4FetchFunction`
+/// once, when the provider is created. Here the provider headers put the
+/// key on the request when the key is used, so the transport decides per
+/// request, from that header alone.
+pub struct SigV4AuthFetch {
+    signing: SigV4Fetch,
+    inner: FetchFunction,
+    api_key_header: http::HeaderName,
+    provider_utils: Option<String>,
+    user_agent: Option<String>,
+}
+
+impl SigV4AuthFetch {
+    /// Sign with `signing`, unless the request carries `api_key_header`
+    /// (`authorization` for Bedrock, `x-api-key` for Anthropic on AWS): then
+    /// it goes to `inner` unsigned.
+    #[must_use]
+    pub fn new(
+        signing: SigV4Fetch,
+        inner: FetchFunction,
+        api_key_header: http::HeaderName,
+    ) -> Self {
+        Self {
+            signing,
+            inner,
+            api_key_header,
+            provider_utils: None,
+            user_agent: None,
+        }
+    }
+
+    /// Before the API-key decision, on both paths, rewrite the
+    /// `ai-sdk-provider-utils/<v>` part to `provider_utils` and append
+    /// `user_agent` (`ai-sdk-<package>/<v>`), as [`transport_user_agent`]
+    /// does: the package's `withUserAgentSuffix` around both of its fetch
+    /// functions.
+    ///
+    /// [`transport_user_agent`]: crate::transport_user_agent
+    #[must_use]
+    pub fn with_user_agent(
+        mut self,
+        provider_utils: impl Into<String>,
+        user_agent: impl Into<String>,
+    ) -> Self {
+        self.provider_utils = Some(provider_utils.into());
+        self.user_agent = Some(user_agent.into());
+        self
+    }
+}
+
+impl fmt::Debug for SigV4AuthFetch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SigV4AuthFetch")
+            .field("signing", &self.signing)
+            .field("api_key_header", &self.api_key_header)
+            .field("user_agent", &self.user_agent)
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl Fetch for SigV4AuthFetch {
+    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        crate::user_agent_fetch::transport_user_agent(
+            &mut request.headers,
+            self.provider_utils.as_deref(),
+            self.user_agent.as_deref(),
+        );
+        if request.headers.contains_key(&self.api_key_header) {
+            self.inner.fetch(request).await
+        } else {
+            self.signing.fetch(request).await
+        }
     }
 }
 
@@ -803,6 +904,76 @@ mod tests {
         assert!(!sent.headers.contains_key("x-amz-content-sha256"));
     }
 
+    /// Caller-supplied reserved headers are handled as aws4fetch 1.0.20 does
+    /// (expected values from its `AwsV4Signer` with the same inputs): the
+    /// caller's `x-amz-content-sha256` is kept, signed and used as the
+    /// payload hash, and its `x-amz-security-token` is kept and signed unless
+    /// the signer has its own; `host`, `x-amz-date` and `authorization` are
+    /// replaced (#464).
+    #[tokio::test]
+    async fn aws4fetch_signing_handles_caller_reserved_headers() {
+        for (session_token, token, signature) in [
+            (
+                None,
+                "CALLER-TOKEN",
+                "88bb06d55d3791bc10cce685ff4ccd2244f8c5238aa264eca57f1fa4ce876a2f",
+            ),
+            (
+                Some("SESSION".to_string()),
+                "SESSION",
+                "9dc9ed04bee8e2a7bb0b14319ccc595b3361017b1cd42da75e0aa6608862eecb",
+            ),
+        ] {
+            let capture = Arc::new(Capture::default());
+            let fetch = SigV4Fetch::new(
+                capture.clone(),
+                Resolvable::from(AwsCredentials {
+                    access_key_id: "AKIDEXAMPLE".to_string(),
+                    secret_access_key: "fake-secret-access-key".to_string(),
+                    session_token,
+                    region: "us-east-1".to_string(),
+                }),
+                "bedrock",
+                SigV4Signing::Aws4Fetch,
+            )
+            .with_clock(fixed_time);
+            let mut request = FetchRequest::new(
+                Method::POST,
+                "https://bedrock-runtime.us-east-1.amazonaws.com/model/m/converse"
+                    .parse()
+                    .unwrap(),
+            );
+            for (name, value) in [
+                ("content-type", "application/json"),
+                ("host", "caller.example.com"),
+                ("authorization", "Bearer stale"),
+                ("x-amz-date", "19990101T000000Z"),
+                ("x-amz-security-token", "CALLER-TOKEN"),
+                ("x-amz-content-sha256", "caller-hash"),
+            ] {
+                request.headers.insert(name, value.parse().unwrap());
+            }
+            request.body = Bytes::from_static(b"{}");
+            fetch.fetch(request).await.unwrap();
+            let sent = capture.0.lock().unwrap().take().unwrap();
+            assert_eq!(
+                sent.headers["authorization"].to_str().unwrap(),
+                format!(
+                    "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20240102/us-east-1/bedrock/aws4_request, \
+                     SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, \
+                     Signature={signature}"
+                )
+            );
+            assert_eq!(sent.headers["x-amz-content-sha256"], "caller-hash");
+            assert_eq!(sent.headers["x-amz-security-token"], token);
+            assert_eq!(sent.headers["x-amz-date"], "20240102T030405Z");
+            assert_eq!(
+                sent.headers["host"],
+                "bedrock-runtime.us-east-1.amazonaws.com"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn decorator_authorization_is_byte_identical_to_sign_request() {
         let (fetch, capture) = decorated(creds());
@@ -934,5 +1105,99 @@ mod tests {
             .unwrap_err();
         assert!(matches!(&error, FetchError::Other(m) if m.message.contains("AWS_ACCESS_KEY_ID")));
         assert!(capture.0.lock().unwrap().is_none());
+    }
+
+    /// A provider transport over a capturing inner fetch: Bedrock's pins,
+    /// with `api_key_header` naming the key.
+    fn auth_fetch(api_key_header: &'static str) -> (SigV4AuthFetch, Arc<Capture>) {
+        let capture = Arc::new(Capture::default());
+        let signing = SigV4Fetch::new(
+            capture.clone(),
+            Resolvable::from(creds()),
+            "bedrock",
+            SigV4Signing::Aws4Fetch,
+        )
+        .with_clock(fixed_time);
+        let fetch = SigV4AuthFetch::new(
+            signing,
+            capture.clone(),
+            http::HeaderName::from_static(api_key_header),
+        )
+        .with_user_agent("5.0.51", "ai-sdk-amazon-bedrock/5.0.100");
+        (fetch, capture)
+    }
+
+    /// A POST with the helper's user-agent part and, when given, the key.
+    fn provider_request(api_key: Option<(&'static str, &'static str)>) -> FetchRequest {
+        let mut request = FetchRequest::new(Method::POST, URL.parse().unwrap());
+        request.body = Bytes::from(BODY);
+        request.headers.insert(
+            http::header::USER_AGENT,
+            http::HeaderValue::from_static("ai-sdk-provider-utils/5.0.53"),
+        );
+        if let Some((name, value)) = api_key {
+            request.headers.insert(
+                http::HeaderName::from_static(name),
+                http::HeaderValue::from_static(value),
+            );
+        }
+        request
+    }
+
+    #[tokio::test]
+    async fn auth_fetch_sends_a_request_with_the_api_key_header_unsigned() {
+        let (fetch, capture) = auth_fetch("authorization");
+        fetch
+            .fetch(provider_request(Some(("authorization", "Bearer key"))))
+            .await
+            .unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        assert_eq!(sent.headers[http::header::AUTHORIZATION], "Bearer key");
+        assert!(!sent.headers.contains_key("x-amz-date"));
+        assert_eq!(
+            sent.headers[http::header::USER_AGENT],
+            "ai-sdk-provider-utils/5.0.51 ai-sdk-amazon-bedrock/5.0.100"
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_fetch_signs_a_request_without_the_api_key_header() {
+        let (fetch, capture) = auth_fetch("x-api-key");
+        fetch.fetch(provider_request(None)).await.unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        let authorization = sent.headers[http::header::AUTHORIZATION].to_str().unwrap();
+        assert!(
+            authorization.starts_with(
+                "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20240102/us-east-1/bedrock/aws4_request"
+            ),
+            "{authorization}"
+        );
+        assert_eq!(sent.headers["x-amz-date"], "20240102T030405Z");
+        // The user-agent part is added before signing, and aws4fetch does not
+        // sign `user-agent`.
+        assert_eq!(
+            sent.headers[http::header::USER_AGENT],
+            "ai-sdk-provider-utils/5.0.51 ai-sdk-amazon-bedrock/5.0.100"
+        );
+        assert!(!authorization.contains("user-agent"), "{authorization}");
+    }
+
+    /// Only the named header counts as a key: Anthropic on AWS signs a
+    /// request that carries an `Authorization` of the caller's.
+    #[tokio::test]
+    async fn auth_fetch_reads_only_its_own_api_key_header() {
+        let (fetch, capture) = auth_fetch("x-api-key");
+        fetch
+            .fetch(provider_request(Some(("authorization", "Bearer key"))))
+            .await
+            .unwrap();
+        let sent = capture.0.lock().unwrap().take().unwrap();
+        assert!(sent.headers.contains_key("x-amz-date"));
+        assert!(
+            sent.headers[http::header::AUTHORIZATION]
+                .to_str()
+                .unwrap()
+                .starts_with("AWS4-HMAC-SHA256 ")
+        );
     }
 }

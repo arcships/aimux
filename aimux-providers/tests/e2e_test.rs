@@ -121,6 +121,77 @@ async fn e2e_openai_stream_text() {
     assert_eq!(text, "Hello world");
 }
 
+/// Strict stream mode (#403) ends `stream_text` at the failure: the strict
+/// error is terminal, so no `FinishStep` or `Finish` follows it. The same
+/// reply without strict mode finishes as usual.
+#[tokio::test]
+async fn e2e_openai_stream_text_ends_at_a_strict_failure() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"id\":\"1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body),
+        )
+        .mount(&server)
+        .await;
+    let model = openai_at(server.uri(), "test-key").chat("gpt-4o");
+    let is_finish = |item: &Result<TextStreamPart, AiMuxError>| {
+        matches!(
+            item,
+            Ok(TextStreamPart::FinishStep { .. } | TextStreamPart::Finish { .. })
+        )
+    };
+
+    let lenient: Vec<_> = stream_text(&model, "Say hello", GenerateTextOptions::default())
+        .await
+        .expect("stream_text should start")
+        .stream
+        .collect()
+        .await;
+    assert!(lenient.iter().any(is_finish), "{lenient:?}");
+
+    let strict: Vec<_> = stream_text(
+        &model,
+        "Say hello",
+        GenerateTextOptions {
+            strict_stream: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("stream_text should start")
+    .stream
+    .collect()
+    .await;
+    let Some(Err(AiMuxError::Other { message, cause })) = strict.last() else {
+        panic!("expected the strict failure to end the stream: {strict:?}");
+    };
+    assert_eq!(
+        message,
+        "Strict stream: the stream ended without a finish_reason"
+    );
+    assert!(
+        matches!(
+            cause,
+            Some(aimux_core::error::ErrorCause::AiMux(error))
+                if matches!(**error, AiMuxError::InvalidResponseData { .. })
+        ),
+        "{cause:?}"
+    );
+    assert!(!strict.iter().any(is_finish), "{strict:?}");
+    assert_eq!(
+        strict.iter().filter(|item| item.is_err()).count(),
+        1,
+        "{strict:?}"
+    );
+}
+
 #[tokio::test]
 async fn e2e_openai_generate_with_tools() {
     let server = MockServer::start().await;

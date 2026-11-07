@@ -155,6 +155,11 @@ pub enum ToolResultOutput {
     },
     Content {
         value: Vec<ToolResultContent>,
+        /// Whether the tool call failed. Beyond the AI SDK's `content` output,
+        /// so a result that carries an image or a file can still be an
+        /// error (#470).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
     },
 }
 
@@ -751,6 +756,7 @@ fn tool_result_output(
                 .into_iter()
                 .map(|item| tool_result_content(item, provider, assets, warnings))
                 .collect::<Result<_, _>>()?,
+            is_error: None,
         },
     })
 }
@@ -1349,7 +1355,7 @@ mod tests {
         let [ToolPart::ToolResult(result)] = &content[..] else {
             panic!("one tool result: {content:?}")
         };
-        let ToolResultOutput::Content { value } = &result.output else {
+        let ToolResultOutput::Content { value, .. } = &result.output else {
             panic!("content output: {:?}", result.output)
         };
         Ok((value.clone(), warnings))
@@ -1717,7 +1723,7 @@ mod download_tests {
         let [ToolPart::ToolResult(result)] = &content[..] else {
             panic!("one tool result: {content:?}")
         };
-        let ToolResultOutput::Content { value } = &result.output else {
+        let ToolResultOutput::Content { value, .. } = &result.output else {
             panic!("content output: {:?}", result.output)
         };
         let [

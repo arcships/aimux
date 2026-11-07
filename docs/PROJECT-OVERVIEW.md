@@ -1,14 +1,19 @@
 # aimux — Project Introduction and Promotional Material
 
-> **Unified LLM service access layer — Rust core, one API to access 290+ AI providers, 8 language bindings**
+> **Unified LLM service access layer — Rust core, one API to access 327 AI providers, 8 language bindings**
 >
 > This document compiles all of aimux's design decisions and benchmark conclusions, for use in README, blogs, and technical talks.
+>
+> **0.6.0 status:** the current API uses the shared operations ABI (ABI 1 /
+> ops 1.0). Some historical benchmark notes and examples below predate that
+> change; use [API.md](API.md) and the per-language guides for the current
+> surface. See [Upgrading to 0.6](upgrading-to-0.6.md).
 
 ---
 
 ## One-line Positioning
 
-> **aimux is a Rust replacement for the Vercel AI SDK. It converges the HTTP APIs of 290+ AI providers into a single unified interface, uses a Rust core to deliver a 7-15x performance advantage, and covers eight language ecosystems — Node / Python / Go / Java / Kotlin / Swift / Flutter / C — through FFI bindings.**
+> **aimux is a Rust replacement for the Vercel AI SDK. It converges the HTTP APIs of 327 AI providers into a single unified interface, uses a Rust core to deliver a 7-15x performance advantage, and covers eight language ecosystems — Node / Python / Go / Java / Kotlin / Swift / Flutter / C — through FFI bindings.**
 
 aimux does not do agent loops, RAG, or orchestration — it focuses solely on unifying service access. This is the fundamental difference between it and LangChain / Mastra: the former is an access layer, the latter is an orchestration layer.
 
@@ -29,7 +34,8 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 
 > **Provider access (RFC-0017 phase 4)**: all OpenAI-compatible providers are
 > represented by presets or vendor packages. Rust uses
-> `create_provider(name, PresetSettings)`; bindings retain `provider(name, ...)`.
+> `create_provider(name, PresetSettings)`; bindings use `provider.create` +
+> `provider.model` with the shared operation names.
 > Presets live in `provider_registry.json`; Groq and DeepSeek have their own
 > vendor packages and chat models. Per-preset shell types were retired.
 
@@ -126,7 +132,7 @@ Counts by category live in [api/providers.md](api/providers.md#totals)
 
 See [api/providers.md](api/providers.md) for the full list with counts.
 Rust providers are accessed via `create_provider(name, PresetSettings)`;
-bindings retain their `provider(name, ...)` entry point
+bindings use `provider.create` + `provider.model`
 — see [API.md](API.md#providers).
 
 ### Data model (aligned with AI SDK V4)
@@ -146,7 +152,7 @@ aimux's type design is already aligned with Vercel AI SDK V4, and the core struc
 
 The type definitions are generated from the Rust types by `aimux-codegen` for every binding (TypeScript in `bindings/node/src/generated/types.ts`), and `cargo run -p aimux-codegen -- --check` fails when a generated file is stale, so the Rust core and the bindings' types stay in sync.
 
-See [type-comparison-aisdk.md](type-comparison-aisdk.md) for the full comparison.
+See [aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) for the full comparison.
 
 ---
 
@@ -256,7 +262,7 @@ The provider layer does not directly depend on `reqwest`; it abstracts the HTTP 
 |------|-------|--------|:---:|
 | Performance (Node equivalent comparison) | 0.101ms | 1.488ms (OpenAI SDK) | **aimux 14.7x** |
 | Performance (Python equivalent comparison) | 0.080ms | 0.595ms (OpenAI SDK) | **aimux 7.5x** |
-| Provider coverage | 290+ | ~20 | **aimux 14.5x** |
+| Provider coverage | 327 | ~20 | **aimux 14.5x** |
 | Modalities | 8 | 6 | **aimux** (more video/STT/reranking/search/file) |
 | Memory (2000 req) | +0~2MB | +60~144MB | **aimux** |
 | GC pauses | None (Rust) | V8 GC jitter | **aimux** |
@@ -284,7 +290,7 @@ aimux does not compete with LangChain; instead it serves as the layer beneath La
 
 | Dimension | aimux | rig / rust-genai |
 |------|-------|------------------|
-| Provider count | 290+ | ~20-40 |
+| Provider count | 327 | ~20-40 |
 | Multi-language bindings | 8 | Rust only |
 | Multimodal | 8 traits | Partial |
 | Recorded testing | 2,650 cassettes | Few |
@@ -319,24 +325,32 @@ npm install @arcships/aimux
 ```
 
 ```typescript
-import { openai, generateText, streamText } from '@arcships/aimux'
+import { Client, LanguageModel } from '@arcships/aimux'
 
-const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
+const client = new Client()
+const provider = await client.provider({
+  package: 'openai',
+  settings: { apiKey: process.env.OPENAI_API_KEY },
+})
+const model = await provider.model('gpt-4o', 'languageModel')
+if (!(model instanceof LanguageModel)) throw new Error('Expected LanguageModel')
 
 // non-streaming
-const result = await generateText(model, 'What is Rust?')
+const result = await model.generate('What is Rust?')
 console.log(result.text)
 
 // streaming
-const { stream } = await streamText(model, 'Write a haiku about Rust.')
-for await (const part of stream) {
-  if (part.TextDelta) process.stdout.write(part.TextDelta.delta)
+for await (const frame of await model.stream('Write a haiku about Rust.')) {
+  if (frame.type === 'event') console.log(frame.event)
+  else console.log(frame.outcome, frame.error)
 }
 
-// switch provider: only change the provider
-const deepseekModel = await deepseek(DEEPSEEK_API_KEY, 'deepseek-chat')
-// model usage is exactly the same
+await model.close()
+await provider.close()
 ```
+
+Switch provider by changing the `package` in `provider.create`; the operation
+names stay the same.
 
 ### Python
 
@@ -345,17 +359,22 @@ pip install arcships-aimux
 ```
 
 ```python
-from aimux import openai, generate_text, stream_text
+from aimux import Client
 
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "What is Rust?")
-print(result["text"])
+client = Client()
+with client.adopt(client.call("provider.create", {
+    "package": "openai",
+    "settings": {"apiKey": "sk-..."},
+})["handle"]) as provider:
+    with client.adopt(provider.call("provider.model", {
+        "method": "languageModel", "modelId": "gpt-4o",
+    })["handle"]) as model:
+        result = model.call("text.generate", {"prompt": "What is Rust?", "options": {}})
+        print(result["text"])
 
-# streaming
-result = stream_text(model, "Write a haiku about Rust.")
-for part in result:
-    if "TextDelta" in part:
-        print(part["TextDelta"]["delta"], end="")
+        with model.stream("text.stream", {"prompt": "Write a haiku.", "options": {}}) as events:
+            for frame in events:
+                print(frame["event"])
 ```
 
 ### Rust
@@ -469,9 +488,9 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 | [docs/API.md](API.md) | Full API documentation |
 | [docs/PERF-RESULTS.md](PERF-RESULTS.md) | Full performance benchmark data |
 | [docs/aimux-vs-aisdk-node.md](aimux-vs-aisdk-node.md) | Node.js experience comparison |
-| [docs/type-comparison-aisdk.md](type-comparison-aisdk.md) | Type comparison (V4 alignment) |
-| [docs/audit-001-feature-coverage.md](audit-001-feature-coverage.md) | Feature audit report |
-| [docs/cross-lang-dx-plan.md](cross-lang-dx-plan.md) | Cross-language DX unification plan |
+| [docs/aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) | Type comparison and AI SDK V4 alignment |
+| [docs/api/reference.md](api/reference.md) | API reference index and generated DTO sources |
+| [ROADMAP.md](../ROADMAP.md) | Roadmap and cross-language DX plan |
 | [rfc/0001-multilang-bindings.md](../rfc/0001-multilang-bindings.md) | Multi-language binding design |
 | [rfc/0004-provider-inventory.md](../rfc/0004-provider-inventory.md) | Provider inventory |
 | [rfc/0005-protocol-conversion.md](../rfc/0005-protocol-conversion.md) | Protocol conversion design |
