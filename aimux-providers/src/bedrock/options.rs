@@ -19,6 +19,24 @@ pub(crate) fn read(provider_options: Option<&SharedProviderOptions>) -> Option<&
         .or_else(|| options.get("bedrock"))
 }
 
+/// `parseProviderOptions` of `amazonBedrock`, then of the legacy `bedrock`
+/// key when the first is absent (`... ?? parseProviderOptions({ provider:
+/// 'bedrock' })`): the same namespace [`read`] returns.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid amazonBedrock provider options" (or
+/// "invalid bedrock provider options") when the namespace does not match
+/// the schema, with the serde error as its cause.
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Result<Option<T>, aimux_core::AiMuxError> {
+    match aimux_provider_utils::parse_provider_options(AMAZON_BEDROCK, provider_options)? {
+        Some(options) => Ok(Some(options)),
+        None => aimux_provider_utils::parse_provider_options("bedrock", provider_options),
+    }
+}
+
 /// Wrap `payload` as response metadata under the namespace key.
 pub(crate) fn metadata(payload: Value) -> ProviderMetadata {
     let mut metadata =

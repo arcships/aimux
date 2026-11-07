@@ -116,9 +116,9 @@ impl RerankingModel for BedrockRerankingModel {
         if let Some(ref token) = bedrock_options.next_token {
             body["nextToken"] = json!(token);
         }
-        if let Some(ref fields) = bedrock_options.additional_model_request_fields {
+        if let Some(fields) = bedrock_options.additional_model_request_fields() {
             body["rerankingConfiguration"]["bedrockRerankingConfiguration"]["modelConfiguration"]
-                ["additionalModelRequestFields"] = fields.clone();
+                ["additionalModelRequestFields"] = fields;
         }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
