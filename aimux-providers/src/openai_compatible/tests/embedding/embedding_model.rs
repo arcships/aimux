@@ -408,3 +408,75 @@ mod upstream_e2e {
         assert!(result.warnings.is_empty());
     }
 }
+
+/// aimux's own: the namespaces are parsed against
+/// `openaiCompatibleEmbeddingModelOptions` with `parseProviderOptions`
+/// (openai-compatible-embedding-model.ts:101-134). A wrong type or an
+/// explicit `null` fails with the upstream message and nothing is sent; a
+/// field a later namespace sets wins.
+mod provider_options_schema {
+    use super::*;
+
+    use aimux_core::AiMuxError;
+
+    #[tokio::test]
+    async fn a_wrong_type_or_null_fails_with_the_upstream_message() {
+        for (provider_options, namespace) in [
+            (
+                json!({ "openaiCompatible": { "dimensions": "64" } }),
+                "openaiCompatible",
+            ),
+            (
+                json!({ "test-provider": { "user": null } }),
+                "test-provider",
+            ),
+        ] {
+            let mock = MockFetch::new(Vec::new());
+            let error = model(&mock)
+                .do_embed(&with_provider_options(embed_options(), provider_options))
+                .await
+                .unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(mock.seen().is_empty());
+        }
+    }
+
+    /// The parsed namespaces are merged in order (`openai-compatible`,
+    /// `openaiCompatible`, the provider's): a valid `dimensions` and `user`
+    /// are sent, and a field a later namespace sets wins.
+    #[tokio::test]
+    async fn a_field_a_later_namespace_sets_wins() {
+        let mock = MockFetch::new(vec![Canned::json(&json!({
+            "object": "list",
+            "data": [
+                { "object": "embedding", "index": 0, "embedding": [0.1, 0.2] },
+                { "object": "embedding", "index": 1, "embedding": [0.3, 0.4] },
+            ],
+            "model": "text-embedding-3-large",
+            "usage": { "prompt_tokens": 8, "total_tokens": 8 },
+        }))]);
+        model(&mock)
+            .do_embed(&with_provider_options(
+                embed_options(),
+                json!({
+                    "openai-compatible": { "dimensions": 32, "user": "first" },
+                    "openaiCompatible": { "dimensions": 64 },
+                    "test-provider": { "user": "last" },
+                }),
+            ))
+            .await
+            .unwrap();
+        let body = mock.seen()[0].json_body();
+        assert_eq!(body["dimensions"], json!(64));
+        assert_eq!(body["user"], json!("last"));
+    }
+}

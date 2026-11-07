@@ -1,36 +1,24 @@
-//! Luma image provider.
-//!
-//! Aligned with Vercel AI SDK `LumaImageModel`
-//! (`reference/ai/packages/luma/src/luma-image-model.ts`).
-//!
-//! Uses an async submit + poll pattern: POST to create generation, then GET
-//! poll until state is "completed", then download the image.
-//!
-//! [`create_luma`] takes [`LumaProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`LumaProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `LUMA_API_KEY`.
-//! [`luma()`] is the default instance; it reads nothing and cannot fail.
+//! The Luma image model (`luma-image-model.ts`, with the model ids and
+//! reference types of `luma-image-settings.ts`).
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
     EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
     poll_until, retry_download,
 };
-use aimux_provider_utils::{Credential, ProviderHeaders};
+
+use super::options;
 
 fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -49,124 +37,49 @@ fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
     })
 }
 
+/// `lumaGenerationResponseSchema` (luma-image-model.ts), the submit and poll
+/// answers: what the implementation reads, checked.
+#[derive(serde::Deserialize)]
+struct LumaGenerationResponse {
+    id: String,
+    state: GenerationState,
+    #[serde(default)]
+    assets: Option<LumaAssets>,
+}
+
+/// `z.enum(['queued', 'dreaming', 'completed', 'failed'])`.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum GenerationState {
+    Queued,
+    Dreaming,
+    Completed,
+    Failed,
+}
+
+#[derive(serde::Deserialize)]
+struct LumaAssets {
+    /// The URL of the generated image.
+    image: String,
+}
+
 /// Milliseconds between two polls of a generation (`providerOptions.luma.pollIntervalMillis`
 /// overrides it for one call).
 const POLL_INTERVAL_MS: u64 = 500;
-/// How many times a generation is polled before the call gives up.
+/// How many times a generation is polled before the call gives up
+/// (`providerOptions.luma.maxPollAttempts` overrides it for one call).
 const MAX_POLL_ATTEMPTS: u32 = 120;
 
-pub(crate) mod options;
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lumalabs.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "LUMA_API_KEY";
-const DEFAULT_NAME: &str = "luma";
-
-/// Settings of [`create_luma`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct LumaProviderSettings {
-    /// Base URL for the API calls. Default `https://api.lumalabs.ai`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `LUMA_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
-    /// Default `"luma"`. The providerOptions key stays `luma`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for LumaProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LumaProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
+/// The polls of upstream's `for (let i = 0; i < maxPollAttempts; i++)`:
+/// none for a count of 0 or less, else the count rounded up.
+fn poll_attempts(count: f64) -> u32 {
+    if count > 0.0 {
+        // `as` saturates a count above `u32::MAX`.
+        count.ceil() as u32
+    } else {
+        0
     }
 }
-
-/// Create a Luma provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_luma(settings: LumaProviderSettings) -> Result<LumaProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(LumaProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Luma"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_luma` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn luma() -> &'static LumaProvider {
-    static DEFAULT: OnceLock<LumaProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_luma(LumaProviderSettings::default())
-            .expect("default Luma settings are always valid")
-    })
-}
-
-/// A Luma provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct LumaProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
-}
-
-impl LumaProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
-    /// An image model (e.g. `"photon-1"`); `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> LumaImageModel {
-        LumaImageModel::from_config(model_id.to_string(), self.model_config("image"))
-    }
-}
-
-crate::impl_single_modality_provider!(LumaProvider, image_model, |p, id| p.image(id));
 
 /// A Luma image generation model.
 pub struct LumaImageModel {
@@ -191,6 +104,15 @@ impl ImageModel for LumaImageModel {
     fn max_images_per_call(&self) -> Option<u32> {
         Some(1)
     }
+    /// `photon-1` and `photon-flash-1` take input files; other models are
+    /// unknown (luma-image-model.ts `supportsFileInputs`).
+    fn supports_file_inputs(&self) -> Option<bool> {
+        matches!(self.model_id.as_str(), "photon-1" | "photon-flash-1").then_some(true)
+    }
+    /// No mask on the models that take files; unknown on the others.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        (self.supports_file_inputs() == Some(true)).then_some(false)
+    }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();
@@ -211,6 +133,7 @@ impl ImageModel for LumaImageModel {
             });
         }
 
+        options::validate(Some(&options.provider_options))?;
         let luma_opts = options::luma_options(Some(&options.provider_options));
 
         // Extract non-request options
@@ -219,6 +142,11 @@ impl ImageModel for LumaImageModel {
             POLL_INTERVAL_MILLIS_KEY,
             POLL_INTERVAL_MS,
         ));
+        // luma-image-model.ts:183-191: `maxPollAttempts` bounds the polls.
+        let max_poll_attempts = luma_opts
+            .and_then(|o| o.get("maxPollAttempts"))
+            .and_then(Value::as_f64)
+            .map_or(MAX_POLL_ATTEMPTS, poll_attempts);
         let reference_type = luma_opts
             .and_then(|o| o.get("referenceType"))
             .and_then(|v| v.as_str())
@@ -228,7 +156,13 @@ impl ImageModel for LumaImageModel {
             .and_then(|v| v.as_array())
             .cloned();
 
-        // Build editing options from files
+        // Build editing options from files (luma-image-model.ts
+        // getEditingOptions): the mask is refused first, files or not.
+        if options.mask.is_some() {
+            return Err(AiMuxError::invalid_argument(
+                "Luma AI does not support mask-based image editing. Use the prompt to describe the changes you want to make, along with `prompt.images` containing the source image URL.",
+            ));
+        }
         let mut editing_opts = Map::new();
         if let Some(ref files) = options.files
             && !files.is_empty()
@@ -237,7 +171,7 @@ impl ImageModel for LumaImageModel {
             for file in files {
                 if !matches!(file, ImageFile::Url { .. }) {
                     return Err(AiMuxError::invalid_argument(
-                        "Luma AI only supports URL-based images.",
+                        "Luma AI only supports URL-based images. Please provide image URLs using `prompt.images` with publicly accessible URLs. Base64 and Uint8Array data are not supported.",
                     ));
                 }
             }
@@ -245,7 +179,7 @@ impl ImageModel for LumaImageModel {
             let default_weight = match reference_type {
                 "style" => 0.8,
                 "modify_image" => 1.0,
-                _ => 0.85, // image, character
+                _ => 0.85, // image; character sends no weight
             };
 
             match reference_type {
@@ -270,11 +204,45 @@ impl ImageModel for LumaImageModel {
                         .collect();
                     editing_opts.insert("style".into(), json!(arr));
                 }
+                "character" => {
+                    // luma-image-model.ts getEditingOptions: the images grouped by
+                    // `images[i].id` (default `identity0`), at most 4 per identity.
+                    let mut identities: Map<String, Value> = Map::new();
+                    for (i, f) in files.iter().enumerate() {
+                        let url = if let ImageFile::Url { url } = f {
+                            url.clone()
+                        } else {
+                            String::new()
+                        };
+                        let identity = image_configs
+                            .as_ref()
+                            .and_then(|c| c.get(i))
+                            .and_then(|c| c.get("id"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("identity0");
+                        let images = identities
+                            .entry(identity.to_string())
+                            .or_insert_with(|| json!({ "images": [] }));
+                        if let Some(list) = images["images"].as_array_mut() {
+                            list.push(json!(url));
+                        }
+                    }
+                    for (identity, images) in &identities {
+                        let count = images["images"].as_array().map_or(0, Vec::len);
+                        if count > 4 {
+                            return Err(AiMuxError::invalid_argument(format!(
+                                "Luma AI character supports up to 4 images per identity. Identity '{identity}' has {count} images."
+                            )));
+                        }
+                    }
+                    editing_opts.insert("character".into(), Value::Object(identities));
+                }
                 "modify_image" => {
                     if files.len() > 1 {
-                        return Err(AiMuxError::invalid_argument(
-                            "Luma AI modify_image only supports a single input image.",
-                        ));
+                        return Err(AiMuxError::invalid_argument(format!(
+                            "Luma AI modify_image only supports a single input image. You provided {} images.",
+                            files.len()
+                        )));
                     }
                     let url = if let ImageFile::Url { url } = &files[0] {
                         url.clone()
@@ -295,9 +263,10 @@ impl ImageModel for LumaImageModel {
                 _ => {
                     // image (default)
                     if files.len() > 4 {
-                        return Err(AiMuxError::invalid_argument(
-                            "Luma AI image supports up to 4 reference images.",
-                        ));
+                        return Err(AiMuxError::invalid_argument(format!(
+                            "Luma AI image supports up to 4 reference images. You provided {} images.",
+                            files.len()
+                        )));
                     }
                     let arr: Vec<Value> = files
                         .iter()
@@ -320,12 +289,6 @@ impl ImageModel for LumaImageModel {
                     editing_opts.insert("image".into(), json!(arr));
                 }
             }
-        }
-
-        if options.mask.is_some() {
-            return Err(AiMuxError::invalid_argument(
-                "Luma AI does not support mask-based image editing.",
-            ));
         }
 
         // Build request body
@@ -362,18 +325,12 @@ impl ImageModel for LumaImageModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(generations_url(None), options),
             Value::Object(body),
-            aimux_provider_utils::create_json_response_handler(),
+            aimux_provider_utils::create_json_response_handler::<LumaGenerationResponse>(),
             luma_failed_response_handler(),
         )
         .await?;
         let rh = resp.response_headers;
-        let submit_body: Value = resp.value;
-
-        let generation_id = submit_body
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::invalid_response_data("missing id in Luma response"))?
-            .to_string();
+        let generation_id = resp.value.id;
 
         // Poll for completion.
         let poll_url = generations_url(Some(&generation_id));
@@ -381,42 +338,33 @@ impl ImageModel for LumaImageModel {
             &format!("luma generation {generation_id}"),
             options.abort_signal.as_ref(),
             poll_interval,
-            MAX_POLL_ATTEMPTS,
+            max_poll_attempts,
             || async {
                 let pr = aimux_provider_utils::get_from_api(
                     exchange.request(poll_url.clone(), options),
-                    aimux_provider_utils::create_json_response_handler::<Value>(),
+                    aimux_provider_utils::create_json_response_handler::<LumaGenerationResponse>(),
                     luma_failed_response_handler(),
                 )
                 .await?;
-                let response_body = pr.raw_value.as_ref().map(ToString::to_string);
-                let pv = pr.value;
-
-                let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
-                if state == "completed" {
-                    return pv
-                        .get("assets")
-                        .and_then(|a| a.get("image"))
-                        .and_then(|v| v.as_str())
-                        .map(|url| PollStep::Ready(url.to_string()))
-                        .ok_or_else(|| {
-                            AiMuxError::invalid_response_data(format!(
-                                "Luma generation {generation_id} completed without assets.image"
-                            ))
-                        });
-                }
-                if state == "failed" {
-                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some(state.to_string()),
-                        message: "Image generation failed.".into(),
-                        response_body,
-                        ..ApiCallError::new(
+                // luma-image-model.ts pollForImageUrl
+                match pr.value.state {
+                    GenerationState::Completed => {
+                        return pr
+                            .value
+                            .assets
+                            .map(|assets| PollStep::Ready(assets.image))
+                            .ok_or_else(|| {
+                                AiMuxError::invalid_response_data(
+                                    "Image generation completed but no image was found.",
+                                )
+                            });
+                    }
+                    GenerationState::Failed => {
+                        return Err(AiMuxError::invalid_response_data(
                             "Image generation failed.",
-                            poll_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    })));
+                        ));
+                    }
+                    GenerationState::Queued | GenerationState::Dreaming => {}
                 }
                 Ok(PollStep::Pending)
             },

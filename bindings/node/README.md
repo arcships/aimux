@@ -1,5 +1,9 @@
 # Node ops binding
 
+> **0.6.0.** This binding uses ABI 1 / ops 1.0. The 0.5 top-level
+> `openai`/`generateText` helpers are removed. See
+> [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
+
 The napi adapter awaits `aimux_ops::dispatch` on napi-rs's Tokio runtime. It does
 not use the C ABI, create a blocking runtime, retry calls, or accept JavaScript
 fetch/model/token/telemetry implementations.
@@ -25,8 +29,9 @@ try {
 }
 ```
 
-The raw entrypoint `@arcships/aimux/raw` exposes `Runtime.call(handle, op,
-paramsJson, abort?)` and `Runtime.stream(...)`. It transports the same DTOs and
+The raw entrypoint `@arcships/aimux/raw` exposes the `Runtime` class with
+`runtime.call(handle, op, paramsJson, abort?)` and
+`runtime.stream(...)`. It transports the same DTOs and
 frames as the typed facade. `runtime.abort(signal?)` creates a native Abort.
 `runtime.operationPush(handle, bytes)` admits bytes before returning a Promise.
 A full input queue rejects immediately with ResourceLimit (305); it never waits

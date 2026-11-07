@@ -199,3 +199,149 @@ async fn should_use_real_date() {
     assert!(result.response.timestamp.is_some());
     assert_eq!(result.response.model_id, Some("wizper".to_string()));
 }
+
+fn wizper(base_url: &str) -> aimux_providers::FalTranscriptionModel {
+    create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(base_url.to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .transcription("wizper")
+}
+
+fn with_fal(fal: Value) -> TranscriptionCallOptions {
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(serde_json::from_value(json!({ "fal": fal })).unwrap());
+    call
+}
+
+/// `providerOptions.fal` is parsed against `falTranscriptionModelOptionsSchema`
+/// (fal-transcription-model.ts getArgs). Its `.default()`s fill a missing key
+/// and keep a `null`; the body then takes `language` as is, drops a nullish
+/// `version`/`batchSize`/`numSpeakers`, and keeps the base `diarize: true` /
+/// `chunk_level: "word"` unless the parsed value is set.
+#[tokio::test]
+async fn should_parse_the_options_with_the_upstream_defaults() {
+    let server = MockServer::start().await;
+    mock_queue_and_result(&server, &fixture_result(), &[]).await;
+    let model = wizper(&server.uri());
+
+    for fal in [
+        json!({}),
+        json!({
+            "language": null, "diarize": null, "chunkLevel": null,
+            "version": null, "batchSize": null, "numSpeakers": null,
+        }),
+        json!({
+            "language": "de", "diarize": false, "chunkLevel": "word",
+            "version": "3", "batchSize": 8, "numSpeakers": 2, "unknown": 1,
+        }),
+    ] {
+        model.do_generate(&with_fal(fal)).await.unwrap();
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    let bodies: Vec<Value> = requests
+        .iter()
+        .filter(|request| request.method.as_str() == "POST")
+        .map(|request| {
+            let mut body: Value = serde_json::from_slice(&request.body).unwrap();
+            body.as_object_mut().unwrap().remove("audio_url");
+            body
+        })
+        .collect();
+    assert_eq!(
+        bodies,
+        [
+            json!({
+                "task": "transcribe", "diarize": true, "chunk_level": "segment",
+                "language": "en", "version": "3", "batch_size": 64,
+            }),
+            json!({
+                "task": "transcribe", "diarize": true, "chunk_level": "word",
+                "language": null,
+            }),
+            json!({
+                "task": "transcribe", "diarize": false, "chunk_level": "word",
+                "language": "de", "version": "3", "batch_size": 8, "num_speakers": 2,
+            }),
+        ]
+    );
+}
+
+/// A value outside the schema fails with the upstream message before
+/// anything is sent.
+#[tokio::test]
+async fn should_reject_options_outside_the_schema() {
+    let model = wizper("http://127.0.0.1:9");
+    for fal in [
+        json!({ "language": 1 }),
+        json!({ "diarize": "yes" }),
+        json!({ "chunkLevel": "sentence" }),
+        json!({ "version": "2" }),
+        json!({ "batchSize": "64" }),
+        json!({ "numSpeakers": "2" }),
+    ] {
+        let error = model.do_generate(&with_fal(fal.clone())).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {fal}, got {error:?}");
+        };
+        assert_eq!(
+            message, "Invalid argument for parameter providerOptions: invalid fal provider options",
+            "{fal}"
+        );
+        assert!(cause.is_some(), "{fal}");
+    }
+}
+
+/// A poll answered with `detail: "Request is still in progress"` is pending,
+/// whatever its status; any other error response ends the call
+/// (fal-transcription-model.ts doGenerate, the status `failedResponseHandler`).
+#[tokio::test]
+async fn should_poll_only_while_the_request_is_in_progress() {
+    let in_progress = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/fal-ai/wizper/requests/test-id"))
+        .respond_with(
+            ResponseTemplate::new(400)
+                .set_body_json(json!({ "detail": "Request is still in progress" })),
+        )
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&in_progress)
+        .await;
+    mock_queue_and_result(&in_progress, &fixture_result(), &[]).await;
+    let result = wizper(&in_progress.uri())
+        .do_generate(&with_fal(json!({ "pollIntervalMs": 0 })))
+        .await
+        .unwrap();
+    assert_eq!(result.text, "Hello from the Versal AISDK.");
+
+    let failed = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/fal-ai/wizper/requests/test-id"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(json!({ "detail": "Invalid audio file" })),
+        )
+        .with_priority(1)
+        .mount(&failed)
+        .await;
+    mock_queue_and_result(&failed, &fixture_result(), &[]).await;
+    let error = wizper(&failed.uri())
+        .do_generate(&with_fal(json!({ "pollIntervalMs": 0 })))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected ApiCall, got {error:?}");
+    };
+    assert_eq!(detail.status_code, Some(400));
+    let polls = failed
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 1);
+}
