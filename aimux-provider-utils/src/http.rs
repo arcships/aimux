@@ -194,7 +194,7 @@ pub(crate) struct DownloadValidation {
 pub(crate) struct PreparedRequest {
     method: HttpMethod,
     pub(crate) body: std::sync::Arc<HttpBody>,
-    wire_body: std::sync::Arc<std::sync::OnceLock<Result<Bytes, String>>>,
+    wire_body: std::sync::Arc<std::sync::OnceLock<Result<Bytes, serde_json::Error>>>,
     pub(crate) url: String,
     headers: Vec<(String, String)>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
@@ -218,16 +218,14 @@ impl PreparedRequest {
     /// reference-counted `Bytes` clone on subsequent calls.
     pub(crate) fn wire_body_bytes(&self) -> Result<Bytes, AiMuxError> {
         match self.wire_body.get_or_init(|| match &*self.body {
-            HttpBody::Json(value) => serde_json::to_vec(value)
-                .map(Bytes::from)
-                .map_err(|error| error.to_string()),
+            HttpBody::Json(value) => serde_json::to_vec(value).map(Bytes::from),
             HttpBody::Bytes(bytes, _) => Ok(Bytes::copy_from_slice(bytes)),
             HttpBody::Empty => Ok(Bytes::new()),
         }) {
             Ok(bytes) => Ok(bytes.clone()),
             Err(error) => Err(AiMuxError::InvalidArgument {
                 message: format!("request body is not serializable: {error}"),
-                cause: None,
+                cause: Some(aimux_core::ErrorCause::source(error)),
             }),
         }
     }
@@ -430,6 +428,7 @@ fn redirect_error(
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status.as_u16()),
         cause,
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
         ..api_call_error(request, message)
     }))
 }
@@ -1029,7 +1028,41 @@ pub(crate) fn sanitized_request_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitized_request_url;
+    use super::{HttpBody, HttpMethod, HttpRequest, RequestCredentials, sanitized_request_url};
+
+    /// AI SDK `credentialedOrigin`: the caller headers go only to that
+    /// origin. Anywhere else only the `user-agent` is sent, with the
+    /// credentials omitted, from the first request on (fal's video status
+    /// poll, #441).
+    #[test]
+    fn prepare_sends_caller_headers_only_to_the_credentialed_origin() {
+        let origin = "https://queue.fal.run/fal-ai/luma-dream-machine";
+        let prepare = |url: &str| {
+            HttpRequest {
+                url: url.into(),
+                headers: vec![
+                    ("authorization".into(), "Key test-api-key".into()),
+                    ("user-agent".into(), "ai-sdk/fal/3.0.54".into()),
+                ],
+                validate_url: true,
+                trusted_origin: Some(origin.into()),
+                credentialed_origin: Some(origin.into()),
+                ..HttpRequest::default()
+            }
+            .prepare(HttpMethod::Get, HttpBody::Empty)
+        };
+
+        let same_origin = prepare("https://queue.fal.run/fal-ai/luma-dream-machine/requests/1");
+        assert_eq!(same_origin.headers.len(), 2);
+        assert_eq!(same_origin.credentials, RequestCredentials::Include);
+
+        let other_origin = prepare("https://elsewhere.example/requests/1");
+        assert_eq!(
+            other_origin.headers,
+            vec![("user-agent".to_string(), "ai-sdk/fal/3.0.54".to_string())]
+        );
+        assert_eq!(other_origin.credentials, RequestCredentials::Omit);
+    }
 
     #[test]
     fn sanitized_request_url_drops_userinfo_and_query() {

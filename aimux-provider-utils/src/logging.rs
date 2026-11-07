@@ -528,4 +528,43 @@ mod tests {
         init_logging("trace"); // second call must be a no-op, not a panic
         assert!(tracing::dispatcher::has_been_set());
     }
+
+    #[test]
+    fn redact_error_context_to_string_matches_redact_error_context() {
+        let long = "x".repeat(ERROR_CONTEXT_MAX_STRING + 1);
+        let many: Vec<_> = (0..ERROR_CONTEXT_MAX_ITEMS + 5)
+            .map(|i| serde_json::json!(i))
+            .collect();
+        let mut wide = serde_json::Map::new();
+        for i in 0..ERROR_CONTEXT_MAX_ITEMS + 3 {
+            wide.insert(format!("k{i:04}"), serde_json::json!(i));
+        }
+        let mut deep = serde_json::json!("leaf");
+        for _ in 0..ERROR_CONTEXT_MAX_DEPTH + 2 {
+            deep = serde_json::json!({ "n": deep });
+        }
+        let cases = [
+            serde_json::json!(null),
+            serde_json::json!("plain"),
+            serde_json::json!({
+                "model": "m",
+                "headers": {"Authorization": "Bearer sk-secret", "x-api-key": "k", "accept": "json"},
+                "api_key": "sk-1",
+                "messages": [{"role": "user", "content": long, "token": "t"}],
+                "n": 1.5, "ok": true, "none": null,
+            }),
+            serde_json::Value::Array(many),
+            serde_json::Value::Object(wide),
+            deep,
+        ];
+        for case in cases {
+            let streamed = redact_error_context_to_string(&case).expect("serializable");
+            let streamed: serde_json::Value = serde_json::from_str(&streamed).unwrap();
+            assert_eq!(
+                streamed,
+                redact_error_context(case.clone()),
+                "input: {case}"
+            );
+        }
+    }
 }
