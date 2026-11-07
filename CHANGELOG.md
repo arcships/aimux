@@ -2200,6 +2200,19 @@ detailed sections below.
   providerOptions.<namespace>.dimensions`). The body is unchanged
   (RFC-0046 R1).
 
+- xAI's speech, transcription and video models parse `providerOptions.xai`
+  with `parse_provider_options` against the upstream schemas
+  (`xaiSpeechModelOptionsSchema`, `xaiTranscriptionModelOptionsSchema`,
+  `xaiVideoModelOptionsSchema`), their literal unions, ranges, enums and
+  nested objects included: a value outside a schema fails with `Invalid
+  argument for parameter providerOptions: invalid xai provider options` and
+  the serde error as its cause, instead of `xai.<key> must be …`. As
+  upstream, `null` is unset only for the `.nullish()` keys; the `.optional()`
+  ones (the video `mode`, `videoUrl`, `referenceImageUrls`,
+  `referenceVoiceIds`, `keyframes`, `storageOptions`, `user`, and the
+  transcription `streaming` object and its fields) now reject it, where
+  aimux took it as unset. The requests are unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
