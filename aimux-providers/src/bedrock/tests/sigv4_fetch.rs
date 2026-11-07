@@ -2,7 +2,8 @@
 //! `src/amazon-bedrock-sigv4-fetch.test.ts`.
 //!
 //! aimux has no `createSigV4FetchFunction` / `createApiKeyFetchFunction`. The
-//! provider's transport is `BedrockAuthFetch` (`bedrock/sigv4_fetch.rs`): it adds the
+//! provider's transport is `aimux_provider_utils::SigV4AuthFetch`, as
+//! `bedrock/sigv4_fetch.rs` (`auth_fetch`) configures it: it adds the
 //! `ai-sdk-amazon-bedrock/<v>` user-agent part, then signs with
 //! `aimux_provider_utils::SigV4Fetch` (service `bedrock`, aws4fetch's header
 //! rule) unless the request already carries `Authorization`. The API key is
@@ -47,7 +48,7 @@ use aimux_provider_utils::{
 };
 
 use crate::bedrock::provider::SIGV4_SERVICE;
-use crate::bedrock::sigv4_fetch::BedrockAuthFetch;
+use crate::bedrock::sigv4_fetch::auth_fetch;
 use crate::bedrock::{AmazonBedrockProvider, AmazonBedrockProviderSettings, create_amazon_bedrock};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
@@ -80,11 +81,11 @@ fn sigv4_fetch_for(
     inner: FetchFunction,
     service: &str,
 ) -> FetchFunction {
-    Arc::new(BedrockAuthFetch {
-        signing: SigV4Fetch::new(inner.clone(), credentials, service, SigV4Signing::Aws4Fetch)
+    Arc::new(auth_fetch(
+        SigV4Fetch::new(inner.clone(), credentials, service, SigV4Signing::Aws4Fetch)
             .with_clock(fixed_clock),
         inner,
-    })
+    ))
 }
 
 /// `createSigV4FetchFunction(getCredentials, inner)`: the provider's

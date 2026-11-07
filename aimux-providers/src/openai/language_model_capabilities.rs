@@ -14,6 +14,7 @@ pub struct GptVersion {
 }
 
 /// Extract GPT version from a model ID (e.g. `gpt-5.1-codex` → major=5, minor=1).
+#[must_use]
 pub fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
     let rest = model_id.strip_prefix("gpt-")?;
     let (major_str, remainder) = rest
@@ -66,6 +67,7 @@ pub fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
 }
 
 /// Extract o-series version (e.g. `o3-mini` → 3). Mirrors TS `getOSeriesVersion`.
+#[must_use]
 pub fn get_o_series_version(model_id: &str) -> Option<u32> {
     let rest = model_id.strip_prefix('o')?;
     let (digits, remainder) = rest
@@ -100,6 +102,7 @@ pub enum SystemMessageMode {
     Remove,
 }
 
+#[must_use]
 pub fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
     let o_version = get_o_series_version(model_id);
     let gpt_version = get_gpt_version(model_id);

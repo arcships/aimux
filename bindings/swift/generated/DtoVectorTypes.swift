@@ -10,6 +10,7 @@ enum DtoVectorTypes {
         case "AiMuxErrorInput": return try encoder.encode(decoder.decode(AiMuxErrorInput.self, from: data))
         case "ApiCallError": return try encoder.encode(decoder.decode(ApiCallError.self, from: data))
         case "ApiCallErrorInput": return try encoder.encode(decoder.decode(ApiCallErrorInput.self, from: data))
+        case "ApiCallErrorOrigin": return try encoder.encode(decoder.decode(ApiCallErrorOrigin.self, from: data))
         case "AspectRatio": return try encoder.encode(decoder.decode(AspectRatio.self, from: data))
         case "AssistantContent": return try encoder.encode(decoder.decode(AssistantContent.self, from: data))
         case "AssistantContentPart": return try encoder.encode(decoder.decode(AssistantContentPart.self, from: data))
