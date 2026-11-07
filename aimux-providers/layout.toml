@@ -3420,49 +3420,49 @@ package = "@ai-sdk/elevenlabs"
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-api-types.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/transcription_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-config.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/provider.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-error.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/error.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-provider.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/provider.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-speech-api-types.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/speech_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-speech-model-options.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/speech_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-speech-model.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/speech_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
@@ -3472,21 +3472,21 @@ sub-feature = [
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-speech-options.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/speech_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-transcription-model-options.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/transcription_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-transcription-model.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/transcription_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
@@ -3513,14 +3513,14 @@ sub-feature = [
 
 [[elevenlabs.files]]
 upstream = "src/elevenlabs-transcription-options.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/transcription_model.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
 
 [[elevenlabs.files]]
 upstream = "src/index.ts"
-rust = "elevenlabs.rs"
+rust = "elevenlabs/mod.rs"
 status = "mapped"
 
 [elevenlabs.files.tests]
