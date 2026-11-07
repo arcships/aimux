@@ -108,15 +108,6 @@ impl Namespace {
     }
 }
 
-/// The options under the public Gemini key only (`providerOptions.google`),
-/// for the surfaces the AI SDK keys by `google` alone (embeddings, images,
-/// files).
-pub(crate) fn google_options(
-    provider_options: Option<&SharedProviderOptions>,
-) -> Option<&JsonObject> {
-    provider_options?.get(GOOGLE)
-}
-
 /// `{ "google": payload }`.
 pub(crate) fn google_metadata(payload: Value) -> ProviderMetadata {
     Namespace::Google.metadata(payload)

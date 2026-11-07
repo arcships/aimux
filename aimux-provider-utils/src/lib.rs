@@ -84,7 +84,9 @@ pub use media_type::{
     is_full_media_type, resolve_full_media_type,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
-pub use parse_provider_options::{optional_field, parse_option_fields, parse_provider_options};
+pub use parse_provider_options::{
+    nullish_positive, optional_field, parse_option_fields, parse_provider_options,
+};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
