@@ -701,7 +701,7 @@ mod fal_video_model {
 #[test]
 fn a_status_poll_is_credentialed_and_trusted_only_on_the_submit_origin() {
     let submit_url = "https://queue.fal.run/fal-ai/luma-dream-machine";
-    let request = crate::fal::status_request(
+    let request = crate::fal::video_model::status_request(
         aimux_provider_utils::HttpRequest {
             url: "https://elsewhere.example/requests/1/status".into(),
             headers: vec![("authorization".into(), "Key test-api-key".into())],
