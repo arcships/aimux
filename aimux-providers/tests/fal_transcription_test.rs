@@ -53,6 +53,7 @@ fn fixture_result() -> Value {
     })
 }
 
+/// partial: `should pass the model`; full port in src/fal/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_model_and_audio() {
     let server = MockServer::start().await;
@@ -84,6 +85,7 @@ async fn should_pass_model_and_audio() {
     assert_eq!(body["chunk_level"], "word");
 }
 
+/// partial: `should pass headers`; full port in src/fal/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -127,6 +129,7 @@ async fn should_pass_headers() {
     );
 }
 
+/// partial: `should extract the transcription text`; full port in src/fal/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_extract_text() {
     let server = MockServer::start().await;
@@ -148,6 +151,7 @@ async fn should_extract_text() {
     assert_eq!(result.text, "Hello from the Versal AISDK.");
 }
 
+/// partial: `should include response data with timestamp, modelId and headers`; full port in src/fal/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
@@ -178,6 +182,7 @@ async fn should_include_response_data() {
     assert_eq!(result.response.model_id, Some("wizper".to_string()));
 }
 
+/// partial: `should use real date when no custom date provider is specified`; full port in src/fal/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_use_real_date() {
     let server = MockServer::start().await;
