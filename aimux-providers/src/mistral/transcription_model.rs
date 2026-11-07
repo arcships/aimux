@@ -97,7 +97,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
         // Mistral documents these options as mutually incompatible. Rejecting
         // the combination locally provides a stable SDK error instead of an
         // API 4xx.
-        if mistral.language.is_some() && mistral.timestamp_granularities.is_some() {
+        if mistral.language().is_some() && mistral.timestamp_granularities().is_some() {
             return Err(AiMuxError::invalid_argument(
                 "providerOptions.mistral.language cannot be combined with \
                  providerOptions.mistral.timestampGranularities",
@@ -121,7 +121,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
             &options.media_type,
             &audio,
         )?;
-        if let Some(language) = mistral.language {
+        if let Some(language) = mistral.language() {
             form.text("language", language)?;
         }
         if let Some(temperature) = mistral.temperature {
@@ -130,7 +130,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
         append_all(
             &mut form,
             "timestamp_granularities",
-            mistral.timestamp_granularities.as_deref().unwrap_or(&[]),
+            &mistral.timestamp_granularities().unwrap_or_default(),
         )?;
         if let Some(diarize) = mistral.diarize {
             form.text("diarize", &diarize.to_string())?;
@@ -138,7 +138,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
         append_all(
             &mut form,
             "context_bias",
-            mistral.context_bias.as_deref().unwrap_or(&[]),
+            &mistral.context_bias().unwrap_or_default(),
         )?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;

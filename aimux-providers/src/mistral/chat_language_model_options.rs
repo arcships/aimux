@@ -1,70 +1,92 @@
-//! The providerOptions and providerMetadata namespace of Mistral.
+//! The providerOptions and providerMetadata namespace of Mistral, and the
+//! chat options (`mistral-chat-language-model-options.ts`).
 //!
 //! `@ai-sdk/mistral` reads `providerOptions.mistral` and writes response
 //! metadata under `mistral`, whatever the provider is named. This module is
-//! the one place that spells the key.
+//! the one place that spells the key, and holds the zod refinements the
+//! other option schemas share as serde types.
 
-use serde_json::Value;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
 
 use aimux_core::AiMuxError;
-use aimux_core::shared::{JsonObject, SharedProviderOptions};
+use aimux_core::shared::SharedProviderOptions;
+use aimux_provider_utils::{optional_field, parse_provider_options};
 
 /// The providerOptions / providerMetadata key.
 pub(crate) const NAMESPACE: &str = "mistral";
 
-/// The Mistral options in a providerOptions map.
-pub(crate) fn mistral_options(
+/// `parseProviderOptions({ provider: 'mistral', providerOptions, schema })`.
+pub(super) fn parse<T: serde::de::DeserializeOwned>(
     provider_options: Option<&SharedProviderOptions>,
-) -> Option<&JsonObject> {
-    provider_options?.get(NAMESPACE)
+) -> Result<Option<T>, AiMuxError> {
+    parse_provider_options(NAMESPACE, provider_options)
 }
 
-/// Validate only the options declared by the upstream Mistral schema.
-pub(crate) fn validated_mistral_options(
-    provider_options: Option<&SharedProviderOptions>,
-) -> Result<Option<&JsonObject>, aimux_core::AiMuxError> {
-    let Some(options) = mistral_options(provider_options) else {
-        return Ok(None);
-    };
-    for (key, value) in options {
-        let valid = match key.as_str() {
-            "safePrompt" | "structuredOutputs" | "strictJsonSchema" | "parallelToolCalls" => {
-                value.is_boolean()
-            }
-            "documentImageLimit" | "documentPageLimit" => value.is_number(),
-            "promptCacheKey" => value.is_string(),
-            "reasoningEffort" => matches!(value.as_str(), Some("high" | "none")),
-            _ => true,
-        };
-        if !valid {
-            return Err(aimux_core::AiMuxError::invalid_argument(format!(
-                "Invalid mistral provider option {key}"
-            )));
+/// `mistralLanguageModelChatOptions`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MistralChatOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) safe_prompt: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) document_image_limit: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) document_page_limit: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) structured_outputs: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) strict_json_schema: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) parallel_tool_calls: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) prompt_cache_key: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(crate) reasoning_effort: Option<MistralReasoningEffort>,
+}
+
+/// `z.enum(['high', 'none'])`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum MistralReasoningEffort {
+    High,
+    None,
+}
+
+impl MistralReasoningEffort {
+    /// The wire value.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::None => "none",
         }
     }
-    Ok(Some(options))
 }
 
-/// The `parseProviderOptions` failure: an `InvalidArgumentError` naming the
-/// provider, with the offending key as the cause.
-pub(super) fn invalid(key: &str) -> AiMuxError {
-    AiMuxError::invalid_argument(format!("invalid mistral provider options: {key}"))
-}
-
-/// One optional key, converted by `get`; a present value of the wrong shape
-/// (`null` included) is invalid, as in the zod schema.
-pub(super) fn field<'a, T>(
-    options: &'a JsonObject,
-    key: &str,
-    get: impl FnOnce(&'a Value) -> Option<T>,
-) -> Result<Option<T>, AiMuxError> {
-    options
-        .get(key)
-        .map(|value| get(value).ok_or_else(|| invalid(key)))
-        .transpose()
+/// The chat options, parsed (`None` without a `mistral` namespace).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid mistral provider options" when the namespace
+/// does not match the schema.
+pub(crate) fn chat_options(
+    provider_options: Option<&SharedProviderOptions>,
+) -> Result<Option<MistralChatOptions>, AiMuxError> {
+    parse(provider_options)
 }
 
 /// `z.string().min(1)`.
-pub(super) fn non_empty_str(value: &Value) -> Option<&str> {
-    value.as_str().filter(|text| !text.is_empty())
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NonEmptyString(pub(super) String);
+
+impl<'de> Deserialize<'de> for NonEmptyString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text.is_empty() {
+            return Err(D::Error::custom(
+                "too small: expected string to have >=1 characters",
+            ));
+        }
+        Ok(Self(text))
+    }
 }

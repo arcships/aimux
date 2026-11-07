@@ -2200,6 +2200,18 @@ detailed sections below.
   providerOptions.<namespace>.dimensions`). The body is unchanged
   (RFC-0046 R1).
 
+- Mistral's chat, embedding, transcription and speech models parse
+  `providerOptions.mistral` with `parse_provider_options` against the
+  upstream schemas (`mistralLanguageModelChatOptions`,
+  `mistralEmbeddingModelOptions`, `mistralTranscriptionModelOptions`,
+  `mistralSpeechModelOptions`), their refinements (`min(1)`, the context-bias
+  pattern, `max(100)`, `int().positive()`, the enums) included: any value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid mistral provider options` and the serde error as
+  its cause, instead of `Invalid mistral provider option <key>`,
+  `mistral.metadata must be a record` and the like. The request is
+  unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
