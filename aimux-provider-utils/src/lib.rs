@@ -90,8 +90,8 @@ pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
-    ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
-    create_binary_response_handler, create_event_source_response_handler,
+    ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
+    ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
     create_status_code_error_response_handler, invalid_response_api_call,
 };
