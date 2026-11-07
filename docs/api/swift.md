@@ -1,349 +1,115 @@
 # aimux · Swift API
 
-> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
-> which V4 removed: errors are now the shared `ErrorEnvelope`
-> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
-> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
-> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
-> AI SDK. The current API is in [bindings/swift/README.md](../../bindings/swift/README.md).
-> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+> **0.6.0.** This binding uses ABI 1 / ops 1.0 and the generated header. The
+> 0.5 provider constructors and unversioned exports are removed. See the
+> [0.6 upgrade guide](../upgrading-to-0.6.md).
 
-> Unified LLM service access layer — one API to access AI providers
-
-Swift wraps the Rust core through the `aimux-ffi` C ABI (module `CAimuxFFI`),
-with ARC-managed model handles.
+The Swift package links `aimux_ffi` through the versioned C ABI. Generated
+`AimuxOps` constants and Codable DTOs in `generated/Types.swift` are part of
+the module.
 
 ## Install
 
-Add the package via SPM (the git tag is the version):
+The repository root is not a Swift package; add the package under
+`bindings/swift` from a checkout as a local dependency:
 
 ```swift
-.package(url: "https://github.com/arcships/aimux", from: "0.3.0"),
-.target(name: "YourApp", dependencies: [.product(name: "Aimux", package: "aimux")])
-```
-
-The binding loads `libaimux_ffi.dylib` at runtime — make it available via
-pkg-config (`aimux-ffi.pc`) or put the prebuilt library from
-[GitHub Releases](https://github.com/arcships/aimux/releases) on the loader
-path (`DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH`).
-
-## Quick Start
-
-```swift
-import Aimux
-
-let model = try Model.openai(apiKey: "sk-...", modelId: "gpt-4o", baseUrl: "http://localhost:3000")
-let result = try model.generateText(prompt: "\"What is Rust?\"")
-print(result)
-```
-
-## Providers
-
-The vendor packages and 282 registry-backed OpenAI-compatible providers are reachable by string name:
-
-> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
-> typed factories remain available. Custom endpoints use the base-URL variant.
-> Full list: [providers.md](providers.md).
-
-```swift
-let model = try Model.provider(name: "groq", modelId: "llama-3.3-70b")
-let result = try model.generateText(prompt: "\"Hello\"")
-
-// Optional config JSON ({"baseUrl": "..."}; unknown keys are rejected):
-let model2 = try Model.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b",
-                                configJson: #"{"baseUrl":"https://proxy.example/v1"}"#)
-```
-
-Unknown names throw `.noSuchProvider` (payload: the provider id).
-
-## Text Generation
-
-`generateText(prompt:options:)` returns the raw `GenerateResult` JSON string.
-
-```swift
-import Aimux
-
-let model = try Model.openai(apiKey: "sk-...", modelId: "gpt-4o")
-// prompt is a JSON string; JSON-quote plain text prompts
-let result = try model.generateText(prompt: "\"What is Rust?\"")
-// or pass multi-role messages
-let result2 = try model.generateText(prompt: #"[{"role":"user","content":"Hello"}]"#)
-print(result2)
-```
-
-> Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
-
-The JSON is the AI SDK JSON: camelCase fields, optional fields absent (never
-`null`; an `unknown` value such as `body` keeps a JSON `null` as
-`JSONValue.null`; a response `timestamp` is a `toISOString()` string such as
-`"2025-03-06T13:50:19.000Z"`, which `ISO8601DateFormatter` with
-`.withFractionalSeconds` reads), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
-typed overloads take and return Codable values with exactly that shape:
-
-```swift
-let options = GenerateTextOptions(
-    tools: [.function(FunctionTool(name: "get_weather", inputSchema: schema))],
-    toolChoice: .required
+.package(path: "../aimux/bindings/swift"),
+.target(
+    name: "YourApp",
+    // The local package identity is the directory basename (`swift`).
+    dependencies: [.product(name: "Aimux", package: "swift")]
 )
-let result = try model.generateText(prompt: .text("Weather in Tokyo?"), options: options)
-print(result.text, result.toolCalls.first?.toolName ?? "-", result.usage.inputTokens.total ?? 0)
-
-// Send a tool result back: the part carries `toolName` and a typed `output`.
-let followUp: [ModelMessage] = [
-    .user("Weather in Tokyo?"),
-    ModelMessage(role: .assistant, content: .parts([
-        .toolCall(toolCallId: "call_1", toolName: "get_weather", input: .object(["location": .string("Tokyo")]))
-    ])),
-    ModelMessage(role: .tool, content: .parts([
-        .toolResult(toolCallId: "call_1", toolName: "get_weather",
-                    output: .json(.object(["temperature": .number(22)])))
-    ])),
-]
 ```
 
-`ToolResultOutput` is `.text`, `.json`, `.executionDenied(reason:)`,
-`.errorText`, `.errorJson` or `.content([ToolResultContent])`
-(`{"type":"text"|"json"|"execution-denied"|"error-text"|"error-json"|"content"}`).
+In Xcode, use **File → Add Package Dependencies → Add Local** and select
+`bindings/swift`. A remote URL dependency is not provided for 0.6.0.
 
-## Streaming Generation
+Provide the matching `libaimux_ffi.dylib` / XCFramework from the release on the
+loader path. For a local build:
 
-`streamText(prompt:options:onPart:onDone:onError:)` delivers each part as a
-`TextStreamPart` JSON string (`{"type":"text-delta","id":…,"text":…}`); the
-typed overload decodes it into `TextStreamPart`.
+```bash
+cargo build -p aimux-ffi --release
+swift test --package-path bindings/swift --disable-sandbox \
+  -Xlinker -L -Xlinker "$PWD/target/release" \
+  -Xlinker -rpath -Xlinker "$PWD/target/release"
+```
+
+## Quick start
 
 ```swift
-model.streamText(prompt: "\"Write a haiku\"") { part in
-    print(part) // TextStreamPart JSON string
-} onDone: {
-    print("[done]")
-} onError: { error in
-    print("error: \(error)")
+let manifest = try await AimuxRuntime.manifest()
+let provider = try await AimuxRuntime.open(AimuxOps.OP_PROVIDER_CREATE, params: .object([
+    "package": .string("openai"),
+    "settings": .object(["apiKey": .string(apiKey)]),
+]))
+defer { provider.close() }
+
+let model = try await provider.open(AimuxOps.OP_PROVIDER_MODEL, params: .object([
+    "method": .string("languageModel"),
+    "modelId": .string("gpt-4o-mini"),
+]))
+defer { model.close() }
+
+let request: JSONValue = .object([
+    "prompt": .string("Hello"),
+    "options": .object([:]),
+])
+let result = try await model.call(AimuxOps.OP_TEXT_GENERATE, params: request)
+let stream = try await model.stream(AimuxOps.OP_TEXT_STREAM, params: request)
+defer { stream.close() }
+for try await frame in stream {
+    print(frame.seq, frame.event)
 }
 ```
 
-## Tool-Call Repair
+`AimuxRuntime` addresses global scope; `AimuxHandle` owns a nonzero `UInt64`
+handle. `handle.id` provides a borrowed ID for secondary handle fields; encode
+it as a decimal string and retain its owner until the call returns.
 
-When the model gets a tool call's arguments wrong, aimux does not fail the
-generation: the call comes back with `invalid == true` and an `error`. Set
-`GenerateTextOptions.repairToolCall` to get one shot at fixing it, mirroring
-the AI SDK's `repairToolCall`. It may issue a second aimux request of its own —
-on the streaming path the binding runs it off the native callback thread for
-exactly that reason, since the FFI re-entrancy guard is thread-local.
+## DTOs and handles
 
-```swift
-var options = GenerateTextOptions(tools: [weatherTool])
-options.repairToolCall = { context in
-    // context.toolCall.input is the model's raw argument TEXT,
-    // context.error the failure, context.inputSchema the tool's schema.
-    let fixed = try model.generateText(
-        prompt: .text("Fix these arguments: \(context.toolCall.input)")
-    )
-    return RawToolCall(toolCallId: context.toolCall.toolCallId,
-                       toolName: context.toolCall.toolName,
-                       input: fixed.text) // nil instead: leave the call as it is
-}
-let result = try model.generateText(prompt: .text("weather in Singapore?"), options: options)
-```
+- `Generated/Types.swift` uses the Rust type names; structs and
+  associated-value enums conform to `Sendable`.
+- `FieldPresence` distinguishes absent keys, explicit nulls and values.
+- `JSONValue` retains integral numbers as `Int64`/`UInt64` and other numbers
+  as `Decimal`.
+- Adopt a raw ID with `init(owning:)` to transfer unique ownership.
 
-Return a `RawToolCall` to replace the call (it is re-validated — a replacement
-that still fails validation stays `invalid`, now carrying a `ToolCallRepair`
-error), `nil` to keep the call and its original error, or throw to fail the
-repair with the thrown error's message as cause. A call generated without a
-tool set is never repaired and the function is not invoked for it.
+## Streams and cancellation
 
-Applies to `generateText`, `generateObject`, `consumeStreamText` (patching
-`toolCalls` **and** the replayed `responseMessages`) and to `streamText`, whose
-`.toolCall` part arrives repaired while the `.toolInputDelta` parts before it
-are the provider's own, forwarded verbatim. It does **not** apply to the
-OpenAI-format outputs (`generateTextAsOpenAI` / `streamTextAsOpenAI`):
-`ChatCompletion` carries no `invalid` marker, so there is nothing to drive a
-repair from. The function is host-side only — it never reaches the library as
-part of the options JSON.
+`BoundedStream` uses a blocking producer and one consumer. The queue holds at
+most 256 frames / 8 MiB; each serialized frame is at most 1 MiB. Full queues
+block native callbacks. Terminals have a separate slot; errors throw once
+after buffered events.
 
-The three pure functions behind it are public as well, for hosts driving the
-loop themselves: `toolCallRepairContext(toolCall:prompt:options:)` (returns the
-JSON literal `"null"` for a call made without tools),
-`applyToolCallRepair(toolCall:options:reply:)` and
-`applyToolCallRepairToResult(result:options:toolCallId:reply:)`.
+Task cancellation signals Abort. Exiting a loop releases its temporary
+iterator and cancels production even while the sequence remains alive. Stored
+iterators require `close()` when abandoned. Callback context is released once
+after the native stream call returns.
 
-## API Surface
+`push(Data)` and `nextPart(timeoutMs:)` use binary push/poll primitives. Poll
+returns `.part`, `.ended` or `.timeout`.
 
-| API | Signature | Description |
-|------|------|------|
-| `Model.openai` / `Model.anthropic` | `static func openai(apiKey: String, modelId: String) throws -> Model` | Create a model (official base URL) |
-| `Model.openai` / `Model.anthropic` | `static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> Model` | Create a model (custom base URL) |
-| `generateText` | `func generateText(prompt: String, options: String? = nil) throws -> String` | Non-streaming; returns `GenerateResult` JSON |
-| `streamText` | `func streamText(prompt: String, options: String? = nil, onPart: @escaping (String) -> Void, onDone: @escaping () -> Void, onError: @escaping (any Error) -> Void)` | Streaming via push callbacks |
-| `streamTextAsync` | `func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error>` | Streaming as an `AsyncSequence` |
-| `repairToolCall` | `var repairToolCall: RepairToolCall?` on `GenerateTextOptions`, i.e. `(ToolCallRepairContext) throws -> RawToolCall?` | One-shot host-side repair of invalid tool calls (see above); `generateTextAsOpenAI` repairs the native result then converts it, `streamTextAsOpenAI` does not reflect repair |
-| `generate` | `func generate(prompt: String, options: [String: Any]? = nil) throws -> [String: Any]` | Convenience: parses `generateText` into a dictionary |
-| `Model.initRecording` | `static func initRecording(dir: String) throws` | Start JSONL recording; throws `RecordingError` (`.initFailed` / `.openFile` / `.spawn`) when the recorder cannot be constructed; the previous recorder stays in place |
-| `Model.recordingTryFlush` | `static func recordingTryFlush() throws` | Checked recorder flush; throws `RecordingError` (own type, see below). Legacy `recordingFlush()` stays and never reports |
+## Errors
 
-### Errors
+`AimuxError` retains domain, code, message and unknown JSON fields. `cause` is
+the payload's cause: a nested AI SDK error, or an OS/TLS/parser error as
+`{message, cause?}`. A retry error's cause is its last attempt. Read a retry
+delay from `error.responseHeaders`, not from a dedicated retry field.
 
-Two independent aimux error types, mirroring two Rust types; neither
-inherits from the other, both share only `Error`: `AimuxError` (core
-`AiMuxError`) and `RecordingError` (recorder). C ABI codes 200...206
-have no Swift type — see "C ABI failures" below.
+## Breaking changes in 0.6
 
-Every fallible C function returns an opaque `aimux_error_t *`
-(`OpaquePointer?`): `NULL` = success (the result is in the trailing
-out-parameter), non-`NULL` = failure. One unified code selects `AimuxError`
-(1...20; 4 retired), `RecordingError` (100...105),
-or a C ABI failure (200...206).
-The three decoders enforce the range expected by each call and restore the
-Swift error type; 200...206 collapses to `DecodingError.dataCorrupted`.
-Every path copies its strings (freed with
-`aimux_free_string`) and then releases the returned error with
-`aimux_error_free` exactly once. A code outside the C enum is a header/library mismatch
-and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
-<message>")`. Errors are not handles: `aimux_drop_handle` never sees one.
+- Provider constructors such as `Model.openai(...)` and `Aimux.openai(...)` are
+  removed; use `AimuxRuntime.open` / `AimuxHandle.open` with operation names.
+- The binding requires the exact ABI, ops version and manifest digest.
+- Generated DTOs replace the 0.5 hand-written types.
+- Errors are the shared envelope with a native `cause` chain.
 
-`AimuxError` is a structured Swift `Error` enum mapped from
-`aimux_error_code_t` (see `aimux-error.h`).
+## See also
 
-| Case | C code | Notes |
-|------|--------|--------|
-| `.jsonParse` | `AIMUX_E_JSON_PARSE` (2) | JSON parse/serialize |
-| `.invalidResponseData` | `AIMUX_E_INVALID_RESPONSE_DATA` (3) | Malformed response / stream data |
-| `.invalidArgument` | `AIMUX_E_INVALID_ARGUMENT` (5) | Bad argument |
-| `.invalidPrompt` | `AIMUX_E_INVALID_PROMPT` (6) | Bad prompt JSON |
-| `.tokenExpired` | `AIMUX_E_TOKEN_EXPIRED` (7) | Expired token; `status` 401 |
-| `.unsupportedFunctionality` | `AIMUX_E_UNSUPPORTED_FUNCTIONALITY` (8) | Unsupported feature |
-| `.noSuchModel` | `AIMUX_E_NO_SUCH_MODEL` (9) | Registry miss |
-| `.noSuchProvider` | `AIMUX_E_NO_SUCH_PROVIDER` (10) | Unknown provider id |
-| `.apiCall` | `AIMUX_E_API_CALL` (11) | Every HTTP-shaped failure; branch on `status` (401 auth, 404 model, 429 rate limit) |
-| `.retry` | `AIMUX_E_RETRY` (14) | Complete attempt history and stop reason |
-| `.timeout` | `AIMUX_E_TIMEOUT` (12) | Request timed out |
-| `.aborted` | `AIMUX_E_ABORTED` (13) | Request aborted |
-| `.noSuchTool` | `AIMUX_E_NO_SUCH_TOOL` (15) | The model called a tool outside the supplied tool set; carries `toolName` and `availableTools` (`[String]?`, `nil` when no tool set was supplied) |
-| `.invalidToolInput` | `AIMUX_E_INVALID_TOOL_INPUT` (16) | Tool arguments failed to parse/validate; carries `toolName` and `toolInput` (the raw argument text) |
-| `.toolCallRepair` | `AIMUX_E_TOOL_CALL_REPAIR` (17) | A `repairToolCall` hook itself failed; carries `originalError` (the repaired-over error as `AiMuxError` JSON tagged by `name`, the `ToolCall.error` encoding) |
-| `.noOutputGenerated` | `AIMUX_E_NO_OUTPUT_GENERATED` (18) | No output was generated |
-| `.loadApiKey` | `AIMUX_E_LOAD_API_KEY` (19) | No API key passed and the fallback environment variable is unset; carries `envVar` |
-| `.loadSetting` | `AIMUX_E_LOAD_SETTING` (20) | A required provider setting is missing; carries `envVar` |
-| `.other` | `AIMUX_E_OTHER` (1) | Unclassified core error |
-
-There are no binding-local cases: only aimux-core produces an `AimuxError`.
-Un-encodable typed input (typed `streamText` prompt/options) surfaces as the
-`EncodingError` `JSONEncoder` threw, undecodable library output as the
-`DecodingError` `JSONDecoder` threw. A code outside the expected range is a
-header/library mismatch and fails
-with `DecodingError.dataCorrupted` from the decoder, not an error type.
-
-Every case carries `message`, `status` (`Int?` — `nil` when C reports no
-status), `retryMs` (`Int64?` — `nil` if none; `0` = retry now) and
-`retryable`. Three cases carry a
-typed payload as extra associated values: `.apiCall(providerCode:providerMessage:responseBody:url:requestBodyValues:responseHeaders:providerData:)`
-(all optional), `.noSuchModel(modelId:modelType:)` and
-`.noSuchProvider(providerId:)`; the same-named computed properties return
-`nil` on every other case. `e.code` returns the mapped `aimux_error_code_t`
-`retryable`. Six cases carry a
-typed payload as extra associated values: `.apiCall(providerCode:providerMessage:requestId:responseBody:)`
-(all optional), `.noSuchModel(modelId:modelType:)`,
-`.noSuchProvider(providerId:)`, `.noSuchTool(toolName:availableTools:)`,
-`.invalidToolInput(toolName:toolInput:)` and
-`.toolCallRepair(originalError:)`; the same-named computed properties return
-`nil` on every other case (`toolName` answers for both `.noSuchTool` and
-`.invalidToolInput`). `e.code` returns the mapped `aimux_error_code_t`
-constant as `Int32`.
-
-**Recording errors are a separate type.** `Model.initRecording(dir:)` and
-`Model.recordingTryFlush()` throw `RecordingError` — `struct RecordingError: Error, Equatable { code: Code;
-message: String }` with `Code` = `.initFailed`, `.openFile`, `.spawn`,
-`.writerGone`, `.flushTimeout`, `.write` (mirrors `aimux_error_code_t`
-in `aimux-error.h`; the first three come from `initRecording`, the last three
-from a flush). It is not
-a case of `AimuxError` and never appears in the code table above; catch it
-with `catch let e as RecordingError`.
-
-**C ABI failures are native errors, not an aimux type.** The binding is
-a consumer of the C ABI: it catches misuse before the C call and maps codes
-200...206 onto Swift's own errors.
-
-| Failure | Swift |
-|---------|-------|
-| Bad raw JSON (`prompt` / `options` / `configJson` / `values` / `recordingsJsonl` strings, on every raw-JSON entry) | `DecodingError.dataCorrupted` naming the parameter, thrown by the binding (`JSONSerialization` pre-check) before the C call. Optional parameters follow the FFI's "blank means default" rule; required ones reject an empty string |
-| Use-after-close (`TranscriptionSession`, the only closeable handle) | `DecodingError.dataCorrupted "aimux: transcription session is closed"` from `pushAudio` / `inputDone` / `nextPart`. Catchable, like Go's `ErrClosed` and Dart's `StateError`; `defer { session.close() }` can never crash the host app. Deliberately **not** `AimuxTranscriptionEndedError` — a pump loop that `break`s on "ended" must not read a transcript its own `close()` truncated as complete |
-| `initRecordingRing(cap: 0)` | `AimuxError.invalidArgument` — the value goes to C and aimux-core classifies it (`AIMUX_E_INVALID_ARGUMENT`, `"cap: must be > 0"`), so a Swift caller sees exactly what a C caller sees. The function is `throws` |
-| `router([])` | `DecodingError.dataCorrupted "aimux ffi: router: …"` — C's zero-children failure, surfaced unchanged. Not a trap: the array is as likely to come from a `.filter` as from a literal, and `router` already throws |
-| C code 200...206 (re-entrant call, NULL arg, invalid UTF-8, marshalling / callback / internal) | `DecodingError.dataCorrupted` `"aimux ffi: <context>: <message>"` — a binding/library invariant, a correct binding never triggers it |
-
-No caller-supplied value traps the process. The binding contains exactly one
-`preconditionFailure`, in `initLogging(level:)`, and it is unreachable: the
-only failure `aimux_init_logging` reports is a non-UTF-8 `level`, which a
-Swift `String` cannot produce (NULL and an unrecognized level string are both
-accepted — they fall back to the default).
-
-Accessors:
-
-```swift
-do {
-    _ = try model.generateText(prompt: "\"hi\"")
-} catch let e as AimuxError {
-    print(e.message, e.status, e.retryMs)
-    if case .apiCall = e, e.status == 429, let ms = e.retryMs {
-        // rate limited — back off `ms`
-    }
-}
-```
-
-Streaming: `aimux_stream_text` returns `NULL` after `on_done`, or an error
-object on failure (no `on_done`, no C `onError` callback). The Swift push
-API's `onError` is
-`(any Error) -> Void` and receives the decoded error unchanged (`AimuxError`,
-or `DecodingError` for bad raw JSON / a C ABI invariant); `streamTextAsync`
-throws the same.
-
-## Types
-
-`bindings/swift/generated/Types.swift` is generated by `aimux-codegen` from the
-Rust types (do not edit it; run `cargo run -p aimux-codegen`). Its Codable types
-decode and encode exactly the JSON of the generated
-`bindings/node/src/generated/types.ts` (camelCase fields, unions tagged by
-`type`) and take the Rust type names — usable with the JSON-string APIs: for
-example `JSONValue` (recursive JSON enum), `GenerateTextOptions`,
-`GenerateTextResult`, `GenerateObjectResult`, `ModelMessage`, `ModelPrompt`,
-`ContentPart`, `Tool`, `ToolChoice`, `ToolCall`, `RawToolCall`, `ToolResult`,
-`FileBytes`, `FileData`, `FilePartData` (the AI SDK `FilePart.data`),
-`GeneratedFile`, `Source`, `GenerateContent`, `LanguageModelUsage`,
-`FinishReasonUnified`, `Warning`, `TimeoutConfiguration`, `TextStreamPart`, the
-OpenAI-shaped `ChatCompletion` (vendor shape, snake_case), and the multimodal
-results (`EmbeddingResult`, `UploadFileResult`, ...). Structs and
-associated-value enums conform to `Sendable` and are `Codable, Equatable`.
-
-`ToolCall`, `RawToolCall` and `Source` encode their AI SDK `type` tag
-(`"tool-call"`, `"source"`) wherever they stand, as the AI SDK's
-`TypedToolCall` and `Source` do in a result's `toolCalls` and `sources`;
-decoding accepts JSON without the tag and rejects a different one.
-
-`ToolCall` (top-level and `TextStreamPart.toolCall`) carries `providerMetadata`
-plus `invalid` (set by Core when tool lookup, input parse, or schema validation
-fails, even after repair) and `error` (the `AiMuxError` object for that
-failure, tagged by `name`, e.g. `"AI_InvalidToolInputError"`; held as a
-`JSONValue`, as is `TextStreamPart.error`).
-
-Key order: the AI SDK's provider options, provider metadata and provider
-references are JS objects, which keep their keys in insertion order, and the
-JSON strings the Swift APIs return keep that order. The typed values do not:
-`ProviderOptions`, `ProviderMetadata`, `UploadFileResult.providerReference`
-and `JSONValue.object` are Swift `Dictionary` values, so a value decoded and
-encoded again may list its keys in another order. Pass the JSON string
-through unchanged when the order matters.
-
-Example:
-
-```swift
-let data = result.data(using: .utf8)!
-let decoded = try JSONDecoder().decode(GenerateTextResult.self, from: data)
-print(decoded.usage.inputTokens ?? 0)
-```
-
-## Coverage
-
-Text generation and streaming have typed wrappers. The multimodal features
-(embedding, TTS, STT, image, video, rerank, search, files) take their options
-as JSON strings and return JSON strings that decode into the typed result
-structs above; see the [coverage matrix](../API.md#feature-coverage).
+- [bindings/swift/README.md](../../bindings/swift/README.md) — package,
+  bounded-stream and test details.
+- [docs/api/ops.md](ops.md) — operation names.
+- [docs/error-model.md](../error-model.md) — error codes and cause chains.
+- [Swift provider list](providers.md).

@@ -94,6 +94,40 @@ async fn should_generate_speech_with_required_parameters() {
     );
 }
 
+/// TS: "should include user-agent header" (elevenlabs-speech-model.test.ts),
+/// with the pinned version in place of upstream's mocked `0.0.0-test`; the
+/// provider-utils part names the `@ai-sdk/provider-utils` that
+/// `@ai-sdk/elevenlabs@3.0.54` depends on.
+#[tokio::test]
+async fn should_include_user_agent_header() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut options = speech_options("Hello, world!");
+    options.voice = Some("test-voice-id".to_string());
+    provider
+        .speech("eleven_multilingual_v2")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let user_agent = requests[0]
+        .headers
+        .get("user-agent")
+        .expect("a user-agent")
+        .to_str()
+        .unwrap();
+    assert!(
+        user_agent.contains("ai-sdk-elevenlabs/3.0.54"),
+        "{user_agent}"
+    );
+    assert!(
+        user_agent.contains("ai-sdk-provider-utils/5.0.53"),
+        "{user_agent}"
+    );
+}
+
 /// TS: "should handle custom output format"
 #[tokio::test]
 async fn should_handle_custom_output_format() {
@@ -244,11 +278,9 @@ async fn should_pass_provider_specific_options() {
     );
 }
 
-/// TS: "should include user-agent header"
-///
-/// The TS test checks for `ai-sdk/elevenlabs/0.0.0-test` in the User-Agent.
-/// The Rust provider does not set a User-Agent header, so this test verifies
-/// the `xi-api-key` header is present instead.
+/// The `xi-api-key` header carries the API key. This test used to stand in
+/// for upstream's "should include user-agent header" while the provider sent
+/// no user-agent part; that case is `should_include_user_agent_header` below.
 #[tokio::test]
 async fn should_include_api_key_header() {
     let server = MockServer::start().await;
@@ -266,4 +298,89 @@ async fn should_include_api_key_header() {
     assert_eq!(requests.len(), 1);
     let h = &requests[0].headers;
     assert_eq!(h.get("xi-api-key").unwrap(), "test-api-key");
+}
+
+/// `providerOptions.elevenlabs` is parsed against
+/// `elevenLabsSpeechModelOptionsSchema` (elevenlabs-speech-model.ts
+/// getArgs): a value outside it fails with the upstream message before
+/// anything is sent.
+#[tokio::test]
+async fn should_reject_speech_options_outside_the_schema() {
+    let provider = test_provider("test-api-key", "http://127.0.0.1:9", None);
+    let model = provider.speech("eleven_multilingual_v2");
+    for elevenlabs in [
+        json!({ "voiceSettings": { "stability": 1.5 } }),
+        json!({ "voiceSettings": { "useSpeakerBoost": "yes" } }),
+        json!({ "seed": -1 }),
+        json!({ "seed": 4_294_967_296_u64 }),
+        json!({ "previousRequestIds": ["a", "b", "c", "d"] }),
+        json!({ "pronunciationDictionaryLocators": [{ "versionId": "v1" }] }),
+        json!({ "applyTextNormalization": "always" }),
+        json!({ "enableLogging": null }),
+    ] {
+        let mut options = speech_options("Hello, world!");
+        options.provider_options =
+            Some(serde_json::from_value(json!({ "elevenlabs": elevenlabs })).unwrap());
+        let error = model.do_generate(&options).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {elevenlabs}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid elevenlabs provider options",
+            "{elevenlabs}"
+        );
+        assert!(cause.is_some(), "{elevenlabs}");
+    }
+}
+
+/// An empty `previousText` or `nextText` is not sent (upstream checks them
+/// for truthiness in elevenlabs-speech-model.ts getArgs).
+#[tokio::test]
+async fn should_not_send_an_empty_previous_or_next_text() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut options = speech_options("Hello, world!");
+    options.provider_options = Some(
+        serde_json::from_value(json!({ "elevenlabs": { "previousText": "", "nextText": "" } }))
+            .unwrap(),
+    );
+    provider
+        .speech("eleven_multilingual_v2")
+        .do_generate(&options)
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("previous_text").is_none(), "{body}");
+    assert!(body.get("next_text").is_none(), "{body}");
+}
+
+/// An empty `language` or `languageCode` is not sent, and an empty
+/// `language` leaves room for `languageCode` (upstream checks both for
+/// truthiness in elevenlabs-speech-model.ts getArgs).
+#[tokio::test]
+async fn should_not_send_an_empty_language() {
+    let server = MockServer::start().await;
+    mock_audio_response(&server, "mp3").await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let model = provider.speech("eleven_multilingual_v2");
+
+    let mut options = speech_options("Hello, world!");
+    options.language = Some(String::new());
+    options.provider_options =
+        Some(serde_json::from_value(json!({ "elevenlabs": { "languageCode": "" } })).unwrap());
+    model.do_generate(&options).await.unwrap();
+
+    options.provider_options =
+        Some(serde_json::from_value(json!({ "elevenlabs": { "languageCode": "fr" } })).unwrap());
+    model.do_generate(&options).await.unwrap();
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(first.get("language_code").is_none(), "{first}");
+    let second: Value = serde_json::from_slice(&requests[1].body).unwrap();
+    assert_eq!(second["language_code"], "fr");
 }

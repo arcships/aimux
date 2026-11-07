@@ -1,5 +1,10 @@
 # aimux · Rust API
 
+> **0.6.0.** The Rust API follows the AI SDK V4 shapes: `ProviderName` and the
+> provider-level retry/body-override settings are removed, and errors carry the
+> shared envelope and cause chain. See the
+> [0.6 upgrade guide](../upgrading-to-0.6.md).
+
 > Unified LLM service access layer — one API to access AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
@@ -103,8 +108,8 @@ if let Some(discovery) = provider.discovery() {
 Unknown names fail with `AiMuxError::NoSuchProvider { provider_id, model_id,
 model_type, available_providers }`.
 Custom endpoints use `PresetSettings::base_url` or the vendor's settings.
-The bindings retain their compatibility API in `aimux_providers::provider`;
-its helpers and option types are not re-exported from the Rust crate root.
+Bindings use the shared ops ABI (`provider.create` + `provider.model`); see
+[Upgrading to 0.6](../upgrading-to-0.6.md).
 
 ## Middleware
 
@@ -160,7 +165,7 @@ outputs — are downloaded before the model call unless the model's
 send the URL. The default downloads with the guarded download.
 
 > Parameters, return value, and the `content` variants are documented in
-> the [API overview](../API.md#text-generation).
+> the [API overview](../API.md).
 
 ## Streaming Generation
 
@@ -188,7 +193,7 @@ Streaming honors the same `timeout` / `abort_signal` options as
 stream with `Err(AiMuxError::Aborted(..))`. Provider-reported error events
 remain `Ok(TextStreamPart::Error { .. })` data.
 
-> Stream part variants are documented in the [API overview](../API.md#streaming-generation).
+> Stream part variants are documented in the [API overview](../API.md).
 
 ## Tool Calling
 
@@ -437,31 +442,24 @@ use aimux_providers::init_logging;
 init_logging("debug"); // idempotent; no-op if a global subscriber exists
 ```
 
-### C ABI
+### C ABI and bindings
 
-```c
-aimux_init_logging("debug"); // aimux-ffi.h, idempotent, logs to stderr
+There is no `aimux_init_logging` export in 0.6. Configure logging through the
+shared `runtime.configure` operation:
+
+```json
+{ "logging": { "level": "debug" } }
 ```
 
-### Per-language entry points
+`runtime.configure` applies the level and returns the logging state
+(`requestedLevel`, `frozen`); `runtime.describe` reports versions and
+capabilities, not logging state. The same operation is available from Node,
+Python, Go, Java, Kotlin, Swift, Flutter and C; a host-installed subscriber is
+never overridden. The `AIMUX_LOG*` environment variables take precedence.
 
-Every binding exposes the same idempotent `init_logging(level)` entry:
-
-| Language | Entry |
-|----------|-------|
-| Rust | `aimux_providers::init_logging("debug")` |
-| C | `aimux_init_logging("debug")` |
-| Python | `aimux.init_logging("debug")` |
-| Node | `initLogging("debug")` |
-| Go | `aimux.InitLogging("debug")` |
-| Java | `Aimux.initLogging("debug")` |
-| Kotlin | `initLogging("debug")` |
-| Swift | `Aimux.initLogging(level: "debug")` |
-| Flutter | `initLogging("debug")` |
-
-`level` accepts `off | error | warn | info | debug | trace` (empty/null
-defaults to `warn`). All entries are no-ops when the host already registered
-its own subscriber, and the `AIMUX_LOG*` env vars always take precedence.
+`level` is required and accepts exactly `off | error | warn | info | debug |
+trace`. Omit the `logging` member to leave logging unchanged; an empty or
+`null` level is invalid.
 
 ### What is logged
 

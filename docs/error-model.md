@@ -3,15 +3,16 @@
 > 本文记录错误模型迁移后的稳定公开契约。本次迁移本身包含破坏性变更；
 > 此后的演进应保持向后兼容，否则需要按主版本变更处理。
 
-## 三类错误
+## 错误域
 
 | 来源 | 对外形态 |
 |---|---|
 | 核心操作 | `AiMuxError` 及各语言的原生子类型 |
 | 录制 | 独立的 `RecordingError`，不属于 `AiMuxError` |
 | 绑定边界 | 各语言的参数、状态或运行时错误；C ABI 使用 `200..206` |
+| ops 协议 | 共享 dispatcher 的协议错误；使用 `300..306` |
 
-三类错误不相互伪装，也不再用序列化后的错误 JSON 作为第二套协议。
+四类错误不相互伪装，也不再用序列化后的错误 JSON 作为第二套协议。
 
 ## 各语言的映射
 
@@ -20,7 +21,18 @@
 - C ABI 成功时返回 `NULL` 并写入出参；失败时返回一个由调用方释放一次的
   不透明 `aimux_error_t *`。
 - Go、Java、Kotlin、Swift 和 Flutter 将 C 错误还原为本语言错误。错误码
-  `1..20` 属于核心，`100..105` 属于录制，`200..206` 属于绑定边界。
+  `1..20` 属于核心，`100..105` 属于录制，`200..206` 属于绑定边界，
+  `300..306` 属于 ops 协议。
+
+| Code | Name | 含义 |
+|---|---|---|
+| `300` | `InvalidOp` | 操作名不存在或不在当前 manifest |
+| `301` | `InvalidParams` | 请求参数不是该操作的合法 DTO |
+| `302` | `UnsupportedOpsVersion` | ABI、ops 版本或 manifest digest 不匹配 |
+| `303` | `ConcurrentConsumer` | 同一 stream/operation 出现第二个消费者 |
+| `304` | `InvalidState` | 操作或 handle 当前状态不允许该调用 |
+| `305` | `ResourceLimit` | 队列、字节数或 admission 超过限制 |
+| `306` | `HandleExhausted` | handle 空间耗尽 |
 
 结构化字段只放在真正拥有它的错误上。例如，HTTP 状态和响应头属于
 `APICallError`，不放进通用基类（retry hint 与 request id 从 `response_headers` 读取）。

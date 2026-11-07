@@ -595,3 +595,256 @@ mod bedrock_remaining {
         );
     }
 }
+
+mod content_block_delta_validation {
+    use super::*;
+
+    use aimux_core::types::FinishReasonUnified;
+
+    fn event(event_type: &str, payload: Value) -> Vec<u8> {
+        create_event(event_type, &payload.to_string())
+    }
+
+    fn delta(index: u64, delta: Value) -> Vec<u8> {
+        event(
+            "contentBlockDelta",
+            json!({ "contentBlockIndex": index, "delta": delta }),
+        )
+    }
+
+    fn unreadable_tool_input() -> Vec<Vec<u8>> {
+        vec![
+            event(
+                "contentBlockStart",
+                json!({
+                    "contentBlockIndex": 0,
+                    "start": { "toolUse": { "toolUseId": "tool-1", "name": "lookup" } },
+                }),
+            ),
+            delta(0, json!({ "toolUse": { "input": ["x"] } })),
+            event("contentBlockStop", json!({ "contentBlockIndex": 0 })),
+            event("messageStop", json!({ "stopReason": "tool_use" })),
+        ]
+    }
+
+    fn is_tool_call(item: &Result<StreamPart, AiMuxError>) -> bool {
+        matches!(item, Ok(StreamPart::ToolCall(_)))
+    }
+
+    /// #476: the delta fails the stream with `InvalidResponseData`, finishes
+    /// it with an error and completes no tool call.
+    async fn assert_refused(frames: &[Vec<u8>]) {
+        let items = stream_items(&model_streaming("anthropic.test", frames)).await;
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item, Err(AiMuxError::InvalidResponseData { .. }))),
+            "{items:?}"
+        );
+        assert!(!items.iter().any(is_tool_call), "{items:?}");
+        assert!(
+            matches!(
+                items.last(),
+                Some(Ok(StreamPart::Finish { finish_reason, .. }))
+                    if finish_reason.unified == FinishReasonUnified::Error
+            ),
+            "{items:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tool_input_that_is_not_a_string_completes_no_call() {
+        let frames = unreadable_tool_input();
+        assert_refused(&frames).await;
+        let items = stream_items(&model_streaming("anthropic.test", &frames)).await;
+        assert!(
+            items.iter().any(
+                |item| matches!(item, Ok(StreamPart::ToolInputEnd { id, .. }) if id == "tool-1")
+            ),
+            "the dropped tool block is closed: {items:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_delta_without_a_known_member_is_refused() {
+        for unreadable in [
+            json!({ "mystery": "x" }),
+            json!({ "reasoningContent": {} }),
+            json!({ "reasoningContent": { "text": 5 } }),
+        ] {
+            assert_refused(&[
+                delta(0, unreadable),
+                event("contentBlockStop", json!({ "contentBlockIndex": 0 })),
+                event("messageStop", json!({ "stopReason": "end_turn" })),
+            ])
+            .await;
+        }
+    }
+
+    /// In strict mode the guard turns the error into the stream's end: no
+    /// call and no `Finish`.
+    #[tokio::test]
+    async fn a_strict_stream_ends_at_an_unreadable_delta() {
+        let mut options = test_options();
+        options.strict_stream = Some(true);
+        let items: Vec<_> = model_streaming("anthropic.test", &unreadable_tool_input())
+            .do_stream(&options)
+            .await
+            .expect("stream starts")
+            .stream
+            .collect()
+            .await;
+        assert!(matches!(items.last(), Some(Err(_))), "{items:?}");
+        assert!(!items.iter().any(is_tool_call), "{items:?}");
+    }
+}
+
+mod strict_content_block_layout {
+    use super::*;
+
+    fn event(event_type: &str, payload: Value) -> Vec<u8> {
+        create_event(event_type, &payload.to_string())
+    }
+
+    fn block_start(index: u64, start: Value) -> Vec<u8> {
+        event(
+            "contentBlockStart",
+            json!({ "contentBlockIndex": index, "start": start }),
+        )
+    }
+
+    fn tool_start() -> Vec<u8> {
+        block_start(
+            0,
+            json!({ "toolUse": { "toolUseId": "tool-1", "name": "lookup" } }),
+        )
+    }
+
+    fn delta(index: u64, delta: Value) -> Vec<u8> {
+        event(
+            "contentBlockDelta",
+            json!({ "contentBlockIndex": index, "delta": delta }),
+        )
+    }
+
+    fn stop(index: u64) -> Vec<u8> {
+        event("contentBlockStop", json!({ "contentBlockIndex": index }))
+    }
+
+    fn end(stop_reason: &str) -> Vec<u8> {
+        [
+            event("messageStop", json!({ "stopReason": stop_reason })),
+            event(
+                "metadata",
+                json!({ "usage": { "inputTokens": 1, "outputTokens": 1, "totalTokens": 2 } }),
+            ),
+        ]
+        .concat()
+    }
+
+    /// Whether the strict stream over `frames` fails.
+    async fn fails(frames: Vec<Vec<u8>>) -> bool {
+        let mut options = test_options();
+        options.strict_stream = Some(true);
+        model_streaming("anthropic.test", &frames)
+            .do_stream(&options)
+            .await
+            .expect("stream starts")
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .iter()
+            .any(Result::is_err)
+    }
+
+    /// #475: the layouts Converse documents keep working in strict mode, and
+    /// a `null` delta opens no block.
+    #[tokio::test]
+    async fn accepts_text_blocks_opened_by_a_start_or_a_delta() {
+        let text = || delta(0, json!({ "text": "x" }));
+        let tool_input = || delta(0, json!({ "toolUse": { "input": "{}" } }));
+        for frames in [
+            vec![block_start(0, json!({})), stop(0), end("end_turn")],
+            vec![text(), stop(0), end("end_turn")],
+            vec![tool_start(), tool_input(), stop(0), end("tool_use")],
+            vec![delta(0, Value::Null), end("end_turn")],
+        ] {
+            assert!(!fails(frames).await);
+        }
+    }
+
+    /// #475: a block that was not opened, a block left open and a tool call
+    /// without `tool_use` fail the strict stream.
+    #[tokio::test]
+    async fn refuses_a_malformed_block_layout() {
+        let text = || delta(0, json!({ "text": "x" }));
+        let tool_input = || delta(0, json!({ "toolUse": { "input": "{}" } }));
+        for (case, frames) in [
+            (
+                "tool delta without start",
+                vec![tool_input(), stop(0), end("end_turn")],
+            ),
+            ("stop of an unknown index", vec![stop(5), end("end_turn")]),
+            ("text block without stop", vec![text(), end("end_turn")]),
+            (
+                "tool block without stop",
+                vec![tool_start(), tool_input(), end("tool_use")],
+            ),
+            (
+                "tool call with end_turn",
+                vec![tool_start(), tool_input(), stop(0), end("end_turn")],
+            ),
+        ] {
+            assert!(fails(frames).await, "{case}");
+        }
+    }
+}
+
+mod metadata_finish {
+    use super::*;
+
+    /// #477: after a `messageStop`, `metadata` finishes the stream with its
+    /// usage; a frame after it is not read.
+    #[tokio::test]
+    async fn finishes_at_metadata_after_message_stop() {
+        let event =
+            |event_type: &str, payload: Value| create_event(event_type, &payload.to_string());
+        let items = stream_items(&model_streaming(
+            "anthropic.test",
+            &[
+                event(
+                    "contentBlockDelta",
+                    json!({ "contentBlockIndex": 0, "delta": { "text": "done" } }),
+                ),
+                event("contentBlockStop", json!({ "contentBlockIndex": 0 })),
+                event("messageStop", json!({ "stopReason": "end_turn" })),
+                event(
+                    "metadata",
+                    json!({ "usage": { "inputTokens": 3, "outputTokens": 5, "totalTokens": 8 } }),
+                ),
+                event(
+                    "contentBlockDelta",
+                    json!({ "contentBlockIndex": 1, "delta": { "text": "late" } }),
+                ),
+            ],
+        ))
+        .await;
+
+        let parts: Vec<Value> = items
+            .into_iter()
+            .map(|item| serde_json::to_value(item.expect("stream does not throw")).unwrap())
+            .collect();
+        assert!(
+            !parts.iter().any(|part| part["delta"] == json!("late")),
+            "{parts:?}"
+        );
+        assert_match_object(
+            parts.last().expect("a finish part"),
+            &json!({
+                "type": "finish",
+                "finishReason": { "unified": "stop" },
+                "usage": { "outputTokens": { "total": 5 } },
+            }),
+        );
+    }
+}

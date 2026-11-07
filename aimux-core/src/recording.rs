@@ -801,20 +801,17 @@ pub(crate) fn new_call_id() -> String {
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
 ///
 /// 这是 recording、logging 和 public error context 的唯一敏感键策略。
-/// 覆盖 `authorization`/`api-key`/`apikey`/`key`/`cookie`/`set-cookie`。
-/// 其中 `key` 取 **exact** 匹配
-/// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
-/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
+/// 名字先 lowercase,再去掉 `-`/`_` 后匹配:以 `key`/`token`/`auth` 结尾
+/// (`x-api-key`、`X-Prodia-Key`、`Ocp-Apim-Subscription-Key`、
+/// `x-portkey-virtual-key`、`helicone-auth`),含 `apikey`/`secret`
+/// (`x-api-secret`),含 `authorization`,以及 `cookie`/`set-cookie`。
+/// 调用方可经 `ProviderHeaders.user`/`CallOptions.headers` 配置任意名字的
+/// 凭据头,故按后缀宽匹配(#459);代价是 `X-Key`、`monkey` 以及缓存路由键
+/// `prompt_cache_key`/`promptCacheKey` 这类非凭据名字也会被脱敏。
 ///
-/// **token 不再用 contains**——教训:`contains("token")` 会误伤
+/// **token 不用 contains**——教训:`contains("token")` 会误伤
 /// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
-/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为
-/// 精确匹配常见 bearer-token 字段和 AWS Bedrock sigv4 的
-/// `x-amz-security-token`(name 已 lowercase 归一化)。其余 needle 维持 contains,以覆盖
-/// `x-goog-api-key`/`proxy-authorization` 等变体。
-///
-/// Provider auth headers whose names match none of these are listed by name:
-/// Prodia's `X-Prodia-Key` and the Azure `Ocp-Apim-Subscription-Key`.
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     // Fast stack-only ASCII path for normal header / JSON key lengths (<= 128 B).
@@ -835,10 +832,10 @@ pub fn is_sensitive_key(name: &str) -> bool {
         let squashed = &sq_buf[..sq_len];
         return n == b"cookie"
             || n == b"set-cookie"
-            || n == b"key"
-            || squashed == b"xprodiakey"
-            || squashed.ends_with(b"subscriptionkey")
+            || squashed.ends_with(b"key")
             || squashed.ends_with(b"token")
+            || squashed.ends_with(b"auth")
+            || contains_subslice(squashed, b"secret")
             || contains_subslice(n, b"authorization")
             || contains_subslice(squashed, b"apikey");
     }
@@ -846,10 +843,10 @@ pub fn is_sensitive_key(name: &str) -> bool {
     let squashed: String = n.chars().filter(|c| *c != '-' && *c != '_').collect();
     n == "cookie"
         || n == "set-cookie"
-        || n == "key"
-        || squashed == "xprodiakey"
-        || squashed.ends_with("subscriptionkey")
+        || squashed.ends_with("key")
         || squashed.ends_with("token")
+        || squashed.ends_with("auth")
+        || squashed.contains("secret")
         || n.contains("authorization")
         || squashed.contains("apikey")
 }
@@ -1557,16 +1554,12 @@ fn writer_loop(
                     damaged.note_dropped_evicted_event(&call_id);
                     continue;
                 }
-                entry_or_init(
-                    &mut w,
-                    &mut pending,
-                    &mut pending_order,
-                    &mut evicted_calls,
-                    &call_id,
-                    &damaged,
-                    &write_error,
-                )
-                .transport_closed = true;
+                // RecordingOutcomeStream 与 HTTP 层各发一次;已写出的 call 不再
+                // 建空占位(#460)。
+                let Some(rec) = pending.get_mut(&call_id) else {
+                    continue;
+                };
+                rec.transport_closed = true;
                 try_finalize(
                     &mut w,
                     &mut pending,
@@ -1749,10 +1742,12 @@ fn write_ready_all(
 
 fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
     match serde_json::to_string(&rec) {
-        Ok(line) => {
+        Ok(mut line) => {
             // 每行落盘,保证崩溃前已写行可见;失败记入粘性错误槽,
-            // 由 try_flush 显式暴露。
-            if let Err(e) = writeln!(w, "{line}").and_then(|()| w.flush()) {
+            // 由 try_flush 显式暴露。记录连同换行一次写出:超过 BufWriter
+            // 容量的行若分两次写,同目录上重叠的 recorder 会插进中间(#465)。
+            line.push('\n');
+            if let Err(e) = w.write_all(line.as_bytes()).and_then(|()| w.flush()) {
                 note_write_error(write_error, &e);
             }
         }
@@ -2261,8 +2256,11 @@ impl Recorder for RingRecorder {
 
     fn record_transport_closed(&self, call_id: &str) {
         let mut inner = self.inner.lock().unwrap();
-        inner.entry_or_init_bounded(call_id).transport_closed = true;
-        inner.finalize(call_id);
+        // 同 JSONL writer:已收进 completed 的 call 不再建空占位(#460)。
+        if let Some(rec) = inner.pending.get_mut(call_id) {
+            rec.transport_closed = true;
+            inner.finalize(call_id);
+        }
     }
 
     /// 内存模式:把 barrier 已满足的 pending 全部收进 completed(对应
@@ -2708,6 +2706,10 @@ mod tests {
             "X-Prodia-Key",
             "Ocp-Apim-Subscription-Key",
             "ocp_apim_subscription_key",
+            // #459: configured gateway credential headers.
+            "x-portkey-virtual-key",
+            "helicone-auth",
+            "x-api-secret",
         ] {
             assert!(is_sensitive_key(key), "{key} must be redacted");
         }
@@ -2722,7 +2724,7 @@ mod tests {
         let v = serde_json::json!({
             "headers": {
                 "Authorization": "Bearer sk-abc",
-                "X-Key": "ok",
+                "X-Request-Id": "ok",
                 "x-goog-api-key": "gkey",
                 "x-amz-security-token": "sts-tok"
             },
@@ -2746,7 +2748,7 @@ mod tests {
         assert_eq!(r["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
         assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
-        assert_eq!(r["headers"]["X-Key"], "ok");
+        assert_eq!(r["headers"]["X-Request-Id"], "ok");
         assert_eq!(r["providerOptions"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["api_key"], "[REDACTED]");
         assert_eq!(r["providerOptions"]["openai"]["token"], "[REDACTED]");
@@ -2988,6 +2990,72 @@ mod tests {
         );
         assert!(parsed.input.prompt.is_empty());
         assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #460: the HTTP layer closes the transport again after
+    /// `RecordingOutcomeStream` has finalized the call; that must not write a
+    /// second, empty line.
+    #[test]
+    fn a_second_transport_close_writes_no_extra_line() {
+        let dir =
+            std::env::temp_dir().join(format!("aimux-rec-second-close-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        rec.record_outcome("call-twice", &success_outcome());
+        rec.record_transport_closed("call-twice");
+        rec.record_transport_closed("call-twice");
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 1, "{content}");
+
+        let ring = RingRecorder::new();
+        ring.record_input("call-twice", &sample_options(), "openai", "gpt-4o");
+        ring.record_outcome("call-twice", &success_outcome());
+        ring.record_transport_closed("call-twice");
+        ring.record_transport_closed("call-twice");
+        assert_eq!(ring.pending_count(), 0);
+        assert_eq!(ring.completed().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #465: two recorders on one directory write records larger than the
+    /// `BufWriter` capacity; no line may be split by the other's writes.
+    #[test]
+    fn overlapping_recorders_never_interleave_large_records() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-overlap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recorders: Vec<_> = (0..2)
+            .map(|_| JsonlRecorder::try_new(&dir).unwrap())
+            .collect();
+        let options = CallOptions::new(
+            crate::language_model_message::convert_to_language_model_prompt(
+                &[crate::message::ModelMessage::user("x".repeat(16_384))],
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        for index in 0..128 {
+            for (writer, recorder) in recorders.iter().enumerate() {
+                let id = format!("writer-{writer}-{index}");
+                recorder.record_input(&id, &options, "openai", "test-model");
+                recorder.record_outcome(&id, &success_outcome());
+                recorder.record_transport_closed(&id);
+            }
+        }
+        for recorder in &recorders {
+            recorder.try_flush().unwrap();
+        }
+        drop(recorders);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        assert_eq!(content.lines().count(), 256);
+        for line in content.lines() {
+            serde_json::from_str::<Recording>(line).unwrap();
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }

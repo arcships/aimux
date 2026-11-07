@@ -129,6 +129,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
         Ok(result) => result,
         Err(_) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: true,
+            origin: aimux_core::ApiCallErrorOrigin::Local,
             ..ApiCallError::new(
                 format!(
                     "Request exceeded the {}s exchange response timeout",
@@ -165,10 +166,10 @@ async fn execute_exchange<T>(
 
     if !(200..300).contains(&status) {
         return match failed_response_handler.handle(input).await {
-            Ok(output) => Err(output.value),
+            Ok(output) => Err(from_response(output.value)),
             Err(
                 error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_)),
-            ) => Err(error),
+            ) => Err(from_response(error)),
             Err(error) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                 status_code: Some(status),
                 response_headers: Some(response_headers),
@@ -176,6 +177,7 @@ async fn execute_exchange<T>(
                 // the status's retryability — retry classification comes from
                 // the HTTP status, not from the parse outcome.
                 is_retryable: aimux_core::error::is_retryable_status(status),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Failed to process error response: {error}"),
                     url,
@@ -189,11 +191,12 @@ async fn execute_exchange<T>(
     match successful_response_handler.handle(input).await {
         Ok(output) => Ok(output),
         Err(error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_))) => {
-            Err(error)
+            Err(from_response(error))
         }
         Err(error) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
             response_headers: Some(response_headers),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
                 format!("Failed to process successful response: {error}"),
                 url,
@@ -201,6 +204,21 @@ async fn execute_exchange<T>(
             )
             .caused_by(error)
         }))),
+    }
+}
+
+/// An `ApiCall` error a response handler returned without recording where it
+/// was built comes from the HTTP response the handler was given: a
+/// provider's own error handler, or a success handler rejecting the body.
+/// Errors that recorded an origin (a body read that broke is `Transport`)
+/// keep it.
+fn from_response(error: AiMuxError) -> AiMuxError {
+    match error {
+        AiMuxError::ApiCall(mut detail) if detail.origin.is_unknown() => {
+            detail.origin = aimux_core::ApiCallErrorOrigin::HttpResponse;
+            AiMuxError::ApiCall(detail)
+        }
+        other => other,
     }
 }
 
