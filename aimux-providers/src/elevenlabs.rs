@@ -1463,3 +1463,6 @@ impl ElevenLabsTranscriptionModel {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests;
