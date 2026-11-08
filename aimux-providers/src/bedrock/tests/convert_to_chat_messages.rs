@@ -3623,3 +3623,277 @@ mod bedrock_remaining {
         );
     }
 }
+
+/// Part options are parsed against the schema of the part type
+/// (convert-to-amazon-bedrock-chat-messages.ts): a user text part against
+/// `amazonBedrockTextPartProviderOptions`, an inline user image against
+/// `amazonBedrockImagePartProviderOptions`, an inline or text document
+/// against `amazonBedrockFilePartProviderOptions`, an assistant reasoning
+/// part against `amazonBedrockReasoningMetadataSchema`. A URL file (an `s3:`
+/// image or video), an inline video, and an assistant text or file part are
+/// not read. Not upstream cases.
+mod part_options {
+    use super::*;
+
+    fn invalid_argument(error: AiMuxError) -> String {
+        match error {
+            AiMuxError::InvalidArgument { message, cause } => {
+                assert!(cause.is_some(), "{message}");
+                message
+            }
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    fn user(part: Value) -> Result<Value, AiMuxError> {
+        convert(json!([{ "role": "user", "content": [part] }]))
+    }
+
+    fn text(options: Value) -> Value {
+        json!({ "type": "text", "text": "Hello", "providerOptions": options })
+    }
+
+    fn image(options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "image/png",
+            "providerOptions": options,
+        })
+    }
+
+    fn document(options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "application/pdf",
+            "providerOptions": options,
+        })
+    }
+
+    #[test]
+    fn rejects_options_outside_the_schema_of_the_part_type() {
+        for (part, namespace) in [
+            (
+                text(json!({ "amazonBedrock": { "guardContent": "yes" } })),
+                "amazonBedrock",
+            ),
+            (
+                text(json!({ "bedrock": { "guardContentQualifiers": ["other"] } })),
+                "bedrock",
+            ),
+            (
+                image(json!({ "amazonBedrock": { "guardContent": 1 } })),
+                "amazonBedrock",
+            ),
+            (
+                document(json!({ "amazonBedrock": { "citations": { "enabled": "yes" } } })),
+                "amazonBedrock",
+            ),
+            (
+                document(json!({ "bedrock": { "citations": true } })),
+                "bedrock",
+            ),
+        ] {
+            let message = invalid_argument(user(part.clone()).unwrap_err());
+            assert_eq!(
+                message,
+                format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{part}"
+            );
+        }
+    }
+
+    /// A key of another part type's schema is not read (`z.object` strips
+    /// unknown keys).
+    #[test]
+    fn ignores_keys_of_another_part_type() {
+        user(text(
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        ))
+        .unwrap();
+        user(image(
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        ))
+        .unwrap();
+        user(document(
+            json!({ "amazonBedrock": { "guardContent": "not read" } }),
+        ))
+        .unwrap();
+    }
+
+    fn s3_file(media_type: &str, options: Value) -> Value {
+        json!({
+            "type": "file",
+            "data": { "type": "url", "url": "s3://bucket/file" },
+            "mediaType": media_type,
+            "providerOptions": options,
+        })
+    }
+
+    /// Upstream reads no options off a URL part (an `s3:` image or video) or
+    /// an inline video, so values its schemas would reject pass, and an `s3:`
+    /// image with `guardContent` is sent as a plain image.
+    #[test]
+    fn reads_no_options_off_url_files_or_inline_video() {
+        let inline_video = json!({
+            "type": "file",
+            "data": { "type": "data", "data": "AAECAw==" },
+            "mediaType": "video/mp4",
+            "providerOptions": { "bedrock": { "citations": true } },
+        });
+        for part in [
+            s3_file(
+                "image/png",
+                json!({ "amazonBedrock": { "guardContent": 1 } }),
+            ),
+            s3_file(
+                "video/mp4",
+                json!({ "amazonBedrock": { "citations": "yes" } }),
+            ),
+            inline_video,
+        ] {
+            if let Err(error) = user(part.clone()) {
+                panic!("{part}: {error:?}");
+            }
+        }
+
+        let result = user(s3_file(
+            "image/png",
+            json!({ "amazonBedrock": { "guardContent": true } }),
+        ))
+        .unwrap();
+        assert_eq!(
+            result["messages"][0]["content"][0],
+            json!({
+                "image": {
+                    "format": "png",
+                    "source": { "s3Location": { "uri": "s3://bucket/file" } },
+                },
+            })
+        );
+    }
+
+    /// Upstream drops an assistant file part without reading its options.
+    #[test]
+    fn reads_no_options_off_an_assistant_file_part() {
+        convert(json!([
+            { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+            {
+                "role": "assistant",
+                "content": [
+                    { "type": "text", "text": "Here" },
+                    {
+                        "type": "file",
+                        "data": { "type": "data", "data": "AAECAw==" },
+                        "mediaType": "image/png",
+                        "providerOptions": { "amazonBedrock": { "guardContent": 1 } },
+                    },
+                ],
+            },
+        ]))
+        .unwrap();
+    }
+
+    #[test]
+    fn reads_no_options_off_an_assistant_text_part() {
+        convert(json!([
+            { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+            {
+                "role": "assistant",
+                "content": [{
+                    "type": "text",
+                    "text": "Hello",
+                    "providerOptions": { "amazonBedrock": { "guardContent": "not read" } },
+                }],
+            },
+        ]))
+        .unwrap();
+    }
+
+    fn tool_result_file(media_type: &str, options: Value) -> Result<Value, AiMuxError> {
+        convert(json!([{
+            "role": "tool",
+            "content": [{
+                "type": "tool-result",
+                "toolCallId": "call-123",
+                "toolName": "files",
+                "output": {
+                    "type": "content",
+                    "value": [{
+                        "type": "file",
+                        "data": { "type": "data", "data": "AAECAw==" },
+                        "mediaType": media_type,
+                        "providerOptions": options,
+                    }],
+                },
+            }],
+        }]))
+    }
+
+    /// A document in a tool result reads `citations` against the file part
+    /// schema (`shouldEnableCitations`); an image in a tool result reads no
+    /// options.
+    #[test]
+    fn checks_a_tool_result_document_against_the_file_part_schema() {
+        for (options, namespace) in [
+            (
+                json!({ "amazonBedrock": { "citations": { "enabled": "yes" } } }),
+                "amazonBedrock",
+            ),
+            (json!({ "bedrock": { "citations": true } }), "bedrock"),
+        ] {
+            let message =
+                invalid_argument(tool_result_file("application/pdf", options.clone()).unwrap_err());
+            assert_eq!(
+                message,
+                format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{options}"
+            );
+        }
+
+        let result = tool_result_file(
+            "application/pdf",
+            json!({ "amazonBedrock": { "citations": { "enabled": true } } }),
+        )
+        .unwrap();
+        assert_eq!(
+            result["messages"][0]["content"][0]["toolResult"]["content"][0]["document"]["citations"],
+            json!({ "enabled": true })
+        );
+
+        tool_result_file(
+            "image/png",
+            json!({ "amazonBedrock": { "citations": "not read" } }),
+        )
+        .unwrap();
+    }
+
+    /// `signature`, `redactedData` and `redactedContent` are `.optional()`:
+    /// `null` fails, as a number does.
+    #[test]
+    fn rejects_reasoning_metadata_outside_the_schema() {
+        for options in [
+            json!({ "amazonBedrock": { "signature": null } }),
+            json!({ "bedrock": { "redactedData": 1 } }),
+        ] {
+            let error = convert(json!([
+                { "role": "user", "content": [{ "type": "text", "text": "Hi" }] },
+                {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "reasoning",
+                        "text": "thinking",
+                        "providerOptions": options,
+                    }],
+                },
+            ]))
+            .unwrap_err();
+            invalid_argument(error);
+        }
+    }
+}
