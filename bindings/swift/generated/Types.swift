@@ -5482,9 +5482,10 @@ public struct RuntimeDescribeParams: Codable, Equatable, Sendable {
 /// A model entry returned by a provider's `/models` endpoint (the sparse,
 /// account-level truth of "what this key can call").
 ///
-/// Carries only what the provider returns — typically just `id`. Configuration
-/// comes from [`ModelSpec`] (community knowledge); the host merges the two as
-/// needed (RFC-0027). aimux itself does not combine them.
+/// Carries only what the provider's list response declares: always `id`, and
+/// `owned_by`, `created` and the token `limits` when the provider sends them.
+/// Configuration comes from [`ModelSpec`] (community knowledge); the host
+/// merges the two as needed (RFC-0027). aimux itself does not combine them.
 public struct RuntimeModel: Codable, Equatable, Sendable {
     /// `created` unix timestamp from OpenAI-compatible `/models` responses.
     public var created: UInt64?

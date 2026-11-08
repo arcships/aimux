@@ -538,3 +538,60 @@ mod google_vertex_embedding_model {
         );
     }
 }
+
+/// aimux's own: the first of `googleVertex`, `vertex` and `google` present is
+/// parsed against `googleVertexEmbeddingModelOptions`
+/// (google-vertex-embedding-model.ts:70-90). A value outside the schema fails
+/// with the upstream message, naming that namespace, before anything is sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for (namespace, value) in [
+            ("googleVertex", json!({ "outputDimensionality": "768" })),
+            ("googleVertex", json!({ "taskType": "SEARCH" })),
+            ("vertex", json!({ "title": 1 })),
+            ("google", json!({ "autoTruncate": "false" })),
+            ("google", json!({ "outputDimensionality": null })),
+        ] {
+            let server = fixture_server(&[]);
+            let model = model_with(MOCK_MODEL_ID, BASE_URL, server.transport());
+            let Err(error) = model
+                .do_embed(&options(&TEST_VALUES, json!({ namespace: value })))
+                .await
+            else {
+                panic!("{namespace}: {value} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {value}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{value}"
+            );
+            assert!(cause.is_some(), "{value}");
+            assert!(server.seen().is_empty(), "{value}");
+        }
+    }
+
+    #[tokio::test]
+    async fn only_the_first_namespace_present_is_parsed() {
+        let server = fixture_server(&[]);
+        let model = model_with(MOCK_MODEL_ID, BASE_URL, server.transport());
+        model
+            .do_embed(&options(
+                &TEST_VALUES,
+                json!({
+                    "googleVertex": mock_provider_options(),
+                    "google": { "taskType": "SEARCH" },
+                }),
+            ))
+            .await
+            .expect("only googleVertex is parsed");
+        assert_eq!(server.seen()[0].json_body(), mock_options_body());
+    }
+}

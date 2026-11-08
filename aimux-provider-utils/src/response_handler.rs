@@ -11,9 +11,62 @@ use aimux_core::{AiMuxError, ApiCallError, ErrorCause};
 
 use crate::extract_response_headers::extract_response_headers;
 use crate::fetch::FetchResponse;
+use crate::http::HttpBody;
 use crate::read_response_with_size_limit::{
-    DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit,
+    DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit_lazy,
 };
+
+tokio::task_local! {
+    static CURRENT_BODY_SOURCE: RequestBodySource;
+}
+
+fn current_request_body_source() -> Option<RequestBodySource> {
+    CURRENT_BODY_SOURCE.try_with(Clone::clone).ok()
+}
+
+/// Shared lazy source for a redacted request body used in error context.
+#[derive(Debug, Clone)]
+pub enum RequestBodySource {
+    HttpBody(std::sync::Arc<HttpBody>),
+    Redacted(std::sync::Arc<serde_json::Value>),
+}
+
+impl RequestBodySource {
+    /// Materialize the redacted `serde_json::Value` for an error payload.
+    #[must_use]
+    pub fn materialize(&self) -> serde_json::Value {
+        match self {
+            Self::HttpBody(body) => crate::logging::redact_request_values(body),
+            Self::Redacted(value) => (**value).clone(),
+        }
+    }
+
+    /// Convert into a shared redacted `Arc<serde_json::Value>`, releasing any
+    /// underlying unredacted `HttpBody` (and redacting `HttpBody::Json` in
+    /// place when uniquely owned so large Base64/image strings are freed
+    /// immediately before a response stream is consumed).
+    #[must_use]
+    pub fn into_redacted_arc(self) -> std::sync::Arc<serde_json::Value> {
+        match self {
+            Self::HttpBody(arc_body) => {
+                let redacted = match std::sync::Arc::try_unwrap(arc_body) {
+                    Ok(HttpBody::Json(value)) => crate::logging::redact_error_context(value),
+                    Ok(other) => crate::logging::redact_request_values(&other),
+                    Err(shared) => crate::logging::redact_request_values(&shared),
+                };
+                std::sync::Arc::new(redacted)
+            }
+            Self::Redacted(value) => value,
+        }
+    }
+
+    /// Convert into [`Self::Redacted`] so streaming response handlers never
+    /// retain the raw unredacted [`HttpBody`] across the lifetime of the stream.
+    #[must_use]
+    pub fn into_stream_source(self) -> Self {
+        Self::Redacted(self.into_redacted_arc())
+    }
+}
 
 /// Input supplied to one response handler.
 pub struct ResponseHandlerInput {
@@ -38,7 +91,8 @@ pub struct ResponseHandlerOutput<T> {
 
 type HandlerFuture<T> =
     Pin<Box<dyn Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send>>;
-type HandlerFn<T> = dyn FnOnce(ResponseHandlerInput) -> HandlerFuture<T> + Send;
+type HandlerFn<T> =
+    dyn FnOnce(ResponseHandlerInput, Option<RequestBodySource>) -> HandlerFuture<T> + Send;
 
 /// Provider-specific fields extracted from a failed response body.
 pub struct ProviderErrorParts {
@@ -54,6 +108,7 @@ pub struct ResponseHandler<T> {
     /// streaming exchange must not be bounded by the per-exchange response
     /// timeout in `call_to_api`.
     streaming: bool,
+    lazy_request_body: bool,
 }
 
 impl<T> ResponseHandler<T> {
@@ -64,8 +119,32 @@ impl<T> ResponseHandler<T> {
         Fut: Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send + 'static,
     {
         Self {
-            handler: Box::new(move |input| Box::pin(handler(input))),
+            handler: Box::new(move |input, _source| Box::pin(handler(input))),
             streaming: false,
+            lazy_request_body: false,
+        }
+    }
+
+    /// Create a handler that receives a lazy [`RequestBodySource`] instead of
+    /// eagerly materializing `request_body_values` before the handler runs.
+    pub fn new_with_source<F, Fut>(handler: F) -> Self
+    where
+        F: FnOnce(ResponseHandlerInput, RequestBodySource) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send + 'static,
+    {
+        Self {
+            handler: Box::new(move |mut input, source| {
+                let source = source
+                    .or_else(current_request_body_source)
+                    .unwrap_or_else(|| {
+                        RequestBodySource::Redacted(std::sync::Arc::new(std::mem::take(
+                            &mut input.request_body_values,
+                        )))
+                    });
+                Box::pin(handler(input, source))
+            }),
+            streaming: false,
+            lazy_request_body: true,
         }
     }
 
@@ -82,6 +161,10 @@ impl<T> ResponseHandler<T> {
         self.streaming
     }
 
+    pub(crate) fn uses_lazy_request_body(&self) -> bool {
+        self.lazy_request_body
+    }
+
     /// Consume the handler and process one response.
     ///
     /// # Errors
@@ -91,7 +174,33 @@ impl<T> ResponseHandler<T> {
         self,
         input: ResponseHandlerInput,
     ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-        (self.handler)(input).await
+        (self.handler)(input, None).await
+    }
+
+    /// Consume the handler with an explicit lazy [`RequestBodySource`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the handler's contextual API, parse, or caller-abort failure.
+    pub async fn handle_with_source(
+        self,
+        input: ResponseHandlerInput,
+        source: Option<RequestBodySource>,
+    ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+        let streaming = self.streaming;
+        match source {
+            Some(src) => {
+                let src = if streaming {
+                    src.into_stream_source()
+                } else {
+                    src
+                };
+                CURRENT_BODY_SOURCE
+                    .scope(src.clone(), (self.handler)(input, Some(src)))
+                    .await
+            }
+            None => (self.handler)(input, None).await,
+        }
     }
 }
 
@@ -106,18 +215,24 @@ pub fn create_json_response_handler<T>() -> ResponseHandler<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
-    ResponseHandler::new(|input| async move {
-        let status = input.response.status().as_u16();
-        let headers = extract_response_headers(input.response.headers());
-        let max_bytes = input
-            .max_json_response_bytes
-            .unwrap_or(DEFAULT_MAX_JSON_RESPONSE_SIZE);
-        let body = read_response_with_size_limit(
-            input.response,
-            &input.url,
-            &input.request_body_values,
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let ResponseHandlerInput {
+            url,
+            response,
+            abort_signal,
+            max_json_response_bytes,
+            ..
+        } = input;
+        let status = response.status().as_u16();
+        let headers = extract_response_headers(response.headers());
+        let max_bytes = max_json_response_bytes.unwrap_or(DEFAULT_MAX_JSON_RESPONSE_SIZE);
+        let read_source = body_source.clone();
+        let body = read_response_with_size_limit_lazy(
+            response,
+            &url,
+            move || read_source.materialize(),
             max_bytes,
-            input.abort_signal.as_ref(),
+            abort_signal.as_ref(),
         )
         .await?;
         // Deserialize straight into `T` instead of parsing a
@@ -136,8 +251,8 @@ where
                 origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
-                    input.url.clone(),
-                    input.request_body_values.clone(),
+                    url,
+                    body_source.materialize(),
                 )
             }))
         })?;
@@ -229,7 +344,7 @@ pub fn create_json_error_response_handler<F>(
 where
     F: Fn(&serde_json::Value) -> ProviderErrorParts + Send + 'static,
 {
-    ResponseHandler::new(move |input| async move {
+    ResponseHandler::new_with_source(move |input, body_source| async move {
         let status = input.response.status().as_u16();
         let status_text = input
             .response
@@ -268,7 +383,7 @@ where
             data: parsed_data.map(crate::logging::redact_error_context),
             is_retryable: aimux_core::error::is_retryable_status(status),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,
@@ -281,14 +396,20 @@ where
 /// Read a successful response as bytes.
 #[must_use]
 pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
-    ResponseHandler::new(|input| async move {
-        let headers = extract_response_headers(input.response.headers());
-        let value = read_response_with_size_limit(
-            input.response,
-            &input.url,
-            &input.request_body_values,
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let ResponseHandlerInput {
+            url,
+            response,
+            abort_signal,
+            ..
+        } = input;
+        let headers = extract_response_headers(response.headers());
+        let value = read_response_with_size_limit_lazy(
+            response,
+            &url,
+            move || body_source.materialize(),
             DEFAULT_MAX_DOWNLOAD_SIZE,
-            input.abort_signal.as_ref(),
+            abort_signal.as_ref(),
         )
         .await?;
         Ok(ResponseHandlerOutput {
@@ -324,14 +445,14 @@ pub fn create_event_source_response_handler<T>()
 where
     T: DeserializeOwned + Send + 'static,
 {
-    ResponseHandler::new(|input| async move {
+    ResponseHandler::new_with_source(|input, body_source| async move {
         let headers = extract_response_headers(input.response.headers());
         let output_headers = headers.clone();
         let url = input.url;
-        let request_body_values = input.request_body_values;
         let signal = input.abort_signal;
+        let redacted_body = body_source.into_redacted_arc();
         let body_url = url.clone();
-        let body_request_body_values = request_body_values.clone();
+        let body_request_values = redacted_body.clone();
         let body = input.response.bytes_stream().map(move |result| {
             result.map_err(|error| {
                 AiMuxError::ApiCall(Box::new(ApiCallError {
@@ -342,7 +463,7 @@ where
                     ..ApiCallError::new(
                         error.to_string(),
                         body_url.clone(),
-                        body_request_body_values.clone(),
+                        (*body_request_values).clone(),
                     )
                 }))
             })
@@ -350,7 +471,7 @@ where
 
         let stream_headers = output_headers.clone();
         let stream_url = url.clone();
-        let stream_request_body_values = request_body_values.clone();
+        let stream_request_values = redacted_body;
         let value: BoxStream<'static, Result<T, AiMuxError>> = Box::pin(async_stream::stream! {
             let events = aimux_stream::SseStream::new(body);
             futures::pin_mut!(events);
@@ -390,7 +511,7 @@ where
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
-                                stream_request_body_values.clone(),
+                                (*stream_request_values).clone(),
                             )
                         })));
                         break;
@@ -407,7 +528,7 @@ where
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
-                                stream_request_body_values.clone(),
+                                (*stream_request_values).clone(),
                             )
                         })));
                         break;
@@ -427,7 +548,7 @@ where
 /// Build an error using only status, headers and body.
 #[must_use]
 pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError> {
-    ResponseHandler::new(|input| async move {
+    ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let message = input
             .response
@@ -451,7 +572,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
             response_headers: Some(headers.clone()),
             is_retryable: aimux_core::error::is_retryable_status(status),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,

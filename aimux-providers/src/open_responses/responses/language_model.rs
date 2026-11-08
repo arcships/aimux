@@ -45,11 +45,10 @@ fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHan
 }
 
 fn open_responses_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let url = input.url.clone();
-        let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
-            .handle(input)
+            .handle_with_source(input, Some(body_source.clone()))
             .await?;
         if let Some(error) = output
             .value
@@ -73,7 +72,7 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
                 origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(message, url, request_body_values)
+                ..ApiCallError::new(message, url, body_source.materialize())
             })));
         }
         // A response without `output` is an APICallError with status 500
@@ -96,7 +95,7 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 response_headers: Some(output.response_headers.clone()),
                 is_retryable: false,
                 origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(message, url, request_body_values)
+                ..ApiCallError::new(message, url, body_source.materialize())
             })));
         }
         Ok(output)
