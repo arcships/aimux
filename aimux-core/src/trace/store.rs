@@ -118,28 +118,53 @@ impl TraceStore {
         }
         let slot = self.next % self.cap;
         self.next += 1;
-        // The slot may hold an older record (global ring wrap): drop its
-        // scope count so `records_in_scope` stays an accurate live count.
-        if let Some(old) = &self.ring[slot].record
-            && let Some(n) = self.scope_count.get_mut(&old.scope)
-        {
-            *n = n.saturating_sub(1);
-        }
+        // The slot may hold an older record (global ring wrap): remove its
+        // reverse-index ref and drop its scope count so `records_in_scope`
+        // and `index` stay bounded to live records.
+        self.remove_slot_from_index(slot);
         let generation = self.ring[slot].generation.wrapping_add(1);
+        let scope = rec.scope;
+        let first_hash = rec.block_hashes.first().copied();
         self.ring[slot] = RingSlot {
             generation,
-            record: Some(rec.clone()),
+            record: Some(rec),
         };
-        *self.scope_count.entry(rec.scope).or_insert(0) += 1;
-        for (block, h) in rec.block_hashes.iter().enumerate() {
+        *self.scope_count.entry(scope).or_insert(0) += 1;
+        if let Some(first) = first_hash {
             self.index
-                .entry((rec.scope, hash::low64(*h)))
+                .entry((scope, hash::low64(first)))
                 .or_default()
                 .push(BlockRef {
                     slot: slot as u32,
                     generation,
-                    block: block as u32,
+                    block: 0,
                 });
+        }
+    }
+
+    fn remove_slot_from_index(&mut self, slot: usize) {
+        let Some(old) = self.ring[slot].record.take() else {
+            return;
+        };
+        let old_gen = self.ring[slot].generation;
+        if let Some(&first) = old.block_hashes.first() {
+            let key = (old.scope, hash::low64(first));
+            let mut empty = false;
+            if let Some(bucket) = self.index.get_mut(&key) {
+                bucket.retain(|r| !(r.slot == slot as u32 && r.generation == old_gen));
+                empty = bucket.is_empty();
+            }
+            if empty {
+                self.index.remove(&key);
+            }
+        }
+        let mut zero_scope = false;
+        if let Some(n) = self.scope_count.get_mut(&old.scope) {
+            *n = n.saturating_sub(1);
+            zero_scope = *n == 0;
+        }
+        if zero_scope {
+            self.scope_count.remove(&old.scope);
         }
     }
 
@@ -154,11 +179,8 @@ impl TraceStore {
             }
         }
         if let Some((slot, _)) = oldest {
+            self.remove_slot_from_index(slot);
             self.ring[slot].generation = self.ring[slot].generation.wrapping_add(1);
-            self.ring[slot].record = None;
-            if let Some(n) = self.scope_count.get_mut(&scope) {
-                *n = n.saturating_sub(1);
-            }
         }
     }
 
@@ -255,17 +277,17 @@ impl TraceStore {
         if live > 0 && self.tombstone_hits * 4 > live as u64 {
             let mut new_index: HashMap<(u64, u64), Vec<BlockRef>> = HashMap::new();
             for (slot, s) in self.ring.iter().enumerate() {
-                if let Some(rec) = &s.record {
-                    for (block, h) in rec.block_hashes.iter().enumerate() {
-                        new_index
-                            .entry((rec.scope, hash::low64(*h)))
-                            .or_default()
-                            .push(BlockRef {
-                                slot: slot as u32,
-                                generation: s.generation,
-                                block: block as u32,
-                            });
-                    }
+                if let Some(rec) = &s.record
+                    && let Some(&first) = rec.block_hashes.first()
+                {
+                    new_index
+                        .entry((rec.scope, hash::low64(first)))
+                        .or_default()
+                        .push(BlockRef {
+                            slot: slot as u32,
+                            generation: s.generation,
+                            block: 0,
+                        });
                 }
             }
             self.index = new_index;
@@ -951,5 +973,48 @@ mod tests {
         assert!(store.session_cache_trajectory("nope").is_empty());
         assert_eq!(store.session_cache_trajectory("s2").len(), 1);
         assert_eq!(store.session_cache_trajectory("s2")[0].call_id, "c-x");
+    }
+
+    #[test]
+    fn ring_wrap_and_scope_eviction_clean_up_index_and_scope_count() {
+        // cap = 4, per_scope_cap = 2
+        let mut st = TraceStore::new(4, 2);
+
+        // Insert 3 records in scope 10 with distinct first-block hashes ->
+        // 3rd insert triggers `evict_oldest_in_scope(10)` on slot 0.
+        insert_hashes(&mut st, 10, 1, "s1", &[101, 201]);
+        insert_hashes(&mut st, 10, 2, "s1", &[102, 202]);
+        assert_eq!(st.records_in_scope(10), 2);
+        assert_eq!(st.index.len(), 2);
+
+        insert_hashes(&mut st, 10, 3, "s1", &[103, 203]);
+        assert_eq!(st.records_in_scope(10), 2, "per_scope_cap enforced");
+        assert!(
+            !st.index.contains_key(&(10, hash::low64(101))),
+            "evicted slot's block-0 bucket must be removed from index"
+        );
+        assert_eq!(st.index.len(), 2);
+
+        // Now insert 4 records across scopes 20 and 30 to wrap the 4-slot ring
+        // and completely overwrite all scope-10 slots.
+        insert_hashes(&mut st, 20, 4, "s2", &[301]);
+        insert_hashes(&mut st, 20, 5, "s2", &[302]);
+        insert_hashes(&mut st, 30, 6, "s3", &[401]);
+        insert_hashes(&mut st, 30, 7, "s3", &[402]);
+
+        assert_eq!(st.records_in_scope(10), 0);
+        assert!(
+            !st.scope_count.contains_key(&10),
+            "zeroed scope must be removed from scope_count map"
+        );
+        assert!(
+            st.index.keys().all(|(scope, _)| *scope != 10),
+            "all scope-10 buckets must be removed after ring wrap"
+        );
+        let live_refs: usize = st.index.values().map(Vec::len).sum();
+        assert_eq!(
+            live_refs, 4,
+            "index holds exactly 1 ref per live ring record"
+        );
     }
 }
