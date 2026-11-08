@@ -89,6 +89,7 @@ fn parse_multipart(body: &[u8]) -> HashMap<String, String> {
     form
 }
 
+/// partial: `should pass the model`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_model_id() {
     let server = MockServer::start().await;
@@ -108,6 +109,7 @@ async fn should_pass_model_id() {
     assert_eq!(form.get("diarize").unwrap(), "true");
 }
 
+/// partial: `should pass headers`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -144,6 +146,7 @@ async fn should_pass_headers() {
     );
 }
 
+/// partial: `should extract the transcription text`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_extract_text() {
     let server = MockServer::start().await;
@@ -164,6 +167,7 @@ async fn should_extract_text() {
     assert_eq!(result.duration_in_seconds, Some(2.5));
 }
 
+/// partial: `should include response data with timestamp, modelId and headers`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
@@ -186,6 +190,7 @@ async fn should_include_response_data() {
     assert_eq!(result.response.model_id, Some("scribe_v1".to_string()));
 }
 
+/// partial: `should use real date when no custom date provider is specified`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_use_real_date() {
     let server = MockServer::start().await;
@@ -307,6 +312,7 @@ async fn should_reject_transcription_options_outside_the_schema() {
 
 /// `streaming` options on a batch transcription are reported, not sent
 /// (elevenlabs-transcription-model.ts getArgs).
+/// partial: `warns when streaming options are passed to batch transcription`; full port in src/elevenlabs/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_warn_about_streaming_options_on_a_batch_transcription() {
     let server = MockServer::start().await;

@@ -720,3 +720,43 @@ async fn should_handle_no_results() {
     assert_eq!(result.language, None);
     assert_eq!(result.duration_in_seconds, None);
 }
+
+/// aimux's own: the first of `googleVertex`, `vertex` and `google` present is
+/// parsed against `googleVertexTranscriptionProviderOptionsSchema`
+/// (google-vertex-transcription-model.ts:101-111). A value outside the schema
+/// fails with the upstream message, naming that namespace, before anything is
+/// sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for (namespace, value) in [
+            ("googleVertex", json!({ "languageCodes": "en-US" })),
+            ("googleVertex", json!({ "languageCodes": ["en-US", 1] })),
+            ("vertex", json!({ "enableAutomaticPunctuation": "false" })),
+            ("vertex", json!({ "enableWordTimeOffsets": null })),
+            ("google", json!({ "region": 1 })),
+        ] {
+            let server = prepare_json_response(&[]);
+            let Err(error) = model(&server)
+                .do_generate(&options(audio(), Some(json!({ namespace: value }))))
+                .await
+            else {
+                panic!("{namespace}: {value} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {value}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{value}"
+            );
+            assert!(cause.is_some(), "{value}");
+            assert!(server.seen().is_empty(), "{value}");
+        }
+    }
+}

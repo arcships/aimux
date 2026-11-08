@@ -2199,6 +2199,21 @@ detailed sections below.
   `invalid <namespace> provider option echo`, `invalid
   providerOptions.<namespace>.dimensions`). The body is unchanged
 
+- Vertex's embedding, transcription and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleVertexEmbeddingModelOptions`,
+  `googleVertexTranscriptionProviderOptionsSchema`,
+  `googleVertexVideoModelOptionsSchema`), reading the same namespaces as
+  before (`googleVertex`, then `vertex`, then `google` for embedding and
+  transcription; `googleVertex`, then `vertex` for video). A value outside a
+  schema fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, and nothing
+  is sent. Embedding used to fail with `Invalid Vertex embedding provider
+  option: <key>`; transcription dropped a value of the wrong type (and the
+  non-string entries of `languageCodes`); video forwarded it, or ignored it
+  for the poll settings. The requests for valid options are unchanged
+  (RFC-0046 R1).
+
 - OpenAI's completion, image, speech, transcription and files models parse
   `providerOptions.openai` with `parse_provider_options` against the
   upstream schemas (`openaiLanguageModelCompletionOptions` under `openai`
@@ -2219,6 +2234,16 @@ detailed sections below.
   send it as written, as upstream's `String(value)` does; image sends an
   `outputCompression` written as `80.0` as `80`, as `JSON.stringify` does
   (RFC-0046 R1).
+
+- Hugging Face's responses model parses `providerOptions.huggingface` with
+  `parse_provider_options` against `huggingfaceLanguageModelResponsesOptions`:
+  a value outside the schema (`metadata` with a non-string value,
+  `instructions: 42`, `strictJsonSchema: "true"`, `reasoningEffort: null`)
+  fails with `Invalid argument for parameter providerOptions: invalid
+  huggingface provider options` and the serde error as its cause, and nothing
+  is sent. It used to be read key by key, so a value of the wrong type was
+  dropped (or, for `metadata`, sent as given). The requests for valid options
+  are unchanged (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
