@@ -31,12 +31,11 @@ use super::responses_prepare_tools::prepare_responses_tools;
 use crate::huggingface::error::huggingface_failed_response_handler;
 
 fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let url = input.url.clone();
-        let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
-            .handle(input)
+            .handle_with_source(input, Some(body_source.clone()))
             .await?;
         if let Some(error) = output.value.get("error").filter(|value| !value.is_null()) {
             let message = error
@@ -53,7 +52,7 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
                 origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(message, url, request_body_values)
+                ..ApiCallError::new(message, url, body_source.materialize())
             })));
         }
         Ok(output)
@@ -617,7 +616,9 @@ pub struct RequestBodyResult {
 /// # Errors
 ///
 /// Propagates prompt-conversion errors from
-/// `convert_to_huggingface_responses_messages`.
+/// `convert_to_huggingface_responses_messages`, and `InvalidArgument`
+/// "invalid huggingface provider options" when `providerOptions.huggingface`
+/// does not match `huggingfaceLanguageModelResponsesOptions`.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -661,23 +662,11 @@ pub fn build_request_body_with_warnings(
     warnings.extend(message_warnings);
 
     // Parse provider options (providerOptions.huggingface.*).
-    let hf_options = options
-        .provider_options
-        .as_ref()
-        .and_then(|m| options::huggingface_options(Some(m)));
-    let metadata = hf_options.and_then(|o| o.get("metadata")).cloned();
-    let instructions = hf_options
-        .and_then(|o| o.get("instructions"))
-        .and_then(|v| v.as_str())
-        .map(std::string::ToString::to_string);
-    let strict_json_schema = hf_options
-        .and_then(|o| o.get("strictJsonSchema"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let reasoning_effort = hf_options
-        .and_then(|o| o.get("reasoningEffort"))
-        .and_then(|v| v.as_str())
-        .map(std::string::ToString::to_string);
+    let hf_options = options::huggingface_options(options.provider_options.as_ref())?;
+    let metadata = hf_options.metadata.map(|metadata| json!(metadata));
+    let instructions = hf_options.instructions;
+    let strict_json_schema = hf_options.strict_json_schema.unwrap_or(false);
+    let reasoning_effort = hf_options.reasoning_effort;
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
