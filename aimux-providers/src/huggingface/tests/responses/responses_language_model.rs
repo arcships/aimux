@@ -2982,3 +2982,67 @@ async fn malformed_chunk_ends_with_an_error_finish() {
         other => panic!("expected Finish last, got {other:?}"),
     }
 }
+
+/// aimux's own: `providerOptions.huggingface` is parsed against
+/// `huggingfaceLanguageModelResponsesOptions` with `parseProviderOptions`
+/// (huggingface-responses-language-model.ts:119-123). A value outside the
+/// schema fails with the upstream message and nothing is sent; the values
+/// it accepts reach the body.
+mod provider_options_schema {
+    use super::*;
+
+    fn with_huggingface(huggingface: Value) -> CallOptions {
+        CallOptions {
+            provider_options: Some(
+                serde_json::from_value(json!({ "huggingface": huggingface })).unwrap(),
+            ),
+            ..call_options(test_prompt())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for huggingface in [
+            json!({ "metadata": { "key": 1 } }),
+            json!({ "instructions": 42 }),
+            json!({ "strictJsonSchema": "true" }),
+            json!({ "reasoningEffort": null }),
+        ] {
+            let fetch = MockFetch::new(vec![]);
+            let Err(error) = provider(&fetch)
+                .responses(MODEL)
+                .do_generate(&with_huggingface(huggingface.clone()))
+                .await
+            else {
+                panic!("a value outside the schema fails: {huggingface}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {huggingface}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid huggingface provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_schema_values_reach_the_body() {
+        let fetch = json_fetch(&basic_text_response());
+        provider(&fetch)
+            .responses(MODEL)
+            .do_generate(&with_huggingface(json!({
+                "metadata": { "b": "2", "a": "1" },
+                "instructions": "Be brief.",
+                "reasoningEffort": "low",
+            })))
+            .await
+            .expect("the options are valid");
+        let body = fetch.seen()[0].json_body();
+        assert_eq!(body["metadata"], json!({ "b": "2", "a": "1" }));
+        assert_eq!(body["instructions"], "Be brief.");
+        assert_eq!(body["reasoning"], json!({ "effort": "low" }));
+    }
+}
