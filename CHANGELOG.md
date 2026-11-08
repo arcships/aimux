@@ -2198,6 +2198,20 @@ detailed sections below.
   instead of aimux's own per-field messages (`` `user` must be a string ``,
   `invalid <namespace> provider option echo`, `invalid
   providerOptions.<namespace>.dimensions`). The body is unchanged
+
+- Vertex's embedding, transcription and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleVertexEmbeddingModelOptions`,
+  `googleVertexTranscriptionProviderOptionsSchema`,
+  `googleVertexVideoModelOptionsSchema`), reading the same namespaces as
+  before (`googleVertex`, then `vertex`, then `google` for embedding and
+  transcription; `googleVertex`, then `vertex` for video). A value outside a
+  schema fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, and nothing
+  is sent. Embedding used to fail with `Invalid Vertex embedding provider
+  option: <key>`; transcription dropped a value of the wrong type (and the
+  non-string entries of `languageCodes`); video forwarded it, or ignored it
+  for the poll settings. The requests for valid options are unchanged
   (RFC-0046 R1).
 
 - Hugging Face's responses model parses `providerOptions.huggingface` with
