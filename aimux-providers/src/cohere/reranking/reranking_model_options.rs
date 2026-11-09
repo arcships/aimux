@@ -1,34 +1,29 @@
 //! `reranking/cohere-reranking-model-options.ts`.
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
+use aimux_provider_utils::optional_field;
 
-/// Cohere provider-specific reranking options.
-#[derive(Debug, Clone, Default)]
+/// `cohereRerankingModelOptionsSchema`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct CohereRerankingOptions {
+    #[serde(default, deserialize_with = "optional_field")]
     pub(super) max_tokens_per_doc: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
     pub(super) priority: Option<serde_json::Number>,
 }
 
+/// The reranking options, parsed (all `None` without a `cohere` namespace).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid cohere provider options" when the namespace
+/// does not match the schema.
 pub(super) fn parse_cohere_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> Result<CohereRerankingOptions, AiMuxError> {
-    let cohere = super::super::chat_language_model_options::cohere_options(provider_options);
-    let number_option = |key: &str| -> Result<Option<serde_json::Number>, AiMuxError> {
-        cohere
-            .and_then(|options| options.get(key))
-            .map(|value| match value {
-                Value::Number(number) => Ok(number.clone()),
-                _ => Err(AiMuxError::invalid_argument(format!(
-                    "Invalid cohere.{key}"
-                ))),
-            })
-            .transpose()
-    };
-    Ok(CohereRerankingOptions {
-        max_tokens_per_doc: number_option("maxTokensPerDoc")?,
-        priority: number_option("priority")?,
-    })
+    Ok(super::super::chat_language_model_options::parse(provider_options)?.unwrap_or_default())
 }

@@ -2242,6 +2242,16 @@ detailed sections below.
   dropped (or, for `metadata`, sent as given). The requests for valid options
   are unchanged (RFC-0046 R1).
 
+- Cohere's chat, embedding and reranking models and its image parts parse
+  `providerOptions.cohere` with `parse_provider_options` against the
+  upstream schemas (`cohereLanguageModelChatOptions`,
+  `cohereImagePartProviderOptions`, `cohereEmbeddingModelOptions`,
+  `cohereRerankingModelOptionsSchema`): a value outside a schema fails with
+  `Invalid argument for parameter providerOptions: invalid cohere provider
+  options` and the serde error as its cause, instead of `cohere.thinking
+  must be an object`, `Invalid cohere.<key>` and the like. The requests are
+  unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
