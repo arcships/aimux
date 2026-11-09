@@ -518,3 +518,53 @@ async fn should_include_response_timestamp_model_id_and_headers() {
     );
     assert!(result.response.timestamp.is_some());
 }
+
+/// aimux's own: `providerOptions.xai` is parsed against
+/// `xaiSpeechModelOptionsSchema` with `parseProviderOptions`. A value outside
+/// the schema fails with the upstream message and nothing is sent; `null`
+/// is unset (`.nullish()`).
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for xai in [
+            json!({ "bitRate": 1000 }),
+            json!({ "sampleRate": "16000" }),
+            json!({ "optimizeStreamingLatency": 3 }),
+            json!({ "replace": { "a": 1 } }),
+        ] {
+            let fetch = MockFetch::new(vec![]);
+            let Err(error) = speech_model(&fetch)
+                .do_generate(&with_xai(options("Hello"), xai.clone()))
+                .await
+            else {
+                panic!("a value outside the schema fails: {xai}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {xai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid xai provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn null_is_unset() {
+        let fetch = MockFetch::new(vec![audio_answer(&[])]);
+        speech_model(&fetch)
+            .do_generate(&with_xai(
+                options("Hello"),
+                json!({ "bitRate": null, "replace": null, "withTimestamps": null }),
+            ))
+            .await
+            .expect("null options are unset");
+        let body = fetch.seen()[0].json_body();
+        assert!(body.get("replace").is_none(), "{body}");
+        assert!(body["output_format"].get("bit_rate").is_none(), "{body}");
+    }
+}
