@@ -1024,8 +1024,8 @@ pub fn build_request_body_checked(
             details: details.map(str::to_owned),
         })
     };
+    validate_options(call.provider_options.as_ref())?;
     let bedrock = options::read(call.provider_options.as_ref());
-    validate_options(bedrock)?;
     let mut reasoning = bedrock
         .and_then(|b| b.get("reasoningConfig"))
         .cloned()
