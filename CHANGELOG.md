@@ -2242,6 +2242,14 @@ detailed sections below.
   dropped (or, for `metadata`, sent as given). The requests for valid options
   are unchanged (RFC-0046 R1).
 
+- Open Responses parses `providerOptions.<name>` with `parse_provider_options`
+  against `openResponsesLanguageModelOptions`: a `reasoningEffort` that is not
+  a string or a `reasoningSummary` other than `concise`, `detailed` or `auto`
+  fails with `Invalid argument for parameter providerOptions: invalid <name>
+  provider options` and the serde error as its cause, and nothing is sent.
+  Such values used to be dropped. `null` still reads as absent, and the
+  requests for valid options are unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
