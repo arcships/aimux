@@ -2242,6 +2242,25 @@ detailed sections below.
   dropped (or, for `metadata`, sent as given). The requests for valid options
   are unchanged (RFC-0046 R1).
 
+- The OpenAI Responses model (and Azure's, and Codex's request body)
+  parses its provider options with `parse_provider_options` against
+  `openaiLanguageModelResponsesOptionsSchema`, under the first of the host's
+  namespaces present (`openai`; for Azure `azure`, then `openai`). A value
+  outside the schema (an unknown `serviceTier`, `include` entry or
+  `systemMessageMode`, `logprobs` outside 1-20, an empty
+  `allowedTools.toolNames`, a `contextManagement` entry without
+  `compactThreshold`, ...) fails with `Invalid argument for parameter
+  providerOptions: invalid <namespace> provider options` and the serde error
+  as its cause, and nothing is sent. These options used to be read key by
+  key unchecked (only `reasoningEffortUpdate` was, with the message
+  `reasoningEffortUpdate`), so such a value was dropped or sent as given.
+  A system message's options are parsed the same way against
+  `openaiResponsesSystemMessageOptionsSchema`: a message-level
+  `reasoningEffortUpdate` that is not a string, `null` included, now fails
+  with that message too instead of being ignored, and an unknown effort
+  fails with it instead of `reasoningEffortUpdate`. The requests for valid
+  options are unchanged (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
