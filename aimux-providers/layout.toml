@@ -3529,3 +3529,131 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[fal]
+package = "@ai-sdk/fal"
+
+[[fal.files]]
+upstream = "src/fal-api-types.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-config.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-error.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-settings.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-provider.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-speech-model-options.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-speech-model.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-speech-settings.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-transcription-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+ts-only = [
+  { case = "FalVideoModel › doStart › should append webhookUrl as fal_webhook query parameter", reason = "aimux's VideoCallOptions has no webhookUrl, so the submit URL never gets a fal_webhook parameter (core difference; the closest injection point, providerOptions.fal.webhookUrl, is not read)" },
+  { case = "FalVideoModel › doStatus › should return error status for non-polling API errors", reason = "VideoOperationStatus has only Pending and Completed, so a terminal API error ends do_status with Err(ApiCall) instead of a `status: 'error'` result (core difference, all video providers)" },
+]
+
+[[fal.files]]
+upstream = "src/fal-video-settings.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/index.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
