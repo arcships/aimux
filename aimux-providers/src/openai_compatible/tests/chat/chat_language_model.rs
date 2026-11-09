@@ -5142,6 +5142,52 @@ mod upstream_e2e {
         }
     }
 
+    /// aimux #470: a `content` tool result's error flag has no wire form on
+    /// this provider; the result goes out as regular content, with or without
+    /// multi-part support, and one warning per such result says so.
+    #[tokio::test]
+    async fn chat_warns_about_a_tool_result_error_flag_it_cannot_send() {
+        use aimux_core::language_model_message::{ToolPart, ToolResultOutput, ToolResultPart};
+        let response = || {
+            Canned::json(&chat_response(
+                json!({"role":"assistant","content":"ok"}),
+                json!({"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}),
+            ))
+        };
+        let fetch = MockFetch::new(vec![response(), response()]);
+        let mut options = multi_part_tool_prompt(None);
+        let LanguageModelMessage::Tool { content, .. } = &mut options.prompt[1] else {
+            unreachable!("a tool message")
+        };
+        let ToolPart::ToolResult(ToolResultPart {
+            output: ToolResultOutput::Content { is_error, .. },
+            ..
+        }) = &mut content[0]
+        else {
+            unreachable!("a content tool result")
+        };
+        *is_error = Some(true);
+
+        for (index, supported) in [(0, None), (1, Some(true))] {
+            let result = multi_part_provider(&fetch, supported)
+                .chat("test-model")
+                .do_generate(&options)
+                .await
+                .unwrap();
+            assert_eq!(
+                super::result_json(&result)["warnings"],
+                json!([{
+                    "type": "other",
+                    "message": "The error flag (isError) of a tool result is not representable on this provider; the result is sent as regular tool content.",
+                }]),
+                "{supported:?}"
+            );
+            let tool_message = fetch.seen()[index].json_body()["messages"][1].clone();
+            assert_eq!(tool_message["role"], "tool", "{supported:?}");
+            assert!(tool_message.get("isError").is_none(), "{tool_message}");
+        }
+    }
+
     /// Upstream: convert-to-openai-compatible-chat-messages.ts:166-170 rejects a
     /// custom part in multi-part tool content.
     #[tokio::test]
