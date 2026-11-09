@@ -36,7 +36,7 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
 
 ## Why aimux
 
-- **327 provider names** — 282 registry-backed OpenAI-compatible presets
+- **328 provider names** — 283 registry-backed OpenAI-compatible presets
   + 45 vendor packages, covering text and other modalities. Local engines
   such as Ollama/vLLM are presets. `provider_names()` lists the Rust names;
   the generated catalogue lives in [docs/api/providers.md](docs/api/providers.md).
@@ -324,7 +324,7 @@ let names = provider_names();
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-Rust by-name creation covers vendor packages and all 282 presets. Each vendor
+Rust by-name creation covers vendor packages and all 283 presets. Each vendor
 also has `create_xxx(XxxProviderSettings {..})` and a default instance `xxx()`.
 Bindings use `provider.create` and `provider.model` with the shared operation
 names. Runtime model listing uses `Provider::discovery()` and then
