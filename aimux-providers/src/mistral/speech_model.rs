@@ -71,6 +71,7 @@ impl SpeechModel for MistralSpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let ref_audio =
             super::speech_model_options::speech_ref_audio(options.provider_options.as_ref())?;
+        let ref_audio = ref_audio.as_deref();
         let mut warnings = Vec::new();
 
         let output_format = options.output_format.as_deref().unwrap_or("mp3");
