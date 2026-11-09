@@ -347,9 +347,10 @@ impl AmazonBedrockChatStream {
             return;
         };
         self.open_blocks.insert(idx);
-        // #476: a delta needs exactly one known member, as in the AI SDK's
-        // chunk schema; unlike its runtime, the tool block is closed without
-        // a call so that none completes with input the model never sent.
+        // #476: a delta needs a known member, as in the AI SDK's chunk
+        // schema; unlike its runtime, the tool block is closed without a call
+        // so that none completes with input the model never sent, and the
+        // stream finishes here instead of waiting for the body to close.
         if !is_known_delta(delta) {
             if let Some((id, name, _)) = self.tool_blocks.remove(&idx)
                 && !(self.uses_json_tool && name == "json")
@@ -360,6 +361,8 @@ impl AmazonBedrockChatStream {
             controller.enqueue_error(AiMuxError::invalid_response_data(format!(
                 "unsupported Amazon Bedrock content block delta: {delta}"
             )));
+            self.finish(controller);
+            controller.terminate();
             return;
         }
         // #475: in strict mode only a `toolUse` start opens a tool block.
@@ -375,9 +378,7 @@ impl AmazonBedrockChatStream {
             && !text.is_empty()
         {
             if self.text_blocks.insert(idx) {
-                let id = idx.to_string();
-                self.text_blocks.insert(idx);
-                controller.text_start(id);
+                controller.text_start(idx.to_string());
             }
             let delta = self
                 .extractor
@@ -401,14 +402,11 @@ impl AmazonBedrockChatStream {
             }
         }
         if let Some(rc) = delta.get("reasoningContent") {
-            if !["text", "signature", "data", "redactedContent"]
-                .iter()
-                .any(|key| {
-                    rc.get(key)
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|s| !s.is_empty())
-                })
-            {
+            if !REASONING_DELTA_KEYS.iter().any(|key| {
+                rc.get(key)
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty())
+            }) {
                 return;
             }
             let id = idx.to_string();
@@ -720,26 +718,28 @@ impl Transformer for AmazonBedrockChatStream {
     }
 }
 
-/// Whether a `contentBlockDelta` delta has exactly one of the AI SDK's
-/// members: a `text` string, a `citation` object, a `toolUse.input` string or
-/// a `reasoningContent` with a `text`, `signature`, `data` or
-/// `redactedContent` string.
+/// The string members of a `reasoningContent` delta.
+const REASONING_DELTA_KEYS: [&str; 4] = ["text", "signature", "data", "redactedContent"];
+
+/// Whether a `contentBlockDelta` delta has one of the AI SDK's members: a
+/// `text` string, a `citation` object, a `toolUse.input` string or a
+/// `reasoningContent` with a `text`, `signature`, `data` or `redactedContent`
+/// string. Like the SDK's zod union, which strips the keys its matching
+/// member does not declare, any other member (null, or of another type) is
+/// ignored.
 fn is_known_delta(delta: &Value) -> bool {
-    let Some(delta) = delta.as_object() else {
-        return false;
+    let string_at = |member: &str, key: &str| {
+        delta
+            .get(member)
+            .and_then(|member| member.get(key))
+            .is_some_and(Value::is_string)
     };
-    let text = delta.get("text").map(Value::is_string);
-    let citation = delta.get("citation").map(Value::is_object);
-    let tool_use = delta
-        .get("toolUse")
-        .map(|tool_use| tool_use.get("input").is_some_and(Value::is_string));
-    let reasoning = delta.get("reasoningContent").map(|reasoning| {
-        ["text", "signature", "data", "redactedContent"]
+    delta.get("text").is_some_and(Value::is_string)
+        || delta.get("citation").is_some_and(Value::is_object)
+        || string_at("toolUse", "input")
+        || REASONING_DELTA_KEYS
             .iter()
-            .any(|key| reasoning.get(key).is_some_and(Value::is_string))
-    });
-    let members = [text, citation, tool_use, reasoning];
-    members.iter().flatten().count() == 1 && !members.contains(&Some(false))
+            .any(|key| string_at("reasoningContent", key))
 }
 
 /// Attach accumulated encrypted reasoning once at the end of the block.

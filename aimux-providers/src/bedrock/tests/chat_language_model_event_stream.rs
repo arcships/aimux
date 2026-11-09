@@ -681,6 +681,66 @@ mod content_block_delta_validation {
         }
     }
 
+    /// A null or differently typed member beside a known one is ignored, as
+    /// the AI SDK's zod union strips the keys its matching member does not
+    /// declare.
+    #[tokio::test]
+    async fn a_delta_with_an_extra_member_streams_the_known_one() {
+        for (readable, text) in [
+            (json!({ "text": "foo", "citation": null }), Some("foo")),
+            (json!({ "text": 5, "citation": {} }), None),
+            (
+                json!({ "reasoningContent": { "text": 5, "signature": "sig" } }),
+                None,
+            ),
+        ] {
+            let parts = stream_parts(&model_streaming(
+                "anthropic.test",
+                &[
+                    delta(0, readable),
+                    event("contentBlockStop", json!({ "contentBlockIndex": 0 })),
+                    event("messageStop", json!({ "stopReason": "end_turn" })),
+                ],
+            ))
+            .await;
+            assert_eq!(
+                parts.last().unwrap()["finishReason"]["unified"],
+                "stop",
+                "{parts:?}"
+            );
+            if let Some(text) = text {
+                assert!(
+                    parts
+                        .iter()
+                        .any(|part| part["type"] == "text-delta" && part["delta"] == text),
+                    "{parts:?}"
+                );
+            }
+        }
+    }
+
+    /// The stream finishes at the unreadable delta: a `messageStop` is not
+    /// waited for, and the frames after it, `metadata` included, are not
+    /// read.
+    #[tokio::test]
+    async fn the_stream_finishes_at_an_unreadable_delta() {
+        let mut frames = unreadable_tool_input();
+        frames.truncate(2);
+        frames.push(event(
+            "metadata",
+            json!({ "usage": { "inputTokens": 1, "outputTokens": 1, "totalTokens": 2 } }),
+        ));
+        frames.push(delta(1, json!({ "text": "late" })));
+        assert_refused(&frames).await;
+        let items = stream_items(&model_streaming("anthropic.test", &frames)).await;
+        assert!(
+            !items.iter().any(
+                |item| matches!(item, Ok(StreamPart::TextDelta { delta, .. }) if delta == "late")
+            ),
+            "{items:?}"
+        );
+    }
+
     /// In strict mode the guard turns the error into the stream's end: no
     /// call and no `Finish`.
     #[tokio::test]
