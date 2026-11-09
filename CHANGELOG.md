@@ -2214,6 +2214,24 @@ detailed sections below.
   for the poll settings. The requests for valid options are unchanged
   (RFC-0046 R1).
 
+- Google's embedding, image, language and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleEmbeddingModelOptions`, `googleImageModelOptionsSchema`,
+  `googleLanguageModelOptions`, `googleVideoModelOptionsSchema`), reading
+  the same namespaces as before (`google`; for the Vertex language model
+  `googleVertex`, then `vertex`, then `google`). A value outside a schema
+  fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, instead of
+  `Invalid Google provider option: <key>`, `Invalid Google video option:
+  <key>`, `Invalid Google image googleSearch option`,
+  `outputDimensionality must be a number` and the like. What is checked and
+  the requests are unchanged, but for the Vertex Gemini image model: it now
+  checks the options it hands to the language model against
+  `googleLanguageModelOptions` too, as upstream's inner `doGenerate` does,
+  where it used to send them unchecked (only a `structuredOutputs` that is
+  not a boolean failed, with `invalid googleVertex provider options`)
+  (RFC-0046 R1).
+
 - Hugging Face's responses model parses `providerOptions.huggingface` with
   `parse_provider_options` against `huggingfaceLanguageModelResponsesOptions`:
   a value outside the schema (`metadata` with a non-string value,
