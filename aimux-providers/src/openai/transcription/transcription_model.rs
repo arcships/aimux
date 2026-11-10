@@ -30,7 +30,9 @@ use serde_json::Value;
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::transcription::transcription_api::OpenAITranscriptionResponse;
-use crate::openai::transcription::transcription_model_options::parse_openai_options;
+use crate::openai::transcription::transcription_model_options::{
+    ChunkingStrategy, parse_openai_options,
+};
 
 // ── Language map ────────────────────────────────────────────────────────────
 
@@ -169,7 +171,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             )));
         }
 
-        let openai_options = parse_openai_options(options.provider_options.as_ref());
+        let openai_options = parse_openai_options(options.provider_options.as_ref())?;
         let warnings: Vec<Warning> = Vec::new();
 
         // Build multipart form.
@@ -198,7 +200,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let is_diarization_model = self.model_id == "gpt-4o-transcribe-diarize";
         // Upstream only selects a non-default format when its options exist.
         if self.model_id != "whisper-1" && has_openai_options {
-            let response_format = if let Some(format) = &openai_options.response_format {
+            let response_format = if let Some(format) = openai_options.response_format {
                 format.as_str()
             } else if is_diarization_model {
                 "diarized_json"
@@ -228,7 +230,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         }
         if let Some(ref tg) = openai_options.timestamp_granularities {
             for item in tg {
-                form.text("timestamp_granularities[]", item)?;
+                form.text("timestamp_granularities[]", item.as_str())?;
             }
         }
 
@@ -242,10 +244,11 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         }
         let chunking_strategy = openai_options
             .chunking_strategy
-            .as_deref()
-            .or(is_diarization_model.then_some("auto"));
+            .as_ref()
+            .map(ChunkingStrategy::wire)
+            .or_else(|| is_diarization_model.then(|| "auto".to_string()));
         if let Some(chunking_strategy) = chunking_strategy {
-            form.text("chunking_strategy", chunking_strategy)?;
+            form.text("chunking_strategy", &chunking_strategy)?;
         }
 
         let (body_bytes, content_type) = form.finish();
@@ -413,7 +416,7 @@ impl OpenAITranscriptionModel {
             )));
         }
 
-        let openai_options = parse_openai_options(options.provider_options.as_ref());
+        let openai_options = parse_openai_options(options.provider_options.as_ref())?;
 
         // Options of the REST endpoint only, read from the raw options
         // (`transcription/openai-transcription-model.ts:395-410`).
@@ -470,22 +473,13 @@ impl OpenAITranscriptionModel {
         // `providerOptions.openai.streaming` (`buildOpenAIRealtimeTranscriptionSession`,
         // `transcription/openai-transcription-model.ts:580-617`); the REST
         // `include` does not apply to the realtime session.
-        let streaming = options
-            .provider_options
-            .as_ref()
-            .and_then(|options| options.get("openai"))
-            .and_then(|openai| openai.get("streaming"));
-        if let Some(delay) = streaming
-            .and_then(|streaming| streaming.get("delay"))
-            .filter(|delay| !delay.is_null())
-        {
-            session_update["session"]["audio"]["input"]["transcription"]["delay"] = delay.clone();
+        let streaming = openai_options.streaming.as_ref();
+        if let Some(delay) = streaming.and_then(|streaming| streaming.delay) {
+            session_update["session"]["audio"]["input"]["transcription"]["delay"] =
+                serde_json::json!(delay);
         }
-        if let Some(include) = streaming
-            .and_then(|streaming| streaming.get("include"))
-            .filter(|include| !include.is_null())
-        {
-            session_update["session"]["include"] = include.clone();
+        if let Some(include) = streaming.and_then(|streaming| streaming.include.as_ref()) {
+            session_update["session"]["include"] = serde_json::json!(include);
         }
 
         let mut header_list = self
