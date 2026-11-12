@@ -317,7 +317,7 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 | `.tcp_nodelay(true)`、`.http2_adaptive_window(true)` | 不做 / 转为待决 | §0.3 |
 | 锁导致“严重自旋”，32 分片句柄表 | 降为小修 | §1.7 |
 | 内联流泵、去掉逐帧 `Instant::now()` | 不做 | §3.3；`Instant::now()` 走 vDSO，不是系统调用 |
-| “未开录制仍调用 `new_call_id()`” | 删除 | 源码中它只在有 recorder 时调用 |
+| “未开录制仍调用 `new_call_id()`” | 不做 | 属实但必需：`generate.rs:1605` 只在有 recorder 时调用，`:1624-1626` 的 `step_call_id` 在未开录制时仍调用，因为 `StreamTextResult.call_id`（`:2050`）是公开字段，总要有值 |
 | “`StepResult` 里已标记 deprecated 的冗余字段” | 删除 | 不存在；deprecated 的是 `GenerateTextResult` 的顶层访问器 |
 | 密码学随机数生成后备 ID | 不处理 | 属实，但每次约百纳秒量级，未单独测 |
 | Chat 路径 `usage` 改 `RawValue` 即可单遍解析 | 改为依赖 `include` | `response.body` 由第二遍解析填充 |
