@@ -385,8 +385,7 @@ impl CodexModel {
                             // object under `response` — the generate-result
                             // parser expects the response object itself.
                             let raw = data.to_string();
-                            let obj = data.get("response").cloned().unwrap_or(data);
-                            completed = Some((obj, raw));
+                            completed = Some((response_object(data), raw));
                             break;
                         }
                         // A `response.failed` whose `response.error` is
@@ -395,8 +394,7 @@ impl CodexModel {
                         // object is the terminal one.
                         "response.failed" if data["response"]["error"].is_null() => {
                             let raw = data.to_string();
-                            let obj = data.get("response").cloned().unwrap_or(data);
-                            completed = Some((obj, raw));
+                            completed = Some((response_object(data), raw));
                             failed_without_error = true;
                             break;
                         }
@@ -447,9 +445,10 @@ impl CodexModel {
 
         match completed {
             Some((data, raw)) => {
+                let has_incomplete_reason = data["incomplete_details"]["reason"].as_str().is_some();
                 let mut result = build_responses_generate_result(
-                    &data,
-                    &raw,
+                    data,
+                    raw.as_bytes(),
                     warnings,
                     ResponsesNamespace::OPENAI.write_key().to_string(),
                     endpoint,
@@ -459,7 +458,7 @@ impl CodexModel {
                 // As the stream reducer's `response.failed` arm: without an
                 // `incomplete_details` reason, a failed response finishes
                 // with `error`.
-                if failed_without_error && data["incomplete_details"]["reason"].as_str().is_none() {
+                if failed_without_error && !has_incomplete_reason {
                     result.finish_reason = FinishReason {
                         unified: FinishReasonUnified::Error,
                         raw: Some("error".to_string()),
@@ -569,6 +568,18 @@ pub struct CodexTokens {
     pub refresh_token: Option<String>,
     /// Access-token lifetime in seconds, if the endpoint reports it.
     pub expires_in_secs: Option<u64>,
+}
+
+/// The response object of a terminal event: the event nests it under
+/// `response`; an event without one is the response object itself.
+fn response_object(event: Value) -> Value {
+    match event {
+        Value::Object(mut event) => match event.remove("response") {
+            Some(response) => response,
+            None => Value::Object(event),
+        },
+        other => other,
+    }
 }
 
 impl std::fmt::Debug for CodexTokens {

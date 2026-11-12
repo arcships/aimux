@@ -47,9 +47,15 @@ fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHan
 fn open_responses_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
     aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let url = input.url.clone();
-        let output = aimux_provider_utils::create_json_response_handler::<Value>()
+        // Parsed once: nothing reads a second `raw_value` copy of the body.
+        let output = aimux_provider_utils::create_json_bytes_response_handler::<Value>()
             .handle_with_source(input, Some(body_source.clone()))
             .await?;
+        let output = aimux_provider_utils::ResponseHandlerOutput {
+            value: output.value.0,
+            raw_value: None,
+            response_headers: output.response_headers,
+        };
         if let Some(error) = output
             .value
             .get("error")

@@ -292,21 +292,16 @@ impl LanguageModel for OpenAIResponsesModel {
         let resp = aimux_provider_utils::post_json_to_api(
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
-            aimux_provider_utils::create_json_response_handler::<Value>(),
+            aimux_provider_utils::create_json_bytes_response_handler::<Value>(),
             crate::openai::error::openai_failed_response_handler(),
         )
         .await?;
 
         let response_headers = resp.response_headers;
-        let raw_body = resp
-            .raw_value
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_default();
-        let data = resp.value;
+        let (data, raw_body) = resp.value;
 
         build_responses_generate_result_with_tools(
-            &data,
+            data,
             &raw_body,
             request_result.warnings,
             provider_key,
@@ -1144,8 +1139,8 @@ pub type ResponsesEventStream = Pin<Box<dyn Stream<Item = Result<StreamPart, AiM
 /// status, `incomplete_details`) and `InvalidResponseData` when required
 /// fields such as `output` are missing.
 pub fn build_responses_generate_result(
-    data: &Value,
-    raw_body: &str,
+    data: Value,
+    raw_body: &[u8],
     request_warnings: Vec<Warning>,
     provider_key: String,
     request_url: String,
@@ -1167,8 +1162,8 @@ pub fn build_responses_generate_result(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_responses_generate_result_with_tools(
-    data: &Value,
-    raw_body: &str,
+    data: Value,
+    raw_body: &[u8],
     request_warnings: Vec<Warning>,
     provider_key: String,
     request_url: String,
@@ -1197,7 +1192,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
             // so redact before it lands in the public error.
             status_code: Some(200),
             provider_code,
-            response_body: Some(raw_body.to_string()),
+            response_body: Some(String::from_utf8_lossy(raw_body).into_owned()),
             response_headers: Some(response_headers.clone()),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
@@ -1242,7 +1237,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     {
                         return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             status_code: Some(200),
-                            response_body: Some(raw_body.to_string()),
+                            response_body: Some(String::from_utf8_lossy(raw_body).into_owned()),
                             response_headers: Some(response_headers.clone()),
                             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                             ..ApiCallError::new(
@@ -1453,7 +1448,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
             headers: Some(response_headers),
-            body: Some(data.clone()),
+            body: Some(data),
             ..aimux_provider_utils::create_language_model_response_metadata(
                 response_id,
                 model,

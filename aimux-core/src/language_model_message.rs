@@ -421,6 +421,43 @@ fn is_full_media_type(media_type: &str) -> bool {
         .is_some_and(|(_, subtype)| !subtype.is_empty() && subtype != "*")
 }
 
+/// Whether [`download_assets`] could plan a download for these messages: a
+/// user file part, or a file URL in a tool result. A prompt without one has
+/// nothing to download, whatever URLs the model supports. Every user file
+/// part counts, so this never answers `false` where `download_assets` would
+/// plan a download.
+pub(crate) fn may_need_downloads(messages: &[ModelMessage]) -> bool {
+    fn output_has_file_url(output: &user::ToolResultOutput) -> bool {
+        matches!(output, user::ToolResultOutput::Content { value } if value.iter().any(|item| {
+            matches!(
+                item,
+                user::ToolResultContentPart::File {
+                    data: FileData::Url { .. },
+                    ..
+                }
+            )
+        }))
+    }
+    messages.iter().any(|message| match message {
+        ModelMessage::User {
+            content: UserContent::Parts(parts),
+            ..
+        } => parts
+            .iter()
+            .any(|part| matches!(part, UserContentPart::File { .. })),
+        ModelMessage::Tool { content, .. } => content.iter().any(|part| {
+            matches!(part, ToolContentPart::ToolResult(result) if output_has_file_url(&result.output))
+        }),
+        ModelMessage::Assistant {
+            content: AssistantContent::Parts(parts),
+            ..
+        } => parts.iter().any(|part| {
+            matches!(part, AssistantContentPart::ToolResult(result) if output_has_file_url(&result.output))
+        }),
+        _ => false,
+    })
+}
+
 /// Download the prompt's file URLs, the AI SDK's `downloadAssets`
 /// (`ai` `prompt/convert-to-language-model-prompt.ts:444-540`).
 ///
@@ -1673,6 +1710,75 @@ mod download_tests {
             ],
             "no data: URL, no assistant file part, no deprecated file-url item"
         );
+    }
+
+    /// `may_need_downloads` gates the download planning in `generate_text`: it
+    /// may answer `true` for a prompt that plans nothing, never `false` for
+    /// one that does.
+    #[tokio::test]
+    async fn prompts_without_file_parts_plan_no_download() {
+        let cases: Vec<(serde_json::Value, bool)> = vec![
+            (json!([{ "role": "user", "content": "hi" }]), false),
+            (
+                json!([{ "role": "user", "content": [{ "type": "text", "text": "hi" }] }]),
+                false,
+            ),
+            (
+                json!([
+                    { "role": "user", "content": "hi" },
+                    { "role": "assistant", "content": [
+                        { "type": "file", "data": "https://cdn.test/assistant.png", "mediaType": "image/png" },
+                        { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} }
+                    ] },
+                    { "role": "tool", "content": [
+                        { "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                          "output": { "type": "content", "value": [
+                              { "type": "text", "text": "done" },
+                              { "type": "file-url", "url": "https://cdn.test/c.pdf", "mediaType": "application/pdf" }
+                          ] } }
+                    ] }
+                ]),
+                false,
+            ),
+            (
+                json!([{ "role": "user", "content": [
+                    { "type": "file", "data": "data:image/png;base64,AAAA", "mediaType": "image/png" }
+                ] }]),
+                // Conservative: a `data:` file part plans nothing, but every
+                // user file part takes the planning path.
+                true,
+            ),
+            (
+                json!([
+                    { "role": "assistant", "content": [
+                        { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} }
+                    ] },
+                    { "role": "tool", "content": [
+                        { "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                          "output": { "type": "content", "value": [
+                              { "type": "file", "data": { "type": "url", "url": "https://cdn.test/c.pdf" },
+                                "mediaType": "application/pdf" }
+                          ] } }
+                    ] }
+                ]),
+                true,
+            ),
+        ];
+        for (value, expected) in cases {
+            let messages: Vec<ModelMessage> =
+                serde_json::from_value(value).expect("valid messages");
+            assert_eq!(may_need_downloads(&messages), expected, "{messages:?}");
+            let planned = Arc::new(Mutex::new(Vec::new()));
+            download_assets(&messages, &recording(planned.clone()), &supported_urls())
+                .await
+                .unwrap();
+            let planned = planned.lock().unwrap();
+            assert!(
+                may_need_downloads(&messages) || planned.is_empty(),
+                "a planned download was not announced: {planned:?}"
+            );
+        }
+        assert!(may_need_downloads(&messages()));
     }
 
     #[tokio::test]
