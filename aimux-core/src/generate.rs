@@ -26,7 +26,7 @@ use crate::download::{DownloadFunction, create_default_download_function};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{
-    LanguageModelPrompt, convert_with_downloaded_assets, download_assets,
+    LanguageModelPrompt, convert_with_downloaded_assets, download_assets, may_need_downloads,
 };
 use crate::message::{ModelMessage, ModelPrompt};
 use crate::operation::OperationSettings;
@@ -1023,20 +1023,39 @@ async fn prepare_prompt(
     download: Option<DownloadFunction>,
     abort_signal: Option<&AbortSignal>,
     operation_timeout: timeout::OperationTimeout,
+    retain_messages: bool,
 ) -> Result<(LanguageModelPrompt, Vec<ModelMessage>), AiMuxError> {
     let (messages, instructions) = standardize_prompt(prompt, instructions)?;
-    let supported_urls = model.supported_urls().await;
-    let download =
-        download.unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
-    let assets = timeout::run(
-        download_assets(&messages, &download, &supported_urls),
-        abort_signal,
-        operation_timeout,
-    )
-    .await?;
+    // A prompt without file parts plans no download, so the default download
+    // function has nothing to do and the model's supported URLs (a map of
+    // compiled patterns, cloned per call) are not needed. A caller's own
+    // download function is still called, as before, even with nothing planned.
+    let assets = if download.is_none() && !may_need_downloads(&messages) {
+        Default::default()
+    } else {
+        let supported_urls = model.supported_urls().await;
+        let download = download
+            .unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
+        timeout::run(
+            download_assets(&messages, &download, &supported_urls),
+            abort_signal,
+            operation_timeout,
+        )
+        .await?
+    };
     let lm_prompt =
         convert_with_downloaded_assets(&messages, instructions, provider_id(model), &assets)?;
-    Ok((lm_prompt, messages))
+    // The messages are kept only as the context of a tool-call repair; without
+    // a repair function nothing reads them again, so they are released here
+    // rather than held for the whole call (a stream holds them until it ends).
+    Ok((
+        lm_prompt,
+        if retain_messages {
+            messages
+        } else {
+            Vec::new()
+        },
+    ))
 }
 
 // The operation body runs inside its settings' scope, where the model, the
@@ -1067,6 +1086,7 @@ async fn generate_in_operation(
                 options.download.clone(),
                 abort_signal.as_ref(),
                 operation_timeout,
+                repair_tool_call.is_some(),
             )
             .await?
         }
@@ -1580,6 +1600,7 @@ async fn stream_in_operation(
         options.download.clone(),
         options.abort_signal.as_ref(),
         operation_timeout,
+        repair_tool_call.is_some(),
     )
     .await?;
 

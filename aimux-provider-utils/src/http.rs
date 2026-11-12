@@ -196,6 +196,9 @@ pub(crate) struct PreparedRequest {
     pub(crate) body: std::sync::Arc<HttpBody>,
     wire_body: std::sync::Arc<std::sync::OnceLock<Result<Bytes, serde_json::Error>>>,
     pub(crate) url: String,
+    /// `url` parsed once when the request was prepared. An invalid URL stays
+    /// an `Err` here and is reported when the request is sent, as before.
+    parsed_url: Result<url::Url, url::ParseError>,
     headers: Vec<(String, String)>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
     call_id: Option<String>,
@@ -229,6 +232,30 @@ impl PreparedRequest {
             }),
         }
     }
+
+    /// [`sanitized_request_url`] of this request's URL, without parsing it
+    /// again.
+    pub(crate) fn sanitized_url(&self) -> String {
+        match &self.parsed_url {
+            Ok(parsed) => sanitize_parsed_url(parsed),
+            Err(_) => sanitize_unparseable_url(&self.url),
+        }
+    }
+
+    /// The URL's host for logs, `"unknown"` when it has none.
+    fn host_str(&self) -> &str {
+        self.parsed_url
+            .as_ref()
+            .ok()
+            .and_then(url::Url::host_str)
+            .unwrap_or("unknown")
+    }
+
+    /// Point the request at the next redirect hop.
+    fn set_url(&mut self, url: url::Url) {
+        self.url = url.as_str().to_owned();
+        self.parsed_url = Ok(url);
+    }
 }
 
 impl HttpRequest {
@@ -248,6 +275,7 @@ impl HttpRequest {
             method,
             body: std::sync::Arc::new(body),
             wire_body: std::sync::Arc::new(std::sync::OnceLock::new()),
+            parsed_url: url::Url::parse(&self.url),
             url: self.url,
             headers,
             abort_signal: self.abort_signal,
@@ -269,7 +297,7 @@ impl HttpRequest {
 fn api_call_error(request: &PreparedRequest, message: impl Into<String>) -> ApiCallError {
     ApiCallError::new(
         message,
-        sanitized_request_url(&request.url),
+        request.sanitized_url(),
         crate::logging::redact_request_values(&request.body),
     )
 }
@@ -337,8 +365,8 @@ pub(crate) async fn send_request_once(
     tracing::debug!(
         target: "aimux_provider_utils::http",
         method = request.method.as_str(),
-        url = %sanitized_request_url(&request.url),
-        host = %request_host(&request.url),
+        url = %request.sanitized_url(),
+        host = %request.host_str(),
         body_size = request_body_size(request),
         header_count = request.headers.len(),
         call_id = request.call_id.as_deref().unwrap_or(""),
@@ -402,7 +430,7 @@ async fn send_one_request(
     sent.map_err(|error| {
         fetch_error_to_ai_mux_error(
             error,
-            &sanitized_request_url(&request.url),
+            &request.sanitized_url(),
             &crate::logging::redact_request_values(&request.body),
         )
     })
@@ -504,11 +532,14 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
                 Some(ErrorCause::source(&error)),
             )
         })?;
-        let base = url::Url::parse(&current.url).map_err(|e| AiMuxError::InvalidArgument {
-            message: format!("invalid request URL: {e}"),
-            cause: Some(ErrorCause::source(&e)),
-        })?;
-        let next = base.join(&location).map_err(|e| {
+        let base = current
+            .parsed_url
+            .as_ref()
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid request URL: {e}"),
+                cause: Some(ErrorCause::source(e)),
+            })?;
+        let next_url = base.join(&location).map_err(|e| {
             redirect_error(
                 request,
                 format!("invalid redirect URL: {e}"),
@@ -519,15 +550,15 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         // Fetch treats a redirect to a non-HTTP(S) scheme (data:, file:, ...)
         // as a network error; following one would let the redirecting server
         // fabricate a response outside the transport.
-        if !matches!(next.scheme(), "http" | "https") {
+        if !matches!(next_url.scheme(), "http" | "https") {
             return Err(redirect_error(
                 request,
-                format!("redirect to non-HTTP scheme: {}", next.scheme()),
+                format!("redirect to non-HTTP scheme: {}", next_url.scheme()),
                 status,
                 None,
             ));
         }
-        let next = next.to_string();
+        let next = next_url.to_string();
         if redirect_count == MAX_REDIRECTS {
             return Err(redirect_error(request, "too many redirects", status, None));
         }
@@ -562,7 +593,7 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
             current.body = std::sync::Arc::new(HttpBody::Empty);
             current.wire_body = std::sync::Arc::new(std::sync::OnceLock::new());
         }
-        current.url = next;
+        current.set_url(next_url);
     }
     unreachable!("redirect loop returns on response or error")
 }
@@ -581,10 +612,13 @@ fn is_multipart(media_type: &str) -> bool {
 /// later entry for the same (case-insensitive) name replaces an earlier one —
 /// a request never goes out with duplicate `Authorization` headers.
 fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxError> {
-    let url = url::Url::parse(&request.url).map_err(|error| AiMuxError::InvalidArgument {
-        message: format!("invalid request URL: {error}"),
-        cause: Some(ErrorCause::source(&error)),
-    })?;
+    let url = request
+        .parsed_url
+        .clone()
+        .map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("invalid request URL: {error}"),
+            cause: Some(ErrorCause::source(&error)),
+        })?;
     let mut headers = http::HeaderMap::new();
     for (name, value) in &request.headers {
         let header_name =
@@ -698,9 +732,8 @@ fn observe_response(
     exchange_index: u32,
 ) -> FetchResponse {
     let status = response.status;
-    let headers = response.headers.clone();
     let recording = request.recording_context.as_ref().map(|context| {
-        let redacted_headers = redacted_response_headers(&headers);
+        let redacted_headers = redacted_response_headers(&response.headers);
         let response = ResponseRecord {
             status: status.as_u16(),
             headers: redacted_headers.clone(),
@@ -748,7 +781,7 @@ fn observe_response(
     };
     FetchResponse {
         status,
-        headers,
+        headers: response.headers,
         url: response.url,
         body: observed.boxed(),
     }
@@ -920,7 +953,7 @@ fn to_http_record(request: &PreparedRequest) -> HttpRecord {
     });
     HttpRecord {
         method: request.method.as_str().into(),
-        url: sanitized_request_url(&request.url),
+        url: request.sanitized_url(),
         headers,
         body,
     }
@@ -994,36 +1027,37 @@ fn request_body_size(request: &PreparedRequest) -> u64 {
     }
 }
 
-fn request_host(url: &str) -> String {
-    url::Url::parse(url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .unwrap_or_else(|| "unknown".into())
-}
-
 /// The request URL as logs, errors and recordings show it: without the query
 /// (API keys travel there) and without the `user:password@` userinfo.
 pub(crate) fn sanitized_request_url(url: &str) -> String {
     match url::Url::parse(url) {
-        Ok(mut parsed) => {
-            parsed.set_query(None);
-            // Both fail only for URLs that cannot carry userinfo at all.
-            let _ = parsed.set_username("");
-            let _ = parsed.set_password(None);
-            parsed.to_string()
-        }
-        Err(_) => {
-            let without_query = url.split('?').next().unwrap_or(url);
-            // Unparseable: drop anything up to the last '@' of the authority.
-            if let Some((scheme, rest)) = without_query.split_once("://") {
-                let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
-                if let Some(at) = authority.rfind('@') {
-                    return format!("{scheme}://{}", &rest[at + 1..]);
-                }
-            }
-            without_query.to_owned()
+        Ok(parsed) => sanitize_parsed_url(&parsed),
+        Err(_) => sanitize_unparseable_url(url),
+    }
+}
+
+fn sanitize_parsed_url(parsed: &url::Url) -> String {
+    if parsed.query().is_none() && parsed.username().is_empty() && parsed.password().is_none() {
+        return parsed.as_str().to_owned();
+    }
+    let mut clean = parsed.clone();
+    clean.set_query(None);
+    // Both fail only for URLs that cannot carry userinfo at all.
+    let _ = clean.set_username("");
+    let _ = clean.set_password(None);
+    clean.into()
+}
+
+fn sanitize_unparseable_url(url: &str) -> String {
+    let without_query = url.split('?').next().unwrap_or(url);
+    // Unparseable: drop anything up to the last '@' of the authority.
+    if let Some((scheme, rest)) = without_query.split_once("://") {
+        let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
+        if let Some(at) = authority.rfind('@') {
+            return format!("{scheme}://{}", &rest[at + 1..]);
         }
     }
+    without_query.to_owned()
 }
 
 #[cfg(test)]
@@ -1082,6 +1116,44 @@ mod tests {
         assert_eq!(
             sanitized_request_url("https://api.example.com/v1/chat?key=sk-1"),
             "https://api.example.com/v1/chat"
+        );
+    }
+
+    /// The URL parsed when the request is prepared gives the same sanitized
+    /// text as parsing it again, and an invalid URL is still only reported
+    /// when the request is built for the transport.
+    #[test]
+    fn prepared_request_sanitizes_from_the_url_parsed_once() {
+        for url in [
+            "https://user:secret@api.example.com/v1/chat?key=sk-1",
+            "https://token@api.example.com/v1",
+            "https://user:secret@bad host/v1?key=sk-1",
+            "https://api.example.com/v1/chat?key=sk-1",
+            "https://API.example.com",
+            "https://api.example.com/v1/chat",
+        ] {
+            let prepared = HttpRequest {
+                url: url.into(),
+                ..HttpRequest::default()
+            }
+            .prepare(HttpMethod::Get, HttpBody::Empty);
+            assert_eq!(
+                prepared.sanitized_url(),
+                sanitized_request_url(url),
+                "{url}"
+            );
+        }
+        let invalid = HttpRequest {
+            url: "https://user:secret@bad host/v1?key=sk-1".into(),
+            ..HttpRequest::default()
+        }
+        .prepare(HttpMethod::Get, HttpBody::Empty);
+        assert_eq!(invalid.host_str(), "unknown");
+        let error = super::build_fetch_request(&invalid).expect_err("invalid URL");
+        assert!(
+            matches!(&error, aimux_core::AiMuxError::InvalidArgument { message, .. }
+                if message.starts_with("invalid request URL: ")),
+            "{error:?}"
         );
     }
 
