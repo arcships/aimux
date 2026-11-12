@@ -35,10 +35,10 @@
 | R-9 | `aimux-provider-utils/src/fetch.rs:258,344,496` | `default_transport()` 每次取写锁置 `frozen`；`client()` 每次锁 `Mutex`；`pool_max_idle_per_host(10)`。 | RFC-0049 §1.7、§3.6：锁改读路径加原子标志列为小修；连接池调高或可配置。 |
 | R-10 | `Cargo.toml:64`；`generate.rs:59,1626,1639`；`provider_registry.rs:50`；`aimux-providers/src/stream/chat_tool_calls.rs:99` | 开启 `serde_json/preserve_order`；后备响应 ID 用 `rand::thread_rng()`；录制关闭时生成 `call_id`；`resolve_session_id` 先于 `session_store()` 求值；注册表用 `BTreeMap`；`ChatToolCalls::default` 每流 `Arc::new` 一个闭包。 | `preserve_order` 见 RFC-0049 §0.3；其余见本文 §4.3。 |
 
-### 2.1 对草案与 RFC-0049 的事实更正
+### 2.1 对草案的事实更正
 
 - **`tcp_nodelay`。** reqwest 0.12.28 的 `ClientBuilder` 默认 `nodelay: true`，草案说"未开启"不对（RFC-0049 §0.3 同）。
-- **录制关闭时生成 `call_id`。** RFC-0049 §8 说"源码中它只在有 recorder 时调用"，不完整：`generate.rs:1605` 确实只在有 recorder 时调用，但 `:1624-1626` 的 `step_call_id = call_id.clone().unwrap_or_else(crate::recording::new_call_id)` 在录制关闭时也会调用。这次调用是必需的：`StreamTextResult.call_id`（`:2050`）是公开字段，总要有值。结论不变（不处理），依据应改为这一条。
+- **录制关闭时生成 `call_id`。** 草案说得对，但这次调用是必需的：`generate.rs:1624-1626` 的 `step_call_id = call_id.clone().unwrap_or_else(crate::recording::new_call_id)` 在录制关闭时也会调用，因为 `StreamTextResult.call_id`（`:2050`）是公开字段，总要有值。不处理。RFC-0049 §8 的对应条目已按此更正（#503）。
 - **未核实的草案说法。** "单条流穿过 5 层 `Box<dyn Stream>`"、"建流时克隆 3 份响应头"本文没有逐层核对。后者 RFC-0049 §3.4 已定为每流一次、不处理；前者在 §5 的基准里按每块耗时判断，不按层数判断。
 
 ## 3. 方案
