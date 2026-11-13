@@ -4,7 +4,7 @@
 >
 > **Date**: 2026-11-12
 >
-> **Baseline**: `master@c5a40837`（v0.6.1）。文中“现行”均指该提交。[#502](https://github.com/arcships/aimux/pull/502)（`a1be8777`，草案）是本文 §6 阶段 1 的第一批改动，未合入；涉及它的数字单独标注。
+> **Baseline**: `master@c5a40837`。它不是 v0.6.1：v0.6.1 tag 是 `164d7f4b`，`c5a40837` 在其后又合入了 18 个 PR，其中 #407、#408 是性能改动。文中“现行”与 §1 的数字均指 `c5a40837`，没有在 v0.6.1 tag 上测过。[#502](https://github.com/arcships/aimux/pull/502)（`a1be8777`，草案）是本文 §6 阶段 1 的第一批改动，未合入；涉及它的数字单独标注。
 >
 > **Scope**: `aimux-ops`、`aimux-core`、`aimux-provider-utils`、`aimux-providers`、`aimux-ffi`、`tools/aimux-codegen`、`bindings/*`。定义瓶颈账本、设计方向、分阶段顺序和验收口径；不改变任何 provider 行为、安全限制或回放能力。
 >
@@ -23,7 +23,7 @@ aimux 自己不做模型计算。一次调用里 SDK 的 CPU 只花在两件事�
 | # | 决定 | 依据 |
 |---|---|---|
 | D1 | 新增 `include: { requestBody, responseBody }`，与上游 AI SDK 同名同义；默认值最终为 `false`（上游默认即 `false`） | §1.3、§3.1 |
-| D2 | `GenerateTextResult` 的序列化只写事实集（`steps`、`totalUsage`、`output`），其余字段由各语言生成的 getter 从 `steps` 派生 | §1.3 原型实测 |
+| D2 | `GenerateTextResult` 的序列化只写事实集（`steps`、`totalUsage`、`output`），其余字段由 codegen 的 7 个目标语言生成的 getter 从 `steps` 派生；C ABI 调用方自行从 `steps` 取（§3.1） | §1.3 原型实测 |
 | D3 | `aimux-ops` 出向不再先建 `serde_json::Value` 树；入向随后 | §1.4 |
 | D4 | 流式读取统一“取走所有已就绪的帧、不等待凑批”；成帧改为单遍有界写入 | §1.5 原型实测 |
 | D5 | 性能门禁用确定性指标（返回包字节数、每请求分配次数与字节数）做硬门禁，耗时只做成对比较 | §1.1、§5 |
@@ -61,6 +61,7 @@ aimux 自己不做模型计算。一次调用里 SDK 的 CPU 只花在两件事�
   - mock 与客户端同机抢核。
   - 32 核扩展性没有测。
   - 基准脚本尚未入库，是阶段 0 的交付物。
+  - **不满足 RFC-0043 §7.1**：Node 22、rustc 1.97 只记到主版本，没有锁定 patch 版本与依赖 lock digest；4 核是虚拟化容器，绑定进程与 mock 没有固定 affinity，Tokio worker 数没有固定。因此 §1 的数字只作立项依据，不作正式基线；正式基线由阶段 0 在 §7.1 的环境中产出。
 
 ### 1.2 相对 README 数据的回归
 
@@ -122,7 +123,7 @@ Rust 层差分（现行，Responses 路径）：
 | 请求 / 响应头处理 | 2.8% | | | |
 | 无用的 `raw_value.to_string()` | 2.6% | | | |
 
-大包采样里 memcpy 合计约 40%，其中约 85% 落在结果序列化的两桶里。
+表中各桶的 memcpy 合计 36.2%，其中结果序列化两桶（结果 `Value` 树转字符串、结果转 `Value` 树）占 32.5 个百分点，约九成。
 
 OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合计 63.6%，响应解析两遍 2.7%（小请求 5.3%），请求体 `Value` 克隆不到 1%。
 
@@ -167,7 +168,7 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 
 ### 1.9 #502
 
-内存 `Fetch`，改动前后各两轮平均，只看 `generate_text` 这一段（结果序列化未改）：小请求 −18%，小 prompt + 50 KB 响应 −27%，大包 −18%。Node 端到端的差别落在噪声内（§1.2）。
+内存 `Fetch`，改动前后各两轮平均，只看 `generate_text` 这一段（结果序列化未改）：小请求 −18%，小 prompt + 50 KB 响应 −27%，大包 −18%。Node 端到端见 §1.2 表：小请求 0.493 → 0.383 ms（−22%），大包吞吐 378 → 395 rps（+4.5%）。这两项都只是两轮平均，仍在 §1.1 记录的同构建两轮间最多 30% 的波动范围内，本文不据此下结论。
 
 ## 2. 现状核实
 
@@ -204,9 +205,11 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 **事实集。** `generate.rs` 已有只含 `steps`、`total_usage`、`output` 的 `GenerateTextResultFacts`，它是反序列化用的私有结构。序列化改为只写这三项：
 
 - `output` 在默认纯文本模式下等于文本，不再写出。
-- 派生字段（`text`、`content`、`toolCalls`、`finishReason`、`usage`、`request`、`response`、`responseMessages` 等）由 `tools/aimux-codegen` 为各语言生成 getter。
+- 派生字段（`text`、`content`、`toolCalls`、`finishReason`、`usage`、`request`、`response`、`responseMessages` 等）由 `tools/aimux-codegen` 生成 getter。codegen 现有 7 个目标（Python、Go、Java、Kotlin、Swift、Flutter、Node，见 `tools/aimux-codegen/generated-files.json`），绑定共 8 个：
+  - **C**：没有生成类型，调用方直接读 JSON。D2 之后 C 调用方拿不到顶层派生字段，只能从 `steps` 自行取；升级说明要给出每个派生字段与 `steps` 的对应关系。
+  - **Node**：只生成类型声明（见下一条），getter 需要另外生成一段运行时代码挂到结果对象上。
 - Node 没有编解码器（`scripts/check_dto_vectors.py` 的 `DECLARATION_ONLY = {"node"}`），结果是 `JSON.parse` 出的普通对象。派生字段用不可枚举的 getter 挂上，避免用户 `JSON.stringify` 结果时重新展开。副作用：对象展开与 `structuredClone` 拿不到这些字段，需写进升级说明。
-- `steps[i].content` 与 `steps[i].response.messages` 的重复保留。去掉它要把响应消息的构造逻辑搬进 8 门语言，不在本文范围。
+- `steps[i].content` 与 `steps[i].response.messages` 的重复保留。去掉它要把响应消息的构造逻辑搬进 7 个 codegen 目标和 C 调用方，不在本文范围。
 
 ### 3.2 `aimux-ops`：出向与入向
 
@@ -264,7 +267,7 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 
 ## 4. 不变量
 
-- 写入达到 1,048,576 字节的那一刻中止并返回 `ResourceLimit`，不允许先分配再检查。
+- 写入超过 1,048,576 字节（即写到第 1,048,577 字节）时立即中止并返回 `ResourceLimit`，不允许先分配再检查；恰好 1,048,576 字节的帧合法，与现行 `check_wire_item`（`aimux-ops/src/limits.rs`，`total <= maximum`）一致。
 - 错误上下文里的请求值，无论从 `Value` 还是从字节生成，都经过同一套脱敏与截断，`contract-tests/dto/AiMuxError/*` 字节级不变。
 - `End` 帧独立于数据队列；取消与上游错误不因批量而丢失或乱序。
 - trace 指纹与录制看到的请求体与现行一致（§3.1 的剥离位置）。
@@ -285,12 +288,12 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 |---|---|---|---|
 | 0 | 0.6.x | 三组基准入库；登记返回包字节数、分配次数、§1.2 的四版本对比 | 基线可由 CI 复现 |
 | 1 | 0.6.x，不破坏类型与默认行为 | #502；Node / Python 流式批量与单遍成帧；ops 出向直写；`include` 选项（此阶段默认仍回传）；§3.6 小修 | Node 突发流帧率不低于 150,000 帧 / 秒（原型 175,000，现行约 26,000）；单流首帧与逐帧延迟不回退；`include` 全关时大包返回 JSON 不超过 360,000 B |
-| 2 | 0.7.0，破坏性窗口 | `include` 默认改为 `false`；序列化只写事实集，8 门语言生成 getter；ops 入向；Go / Flutter 流式改造；mimalloc、HTTP/2、`aimux-ffi` profile 三项按实测定案 | 大包返回 JSON 不超过 110,000 B（原型 101,324）；同机成对比较，大包吞吐不低于 `c4748178`；小请求耗时登记并说明与 `c4748178` 的差距构成 |
+| 2 | 0.7.0，破坏性窗口 | `include` 默认改为 `false`；序列化只写事实集，7 个 codegen 目标生成 getter，C 调用方按升级说明从 `steps` 取；ops 入向；Go / Flutter 流式改造；mimalloc、HTTP/2、`aimux-ffi` profile 三项按实测定案 | 大包返回 JSON 不超过 110,000 B（原型 101,324）；目标（不作门禁）：大包吞吐不低于 `c4748178`，按 RFC-0043 §7.4 的配对 bootstrap 登记结果；小请求耗时登记并说明与 `c4748178` 的差距构成 |
 | 3 | 0.7.x 之后 | C ABI 异步原语与批量回调；§3.7 中经实测立项的部分 | 另行补充 |
 
 说明：
 
-- “不低于 `c4748178`”是推算目标：原型把单并发吞吐提到 1.76 倍，与现行落后 7 月版的 1.7 倍相当，且原型的返回包（101 KB）小于 7 月版（297 KB）。没有与 7 月版直接对测过原型。
+- “不低于 `c4748178`”是推算出的目标，不是门禁：原型把单并发吞吐提到 1.76 倍，与现行落后 7 月版的 1.7 倍相当，且原型的返回包（101 KB）小于 7 月版（297 KB）。没有与 7 月版直接对测过原型。
 - 小请求能否回到 7 月水平没有证据。差的约 0.25 ms 里，已知的是 core 约 0.1 ms、结果序列化约 0.04 ms。
 - 体积：各阶段的产物都在 RFC-0043 §4.1 的上限内（cdylib 24,200,000、staticlib 70,000,000、Android 单片 9,000,000）。
 
@@ -317,7 +320,7 @@ OpenAI Chat 路径（#502 头部）分布相同：大包结果序列化两桶合
 | `.tcp_nodelay(true)`、`.http2_adaptive_window(true)` | 不做 / 转为待决 | §0.3 |
 | 锁导致“严重自旋”，32 分片句柄表 | 降为小修 | §1.7 |
 | 内联流泵、去掉逐帧 `Instant::now()` | 不做 | §3.3；`Instant::now()` 走 vDSO，不是系统调用 |
-| “未开录制仍调用 `new_call_id()`” | 不做 | 属实但必需：`generate.rs:1605` 只在有 recorder 时调用，`:1624-1626` 的 `step_call_id` 在未开录制时仍调用，因为 `StreamTextResult.call_id`（`:2050`）是公开字段，总要有值 |
+| “未开录制仍调用 `new_call_id()`” | 不做 | 属实但必需：`generate.rs:1605` 只在有 recorder 时调用，`:1624-1626` 的 `step_call_id` 在未开录制时仍调用，因为 `StreamTextResult::consume()` 把它写进公开字段 `StepResult.call_id`（`aimux-core/src/step_result.rs:223`），总要有值；`StreamTextResult.call_id`（`:2050`）本身是私有字段 |
 | “`StepResult` 里已标记 deprecated 的冗余字段” | 删除 | 不存在；deprecated 的是 `GenerateTextResult` 的顶层访问器 |
 | 密码学随机数生成后备 ID | 不处理 | 属实，但每次约百纳秒量级，未单独测 |
 | Chat 路径 `usage` 改 `RawValue` 即可单遍解析 | 改为依赖 `include` | `response.body` 由第二遍解析填充 |
