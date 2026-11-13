@@ -6,16 +6,16 @@
 >
 > **Baseline**: master `c5a408370`（v0.6.1 之后）。文中 `文件:行号` 都指这个提交；上游引用 `ai@7.0.122`、`@ai-sdk/openai@4.0.80`（`reference/aisdk-pinned`）。
 >
-> **Scope**: Rust 服务直接依赖 `aimux-core` + `aimux-providers` 调用 `generate_text` / `stream_text` 时，[RFC-0049](0049-data-plane-performance.md)（PR [#503](https://github.com/arcships/aimux/pull/503)）没有覆盖的部分。涉及 `aimux-core`、`aimux-providers`、`aimux-provider-utils`、`aimux-stream`。§3.1 的类型改动会传到 ops DTO（`GenerateTextOptions` 是 DTO，见 `aimux-ops/src/dto_vectors.rs:107`），线格式不变。
+> **Scope**: Rust 服务直接依赖 `aimux-core` + `aimux-providers` 调用 `generate_text` / `stream_text` 时，[RFC-0049](https://github.com/arcships/aimux/blob/docs/rfc-0049-data-plane-performance/rfc/0049-data-plane-performance.md)（PR [#503](https://github.com/arcships/aimux/pull/503)，尚未合入；本分支上没有 `rfc/0049-*.md`，链接指向 #503 的分支）没有覆盖的部分。涉及 `aimux-core`、`aimux-providers`、`aimux-provider-utils`、`aimux-stream`。§3.1 的类型改动会传到 ops DTO（`GenerateTextOptions` 是 DTO，见 `aimux-ops/src/dto_vectors.rs:107`），线格式不变。
 >
-> **Related**: [RFC-0049](0049-data-plane-performance.md)（数据面性能，含实测基线）、[RFC-0036](0036-positioning-and-layered-architecture.md)、[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）、[RFC-0043](0043-size-performance-budgets.md) §7（基准方法）、PR [#502](https://github.com/arcships/aimux/pull/502)、PR [#407](https://github.com/arcships/aimux/pull/407)。
+> **Related**: [RFC-0049](https://github.com/arcships/aimux/blob/docs/rfc-0049-data-plane-performance/rfc/0049-data-plane-performance.md)（数据面性能，含实测基线，PR #503）、[RFC-0036](0036-positioning-and-layered-architecture.md)、[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）、[RFC-0043](0043-size-performance-budgets.md) §7（基准方法）、PR [#502](https://github.com/arcships/aimux/pull/502)、PR [#407](https://github.com/arcships/aimux/pull/407)。
 >
 > **来源**：修订自一份外部草案（"纯 Rust SDK 零开销引擎"）。草案列出的十处开销点（下文 R-1…R-10）逐条在源码上核对过；它与同一来源的 RFC-0049 草案大面积重叠，重叠部分以 RFC-0049 为准，本文只保留纯 Rust 调用方特有、RFC-0049 未处理的条目。
 
 ## 1. 决策摘要
 
 1. **与 RFC-0049 重叠的条目以 RFC-0049 为准，本文不重新决定。** 包括 `include` 选项及默认值切换时点、单遍解析的推进顺序、`body.clone()` 不单独处理、连接池、`default_transport()` 读路径小修、不去掉 `preserve_order`、不做内联流泵、门禁口径（§2 表中逐条标出）。
-2. **工具集按引用共享。** `GenerateTextOptions::tools` 改为 `Option<Arc<[Tool]>>`，每次调用和每个 step 的 `tools.clone()` 变成引用计数加一。线格式不变，Rust 源码层是破坏性改动，放进 RFC-0049 阶段 2 的 0.7.0 破坏性窗口（§3.1）。
+2. **工具集按引用共享。** `GenerateTextOptions::tools` 改为 `Option<Arc<[Tool]>>`，每次调用和每个 step 的 `tools.clone()` 变成引用计数加一。线格式不变，Rust 源码层（含 `CallOptions` 与 `LanguageModel` 实现方）是破坏性改动，只能放进 RFC-0049 阶段 2 的 0.7.0 破坏性窗口，不在 0.6.x 提前（RFC-0049 阶段 1 要求不破坏类型）（§3.1）。
 3. **借用型流块的字符串字段用 `Cow<'a, str>`。** 这是对 RFC-0049 §3.4"借用型 chunk 结构"的约束：serde_json 不能把带转义的字符串借用成 `&str`（§3.2）。
 4. **流块 ID 与活跃块集合**、**请求头合并**两项按 §3.3、§3.4 处理，先测后定。
 5. **只保留一条路径。** 不新增 `HttpBody::WireJson`、内联流快路径、静态分发的 `NativeLanguageModel` 等与现有实现并存的路径（§4）。
@@ -38,7 +38,7 @@
 ### 2.1 对草案的事实更正
 
 - **`tcp_nodelay`。** reqwest 0.12.28 的 `ClientBuilder` 默认 `nodelay: true`，草案说"未开启"不对（RFC-0049 §0.3 同）。
-- **录制关闭时生成 `call_id`。** 草案说得对，但这次调用是必需的：`generate.rs:1624-1626` 的 `step_call_id = call_id.clone().unwrap_or_else(crate::recording::new_call_id)` 在录制关闭时也会调用，因为 `StreamTextResult.call_id`（`:2050`）是公开字段，总要有值。不处理。RFC-0049 §8 的对应条目已按此更正（#503）。
+- **录制关闭时生成 `call_id`。** 草案说得对，但这次调用是必需的：`generate.rs:1624-1626` 的 `step_call_id = call_id.clone().unwrap_or_else(crate::recording::new_call_id)` 在录制关闭时也会调用，因为 `StreamTextResult::consume()` 把它写进公开字段 `StepResult.call_id`（`aimux-core/src/step_result.rs:223`），总要有值；`StreamTextResult.call_id`（`:2050`）本身是私有字段，没有公开访问器。不处理。RFC-0049 §8 的对应条目已按此更正（#503）。
 - **未核实的草案说法。** "单条流穿过 5 层 `Box<dyn Stream>`"、"建流时克隆 3 份响应头"本文没有逐层核对。后者 RFC-0049 §3.4 已定为每流一次、不处理；前者在 §5 的基准里按每块耗时判断，不按层数判断。
 
 ## 3. 方案
@@ -49,6 +49,8 @@
 
 - `generate.rs:1051,1568` 的 `clone()` 变成引用计数加一；Agent 循环里反复使用同一组工具时，不再每次复制所有 `input_schema`。
 - `GenerateTextOptions` 派生 `Serialize`、`Deserialize`、`JsonSchema`，是 ops DTO。`Arc<[T]>` 的序列化要打开 serde 的 `rc` 特性（工作区 `Cargo.toml:63` 现在只开了 `derive`）；JSON 形状仍是数组，DTO schema 与线格式不变，要用 `aimux-ops` 的 DTO 往返测试确认。
+- **`CallOptions::tools` 一起改。** `into_call_options`（`generate.rs:243`）把 `self.tools` 按值移进 `CallOptions::tools`（`aimux-core/src/options.rs:136`，`Option<Vec<Tool>>`）。只改 `GenerateTextOptions` 的话，这里要 `to_vec()` 一次，所有 `input_schema` 照样整树复制，省下的只是 `generate.rs:1051,1568` 那一份。所以 `CallOptions::tools` 也改成 `Option<Arc<[Tool]>>`。`CallOptions` 是 `LanguageModel` trait 的入参，这对仓库外自己实现 provider 的调用方同样是破坏性改动。
+- **改写 `call.tools` 的地方。** Bedrock（`aimux-providers/src/bedrock/chat_language_model.rs:1358`）`call.tools.clone().unwrap_or_default()` 后追加 provider 工具，改为 `to_vec()` 后追加，只在这条路径上复制，与现行相同；Google 图像模型（`aimux-providers/src/google/image_model.rs:195`）整体赋值 `call.tools = Some(vec![...])`，改为 `.into()`。`ToolCallRepairContext::tools`（`aimux-core/src/parse_tool_call.rs:30`，`Vec<Tool>`）只在工具修复时构造，不在本文范围。
 - Rust 源码层是破坏性改动：结构体字面量 `tools: Some(vec![...])` 要改成 `Some(vec![...].into())`。提供 `From<Vec<Tool>>`，按 RFC-0036 的一次性破坏原则在同一 PR 里改完仓库内全部调用方，排在 RFC-0049 阶段 2 的 0.7.0 窗口。
 
 不做 schema 预编码成 `RawValue`：各 provider 发送前会改写 schema（OpenAI strict 模式、Google 的 schema 转换），预编码的字节不能直接使用。工具 schema 校验器的缓存归 RFC-0049 §3.6（按 schema 哈希的全局有界缓存）。
@@ -65,7 +67,7 @@ serde_json 只能在 JSON 字符串没有转义时借用。带 `\n`、`\"`、`\u
 
 `StreamPart` 的 `id: String` 让常量 ID 每块分配一次。两个做法：
 
-- **A.** `id` 改为 `Cow<'static, str>`。常量 ID 不分配，动态 ID 仍是 `String`。改公共类型，DTO 生成（RFC-0042）跟着改，线格式不变。
+- **A.** `id` 改为 `Cow<'static, str>`。常量 ID 不分配，动态 ID 仍是 `String`。`StreamPart::into_text_stream_part`（`aimux-core/src/stream_part.rs:461`）把 `id` 原样移进 `TextStreamPart`（`stream_part.rs:189`，`id: String`），只改 `StreamPart` 的话这里要 `into_owned()`，常量 ID 照样分配一次，所以 `TextStreamPart` 的 `id` 也要改成 `Cow<'static, str>`。两者都是公共类型，DTO 生成（RFC-0042）跟着改，线格式不变。
 - **B.** 不改类型，只把 `generate.rs:1862-1863` 的 `HashSet<String>` 换成线性查找的小 `Vec`。同一时刻活跃的文本块、推理块通常各一个，省掉哈希表分配与哈希计算，ID 分配保留。
 
 `delta` 保持 `String`：内容来自网络，本来就要一份自有数据；换成 `CompactString` 之类会引入新依赖并改公共类型。
@@ -74,7 +76,7 @@ serde_json 只能在 JSON 字符串没有转义时借用。带 `\n`、`\"`、`\u
 
 ### 3.4 请求头合并（R-8）
 
-保留现有语义：值为 `None` 表示删除该头；只差大小写的头名按原名字节序处理，结果与哈希表遍历顺序无关。在此前提下把 `combine_headers` + `normalize_headers` 合成一遍，直接产出 `http::HeaderMap`，省掉中间的 `BTreeMap` 与 `Vec`。每请求一次，不在流式路径上，排在最后，测不出收益就不做。
+保留现有语义：值为 `None` 表示删除该头；只差大小写的头名按原名字节序处理，结果与哈希表遍历顺序无关。在此前提下新增一个内部函数，把合并与规范化合成一遍，直接产出 `http::HeaderMap`，省掉中间的 `BTreeMap` 与 `Vec`，HTTP 层改用它。`combine_headers` / `normalize_headers` 是 `aimux-provider-utils` 的公开函数（`lib.rs:71-72` 重导出），保留原签名与语义作为包装，因此不破坏（§7 表中标为“否”）。每请求一次，不在流式路径上，排在最后，测不出收益就不做。
 
 ## 4. 不采纳项
 
@@ -119,7 +121,6 @@ RFC-0049 已否决的（`preserve_order`、内联流泵、按包 `opt-level`、�
 ## 6. 开放问题
 
 1. **流块 ID。** §3.3 选 A 还是 B。
-2. **`Arc<[Tool]>` 的时点。** 跟 RFC-0049 阶段 2 一起进 0.7.0，还是单独提前；它只破坏 Rust 源码，不破坏线格式。
 
 ## 7. 实施拆分
 
@@ -129,6 +130,6 @@ RFC-0049 已否决的（`preserve_order`、内联流泵、按包 `opt-level`、�
 |---|---|---|---|
 | 1 | §5 的两个基准场景，先测 base | RFC-0049 阶段 0 | 否 |
 | 2 | 活跃块集合改小 `Vec`（§3.3 B） | 1 | 否 |
-| 3 | `tools: Option<Arc<[Tool]>>`，开 serde `rc`（§3.1） | 1 | 是（Rust 源码） |
+| 3 | `GenerateTextOptions` 与 `CallOptions` 的 `tools: Option<Arc<[Tool]>>`，开 serde `rc`（§3.1），0.7.0 | 1 | 是（Rust 源码） |
 | 4 | 借用型流块（§3.2），随 RFC-0049 §3.4 的零拷贝解析器一起做 | RFC-0049 阶段 1 的批量完成 | 否 |
 | 5 | 请求头合并（§3.4） | 1 | 否 |
