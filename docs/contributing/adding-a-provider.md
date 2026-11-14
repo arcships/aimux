@@ -49,7 +49,9 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    worth retrying when the error arrives in a body with a success status, as
    a long non-streaming response that has already sent `200` must report a
    later failure; without it such an error keeps its message and code but is
-   not retried). Per-call
+   not retried); `profile.response_timeout_secs` (how long a non-streaming
+   exchange may take, connect through the whole body, for a vendor that
+   documents responses slower than the transport's 30 s default). Per-call
    body fields can use the
    provider's options namespace. The OpenAI-compatible factory also exposes
    its upstream `transform_request_body` hook; if the quirk changes auth or

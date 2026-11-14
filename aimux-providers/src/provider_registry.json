@@ -14,7 +14,8 @@
     "profile": {
       "in_band_retryable_codes": [
         "upstream_error"
-      ]
+      ],
+      "response_timeout_secs": 630
     }
   },
   {

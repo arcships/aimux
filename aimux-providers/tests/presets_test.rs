@@ -514,6 +514,26 @@ async fn abliteratedllm_reports_an_error_sent_after_a_200() {
     }
 }
 
+/// A non-streaming AbliteratedLLM request may run to its documented 10-minute
+/// limit, after which the error arrives in the `200` body: the row waits that
+/// long plus a margin for the upload and the error body, not the transport's
+/// 30 s default (which would disconnect before the 90 s mark).
+#[test]
+fn abliteratedllm_waits_for_the_documented_time_limit() {
+    let descriptor = preset::lookup("abliteratedllm").unwrap().descriptor;
+    assert_eq!(
+        descriptor.response_timeout,
+        Some(std::time::Duration::from_secs(630))
+    );
+    assert_eq!(
+        preset::lookup("openrouter")
+            .unwrap()
+            .descriptor
+            .response_timeout,
+        None
+    );
+}
+
 /// An ordinary `200` result, and one started early with whitespace, read as
 /// before.
 #[tokio::test]

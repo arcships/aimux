@@ -511,11 +511,11 @@ impl CompatModelConfig {
         options: &impl ExchangeContext,
     ) -> Result<HttpRequest, AiMuxError> {
         let (url, origin) = self.url(path)?;
-        Ok(self.with_transport(
-            HttpRequest::new(url, headers.list, options),
-            origin,
-            headers.fetch_user_agent,
-        ))
+        let mut request = HttpRequest::new(url, headers.list, options);
+        // A vendor that documents responses slower than the transport's hang
+        // guard declares its own bound.
+        request.response_timeout = self.chat.response_timeout;
+        Ok(self.with_transport(request, origin, headers.fetch_user_agent))
     }
 
     /// Attach the transport and the credential origin to a request. A fetch

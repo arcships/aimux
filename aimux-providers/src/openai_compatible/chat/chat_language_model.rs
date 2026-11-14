@@ -97,6 +97,10 @@ pub(crate) struct ChatSettings {
     /// ([`json_response_handler`](crate::openai_compatible::error::json_response_handler));
     /// a preset's `profile.in_band_retryable_codes`. Empty: none is.
     pub in_band_retryable_codes: &'static [String],
+    /// How long a non-streaming exchange may take, connect through the whole
+    /// body; a preset's `profile.response_timeout_secs`. `None`: the
+    /// transport's default.
+    pub response_timeout: Option<std::time::Duration>,
 }
 
 impl Default for ChatSettings {
@@ -117,6 +121,7 @@ impl Default for ChatSettings {
             stream_usage_key: None,
             error_structure: Arc::new(default_error_structure),
             in_band_retryable_codes: &[],
+            response_timeout: None,
         }
     }
 }

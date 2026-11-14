@@ -4751,6 +4751,36 @@ mod error_structure_and_base_url {
         assert!(!unlisted.is_retryable);
     }
 
+    /// `response_timeout` (a row's `response_timeout_secs`) bounds the
+    /// non-streaming exchange in place of the transport's 30 s default.
+    #[tokio::test]
+    async fn a_response_timeout_bounds_the_exchange() {
+        let server = MockServer::start().await;
+        serve(
+            &server,
+            ResponseTemplate::new(200)
+                .set_body_raw(ERROR_AFTER_200, "application/json")
+                .set_delay(std::time::Duration::from_millis(500)),
+        )
+        .await;
+        let chat = ChatSettings {
+            response_timeout: Some(std::time::Duration::from_millis(50)),
+            ..ChatSettings::default()
+        };
+        let error = provider(BaseUrl::Fixed(server.uri()), chat)
+            .chat("m")
+            .do_generate(&hello())
+            .await
+            .unwrap_err();
+        match error {
+            AiMuxError::ApiCall(detail) => {
+                assert!(detail.message.contains("exchange response timeout"));
+                assert_eq!(detail.origin, aimux_core::ApiCallErrorOrigin::Local);
+            }
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
+    }
+
     /// A dynamic base URL (a preset's template, a Vertex AI partner's project
     /// and location) is data the request resolves: creating the provider and
     /// the model reads nothing, a request that cannot resolve it fails, and
