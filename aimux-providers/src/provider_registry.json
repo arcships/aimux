@@ -11,7 +11,11 @@
     "display": "AbliteratedLLM",
     "base_url": "https://api.abliteratedllm.dev/v1",
     "env_var": "ABLITERATEDLLM_API_KEY",
-    "profile": {}
+    "profile": {
+      "in_band_retryable_codes": [
+        "upstream_error"
+      ]
+    }
   },
   {
     "name": "abliteration_ai",

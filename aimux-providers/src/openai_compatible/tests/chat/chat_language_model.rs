@@ -4691,6 +4691,66 @@ mod error_structure_and_base_url {
         }
     }
 
+    /// A long response started with `200` and whitespace, then ended with a
+    /// top-level `error`: the error a failed status gives, with the observed
+    /// status.
+    const ERROR_AFTER_200: &str = "\n\n\n{\"error\":{\"type\":\"api_error\",\"code\":\"upstream_error\",\"message\":\"The model backend failed.\"}}";
+
+    async fn error_after_200(chat: ChatSettings) -> aimux_core::ApiCallError {
+        let server = MockServer::start().await;
+        serve(
+            &server,
+            ResponseTemplate::new(200).set_body_raw(ERROR_AFTER_200, "application/json"),
+        )
+        .await;
+        match provider(BaseUrl::Fixed(server.uri()), chat)
+            .chat("m")
+            .do_generate(&hello())
+            .await
+            .unwrap_err()
+        {
+            AiMuxError::ApiCall(detail) => *detail,
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
+    }
+
+    /// aimux extension: the AI SDK rejects such a body as one without choices.
+    #[tokio::test]
+    async fn an_error_sent_with_a_success_status_keeps_its_message_and_code() {
+        let detail = error_after_200(ChatSettings::default()).await;
+        assert_eq!(detail.message, "The model backend failed.");
+        assert_eq!(detail.provider_code.as_deref(), Some("upstream_error"));
+        assert_eq!(detail.status_code, Some(200));
+        assert_eq!(detail.origin, aimux_core::ApiCallErrorOrigin::HttpResponse);
+        assert_eq!(
+            serde_json::from_str::<Value>(detail.response_body.as_deref().unwrap()).unwrap(),
+            serde_json::from_str::<Value>(ERROR_AFTER_200).unwrap()
+        );
+        // No failed status, and the provider names no code worth retrying.
+        assert!(!detail.is_retryable);
+    }
+
+    #[tokio::test]
+    async fn a_listed_code_makes_an_error_sent_with_a_success_status_retryable() {
+        static CODES: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| vec!["upstream_error".to_string()]);
+        static OTHER: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| vec!["capacity_exhausted".to_string()]);
+        let listed = error_after_200(ChatSettings {
+            in_band_retryable_codes: &CODES,
+            ..ChatSettings::default()
+        })
+        .await;
+        assert!(listed.is_retryable);
+        assert_eq!(listed.provider_code.as_deref(), Some("upstream_error"));
+        let unlisted = error_after_200(ChatSettings {
+            in_band_retryable_codes: &OTHER,
+            ..ChatSettings::default()
+        })
+        .await;
+        assert!(!unlisted.is_retryable);
+    }
+
     /// A dynamic base URL (a preset's template, a Vertex AI partner's project
     /// and location) is data the request resolves: creating the provider and
     /// the model reads nothing, a request that cannot resolve it fails, and

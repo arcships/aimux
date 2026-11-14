@@ -104,6 +104,11 @@ pub struct PresetDescriptor {
     /// which sends `json_object` with a warning for a schema. Rows of vendors
     /// with an AI SDK package follow its `supportsStructuredOutputs`.
     pub structured_output_models: Option<Vec<String>>,
+    /// The error codes the vendor documents as worth retrying when the error
+    /// arrives in a body with a success status
+    /// (`profile.in_band_retryable_codes`), which has no failed status to
+    /// judge by. Empty: none is.
+    pub in_band_retryable_codes: Vec<String>,
 }
 
 /// Settings of a preset factory. Every field is optional.
@@ -185,6 +190,8 @@ struct RegistryProfile {
     user_agent: Option<String>,
     #[serde(default, deserialize_with = "registry_optional")]
     structured_output_models: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    in_band_retryable_codes: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -340,6 +347,7 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             params,
             user_agent,
             structured_output_models: row.profile.structured_output_models,
+            in_band_retryable_codes: row.profile.in_band_retryable_codes.unwrap_or_default(),
         });
     }
     descriptors
@@ -448,6 +456,7 @@ fn assemble(
         convert_usage: descriptor
             .convert_usage
             .map(|convert| Arc::new(convert) as ConvertUsage),
+        in_band_retryable_codes: &descriptor.in_band_retryable_codes,
         ..ChatSettings::default()
     };
 
@@ -816,6 +825,21 @@ mod tests {
         assert_eq!(
             descriptors[1].structured_output_models,
             Some(vec!["model-a".to_string()])
+        );
+    }
+
+    #[test]
+    fn an_in_band_retryable_code_list_is_read() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({
+                "profile": { "in_band_retryable_codes": ["upstream_error"] }
+            })),
+            row(serde_json::json!({ "name": "other", "profile": {} })),
+        ]));
+        assert!(descriptors[0].in_band_retryable_codes.is_empty());
+        assert_eq!(
+            descriptors[1].in_band_retryable_codes,
+            vec!["upstream_error".to_string()]
         );
     }
 

@@ -92,6 +92,11 @@ pub(crate) struct ChatSettings {
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
     pub error_structure: ErrorStructure,
+    /// The error codes worth retrying when the server sends the error in a
+    /// body with a success status
+    /// ([`json_response_handler`](crate::openai_compatible::error::json_response_handler));
+    /// a preset's `profile.in_band_retryable_codes`. Empty: none is.
+    pub in_band_retryable_codes: &'static [String],
 }
 
 impl Default for ChatSettings {
@@ -111,6 +116,7 @@ impl Default for ChatSettings {
             max_tokens_key: None,
             stream_usage_key: None,
             error_structure: Arc::new(default_error_structure),
+            in_band_retryable_codes: &[],
         }
     }
 }
@@ -503,7 +509,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let resp = aimux_provider_utils::post_json_to_api(
             http,
             body.clone(),
-            aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
+            self.config
+                .json_response_handler::<ChatCompletionResponse>(),
             self.config.failed_response_handler(),
         )
         .await?;

@@ -44,7 +44,12 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    `profile.structured_output_models` (the chat models that take a
    `json_schema` response format, exact model ids or a prefix ending in `*`;
    `[]` for none; absent for every model; a vendor with an AI SDK package
-   follows its `supportsStructuredOutputs`). Per-call
+   follows its `supportsStructuredOutputs`);
+   `profile.in_band_retryable_codes` (the error codes the vendor documents as
+   worth retrying when the error arrives in a body with a success status, as
+   a long non-streaming response that has already sent `200` must report a
+   later failure; without it such an error keeps its message and code but is
+   not retried). Per-call
    body fields can use the
    provider's options namespace. The OpenAI-compatible factory also exposes
    its upstream `transform_request_body` hook; if the quirk changes auth or

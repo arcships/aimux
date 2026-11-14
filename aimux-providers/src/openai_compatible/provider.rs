@@ -549,6 +549,18 @@ impl CompatModelConfig {
         }
     }
 
+    /// The successful-response handler of a non-streaming call: the JSON body
+    /// as `T`, or the error the server sent in it with a success status.
+    pub(crate) fn json_response_handler<T>(&self) -> aimux_provider_utils::ResponseHandler<T>
+    where
+        T: serde::de::DeserializeOwned + Send + 'static,
+    {
+        crate::openai_compatible::error::json_response_handler(
+            self.chat.error_structure.clone(),
+            self.chat.in_band_retryable_codes,
+        )
+    }
+
     /// The failed-response handler of this provider's error structure.
     pub(crate) fn failed_response_handler(
         &self,

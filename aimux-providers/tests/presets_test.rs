@@ -16,6 +16,7 @@ use aimux_core::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
+use aimux_core::result::GenerateContent;
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
 };
@@ -468,4 +469,73 @@ async fn the_optional_key_variable_is_sent_only_when_set() {
         !received[2].headers.contains_key("authorization"),
         "unset key"
     );
+}
+
+/// The `abliteratedllm` chat model on the injected transport, whose responses
+/// are `200` with a JSON content type.
+fn abliteratedllm(mock: &Arc<MockFetch>) -> impl LanguageModel {
+    preset::create(
+        "abliteratedllm",
+        PresetSettings {
+            api_key: Some(Resolvable::Value("test-key".into())),
+            fetch: Some(mock.transport()),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .chat("glm-5.3-flash-abliterated")
+}
+
+/// AbliteratedLLM starts a non-streaming response that is not ready after 90
+/// seconds with `200` and a newline every 15 seconds; a later failure arrives
+/// in that body as a top-level `error`, and `upstream_error` there is worth
+/// retrying (https://abliteratedllm.dev/docs/errors#long-requests). The row
+/// lists that code; a code it does not list keeps its message but is not
+/// retried.
+#[tokio::test]
+async fn abliteratedllm_reports_an_error_sent_after_a_200() {
+    for (code, error_type, retryable) in [
+        ("upstream_error", "api_error", true),
+        ("invalid_request", "invalid_request_error", false),
+    ] {
+        let error = json!({"error": {"type": error_type, "code": code, "message": "The model backend failed."}});
+        let mock = MockFetch::new(vec![format!("\n\n\n{error}").into_bytes()]);
+
+        let detail = match abliteratedllm(&mock).do_generate(&hello()).await {
+            Err(AiMuxError::ApiCall(detail)) => detail,
+            other => panic!("{code}: expected ApiCall, got {other:?}"),
+        };
+
+        assert_eq!(detail.message, "The model backend failed.", "{code}");
+        assert_eq!(detail.provider_code.as_deref(), Some(code));
+        assert_eq!(detail.status_code, Some(200), "{code}");
+        assert_eq!(detail.is_retryable, retryable, "{code}");
+        assert_eq!(mock.seen().len(), 1, "{code}");
+    }
+}
+
+/// An ordinary `200` result, and one started early with whitespace, read as
+/// before.
+#[tokio::test]
+async fn abliteratedllm_reads_a_200_result() {
+    for prefix in ["", "\n\n\n"] {
+        let mut body = prefix.as_bytes().to_vec();
+        body.extend(chat_ok());
+        let mock = MockFetch::new(vec![body]);
+
+        let result = abliteratedllm(&mock).do_generate(&hello()).await.unwrap();
+
+        assert!(
+            matches!(
+                result.content.as_slice(),
+                [GenerateContent::Text { text, .. }] if text == "ok"
+            ),
+            "{prefix:?}: {:?}",
+            result.content
+        );
+        assert_eq!(
+            mock.seen()[0].url,
+            "https://api.abliteratedllm.dev/v1/chat/completions"
+        );
+    }
 }

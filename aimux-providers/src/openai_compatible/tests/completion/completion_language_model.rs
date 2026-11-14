@@ -1077,3 +1077,30 @@ mod provider_options_schema {
         assert_eq!(body["rawOnly"], 1);
     }
 }
+
+/// aimux extension: an error a server sends with a success status (a long
+/// response started with `200` and whitespace) is the error a failed status
+/// gives, with its message and code; the AI SDK rejects it as an invalid
+/// completion response.
+mod error_with_a_success_status {
+    use super::*;
+
+    #[tokio::test]
+    async fn keeps_its_message_and_code() {
+        let mock = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: b"\n\n{\"error\":{\"type\":\"api_error\",\"code\":\"upstream_error\",\"message\":\"The model backend failed.\"}}".to_vec(),
+        }]);
+
+        let detail = match model(&mock).do_generate(&call_options()).await {
+            Err(AiMuxError::ApiCall(detail)) => detail,
+            other => panic!("expected ApiCall, got {other:?}"),
+        };
+
+        assert_eq!(detail.message, "The model backend failed.");
+        assert_eq!(detail.provider_code.as_deref(), Some("upstream_error"));
+        assert_eq!(detail.status_code, Some(200));
+        assert!(!detail.is_retryable);
+    }
+}
