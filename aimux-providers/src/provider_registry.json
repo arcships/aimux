@@ -7,6 +7,13 @@
     "profile": {}
   },
   {
+    "name": "abliteratedllm",
+    "display": "AbliteratedLLM",
+    "base_url": "https://api.abliteratedllm.dev/v1",
+    "env_var": "ABLITERATEDLLM_API_KEY",
+    "profile": {}
+  },
+  {
     "name": "abliteration_ai",
     "display": "Abliteration AI",
     "base_url": "https://api.abliteration.ai/v1",
