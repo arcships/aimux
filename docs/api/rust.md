@@ -71,7 +71,7 @@ selects Chat Completions explicitly.
 Retry is not a provider setting: `max_retries` on the call options (default
 2, 2000 ms initial delay, factor 2).
 
-The 282 OpenAI-compatible presets use a runtime table parsed once from
+The 283 OpenAI-compatible presets use a runtime table parsed once from
 `provider_registry.json`; there is no `family` field or generated presets source.
 Groq and DeepSeek are vendor packages with their own chat models. xAI and
 Hugging Face use the Responses API for language models, with no chat-completions

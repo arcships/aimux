@@ -28,6 +28,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -104,6 +105,16 @@ pub struct PresetDescriptor {
     /// which sends `json_object` with a warning for a schema. Rows of vendors
     /// with an AI SDK package follow its `supportsStructuredOutputs`.
     pub structured_output_models: Option<Vec<String>>,
+    /// The error codes the vendor documents as worth retrying when the error
+    /// arrives in a body with a success status
+    /// (`profile.in_band_retryable_codes`), which has no failed status to
+    /// judge by. Empty: none is.
+    pub in_band_retryable_codes: Vec<String>,
+    /// How long a non-streaming exchange may take, connect through the whole
+    /// body (`profile.response_timeout_secs`), for a vendor that documents
+    /// responses slower than the transport's 30 s default. `None`: the
+    /// default.
+    pub response_timeout: Option<Duration>,
 }
 
 /// Settings of a preset factory. Every field is optional.
@@ -185,6 +196,10 @@ struct RegistryProfile {
     user_agent: Option<String>,
     #[serde(default, deserialize_with = "registry_optional")]
     structured_output_models: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    in_band_retryable_codes: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    response_timeout_secs: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -328,6 +343,12 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             .map(|c| c.get(1).unwrap().as_str())
             .collect();
         check(placeholders == names, "URL placeholders differ from params");
+        check(
+            row.profile
+                .response_timeout_secs
+                .is_none_or(|secs| secs > 0),
+            "response_timeout_secs must be positive",
+        );
         descriptors.push(PresetDescriptor {
             name: row.name,
             display: row.display,
@@ -340,6 +361,8 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             params,
             user_agent,
             structured_output_models: row.profile.structured_output_models,
+            in_band_retryable_codes: row.profile.in_band_retryable_codes.unwrap_or_default(),
+            response_timeout: row.profile.response_timeout_secs.map(Duration::from_secs),
         });
     }
     descriptors
@@ -448,6 +471,8 @@ fn assemble(
         convert_usage: descriptor
             .convert_usage
             .map(|convert| Arc::new(convert) as ConvertUsage),
+        in_band_retryable_codes: &descriptor.in_band_retryable_codes,
+        response_timeout: descriptor.response_timeout,
         ..ChatSettings::default()
     };
 
@@ -817,6 +842,42 @@ mod tests {
             descriptors[1].structured_output_models,
             Some(vec!["model-a".to_string()])
         );
+    }
+
+    #[test]
+    fn an_in_band_retryable_code_list_is_read() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({
+                "profile": { "in_band_retryable_codes": ["upstream_error"] }
+            })),
+            row(serde_json::json!({ "name": "other", "profile": {} })),
+        ]));
+        assert!(descriptors[0].in_band_retryable_codes.is_empty());
+        assert_eq!(
+            descriptors[1].in_band_retryable_codes,
+            vec!["upstream_error".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_response_timeout_is_read() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({ "profile": { "response_timeout_secs": 630 } })),
+            row(serde_json::json!({ "name": "other", "profile": {} })),
+        ]));
+        assert_eq!(descriptors[0].response_timeout, None);
+        assert_eq!(
+            descriptors[1].response_timeout,
+            Some(Duration::from_secs(630))
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row 'vendor': response_timeout_secs must be positive")]
+    fn a_response_timeout_is_positive() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "profile": { "response_timeout_secs": 0 } })
+        )]));
     }
 
     #[test]

@@ -179,7 +179,7 @@ anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字
 
 ### 7.4 覆盖范围
 
-Rust 通过 `Provider::discovery()` 检查厂商是否提供模型发现,返回 `None` 表示未提供。预设表有 282 行;Groq 和 DeepSeek 由各自厂商包提供发现。绑定的 provider 句柄保留 `listModels()` / `list_models()` API。
+Rust 通过 `Provider::discovery()` 检查厂商是否提供模型发现,返回 `None` 表示未提供。预设表有 283 行;Groq 和 DeepSeek 由各自厂商包提供发现。绑定的 provider 句柄保留 `listModels()` / `list_models()` API。
 
 ### 7.5 无内置缓存(不存在缓存/离线环境变量)
 

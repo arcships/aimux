@@ -1,6 +1,6 @@
 # aimux — Project Introduction and Promotional Material
 
-> **Unified LLM service access layer — Rust core, one API to access 327 AI providers, 8 language bindings**
+> **Unified LLM service access layer — Rust core, one API to access 328 AI providers, 8 language bindings**
 >
 > This document compiles all of aimux's design decisions and benchmark conclusions, for use in README, blogs, and technical talks.
 >
@@ -13,7 +13,7 @@
 
 ## One-line Positioning
 
-> **aimux is a Rust replacement for the Vercel AI SDK. It converges the HTTP APIs of 327 AI providers into a single unified interface, uses a Rust core to deliver a 7-15x performance advantage, and covers eight language ecosystems — Node / Python / Go / Java / Kotlin / Swift / Flutter / C — through FFI bindings.**
+> **aimux is a Rust replacement for the Vercel AI SDK. It converges the HTTP APIs of 328 AI providers into a single unified interface, uses a Rust core to deliver a 7-15x performance advantage, and covers eight language ecosystems — Node / Python / Go / Java / Kotlin / Swift / Flutter / C — through FFI bindings.**
 
 aimux does not do agent loops, RAG, or orchestration — it focuses solely on unifying service access. This is the fundamental difference between it and LangChain / Mastra: the former is an access layer, the latter is an orchestration layer.
 
@@ -24,7 +24,7 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 | Metric | Value |
 |------|------|
 | Rust code | 144,500+ lines |
-| AI providers | 327 accepted names (282 registry-backed presets + 45 vendor packages; listed by `provider_names()`) |
+| AI providers | 328 accepted names (283 registry-backed presets + 45 vendor packages; listed by `provider_names()`) |
 | Modality traits | 8 (text/embedding/image/video/speech/transcription/reranking/search) |
 | Test cassettes | 2,650 recorded replays |
 | Test files | 118 |
@@ -216,7 +216,7 @@ let provider = create_openai_compatible(OpenAICompatibleProviderSettings {
 let model = provider.chat("acme-large");
 ```
 
-The 282 presets are rows of `provider_registry.json` (base URL, key variable, `auth: api_key | none`, template parameters, `profile.max_tokens_key`); the embedded JSON is parsed once into a runtime descriptor table. `create_provider(name, PresetSettings)` creates presets or vendor packages by name. There is no `family` field or generated presets source. Groq and DeepSeek have their own chat models; xAI and Hugging Face use Responses for text.
+The 283 presets are rows of `provider_registry.json` (base URL, key variable, `auth: api_key | none`, template parameters, `profile.max_tokens_key`); the embedded JSON is parsed once into a runtime descriptor table. `create_provider(name, PresetSettings)` creates presets or vendor packages by name. There is no `family` field or generated presets source. Groq and DeepSeek have their own chat models; xAI and Hugging Face use Responses for text.
 
 #### 3. JSON string FFI boundary
 
@@ -262,7 +262,7 @@ The provider layer does not directly depend on `reqwest`; it abstracts the HTTP 
 |------|-------|--------|:---:|
 | Performance (Node equivalent comparison) | 0.101ms | 1.488ms (OpenAI SDK) | **aimux 14.7x** |
 | Performance (Python equivalent comparison) | 0.080ms | 0.595ms (OpenAI SDK) | **aimux 7.5x** |
-| Provider coverage | 327 | ~20 | **aimux 14.5x** |
+| Provider coverage | 328 | ~20 | **aimux 14.5x** |
 | Modalities | 8 | 6 | **aimux** (more video/STT/reranking/search/file) |
 | Memory (2000 req) | +0~2MB | +60~144MB | **aimux** |
 | GC pauses | None (Rust) | V8 GC jitter | **aimux** |
@@ -290,7 +290,7 @@ aimux does not compete with LangChain; instead it serves as the layer beneath La
 
 | Dimension | aimux | rig / rust-genai |
 |------|-------|------------------|
-| Provider count | 327 | ~20-40 |
+| Provider count | 328 | ~20-40 |
 | Multi-language bindings | 8 | Rust only |
 | Multimodal | 8 traits | Partial |
 | Recorded testing | 2,650 cassettes | Few |
@@ -458,7 +458,7 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 
 ### Completed
 
-- [x] 327 provider names accepted by `create_provider` (282 presets + 45 vendor packages; `provider_names()` lists them)
+- [x] 328 provider names accepted by `create_provider` (283 presets + 45 vendor packages; `provider_names()` lists them)
 - [x] 8 modality traits (text/embedding/image/video/speech/transcription/reranking/search)
 - [x] 7 language bindings (Node/Python/Swift/Kotlin/Flutter/C/Rust)
 - [x] 2650 cassette recorded tests
