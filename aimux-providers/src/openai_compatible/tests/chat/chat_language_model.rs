@@ -4697,10 +4697,14 @@ mod error_structure_and_base_url {
     const ERROR_AFTER_200: &str = "\n\n\n{\"error\":{\"type\":\"api_error\",\"code\":\"upstream_error\",\"message\":\"The model backend failed.\"}}";
 
     async fn error_after_200(chat: ChatSettings) -> aimux_core::ApiCallError {
+        error_sent_with_200(ERROR_AFTER_200.to_owned(), chat).await
+    }
+
+    async fn error_sent_with_200(body: String, chat: ChatSettings) -> aimux_core::ApiCallError {
         let server = MockServer::start().await;
         serve(
             &server,
-            ResponseTemplate::new(200).set_body_raw(ERROR_AFTER_200, "application/json"),
+            ResponseTemplate::new(200).set_body_raw(body, "application/json"),
         )
         .await;
         match provider(BaseUrl::Fixed(server.uri()), chat)
@@ -4728,6 +4732,25 @@ mod error_structure_and_base_url {
         );
         // No failed status, and the provider names no code worth retrying.
         assert!(!detail.is_retryable);
+    }
+
+    /// The body is capped like a failed-status error body: the error crosses
+    /// the FFI serialized and is persisted by recordings.
+    #[tokio::test]
+    async fn an_oversize_error_sent_with_a_success_status_has_a_capped_body() {
+        let body = json!({"error": {
+            "type": "api_error",
+            "code": "upstream_error",
+            "message": "The model backend failed.",
+            "detail": "x".repeat(100 * 1024),
+        }})
+        .to_string();
+        let detail = error_sent_with_200(body, ChatSettings::default()).await;
+        assert_eq!(detail.message, "The model backend failed.");
+        assert_eq!(detail.provider_code.as_deref(), Some("upstream_error"));
+        let response_body = detail.response_body.as_deref().unwrap();
+        assert!(response_body.ends_with("…(truncated)"));
+        assert!(response_body.len() <= 64 * 1024 + "…(truncated)".len());
     }
 
     #[tokio::test]

@@ -92,7 +92,7 @@ where
         Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
             provider_code: parts.provider_code,
-            response_body: Some(raw.to_string()),
+            response_body: Some(aimux_provider_utils::public_error_body(&raw)),
             response_headers: Some(response_headers),
             data: Some(aimux_provider_utils::redact_error_context(raw)),
             is_retryable,

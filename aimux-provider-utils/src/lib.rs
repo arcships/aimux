@@ -95,7 +95,7 @@ pub use response_handler::{
     ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
     ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
-    create_status_code_error_response_handler, invalid_response_api_call,
+    create_status_code_error_response_handler, invalid_response_api_call, public_error_body,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4AuthFetch, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;

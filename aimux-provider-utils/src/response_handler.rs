@@ -302,6 +302,13 @@ fn error_body_string(body: &[u8], read_truncated: bool) -> String {
     value
 }
 
+/// The public `response_body` of an error a provider returned as parsed JSON:
+/// the serialized value, capped at 64 KiB like a failed-status error body.
+#[must_use]
+pub fn public_error_body(body: &serde_json::Value) -> String {
+    error_body_string(body.to_string().as_bytes(), false)
+}
+
 /// A successful JSON response failed provider-specific validation.
 ///
 /// Callers may hold the original request after the transport has returned.
@@ -320,10 +327,7 @@ pub fn invalid_response_api_call(
 ) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status_code),
-        response_body: Some(error_body_string(
-            response_body.to_string().as_bytes(),
-            false,
-        )),
+        response_body: Some(public_error_body(&response_body)),
         response_headers: Some(response_headers),
         data: Some(crate::logging::redact_error_context(response_body)),
         cause: Some(ErrorCause::source(error)),
