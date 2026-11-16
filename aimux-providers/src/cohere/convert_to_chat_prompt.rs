@@ -175,7 +175,8 @@ pub fn convert_prompt_to_cohere(
                     else {
                         continue;
                     };
-                    let content = aimux_provider_utils::tool_result_to_content(output, warnings);
+                    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
+                    let content = aimux_provider_utils::tool_result_to_content(output);
                     messages.push(json!({
                         "role": "tool",
                         "content": content,

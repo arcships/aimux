@@ -139,10 +139,11 @@ pub(crate) fn convert_to_groq_chat_messages(
                     else {
                         continue;
                     };
+                    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": aimux_provider_utils::tool_result_to_content(output, warnings),
+                        "content": aimux_provider_utils::tool_result_to_content(output),
                     }));
                 }
             }

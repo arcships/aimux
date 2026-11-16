@@ -236,6 +236,7 @@ fn convert_tool_output(
     output: &ToolResultOutput,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
+    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
     match output {
         ToolResultOutput::ExecutionDenied { reason, .. } => {
             Ok(json!(reason.as_deref().unwrap_or("tool execution denied")))
@@ -266,9 +267,7 @@ fn convert_tool_output(
             }
             Ok(json!(parts))
         }
-        _ => Ok(aimux_provider_utils::tool_result_to_content(
-            output, warnings,
-        )),
+        _ => Ok(aimux_provider_utils::tool_result_to_content(output)),
     }
 }
 

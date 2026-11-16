@@ -2407,6 +2407,61 @@ mod convert_to_openai_responses_input {
             );
         }
     }
+
+    /// aimux #470: `Content { is_error: Some(true) }` cannot carry `isError` on
+    /// Responses; pure-text and text+image tool results warn once per result
+    /// and emit the same wire input as `is_error: None`.
+    #[tokio::test]
+    async fn warns_once_and_keeps_wire_input_for_content_tool_result_error_flag() {
+        for (case, content) in [
+            ("text-only", json!([{ "type": "text", "text": "boom" }])),
+            (
+                "text-and-image",
+                json!([
+                    { "type": "text", "text": "screenshot" },
+                    {
+                        "type": "file",
+                        "data": { "type": "url", "url": "https://example.com/err.png" },
+                        "mediaType": "image/png",
+                    },
+                ]),
+            ),
+        ] {
+            let prompt_with_flag = |is_error: Value| {
+                json!({
+                    "prompt": [{
+                        "role": "tool",
+                        "content": [{
+                            "type": "tool-result",
+                            "toolCallId": "call_1",
+                            "toolName": "inspect",
+                            "output": {
+                                "type": "content",
+                                "value": content,
+                                "isError": is_error,
+                            },
+                        }],
+                    }],
+                    "systemMessageMode": "system",
+                    "providerOptionsName": "openai",
+                    "store": true,
+                })
+            };
+            let plain = convert(prompt_with_flag(Value::Null)).await.unwrap();
+            let flagged = convert(prompt_with_flag(json!(true))).await.unwrap();
+
+            assert_eq!(flagged.input, plain.input, "{case}");
+            assert!(flagged.input[0].get("isError").is_none(), "{case}");
+            assert_eq!(
+                flagged.warnings,
+                json!([{
+                    "type": "other",
+                    "message": "The error flag (isError) of a tool result is not representable on this provider; the result is sent as regular tool content.",
+                }]),
+                "{case}"
+            );
+        }
+    }
 }
 
 // ── Older ports (previously the inline tests of `src/openai/responses/convert.rs`) ──

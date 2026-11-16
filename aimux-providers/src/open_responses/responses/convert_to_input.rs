@@ -400,8 +400,9 @@ fn resolve_tool_result_output(
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
 ) -> Value {
+    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
     let ToolResultOutput::Content { value, .. } = output else {
-        return aimux_provider_utils::tool_result_to_content(output, warnings);
+        return aimux_provider_utils::tool_result_to_content(output);
     };
     let mut parts = Vec::new();
     for item in value {

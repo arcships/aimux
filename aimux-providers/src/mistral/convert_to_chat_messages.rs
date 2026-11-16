@@ -80,7 +80,8 @@ pub fn convert_prompt_to_mistral_messages(
                     else {
                         continue;
                     };
-                    messages.push(json!({"role":"tool", "name":tool_name, "tool_call_id":tool_call_id, "content":aimux_provider_utils::tool_result_to_content(output, warnings)}));
+                    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
+                    messages.push(json!({"role":"tool", "name":tool_name, "tool_call_id":tool_call_id, "content":aimux_provider_utils::tool_result_to_content(output)}));
                 }
             }
         }

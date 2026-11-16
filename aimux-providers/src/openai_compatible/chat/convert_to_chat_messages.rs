@@ -94,11 +94,11 @@ fn convert_message(
                 // convert-to-openai-compatible-chat-messages.ts:284-321: a
                 // `content` output is an array of content parts only when
                 // the provider supports multi-part tool content.
+                aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
                 let content = match output {
                     ToolResultOutput::Content { value, .. }
                         if spec.supports_multi_part_tool_content =>
                     {
-                        aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
                         Value::Array(
                             value
                                 .iter()
@@ -106,7 +106,7 @@ fn convert_message(
                                 .collect::<Result<_, _>>()?,
                         )
                     }
-                    output => aimux_provider_utils::tool_result_to_content(output, warnings),
+                    output => aimux_provider_utils::tool_result_to_content(output),
                 };
                 Ok(with_metadata(
                     json!({

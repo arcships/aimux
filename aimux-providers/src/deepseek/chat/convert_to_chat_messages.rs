@@ -331,10 +331,9 @@ fn convert_tool_result_content(
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
+    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
     let ToolResultOutput::Content { value, .. } = output else {
-        return Ok(aimux_provider_utils::tool_result_to_content(
-            output, warnings,
-        ));
+        return Ok(aimux_provider_utils::tool_result_to_content(output));
     };
     let is_image = |part: &ToolResultContent| {
         matches!(part, ToolResultContent::File(file)
@@ -342,9 +341,7 @@ fn convert_tool_result_content(
                 && !matches!(file.data, FileData::Text { .. }))
     };
     if !value.iter().any(is_image) {
-        return Ok(aimux_provider_utils::tool_result_to_content(
-            output, warnings,
-        ));
+        return Ok(aimux_provider_utils::tool_result_to_content(output));
     }
     let mut content = Vec::new();
     for part in value {

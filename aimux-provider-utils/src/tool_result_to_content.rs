@@ -15,11 +15,10 @@ use serde_json::{Value, json};
 /// text or error-text output, the denial reason (or `Tool call execution
 /// denied.`), or `JSON.stringify` of a JSON, error-JSON or content output.
 ///
-/// A content output's error flag has no place in that string; `warnings`
-/// receives a warning for it (see [`warn_tool_result_error_flag`]).
+/// A content output's error flag (`isError`) has no place in that string;
+/// converters that drop it should also call [`warn_tool_result_error_flag`].
 #[must_use]
-pub fn tool_result_to_content(output: &ToolResultOutput, warnings: &mut Vec<Warning>) -> Value {
-    warn_tool_result_error_flag(output, warnings);
+pub fn tool_result_to_content(output: &ToolResultOutput) -> Value {
     Value::String(match output {
         ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
             value.clone()

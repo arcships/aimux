@@ -1549,3 +1549,56 @@ fn tool_calls_replay_the_item_id() {
                  "name": "weather", "arguments": "{\"city\":\"Paris\"}" }])
     );
 }
+
+/// aimux #470: `Content { is_error: Some(true) }` cannot carry `isError` on
+/// Open Responses; pure-text and text+image tool results warn once per result
+/// and emit the same wire input as `is_error: None`.
+#[test]
+fn warns_once_and_keeps_wire_input_for_content_tool_result_error_flag() {
+    for (case, content) in [
+        ("text-only", json!([{ "type": "text", "text": "boom" }])),
+        (
+            "text-and-image",
+            json!([
+                { "type": "text", "text": "screenshot" },
+                {
+                    "type": "file",
+                    "data": { "type": "url", "url": "https://example.com/err.png" },
+                    "mediaType": "image/png",
+                },
+            ]),
+        ),
+    ] {
+        let make_prompt = |is_error: Value| {
+            prompt(json!([{
+                "role": "tool",
+                "content": [{
+                    "type": "tool-result",
+                    "toolCallId": "call_1",
+                    "toolName": "inspect",
+                    "output": {
+                        "type": "content",
+                        "value": content,
+                        "isError": is_error,
+                    },
+                }],
+            }]))
+        };
+        let (plain_input, _, plain_warnings) =
+            convert_to_open_responses_input(&make_prompt(Value::Null));
+        let (flagged_input, _, flagged_warnings) =
+            convert_to_open_responses_input(&make_prompt(json!(true)));
+
+        assert!(plain_warnings.is_empty(), "{case}");
+        assert_eq!(flagged_input, plain_input, "{case}");
+        assert!(flagged_input[0].get("isError").is_none(), "{case}");
+        assert_eq!(
+            json!(flagged_warnings),
+            json!([{
+                "type": "other",
+                "message": "The error flag (isError) of a tool result is not representable on this provider; the result is sent as regular tool content.",
+            }]),
+            "{case}"
+        );
+    }
+}

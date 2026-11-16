@@ -10,6 +10,7 @@ use aimux_core::shared::{FileData, SharedProviderOptions};
 use aimux_core::types::Warning;
 use aimux_provider_utils::{
     get_top_level_media_type, resolve_full_media_type, tool_result_to_content,
+    warn_tool_result_error_flag,
 };
 use serde_json::{Value, json};
 
@@ -208,7 +209,8 @@ fn convert_message_to_openai(
                 .iter()
                 .filter_map(|part| {
                     let ToolPart::ToolResult(result) = part else { return None; };
-                    let mut content = tool_result_to_content(&result.output, warnings);
+                    warn_tool_result_error_flag(&result.output, warnings);
+                    let mut content = tool_result_to_content(&result.output);
                     let breakpoint = tool_result_cache_breakpoint(&result.output).or_else(|| get_prompt_cache_breakpoint(&result.provider_options));
                     if let Some(breakpoint) = breakpoint {
                         content = json!([{ "type": "text", "text": content, "prompt_cache_breakpoint": breakpoint }]);

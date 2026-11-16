@@ -17,17 +17,11 @@ fn output(value: Value) -> ToolResultOutput {
 #[test]
 fn sends_text_outputs_as_is() {
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "text", "value": "sunny" })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(json!({ "type": "text", "value": "sunny" }))),
         json!("sunny")
     );
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "error-text", "value": "failed" })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(json!({ "type": "error-text", "value": "failed" }))),
         json!("failed")
     );
 }
@@ -36,17 +30,13 @@ fn sends_text_outputs_as_is() {
 #[test]
 fn sends_the_denial_reason_or_the_default_text() {
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "execution-denied", "reason": "not allowed" })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(
+            json!({ "type": "execution-denied", "reason": "not allowed" })
+        )),
         json!("not allowed")
     );
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "execution-denied" })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(json!({ "type": "execution-denied" }))),
         json!("Tool call execution denied.")
     );
 }
@@ -55,17 +45,15 @@ fn sends_the_denial_reason_or_the_default_text() {
 #[test]
 fn stringifies_json_outputs() {
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "json", "value": { "temperature": 21 } })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(
+            json!({ "type": "json", "value": { "temperature": 21 } })
+        )),
         json!(r#"{"temperature":21}"#)
     );
     assert_eq!(
-        tool_result_to_content(
-            &output(json!({ "type": "error-json", "value": { "error": "timeout" } })),
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&output(
+            json!({ "type": "error-json", "value": { "error": "timeout" } })
+        )),
         json!(r#"{"error":"timeout"}"#)
     );
 }
@@ -118,13 +106,10 @@ fn stringifies_content_parts_as_upstream_serializes_them() {
     ]);
     assert_eq!(tool_result_content_value(&content), expected);
     assert_eq!(
-        tool_result_to_content(
-            &ToolResultOutput::Content {
-                value: content,
-                is_error: None,
-            },
-            &mut Vec::new()
-        ),
+        tool_result_to_content(&ToolResultOutput::Content {
+            value: content,
+            is_error: None,
+        }),
         json!(expected.to_string())
     );
 }
@@ -141,8 +126,9 @@ fn warns_once_about_an_error_flag_it_cannot_send() {
         is_error: Some(true),
     };
     let mut warnings = Vec::new();
+    warn_tool_result_error_flag(&failed, &mut warnings);
     assert_eq!(
-        tool_result_to_content(&failed, &mut warnings),
+        tool_result_to_content(&failed),
         json!(r#"[{"type":"text","text":"boom"}]"#)
     );
     assert_eq!(warnings.len(), 1);
@@ -160,6 +146,13 @@ fn warns_once_about_an_error_flag_it_cannot_send() {
         &ToolResultOutput::Content {
             value: Vec::new(),
             is_error: Some(false),
+        },
+        &mut warnings,
+    );
+    warn_tool_result_error_flag(
+        &ToolResultOutput::Content {
+            value: Vec::new(),
+            is_error: None,
         },
         &mut warnings,
     );
