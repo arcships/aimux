@@ -57,7 +57,7 @@ use crate::openai::language_model_capabilities::{
 };
 use crate::openai::responses::convert_responses_usage::{convert_responses_usage, parse_usage};
 use crate::openai::responses::convert_to_responses_input::{
-    apply_file_id_prefixes, convert_responses_input_with_conversation,
+    EffortUpdateCheck, apply_file_id_prefixes, convert_responses_input_with_conversation,
 };
 use crate::openai::responses::map_responses_finish_reason::map_responses_finish_reason;
 use crate::openai::responses::responses_api::ResponsesUsage;
@@ -131,43 +131,14 @@ impl OpenAIResponsesModel {
             .and_then(|v| v.get("passThroughUnsupportedFiles"))
             .and_then(Value::as_bool)
             == Some(true);
-        let caps =
-            crate::openai::language_model_capabilities::get_model_capabilities(&self.model_id);
         profile
             .namespace
             .validate(options.provider_options.as_ref())?;
-        let provider_options = options
-            .provider_options
-            .as_ref()
-            .and_then(|v| profile.namespace.find_in(v));
-        let update_incompatible = provider_options.is_some_and(|v| {
-            v.get("reasoningMode") == Some(&serde_json::json!("pro"))
-                || v.get("contextManagement").is_some()
-                || v.get("truncation") == Some(&serde_json::json!("auto"))
-        });
         for message in &options.prompt {
             use aimux_core::language_model_message::{
                 AssistantPart, LanguageModelMessage, UserPart,
             };
             use aimux_core::shared::FileData;
-            if let LanguageModelMessage::System {
-                content,
-                provider_options,
-            } = message
-                && let Some(effort) = profile
-                    .namespace
-                    .system_message_effort_update(provider_options.as_ref())?
-                && (!content.is_empty()
-                    || !caps.supports_configuration_update
-                    || update_incompatible
-                    || caps
-                        .supported_reasoning_efforts
-                        .is_some_and(|values| !values.contains(&effort)))
-            {
-                return Err(AiMuxError::UnsupportedFunctionality(
-                    "Message-level reasoningEffortUpdate".into(),
-                ));
-            }
             let (files, user) = match message {
                 LanguageModelMessage::User { content, .. } => (
                     content
@@ -873,6 +844,7 @@ fn apply_responses_reasoning_block(
 ///
 /// # Errors
 /// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// or `openaiResponsesSystemMessageOptionsSchema`
 /// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
 /// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body(
@@ -888,6 +860,7 @@ pub fn build_responses_request_body(
 ///
 /// # Errors
 /// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// or `openaiResponsesSystemMessageOptionsSchema`
 /// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
 /// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body_for(
@@ -950,6 +923,10 @@ fn build_validated_request_body(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
+    let update_incompatible = openai_option(ns, provider_opts, "reasoningMode")
+        == Some(json!("pro"))
+        || openai_option(ns, provider_opts, "contextManagement").is_some()
+        || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"));
     let mut input_result = convert_responses_input_with_conversation(
         ns,
         &options.prompt,
@@ -958,16 +935,17 @@ fn build_validated_request_body(
         has_previous_response_id,
         openai_option(ns, provider_opts, "conversation").is_some(),
         options.tools.as_deref(),
+        Some(EffortUpdateCheck {
+            caps: &caps,
+            incompatible: update_incompatible,
+        }),
     )?;
     if let Some(effort) = openai_option(ns, provider_opts, "reasoningEffortUpdate")
         .and_then(|v| v.as_str().map(str::to_owned))
     {
         let reason = if !caps.supports_configuration_update {
             Some("reasoningEffortUpdate is only supported by GPT-6 and later models".to_string())
-        } else if openai_option(ns, provider_opts, "reasoningMode") == Some(json!("pro"))
-            || openai_option(ns, provider_opts, "contextManagement").is_some()
-            || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
-        {
+        } else if update_incompatible {
             Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
         } else {
             caps.supported_reasoning_efforts

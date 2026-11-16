@@ -14571,7 +14571,11 @@ mod older_upstream_e2e {
 /// sent; a `.nullish()` key reads `null` as absent.
 mod provider_options_schema {
     use super::*;
-    use crate::openai::responses::{ResponsesNamespace, build_responses_request_body_for};
+    use crate::openai::language_model_capabilities::SystemMessageMode;
+    use crate::openai::responses::{
+        ResponsesNamespace, build_responses_request_body, build_responses_request_body_for,
+        convert_to_responses_input,
+    };
 
     fn assert_invalid(error: &AiMuxError, namespace: &str, case: &Value) {
         let AiMuxError::InvalidArgument { message, cause } = error else {
@@ -14718,5 +14722,73 @@ mod provider_options_schema {
         }));
         build_responses_request_body_for(azure, "gpt-5", &options, false)
             .expect("only azure is parsed");
+    }
+
+    #[test]
+    fn public_builders_and_input_converter_reject_invalid_system_message_options() {
+        let azure = ResponsesNamespace::new(&["azure", "openai"], "azure");
+        for effort in [json!("minimal"), json!(1), json!(null)] {
+            let options = generate_call_options(json!({
+                "prompt": [
+                    {
+                        "role": "system",
+                        "content": "",
+                        "providerOptions": { "openai": { "reasoningEffortUpdate": effort } },
+                    },
+                    {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": "Hello" }],
+                    },
+                ],
+            }));
+
+            let Err(err) = build_responses_request_body("gpt-6-astra", &options, false) else {
+                panic!("build_responses_request_body should reject {effort}");
+            };
+            assert_invalid(&err, "openai", &effort);
+
+            let Err(err) = build_responses_request_body_for(
+                ResponsesNamespace::OPENAI,
+                "gpt-6-astra",
+                &options,
+                false,
+            ) else {
+                panic!("build_responses_request_body_for(openai) should reject {effort}");
+            };
+            assert_invalid(&err, "openai", &effort);
+
+            let Err(err) = build_responses_request_body_for(azure, "gpt-6-astra", &options, false)
+            else {
+                panic!("build_responses_request_body_for(azure->openai) should reject {effort}");
+            };
+            assert_invalid(&err, "openai", &effort);
+
+            let Err(err) = convert_to_responses_input(
+                ResponsesNamespace::OPENAI,
+                &options.prompt,
+                SystemMessageMode::Developer,
+                true,
+                false,
+            ) else {
+                panic!("convert_to_responses_input should reject {effort}");
+            };
+            assert_invalid(&err, "openai", &effort);
+
+            let azure_options = generate_call_options(json!({
+                "prompt": [
+                    {
+                        "role": "system",
+                        "content": "",
+                        "providerOptions": { "azure": { "reasoningEffortUpdate": effort } },
+                    },
+                ],
+            }));
+            let Err(err) =
+                build_responses_request_body_for(azure, "gpt-6-astra", &azure_options, false)
+            else {
+                panic!("build_responses_request_body_for(azure) should reject {effort}");
+            };
+            assert_invalid(&err, "azure", &effort);
+        }
     }
 }
