@@ -854,8 +854,72 @@ mod strict_content_block_layout {
                 "tool call with end_turn",
                 vec![tool_start(), tool_input(), stop(0), end("end_turn")],
             ),
+            (
+                "null toolUse delta alone",
+                vec![
+                    delta(0, json!({ "toolUse": null })),
+                    stop(0),
+                    end("end_turn"),
+                ],
+            ),
         ] {
             assert!(fails(frames).await, "{case}");
+        }
+    }
+
+    /// Extra `toolUse` members (`null` or another shape) beside a valid union
+    /// member are ignored in strict mode too, so a text block streams `"foo"`
+    /// cleanly without firing the missing-`toolUse`-start guard.
+    #[tokio::test]
+    async fn ignores_extra_tool_use_members_on_a_strict_text_block() {
+        let mut options = test_options();
+        options.strict_stream = Some(true);
+        for extra_tool_use in [Value::Null, json!(5), json!({})] {
+            let frames = vec![
+                delta(0, json!({ "text": "foo", "toolUse": extra_tool_use })),
+                stop(0),
+                end("end_turn"),
+            ];
+            let items: Vec<_> = model_streaming("anthropic.test", &frames)
+                .do_stream(&options)
+                .await
+                .expect("stream starts")
+                .stream
+                .collect()
+                .await;
+            assert!(
+                !items.iter().any(Result::is_err),
+                "{extra_tool_use}: {items:?}"
+            );
+            assert!(
+                items.iter().any(
+                    |item| matches!(item, Ok(StreamPart::TextDelta { delta, .. }) if delta == "foo")
+                ),
+                "{extra_tool_use}: {items:?}"
+            );
+            assert!(
+                !items.iter().any(|item| matches!(
+                    item,
+                    Ok(StreamPart::ToolInputStart { .. }
+                        | StreamPart::ToolInputDelta { .. }
+                        | StreamPart::ToolInputEnd { .. }
+                        | StreamPart::ToolCall(_))
+                )),
+                "{extra_tool_use}: {items:?}"
+            );
+            assert!(
+                matches!(
+                    items.last(),
+                    Some(Ok(StreamPart::Finish {
+                        finish_reason: aimux_core::types::FinishReason {
+                            unified: aimux_core::types::FinishReasonUnified::Stop,
+                            ..
+                        },
+                        ..
+                    }))
+                ),
+                "{extra_tool_use}: {items:?}"
+            );
         }
     }
 }
