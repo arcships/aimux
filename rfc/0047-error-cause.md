@@ -1,12 +1,12 @@
 # RFC-0047：错误体系与错误原因（cause）
 
-> **Status**: Draft
+> **Status**: Implemented (0.6.0)。§12 的三个 PR（#289、#290、#293）均已合并，随 0.6.0 发布（CHANGELOG “Errors keep their cause”）；跟踪 issue #327。§10 问题 1、4、5 仍待定。
 >
 > **Date**: 2026-10-19
 >
-> **Scope**: `AiMuxError` 的结构与 `cause`、传输层错误链、ops 错误信封的四个域、#268 生成的错误 DTO、各语言绑定的原生错误、录制里的错误。不改错误名称、错误码、消息文字和 C ABI 函数。
+> **Scope**: `AiMuxError` 的结构与 `cause`、传输层错误链、ops 错误信封的四个域、#268 生成的错误 DTO、各语言绑定的原生错误、录制里的错误。不改错误名称、错误码和 C ABI 函数；消息文字除去掉 URL（§1.10）外不变。
 >
-> **Baseline**: `master@42208472413a9b157428924e3f4785bb009bc27f`（#268 合并后，DTO 由生成器生成，ts-rs 已删除）。
+> **Baseline**: 设计基线 `master@42208472413a9b157428924e3f4785bb009bc27f`（#268 合并后，DTO 由生成器生成，ts-rs 已删除）。实现状态按 `master@c5a408370` 核对；§2 描述的是设计基线上的代码，不是现状。
 >
 > **Related**: [RFC-0039](0039-ops-bindings-contract.md) §6 错误信封、[RFC-0042](0042-v4-type-boundaries.md) 错误联合归属、RFC-0044（#279）共享错误枚举的归属、RFC-0048（#325）录制 schema 3、#349（信封去掉 `retryAfterMs`）、`docs/error-model.md`、`docs/ai-sdk-request-pipeline.md` §3、#268、#280（本 RFC 的原型实现，拆分后关闭）。
 >
@@ -18,7 +18,7 @@
 2. **AI SDK 哪个错误类接受 `cause`，aimux 对应的变体就有 `cause`，其他变体没有。** 底层错误在构造处手上有的，必须传进去；不得再 `format!` 进消息后丢掉对象。
 3. **一个 cause 只有两种：** 嵌套的 `AiMuxError`（原样保留，带自己的 `name`），或 `SourceError { message, cause? }`（OS、TLS、JSON 解析器等外部错误沿 `source()` 一层层抄下来）。
 4. **Rust 里 cause 就是 `Error::source()`。** 继续用 thiserror，`cause` 字段标 `#[source]`；只有算出来的 source 才手写：`RetryError` 的 source 是最后一次尝试（AI SDK 的 `lastError`），`ApiCallError` 的 source 是它的 `cause`。
-5. **消息文字不变，仍包含底层错误的文字。** C ABI 的 `aimux_error_message` 和只打印消息的调用方只看得到这一行，不能因为有了 cause 就把文字去掉。
+5. **消息仍包含底层错误的文字；除传输错误去掉的 URL（第 10 条）外，文字不变。** 例如 reqwest 的 `error sending request for url (…)` 现在是 `error sending request`（CHANGELOG 0.6.0）。 C ABI 的 `aimux_error_message` 和只打印消息的调用方只看得到这一行，不能因为有了 cause 就把文字去掉。
 6. **ops 四个域用同一个 `cause` 形状。** `aimux` 域就是 `AiMuxError` 的 cause；`recording`、`binding`、`protocol` 域有底层错误时（I/O、serde）也放进 `cause`，没有就不放。各语言只有一条解码路径：读 `error.cause`。
 7. **C ABI 不加函数。** cause 只在 `aimux_error_json` 返回的 JSON 里；代码、消息、JSON 三个 getter 保持冻结。
 8. **DTO 由 #268 的生成器从 Rust 类型生成。** `ErrorCause`、`SourceError` 是普通的 schemars 类型，生成器按“先 `AiMuxError`、后 `SourceError`”的有序无标签联合生成；Python 的嵌套错误投影把 `cause` 加进每个带 cause 的变体。
@@ -26,7 +26,9 @@
 10. **传输错误先去掉 URL。** URL 的 query 里可能有 API key；cause 链和消息都不得带它。
 11. **实现分三个 PR，基于 #268 合并后的 master，用它的生成器。** 每个 PR 带自己的测试，单独过 CI。
 
-## 2. 现状和问题
+## 2. 实现前的现状和问题（历史）
+
+> 本节记录设计基线 `42208472` 上的代码，作为改动的理由保留。其中的 `✗` 已由 #289（§2.1–§2.5）、#290（§2.6、§2.7）、#293（§2.8）全部修复，改后的结构见 §4–§7。文中的文件行号是基线上的行号，与现在的代码对不上。
 
 ### 2.0 现在错误怎么走
 
@@ -224,11 +226,11 @@ aimux_error_json                           aimux-ffi/src/abi.rs:380   各语言�
 | 形态 | 一组 JS 类，`isInstance` 判断 | 一个封闭的 Rust 枚举 `AiMuxError`，JSON 以 `name` 区分变体（名字与 AI SDK 相同） | 要 `Clone`、`Serialize`，要跨 C ABI |
 | 错误名 | `AI_APICallError` 等 | 相同；未知名字在绑定里保留为 Unknown | 跨语言判断只能靠名字 |
 | 可否重试 | `isRetryable` 属性 | 同名字段，存在 `ApiCallError` 上 | 一致 |
-| 重试提示 | 每次从响应头算 | 信封顶层 `retryAfterMs`，在 ops 边界按一次时钟算一次 | RFC-0039 §6，避免各绑定各算一遍 |
+| 重试提示 | 每次从响应头算 | 不进信封（#349 已去掉 `retryAfterMs`）；调用方读 `ApiCallError.responseHeaders`，Rust 里可用 `retry_after_ms_from_headers` | 信封只有 `{kind, code, message, error}`，见 §11.1 |
 | 消息 | 只有自身消息 | `Display` 带前缀（`API call error: …`），并包含底层错误文字 | C ABI 只暴露消息一行 |
 | `cause` | `unknown`，任意对象 | 嵌套 `AiMuxError` 或 `SourceError` 链 | 原始 Rust 错误对象不能克隆、序列化、跨语言 |
 | 哪些错误有 `cause` | 构造参数接受 `cause` 的类 | 对应变体（见 §4.2） | 对齐 |
-| 错误上下文 | 原样带请求上下文 | 白名单、脱敏、大小上限；传输错误去 URL | 错误会进录制、跨 FFI |
+| 错误上下文 | 原样带请求上下文 | 白名单、脱敏；传输错误去 URL；大小上限待定（§10 问题 5） | 错误会进录制、跨 FFI |
 | 错误域 | 只有 SDK 错误 | ops 信封分 `aimux`、`recording`、`binding`、`protocol` 四个域，各有错误码区间 | RFC-0039 §6 |
 | 没有的类型 | `GatewayError`、`StreamProviderError` 等 | 不加；流中错误帧映射为 `ApiCallError` | 已登记 |
 
@@ -286,7 +288,7 @@ JSON 形状：
 | `ApiCall` | `APICallError` | 可选（`ApiCallError.cause`，`.caused_by(..)`） |
 | `JsonParse` | `JSONParseError` | 可选 |
 | `InvalidResponseData` | `InvalidResponseDataError`；结构化输出不合 schema 时对应 `NoObjectGeneratedError` | 可选（不合 schema 时是 `TypeValidation`） |
-| `TypeValidation`（新增） | `TypeValidationError`，带 `value` | 可选（校验器错误）；只作为 cause 出现，ops 错误码与 `InvalidResponseData` 共用 3 |
+| `TypeValidation`（新增） | `TypeValidationError`，带 `value` | 可选（校验器错误）；通常作为 cause 出现，ops 错误码与 `InvalidResponseData` 共用 3。例外：OpenAI Responses 流的数据块不合 schema 时，它直接作为 `StreamPart::Error` 的错误（`openai/responses/responses_language_model.rs`），与上游一致 |
 | `InvalidArgument` | `InvalidArgumentError` | 可选 |
 | `InvalidPrompt` | `InvalidPromptError` | 可选 |
 | `NoOutputGenerated` | `NoOutputGeneratedError` | 可选 |
@@ -356,6 +358,8 @@ aimux_error_json                           aimux-ffi/src/abi.rs:380   不变，J
 ### 5.4 重试提示
 
 `retryAfterMs` 仍只在顶层是 `ApiCall` 时给出。cause 里嵌套的 `ApiCall` 不产生顶层提示：调用方要重试的是外层错误。
+
+> 已被 #349 取代：信封里不再有 `retryAfterMs`（见 §11.1）。cause 里嵌套的 `ApiCall` 同样不作为重试依据，调用方看外层错误。
 
 ## 6. DTO（#268 生成器）
 
@@ -431,7 +435,7 @@ RFC-0048 的回放引擎把录下的传输终态映射回 `FetchError`，并用 
 
 不只是新增可选字段，下面每一条都写入 CHANGELOG 的 Breaking：
 
-- **错误名、错误码不变。** 新增 `AI_TypeValidationError`，与 `InvalidResponseData` 共用错误码 3，只作为 cause 出现。
+- **错误名、错误码不变。** 新增 `AI_TypeValidationError`，与 `InvalidResponseData` 共用错误码 3，通常作为 cause 出现（例外见 §4.2）。
 - **消息文字**：只有传输和下载错误变化，reqwest 原来的 `for url (…)` 不再出现（§9）。只按消息匹配的调用方要改。
 - **wire JSON 的形状变化**：
   - `InvalidToolInput.cause` 从字符串变为错误对象（`AI_JSONParseError` 或 `AI_TypeValidationError`），按字符串读它的代码要改。
