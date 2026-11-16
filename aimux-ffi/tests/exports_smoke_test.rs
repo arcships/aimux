@@ -23,26 +23,94 @@ const PRIMITIVES: &[&str] = &[
     "aimux_handle_finalizer",
 ];
 
+fn collect_build_dir_cdylibs(dir: &Path, name: &str, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let candidate = entry.path().join("out").join(name);
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+}
+
+fn push_profile_candidates(profile: &Path, name: &str, out: &mut Vec<PathBuf>) {
+    let direct = profile.join(name);
+    if direct.is_file() {
+        out.push(direct);
+    }
+    // Cargo 1.100+ writes `cargo test` cdylib artifacts inside `<profile>/build/aimux-ffi/<hash>/out/`.
+    collect_build_dir_cdylibs(&profile.join("build").join("aimux-ffi"), name, out);
+}
+
+fn profile_dir(executable: &Path) -> Option<&Path> {
+    let exe_dir = executable.parent()?;
+    if exe_dir.file_name() == Some(std::ffi::OsStr::new("deps")) {
+        return exe_dir.parent();
+    }
+    // Cargo 1.100+ places test executables under `<profile>/build/<pkg>/<hash>/out/`.
+    for ancestor in exe_dir.ancestors() {
+        if ancestor.file_name() == Some(std::ffi::OsStr::new("build")) {
+            return ancestor.parent();
+        }
+    }
+    exe_dir.parent()
+}
+
 fn library() -> PathBuf {
     if let Some(path) = std::env::var_os("AIMUX_FFI_LIBRARY") {
         return path.into();
     }
     let executable = std::env::current_exe().expect("test executable path");
-    let profile = executable
-        .parent()
-        .and_then(Path::parent)
-        .expect("test executable must be in the profile's deps directory");
     let name = format!(
         "{}aimux_ffi{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
     );
-    let dependency = executable.parent().unwrap().join(&name);
-    if dependency.exists() {
-        dependency
-    } else {
-        profile.join(name)
+    let mut candidates = Vec::new();
+    if let Some(exe_dir) = executable.parent() {
+        let dependency = exe_dir.join(&name);
+        if dependency.is_file() {
+            candidates.push(dependency);
+        }
     }
+
+    let profile =
+        profile_dir(&executable).expect("test executable must be under a Cargo profile directory");
+    push_profile_candidates(profile, &name, &mut candidates);
+
+    // When Cargo redirects intermediate artifacts via `build.build-dir`, final
+    // cdylib artifacts still land under `CARGO_TARGET_DIR` (or `<workspace>/target`).
+    if let Some(profile_name) = profile.file_name() {
+        let maybe_triple = profile.parent().and_then(Path::file_name);
+        let target_root = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .map(|root| root.join("target"))
+            });
+        if let Some(root) = target_root {
+            if let Some(triple) = maybe_triple {
+                push_profile_candidates(
+                    &root.join(triple).join(profile_name),
+                    &name,
+                    &mut candidates,
+                );
+            }
+            push_profile_candidates(&root.join(profile_name), &name, &mut candidates);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .max_by_key(|path| {
+            path.metadata()
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        })
+        .unwrap_or_else(|| profile.join(name))
 }
 
 #[test]
