@@ -356,6 +356,7 @@ fn build_anthropic_aws(
     };
     let headers = (!settings.headers.is_empty()).then(|| settings.headers.clone());
     Ok(Arc::new(crate::anthropic_aws::create_anthropic_aws(
+        #[allow(clippy::needless_update)]
         crate::anthropic_aws::AnthropicAwsProviderSettings {
             base_url: settings.base_url.clone(),
             region: settings.region.clone(),
@@ -398,6 +399,7 @@ fn build_codex(
     };
     let headers = (!settings.headers.is_empty()).then(|| settings.headers.clone());
     Ok(Arc::new(crate::codex::create_codex(
+        #[allow(clippy::needless_update)]
         crate::codex::CodexProviderSettings {
             mode,
             base_url: settings.base_url.clone(),
@@ -500,6 +502,7 @@ fn build_native_provider(
         "anthropic_aws" => build_anthropic_aws(settings, policy, fetch),
         "codex" => build_codex(settings, policy, fetch),
         "openai" => Ok(Arc::new(crate::openai::create_openai(
+            #[allow(clippy::needless_update)]
             crate::openai::OpenAIProviderSettings {
                 base_url,
                 api_key,
@@ -512,6 +515,7 @@ fn build_native_provider(
             },
         )?)),
         "anthropic" => Ok(Arc::new(crate::anthropic::create_anthropic(
+            #[allow(clippy::needless_update)]
             crate::anthropic::AnthropicProviderSettings {
                 base_url,
                 api_key,
@@ -537,6 +541,7 @@ fn build_native_provider(
             },
         )?)),
         "amazon_bedrock" => Ok(Arc::new(crate::bedrock::create_amazon_bedrock(
+            #[allow(clippy::needless_update)]
             crate::bedrock::AmazonBedrockProviderSettings {
                 region: settings.region.clone(),
                 api_key: api_key.map(Resolvable::Value),
@@ -550,6 +555,7 @@ fn build_native_provider(
             },
         )?)),
         "aws_polly" => Ok(Arc::new(crate::aws_polly::create_aws_polly(
+            #[allow(clippy::needless_update)]
             crate::aws_polly::AwsPollyProviderSettings {
                 region: settings.region.clone(),
                 access_key_id: resolve_opt_cred(settings.access_key_id.as_ref(), policy)?,
@@ -584,6 +590,7 @@ fn build_native_provider(
             },
         )?)),
         "google_vertex" => Ok(Arc::new(crate::vertex::create_google_vertex(
+            #[allow(clippy::needless_update)]
             crate::vertex::VertexProviderSettings {
                 api_key: api_key.map(Resolvable::Value),
                 location: settings.location.clone(),
@@ -688,6 +695,7 @@ fn build_provider_with_key_and_fetch(
                 .then(|| spec.settings.query_params.clone());
             Ok(Arc::new(
                 crate::openai_compatible::create_openai_compatible(
+                    #[allow(clippy::needless_update)]
                     crate::openai_compatible::OpenAICompatibleProviderSettings {
                         name,
                         base_url,
