@@ -61,8 +61,13 @@ cd "$REPO"
 
 # ── generated contracts ────────────────────────────────────────────────────
 if want codegen; then
-  section "codegen: generated files + manifest digest"
-  if cargo run -p aimux-codegen -- --check; then
+  section "codegen: generated files, registry sync & manifest digest"
+  if python3 scripts/tests/test_sync_registry.py \
+     && python3 scripts/tests/test_probe_registry.py \
+     && python3 scripts/sync_registry.py --check --source models-dev --snapshot registry/models_dev_snapshot.json \
+     && python3 scripts/gen_providers_doc.py --check \
+     && bash scripts/check_provider_boundaries.sh \
+     && cargo run -p aimux-codegen -- --check; then
     pass "codegen"
   else
     fail "codegen"

@@ -1,0 +1,727 @@
+{
+  "schema_version": 1,
+  "overrides": [
+    {
+      "id": "ai21",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.ai21.ai/v1",
+      "upstream_value": "https://api.ai21.com/studio/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "ai302",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "AI302_API_KEY",
+      "upstream_value": [
+        "302AI_API_KEY"
+      ],
+      "reason": "Upstream 302AI_API_KEY starts with a digit and violates preset.rs ^[A-Z][A-Z0-9_]*$ rule; retain AI302_API_KEY."
+    },
+    {
+      "id": "aiml",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "AIML_API_KEY",
+      "upstream_value": [
+        "AIMLAPI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (AIML_API_KEY) rather than upstream ['AIMLAPI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "alibaba",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "ALIBABA_API_KEY",
+      "upstream_value": [
+        "DASHSCOPE_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (ALIBABA_API_KEY) rather than upstream ['DASHSCOPE_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "anyapi",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "ANYAPI_KEY",
+      "upstream_value": [
+        "ANYAPI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (ANYAPI_KEY) rather than upstream ['ANYAPI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "bigmodel",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "BIGMODEL_API_KEY",
+      "upstream_value": [
+        "ZHIPU_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (BIGMODEL_API_KEY) rather than upstream ['ZHIPU_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "byteplus",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://ark.bytepluses.com/api/v3",
+      "upstream_value": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "clarifai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "CLARIFAI_API_KEY",
+      "upstream_value": [
+        "CLARIFAI_PAT"
+      ],
+      "reason": "Retains established aimux public env_var contract (CLARIFAI_API_KEY) rather than upstream ['CLARIFAI_PAT'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "claudinio",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.claudin.io",
+      "upstream_value": "https://api.claudin.io/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "cline_pass",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.cline.bot/v1",
+      "upstream_value": "https://api.cline.bot/api/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "cloudferro_sherlock",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api-sherlock.cloudferro.com/openai/v1",
+      "upstream_value": "https://api-sherlock.cloudferro.com/openai/v1/",
+      "reason": "Retains existing no-trailing-slash convention pending #171 endpoint verification."
+    },
+    {
+      "id": "commandcode",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.commandcode.com/v1",
+      "upstream_value": "https://api.commandcode.ai/provider/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "commandcode",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "COMMANDCODE_API_KEY",
+      "upstream_value": [
+        "CMD_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (COMMANDCODE_API_KEY) rather than upstream ['CMD_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "copilot",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "COPILOT_API_KEY",
+      "upstream_value": [
+        "GITHUB_TOKEN"
+      ],
+      "reason": "Retains established aimux public env_var contract (COPILOT_API_KEY) rather than upstream ['GITHUB_TOKEN'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "cortecs",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.cortecs.ai/v1/",
+      "upstream_value": "https://api.cortecs.ai/v1",
+      "reason": "Retains existing slash convention pending #171 endpoint verification."
+    },
+    {
+      "id": "databricks",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "DATABRICKS_API_KEY",
+      "upstream_value": [
+        "DATABRICKS_TOKEN"
+      ],
+      "reason": "Retains established aimux public env_var contract (DATABRICKS_API_KEY) rather than upstream ['DATABRICKS_TOKEN'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "digitalocean",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://inference.do-ai.run",
+      "upstream_value": "https://inference.do-ai.run/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "fastrouter",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.fastrouter.ai/v1",
+      "upstream_value": "https://go.fastrouter.ai/api/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "fireworks",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.fireworks.ai/inference/v1",
+      "upstream_value": "https://api.fireworks.ai/inference/v1/",
+      "reason": "Pinned by fireworks_test.rs without trailing slash; semantically equivalent path."
+    },
+    {
+      "id": "freemodel",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.freemodel.dev/v1",
+      "upstream_value": "https://cc.freemodel.dev/v1",
+      "reason": "Upstream models.dev targets @ai-sdk/anthropic; aimux preset keeps OpenAI-compatible base URL."
+    },
+    {
+      "id": "friendliai",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://inference.friendli.ai/v1",
+      "upstream_value": "https://api.friendli.ai/serverless/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "friendliai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "FRIENDLIAI_API_KEY",
+      "upstream_value": [
+        "FRIENDLI_TOKEN"
+      ],
+      "reason": "Retains established aimux public env_var contract (FRIENDLIAI_API_KEY) rather than upstream ['FRIENDLI_TOKEN'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "gmicloud",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "GMI_API_KEY",
+      "upstream_value": [
+        "GMICLOUD_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (GMI_API_KEY) rather than upstream ['GMICLOUD_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "helicone",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.helicone.ai/v1",
+      "upstream_value": "https://ai-gateway.helicone.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "hetzner",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://inference.hetzner.com/api/v1",
+      "upstream_value": "https://inference.hetzner.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "hetzner",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "HETZNER_VLLM_API_KEY",
+      "upstream_value": [
+        "HETZNER_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (HETZNER_VLLM_API_KEY) rather than upstream ['HETZNER_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "hpc_ai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "INFERENCE_API_KEY",
+      "upstream_value": [
+        "HPC_AI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (INFERENCE_API_KEY) rather than upstream ['HPC_AI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "inception",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.inceptionlabs.ai/v1",
+      "upstream_value": "https://api.inceptionlabs.ai/v1/",
+      "reason": "Retains existing no-trailing-slash convention pending #171 endpoint verification."
+    },
+    {
+      "id": "inference_net",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.inference.net/v1",
+      "upstream_value": "https://inference.net/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "inference_net",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "INFERENCE_NET_API_KEY",
+      "upstream_value": [
+        "INFERENCE_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (INFERENCE_NET_API_KEY) rather than upstream ['INFERENCE_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "inferx",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://model.inferx.net/v1",
+      "upstream_value": "https://model.inferx.net/endpoints/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "jiekou",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.highwayapi.ai/openai",
+      "upstream_value": "https://api.jiekou.ai/openai",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "kilo",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.kilo.ai/v1",
+      "upstream_value": "https://api.kilo.ai/api/gateway",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "llmgateway",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "LLM_GATEWAY_API_KEY",
+      "upstream_value": [
+        "LLMGATEWAY_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (LLM_GATEWAY_API_KEY) rather than upstream ['LLMGATEWAY_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "lmstudio",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": null,
+      "upstream_value": [
+        "LMSTUDIO_API_KEY"
+      ],
+      "reason": "LM Studio is auth:'none' keyless local server preset in aimux (presets_test coverage); upstream lists optional LMSTUDIO_API_KEY."
+    },
+    {
+      "id": "longcat",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.longcat.chat/v1",
+      "upstream_value": "https://api.longcat.chat/openai",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "lynkr",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "http://localhost:8081/v1",
+      "upstream_value": "http://127.0.0.1:8081/v1",
+      "reason": "Uses localhost:8081 local server convention (upstream uses 127.0.0.1:8081)."
+    },
+    {
+      "id": "merge_gateway",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api-gateway.merge.dev/v1/openai",
+      "upstream_value": "https://api-gateway.merge.dev/v1/ai-sdk",
+      "reason": "Retains OpenAI-compatible /v1/openai gateway path (upstream points to /v1/ai-sdk)."
+    },
+    {
+      "id": "meta",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MODEL_API_KEY",
+      "upstream_value": [
+        "META_MODEL_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (MODEL_API_KEY) rather than upstream ['META_MODEL_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "mimo",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MIMO_API_KEY",
+      "upstream_value": [
+        "XIAOMI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (MIMO_API_KEY) rather than upstream ['XIAOMI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "minimax",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.minimax.io/v1",
+      "upstream_value": "https://api.minimax.io/anthropic/v1",
+      "reason": "Upstream models.dev targets @ai-sdk/anthropic; aimux preset keeps OpenAI-compatible base URL."
+    },
+    {
+      "id": "minimax_cn",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.minimaxi.com/v1",
+      "upstream_value": "https://api.minimax.cn/anthropic/v1",
+      "reason": "Upstream models.dev targets @ai-sdk/anthropic (per catalogue.rs); aimux preset keeps OpenAI-compatible base URL."
+    },
+    {
+      "id": "minimax_cn_coding_plan",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.minimaxi.com/v1",
+      "upstream_value": "https://api.minimax.cn/anthropic/v1",
+      "reason": "Upstream models.dev targets @ai-sdk/anthropic; aimux preset keeps OpenAI-compatible base URL."
+    },
+    {
+      "id": "moark",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.moark.com/v1",
+      "upstream_value": "https://moark.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "modal",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://modal.com/v1",
+      "upstream_value": "https://inference.us-west.modal.direct/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "modal",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MODAL_API_KEY",
+      "upstream_value": [
+        "MODAL_PROXY_TOKEN"
+      ],
+      "reason": "Retains established aimux public env_var contract (MODAL_API_KEY) rather than upstream ['MODAL_PROXY_TOKEN'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "moonshotai",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.moonshot.cn/v1",
+      "upstream_value": "https://api.moonshot.ai/v1",
+      "reason": "Retains China endpoint api.moonshot.cn/v1 documented in moonshotai_test.rs (moonshotai_cn kept separate)."
+    },
+    {
+      "id": "moonshotai_cn",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.moonshot.cn/anthropic/v1",
+      "upstream_value": "https://api.moonshot.cn/v1",
+      "reason": "Pinned by presets_test::registry_fixed_base_urls_are_correct (Anthropic endpoint vs OpenAI compat upstream entry)."
+    },
+    {
+      "id": "nanogpt",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.nanogpt.com/v1",
+      "upstream_value": "https://nano-gpt.com/api/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "nanogpt",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "NANOGPT_API_KEY",
+      "upstream_value": [
+        "NANO_GPT_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (NANOGPT_API_KEY) rather than upstream ['NANO_GPT_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "nebius",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.studio.nebius.ai/v1",
+      "upstream_value": "https://api.tokenfactory.nebius.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "novita",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.novita.ai/v1",
+      "upstream_value": "https://api.novita.ai/openai",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "oci",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "OCI_API_KEY",
+      "upstream_value": [
+        "OCI_GENAI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (OCI_API_KEY) rather than upstream ['OCI_GENAI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "ollama_cloud",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.ollama.com/v1",
+      "upstream_value": "https://ollama.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "ollama_cloud",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "OLLAMA_CLOUD_API_KEY",
+      "upstream_value": [
+        "OLLAMA_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (OLLAMA_CLOUD_API_KEY) rather than upstream ['OLLAMA_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "opencode",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.opencode.zen/v1",
+      "upstream_value": "https://opencode.ai/inference/openai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "opencode_go",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.opencode.dev/v1",
+      "upstream_value": "https://opencode.ai/inference/go/openai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "opencode_go",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "OPENCODE_GO_API_KEY",
+      "upstream_value": [
+        "OPENCODE_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (OPENCODE_GO_API_KEY) rather than upstream ['OPENCODE_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "orcarouter",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.orcarouter.com/v1",
+      "upstream_value": "https://api.orcarouter.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "pioneer",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.pioneer.ai/v1",
+      "upstream_value": "https://api.fastino.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "qiniu_ai",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.qiniu.com/v1",
+      "upstream_value": "https://api.qnaigc.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "requesty",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.requesty.ai/v1",
+      "upstream_value": "https://router.requesty.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "scx_ai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "SCX_AI_API_KEY",
+      "upstream_value": [
+        "SCX_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (SCX_AI_API_KEY) rather than upstream ['SCX_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "siliconflow",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.siliconflow.cn/v1",
+      "upstream_value": "https://api.siliconflow.com/v1",
+      "reason": "Retains China endpoint api.siliconflow.cn/v1 covered by existing conformance cassettes."
+    },
+    {
+      "id": "submodel",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.submodel.com/v1",
+      "upstream_value": "https://llm.submodel.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "submodel",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "SUBMODEL_API_KEY",
+      "upstream_value": [
+        "SUBMODEL_INSTAGEN_ACCESS_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (SUBMODEL_API_KEY) rather than upstream ['SUBMODEL_INSTAGEN_ACCESS_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "tencent_token_plan",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.lkeap.cloud.tencent.com/plan/v3",
+      "upstream_value": "https://tokenhub.tencentmaas.com/plan/v3",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "the_grid_ai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "THEGRIDAI_API_KEY",
+      "upstream_value": [
+        "THEGRID_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (THEGRIDAI_API_KEY) rather than upstream ['THEGRID_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "thinkingmachines",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1",
+      "upstream_value": "https://tinker.thinkingmachines.dev/services/tinker-prod/anthropic/api/v1",
+      "reason": "Upstream models.dev targets @ai-sdk/anthropic; aimux preset keeps OpenAI-compatible /oai/api/v1 base URL."
+    },
+    {
+      "id": "unorouter",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://unorouter.com/en",
+      "upstream_value": "https://api.unorouter.com/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "upstage",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.upstage.ai/v1",
+      "upstream_value": "https://api.upstage.ai/v1/solar",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "vercel",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "VERCEL_API_KEY",
+      "upstream_value": [
+        "AI_GATEWAY_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (VERCEL_API_KEY) rather than upstream ['AI_GATEWAY_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "vertex_ai_anthropic_models",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "GOOGLE_VERTEX_ACCESS_TOKEN",
+      "upstream_value": [
+        "GOOGLE_APPLICATION_CREDENTIALS"
+      ],
+      "reason": "Aimux OpenAI-compatible Vertex Anthropic endpoint authenticates with bearer token GOOGLE_VERTEX_ACCESS_TOKEN rather than ADC credentials file."
+    },
+    {
+      "id": "wafer",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.wafer.ai/v1",
+      "upstream_value": "https://pass.wafer.ai/v1",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "xiaomi_token_plan_ams",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MIMO_API_KEY",
+      "upstream_value": [
+        "XIAOMI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (MIMO_API_KEY) rather than upstream ['XIAOMI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "xiaomi_token_plan_cn",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MIMO_API_KEY",
+      "upstream_value": [
+        "XIAOMI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (MIMO_API_KEY) rather than upstream ['XIAOMI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "xiaomi_token_plan_sgp",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "MIMO_API_KEY",
+      "upstream_value": [
+        "XIAOMI_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (MIMO_API_KEY) rather than upstream ['XIAOMI_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "zai",
+      "upstream": "models-dev",
+      "field": "env_var",
+      "local_value": "ZAI_API_KEY",
+      "upstream_value": [
+        "ZHIPU_API_KEY"
+      ],
+      "reason": "Retains established aimux public env_var contract (ZAI_API_KEY) rather than upstream ['ZHIPU_API_KEY'] (#171 / RFC-0033 §3.3)."
+    },
+    {
+      "id": "zai_coding_plan",
+      "upstream": "models-dev",
+      "field": "base_url",
+      "local_value": "https://api.z.ai/api/anthropic",
+      "upstream_value": "https://api.z.ai/api/coding/paas/v4",
+      "reason": "Preserved existing preset base_url pending per-row cassette verification (#171 / RFC-0033 §3.3)."
+    }
+  ],
+  "entries": {
+    "docker_model_runner": {
+      "note": "Local/private endpoint (http://model-runner.docker.internal/engines/llama.cpp/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "laya": {
+      "note": "Local/private endpoint (http://127.0.0.1:8000/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "llamacpp": {
+      "note": "Local/private endpoint (http://127.0.0.1:8080/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "lmstudio": {
+      "note": "Local/private endpoint (http://127.0.0.1:1234/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "lynkr": {
+      "note": "Local/private endpoint (http://localhost:8081/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "ollama": {
+      "note": "Local/private endpoint (http://127.0.0.1:11434/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "sglang": {
+      "note": "Local/private endpoint (http://127.0.0.1:30000/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    },
+    "vllm": {
+      "note": "Local/private endpoint (http://127.0.0.1:8000/v1); excluded from public SSRF probe allowlist (RFC-0033 §4.2)."
+    }
+  }
+}
