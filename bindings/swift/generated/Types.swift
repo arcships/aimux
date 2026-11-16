@@ -1594,6 +1594,43 @@ public struct ChatCompletionUsage: Codable, Equatable, Sendable {
     }
 }
 
+/// Access mode for the `codex` package in declarative configuration.
+public indirect enum CodexModeSpec: Codable, Equatable, Sendable {
+    case apiKey(apiKey: StringOrEnv?)
+    case chatGptAccount(accountId: String?, token: StringOrEnv)
+    private enum CodingKeys: String, CodingKey {
+        case accountId = "accountId"
+        case apiKey = "apiKey"
+        case token = "token"
+        case type = "type"
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let tag = try c.decode(String.self, forKey: .type)
+        switch tag {
+        case "apiKey":
+            self = .apiKey(apiKey: try c.decodeIfPresent(StringOrEnv.self, forKey: .apiKey))
+            return
+        case "chatGptAccount":
+            self = .chatGptAccount(accountId: try c.decodeIfPresent(String.self, forKey: .accountId), token: try c.decode(StringOrEnv.self, forKey: .token))
+            return
+        default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown CodexModeSpec tag \(tag)"))
+        }
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .apiKey(let v0):
+            try c.encode("apiKey", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .apiKey)
+        case .chatGptAccount(let v0, let v1):
+            try c.encode("chatGptAccount", forKey: .type)
+            try c.encodeIfPresent(v0, forKey: .accountId)
+            try c.encode(v1, forKey: .token)
+        }
+    }
+}
+
 public struct CodexRefreshRequest: Codable, Equatable, Sendable {
     public var clientId: String
     public var refreshToken: String
@@ -2413,6 +2450,15 @@ public struct EmptyParams: Codable, Equatable, Sendable {
     }
     public func encode(to encoder: any Encoder) throws {
         _ = encoder.container(keyedBy: WireKey.self)
+    }
+}
+
+/// Reference to an environment variable carrying a credential or secret.
+public struct EnvVarRef: Codable, Equatable, Sendable {
+    public var env: String
+
+    public init(env: String) {
+        self.env = env
     }
 }
 
@@ -3479,6 +3525,15 @@ public struct InputTokenDetails: Codable, Equatable, Sendable {
     }
 }
 
+/// Language-model API variant exposed on a [`Provider`] alongside the default
+/// [`Provider::language_model`] constructor.
+public enum LanguageApi: String, Codable, Equatable, Sendable {
+    case chat = "chat"
+    case responses = "responses"
+    case completion = "completion"
+    case messages = "messages"
+}
+
 /// A file in a provider's output: `LanguageModelV4File` /
 /// `LanguageModelV4ReasoningFile` (`provider`
 /// `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
@@ -3884,6 +3939,19 @@ public enum Modality: String, Codable, Equatable, Sendable {
     case score = "Score"
 }
 
+/// Model modality supported by a provider package or registry resolution call.
+public enum ModalityKind: String, Codable, Equatable, Sendable {
+    case languageModel = "languageModel"
+    case embeddingModel = "embeddingModel"
+    case imageModel = "imageModel"
+    case speechModel = "speechModel"
+    case transcriptionModel = "transcriptionModel"
+    case rerankingModel = "rerankingModel"
+    case videoModel = "videoModel"
+    case searchModel = "searchModel"
+    case decision = "decision"
+}
+
 /// Model-level capability flags (more precise than provider-level `supports_*`).
 public struct ModelCapabilities: Codable, Equatable, Sendable {
     /// Accepts multimodal attachments (image/audio/pdf input).
@@ -4018,6 +4086,10 @@ public indirect enum ModelMessage: Codable, Equatable, Sendable {
 
 public enum ModelMethod: String, Codable, Equatable, Sendable {
     case languageModel = "languageModel"
+    case chat = "chat"
+    case responses = "responses"
+    case completion = "completion"
+    case messages = "messages"
     case embeddingModel = "embeddingModel"
     case imageModel = "imageModel"
     case speechModel = "speechModel"
@@ -4491,6 +4563,67 @@ public struct OutputTokenDetails: Codable, Equatable, Sendable {
     }
 }
 
+/// Authentication mechanism implemented by a provider package.
+public enum PackageAuthKind: String, Codable, Equatable, Sendable {
+    case bearer = "bearer"
+    case header = "header"
+    case queryParam = "queryParam"
+    case basic = "basic"
+    case awsSigV4 = "awsSigV4"
+    case awsBearerOrSigV4 = "awsBearerOrSigV4"
+    case anthropicAws = "anthropicAws"
+    case googleVertex = "googleVertex"
+    case azureApiKeyOrToken = "azureApiKeyOrToken"
+    case codexChannel = "codexChannel"
+    case optionalBearer = "optionalBearer"
+    case none = "none"
+}
+
+/// Secret-free static metadata describing a provider package.
+public struct PackageDescriptor: Codable, Equatable, Sendable {
+    public var apiKeyEnv: String?
+    public var authKind: PackageAuthKind
+    public var baseUrlEnv: String?
+    public var defaultBaseUrl: String?
+    public var defaultMethod: ModalityKind?
+    public var id: String
+    public var kind: PackageKind
+    public var languageApis: [LanguageApi]
+    public var modalities: [ModalityKind]
+    public var settings: [SettingFieldSpec]
+    public var supportsDefaultInstance: Bool
+    public var supportsDiscovery: Bool
+    public var supportsFiles: Bool
+    public var supportsSkills: Bool
+    public var templateParams: [TemplateParamDescriptor]
+
+    public init(apiKeyEnv: String? = nil, authKind: PackageAuthKind, baseUrlEnv: String? = nil, defaultBaseUrl: String? = nil, defaultMethod: ModalityKind? = nil, id: String, kind: PackageKind, languageApis: [LanguageApi], modalities: [ModalityKind], settings: [SettingFieldSpec], supportsDefaultInstance: Bool, supportsDiscovery: Bool, supportsFiles: Bool, supportsSkills: Bool, templateParams: [TemplateParamDescriptor]) {
+        self.apiKeyEnv = apiKeyEnv
+        self.authKind = authKind
+        self.baseUrlEnv = baseUrlEnv
+        self.defaultBaseUrl = defaultBaseUrl
+        self.defaultMethod = defaultMethod
+        self.id = id
+        self.kind = kind
+        self.languageApis = languageApis
+        self.modalities = modalities
+        self.settings = settings
+        self.supportsDefaultInstance = supportsDefaultInstance
+        self.supportsDiscovery = supportsDiscovery
+        self.supportsFiles = supportsFiles
+        self.supportsSkills = supportsSkills
+        self.templateParams = templateParams
+    }
+}
+
+/// Architectural category of a provider package.
+public enum PackageKind: String, Codable, Equatable, Sendable {
+    case native = "native"
+    case `protocol` = "protocol"
+    case preset = "preset"
+    case specialized = "specialized"
+}
+
 /// A prefix break between two consecutive records of a session.
 public struct PrefixBreak: Codable, Equatable, Sendable {
     public var atRecordId: String
@@ -4522,17 +4655,97 @@ public struct PromptTokensDetails: Codable, Equatable, Sendable {
     }
 }
 
+/// Declarative provider registry configuration document.
+public struct ProviderConfigDocument: Codable, Equatable, Sendable {
+    public var providers: [String: ProviderEntrySpec]
+
+    public init(providers: [String: ProviderEntrySpec]) {
+        self.providers = providers
+    }
+}
+
+/// Secret-safe declarative settings shared across provider packages.
+public struct ProviderConfigSettings: Codable, Equatable, Sendable {
+    public var accessKeyId: StringOrEnv?
+    public var accessToken: StringOrEnv?
+    public var apiKey: StringOrEnv?
+    public var apiVersion: String?
+    public var authToken: StringOrEnv?
+    public var baseUrl: String?
+    public var codexMode: CodexModeSpec?
+    public var cx: String?
+    public var endpoint: String?
+    public var headers: [String: String?]?
+    public var includeUsage: Bool?
+    public var location: String?
+    public var login: StringOrEnv?
+    public var name: String?
+    public var organization: String?
+    public var originator: String?
+    public var params: [String: String]?
+    public var password: StringOrEnv?
+    public var probabilitySource: String?
+    public var project: String?
+    public var queryParams: [String: String]?
+    public var region: String?
+    public var resourceName: String?
+    public var secretAccessKey: StringOrEnv?
+    public var sessionToken: StringOrEnv?
+    public var speechBaseUrl: String?
+    public var supportsMultiPartToolContent: Bool?
+    public var supportsStructuredOutputs: Bool?
+    public var useDeploymentBasedUrls: Bool?
+    public var workspaceId: String?
+
+    public init(accessKeyId: StringOrEnv? = nil, accessToken: StringOrEnv? = nil, apiKey: StringOrEnv? = nil, apiVersion: String? = nil, authToken: StringOrEnv? = nil, baseUrl: String? = nil, codexMode: CodexModeSpec? = nil, cx: String? = nil, endpoint: String? = nil, headers: [String: String?]? = nil, includeUsage: Bool? = nil, location: String? = nil, login: StringOrEnv? = nil, name: String? = nil, organization: String? = nil, originator: String? = nil, params: [String: String]? = nil, password: StringOrEnv? = nil, probabilitySource: String? = nil, project: String? = nil, queryParams: [String: String]? = nil, region: String? = nil, resourceName: String? = nil, secretAccessKey: StringOrEnv? = nil, sessionToken: StringOrEnv? = nil, speechBaseUrl: String? = nil, supportsMultiPartToolContent: Bool? = nil, supportsStructuredOutputs: Bool? = nil, useDeploymentBasedUrls: Bool? = nil, workspaceId: String? = nil) {
+        self.accessKeyId = accessKeyId
+        self.accessToken = accessToken
+        self.apiKey = apiKey
+        self.apiVersion = apiVersion
+        self.authToken = authToken
+        self.baseUrl = baseUrl
+        self.codexMode = codexMode
+        self.cx = cx
+        self.endpoint = endpoint
+        self.headers = headers
+        self.includeUsage = includeUsage
+        self.location = location
+        self.login = login
+        self.name = name
+        self.organization = organization
+        self.originator = originator
+        self.params = params
+        self.password = password
+        self.probabilitySource = probabilitySource
+        self.project = project
+        self.queryParams = queryParams
+        self.region = region
+        self.resourceName = resourceName
+        self.secretAccessKey = secretAccessKey
+        self.sessionToken = sessionToken
+        self.speechBaseUrl = speechBaseUrl
+        self.supportsMultiPartToolContent = supportsMultiPartToolContent
+        self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.useDeploymentBasedUrls = useDeploymentBasedUrls
+        self.workspaceId = workspaceId
+    }
+}
+
 public struct ProviderCreateParams: Codable, Equatable, Sendable {
+    public var envAllowlist: [String]?
     public var package: String
     public var settings: ProviderSettings?
 
-    public init(package: String, settings: ProviderSettings? = nil) {
+    public init(envAllowlist: [String]? = nil, package: String, settings: ProviderSettings? = nil) {
+        self.envAllowlist = envAllowlist
         self.package = package
         self.settings = settings
     }
 }
 
 public struct ProviderCustomParams: Codable, Equatable, Sendable {
+    public var chatModels: [String: HandleIdInput]?
+    public var completionModels: [String: HandleIdInput]?
     public var decisionModels: [String: HandleIdInput]?
     public var defaultMethod: String?
     public var embeddingModels: [String: HandleIdInput]?
@@ -4542,13 +4755,17 @@ public struct ProviderCustomParams: Codable, Equatable, Sendable {
     public var imageModels: [String: HandleIdInput]?
     public var languageModelMiddleware: [HandleIdInput]?
     public var languageModels: [String: HandleIdInput]?
+    public var messagesModels: [String: HandleIdInput]?
     public var rerankingModels: [String: HandleIdInput]?
+    public var responsesModels: [String: HandleIdInput]?
     public var searchModels: [String: HandleIdInput]?
     public var speechModels: [String: HandleIdInput]?
     public var transcriptionModels: [String: HandleIdInput]?
     public var videoModels: [String: HandleIdInput]?
 
-    public init(decisionModels: [String: HandleIdInput]? = nil, defaultMethod: String? = nil, embeddingModels: [String: HandleIdInput]? = nil, fallbackProvider: HandleIdInput? = nil, files: HandleIdInput? = nil, imageModelMiddleware: [HandleIdInput]? = nil, imageModels: [String: HandleIdInput]? = nil, languageModelMiddleware: [HandleIdInput]? = nil, languageModels: [String: HandleIdInput]? = nil, rerankingModels: [String: HandleIdInput]? = nil, searchModels: [String: HandleIdInput]? = nil, speechModels: [String: HandleIdInput]? = nil, transcriptionModels: [String: HandleIdInput]? = nil, videoModels: [String: HandleIdInput]? = nil) {
+    public init(chatModels: [String: HandleIdInput]? = nil, completionModels: [String: HandleIdInput]? = nil, decisionModels: [String: HandleIdInput]? = nil, defaultMethod: String? = nil, embeddingModels: [String: HandleIdInput]? = nil, fallbackProvider: HandleIdInput? = nil, files: HandleIdInput? = nil, imageModelMiddleware: [HandleIdInput]? = nil, imageModels: [String: HandleIdInput]? = nil, languageModelMiddleware: [HandleIdInput]? = nil, languageModels: [String: HandleIdInput]? = nil, messagesModels: [String: HandleIdInput]? = nil, rerankingModels: [String: HandleIdInput]? = nil, responsesModels: [String: HandleIdInput]? = nil, searchModels: [String: HandleIdInput]? = nil, speechModels: [String: HandleIdInput]? = nil, transcriptionModels: [String: HandleIdInput]? = nil, videoModels: [String: HandleIdInput]? = nil) {
+        self.chatModels = chatModels
+        self.completionModels = completionModels
         self.decisionModels = decisionModels
         self.defaultMethod = defaultMethod
         self.embeddingModels = embeddingModels
@@ -4558,7 +4775,9 @@ public struct ProviderCustomParams: Codable, Equatable, Sendable {
         self.imageModels = imageModels
         self.languageModelMiddleware = languageModelMiddleware
         self.languageModels = languageModels
+        self.messagesModels = messagesModels
         self.rerankingModels = rerankingModels
+        self.responsesModels = responsesModels
         self.searchModels = searchModels
         self.speechModels = speechModels
         self.transcriptionModels = transcriptionModels
@@ -4571,6 +4790,25 @@ public struct ProviderDefaultParams: Codable, Equatable, Sendable {
 
     public init(package: String) {
         self.package = package
+    }
+}
+
+public struct ProviderDescriptorsParams: Codable, Equatable, Sendable {
+    public var package: String?
+
+    public init(package: String? = nil) {
+        self.package = package
+    }
+}
+
+/// Configuration for a single provider entry (`package` + typed `settings`).
+public struct ProviderEntrySpec: Codable, Equatable, Sendable {
+    public var package: String
+    public var settings: ProviderConfigSettings?
+
+    public init(package: String, settings: ProviderConfigSettings? = nil) {
+        self.package = package
+        self.settings = settings
     }
 }
 
@@ -4616,30 +4854,74 @@ public struct ProviderRecord: Codable, Equatable, Sendable {
 }
 
 public struct ProviderSettings: Codable, Equatable, Sendable {
-    public var apiKey: String?
+    public var accessKeyId: StringOrEnv?
+    public var accessToken: StringOrEnv?
+    public var apiKey: StringOrEnv?
+    public var apiVersion: String?
+    public var authToken: StringOrEnv?
     public var baseUrl: String?
+    public var codexMode: CodexModeSpec?
     public var credentialResolver: HandleIdInput?
+    public var cx: String?
     public var endpoint: String?
     public var fetch: HandleIdInput?
     public var headers: [String: String?]?
+    public var includeUsage: Bool?
+    public var location: String?
+    public var login: StringOrEnv?
+    public var name: String?
     public var organization: String?
+    public var originator: String?
     public var params: [String: String]?
+    public var password: StringOrEnv?
     public var probabilitySource: String?
     public var project: String?
+    public var queryParams: [String: String]?
+    public var region: String?
+    public var resourceName: String?
+    public var secretAccessKey: StringOrEnv?
+    public var sessionToken: StringOrEnv?
+    public var speechBaseUrl: String?
+    public var supportsMultiPartToolContent: Bool?
+    public var supportsStructuredOutputs: Bool?
+    public var useDeploymentBasedUrls: Bool?
     public var webSocket: HandleIdInput?
+    public var workspaceId: String?
 
-    public init(apiKey: String? = nil, baseUrl: String? = nil, credentialResolver: HandleIdInput? = nil, endpoint: String? = nil, fetch: HandleIdInput? = nil, headers: [String: String?]? = nil, organization: String? = nil, params: [String: String]? = nil, probabilitySource: String? = nil, project: String? = nil, webSocket: HandleIdInput? = nil) {
+    public init(accessKeyId: StringOrEnv? = nil, accessToken: StringOrEnv? = nil, apiKey: StringOrEnv? = nil, apiVersion: String? = nil, authToken: StringOrEnv? = nil, baseUrl: String? = nil, codexMode: CodexModeSpec? = nil, credentialResolver: HandleIdInput? = nil, cx: String? = nil, endpoint: String? = nil, fetch: HandleIdInput? = nil, headers: [String: String?]? = nil, includeUsage: Bool? = nil, location: String? = nil, login: StringOrEnv? = nil, name: String? = nil, organization: String? = nil, originator: String? = nil, params: [String: String]? = nil, password: StringOrEnv? = nil, probabilitySource: String? = nil, project: String? = nil, queryParams: [String: String]? = nil, region: String? = nil, resourceName: String? = nil, secretAccessKey: StringOrEnv? = nil, sessionToken: StringOrEnv? = nil, speechBaseUrl: String? = nil, supportsMultiPartToolContent: Bool? = nil, supportsStructuredOutputs: Bool? = nil, useDeploymentBasedUrls: Bool? = nil, webSocket: HandleIdInput? = nil, workspaceId: String? = nil) {
+        self.accessKeyId = accessKeyId
+        self.accessToken = accessToken
         self.apiKey = apiKey
+        self.apiVersion = apiVersion
+        self.authToken = authToken
         self.baseUrl = baseUrl
+        self.codexMode = codexMode
         self.credentialResolver = credentialResolver
+        self.cx = cx
         self.endpoint = endpoint
         self.fetch = fetch
         self.headers = headers
+        self.includeUsage = includeUsage
+        self.location = location
+        self.login = login
+        self.name = name
         self.organization = organization
+        self.originator = originator
         self.params = params
+        self.password = password
         self.probabilitySource = probabilitySource
         self.project = project
+        self.queryParams = queryParams
+        self.region = region
+        self.resourceName = resourceName
+        self.secretAccessKey = secretAccessKey
+        self.sessionToken = sessionToken
+        self.speechBaseUrl = speechBaseUrl
+        self.supportsMultiPartToolContent = supportsMultiPartToolContent
+        self.supportsStructuredOutputs = supportsStructuredOutputs
+        self.useDeploymentBasedUrls = useDeploymentBasedUrls
         self.webSocket = webSocket
+        self.workspaceId = workspaceId
     }
 }
 
@@ -4992,10 +5274,12 @@ public enum RecordingOperation: String, Codable, Equatable, Sendable {
 public struct RegistryCreateParams: Codable, Equatable, Sendable {
     public var entries: [RegistryEntry]
     public var namespace: String?
+    public var separator: String?
 
-    public init(entries: [RegistryEntry], namespace: String? = nil) {
+    public init(entries: [RegistryEntry], namespace: String? = nil, separator: String? = nil) {
         self.entries = entries
         self.namespace = namespace
+        self.separator = separator
     }
 }
 
@@ -5009,11 +5293,75 @@ public struct RegistryEntry: Codable, Equatable, Sendable {
     }
 }
 
+public struct RegistryFromConfigParams: Codable, Equatable, Sendable {
+    public var config: ProviderConfigDocument
+    public var envAllowlist: [String]?
+    public var namespace: String?
+    public var separator: String?
+
+    public init(config: ProviderConfigDocument, envAllowlist: [String]? = nil, namespace: String? = nil, separator: String? = nil) {
+        self.config = config
+        self.envAllowlist = envAllowlist
+        self.namespace = namespace
+        self.separator = separator
+    }
+}
+
+public struct RegistryListParams: Codable, Equatable, Sendable {
+
+    public init() {
+    }
+    public init(from decoder: any Decoder) throws {
+        _ = try decoder.container(keyedBy: WireKey.self)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        _ = encoder.container(keyedBy: WireKey.self)
+    }
+}
+
+public struct RegistryListResult: Codable, Equatable, Sendable {
+    public var keys: [String]
+    public var namespace: String
+    public var separator: String
+
+    public init(keys: [String], namespace: String, separator: String) {
+        self.keys = keys
+        self.namespace = namespace
+        self.separator = separator
+    }
+}
+
 public struct RegistryProviderParams: Codable, Equatable, Sendable {
     public var key: String
 
     public init(key: String) {
         self.key = key
+    }
+}
+
+public struct RegistryUpdateParams: Codable, Equatable, Sendable {
+    public var derive: Bool?
+    public var remove: [String]?
+    public var replace: Bool?
+    public var set: [RegistryEntry]?
+
+    public init(derive: Bool? = nil, remove: [String]? = nil, replace: Bool? = nil, set: [RegistryEntry]? = nil) {
+        self.derive = derive
+        self.remove = remove
+        self.replace = replace
+        self.set = set
+    }
+}
+
+public struct RegistryUpdateResult: Codable, Equatable, Sendable {
+    public var handle: HandleId?
+    public var keys: [String]
+    public var kind: HandleKind?
+
+    public init(handle: HandleId? = nil, keys: [String], kind: HandleKind? = nil) {
+        self.handle = handle
+        self.keys = keys
+        self.kind = kind
     }
 }
 
@@ -5728,6 +6076,33 @@ public struct SessionView: Codable, Equatable, Sendable {
     }
 }
 
+/// Wire shape of a setting field accepted by a provider package.
+public enum SettingFieldKind: String, Codable, Equatable, Sendable {
+    case string = "string"
+    case credential = "credential"
+    case boolean = "boolean"
+    case headerMap = "headerMap"
+    case stringMap = "stringMap"
+    case codexMode = "codexMode"
+}
+
+/// Static description of one setting accepted when constructing a provider package.
+public struct SettingFieldSpec: Codable, Equatable, Sendable {
+    public var credential: Bool
+    public var envVar: String?
+    public var kind: SettingFieldKind
+    public var name: String
+    public var required: Bool
+
+    public init(credential: Bool, envVar: String? = nil, kind: SettingFieldKind, name: String, required: Bool) {
+        self.credential = credential
+        self.envVar = envVar
+        self.kind = kind
+        self.name = name
+        self.required = required
+    }
+}
+
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
 ///
 /// Newtype that enforces the `WxH` format used by V4 image `size` and video
@@ -6375,6 +6750,24 @@ public struct StreamOptions: Codable, Equatable, Sendable {
     }
 }
 
+/// Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
+public indirect enum StringOrEnv: Codable, Equatable, Sendable {
+    case text(String)
+    case envVarRef(EnvVarRef)
+
+    public init(from decoder: any Decoder) throws {
+        do { let value = try decoder.singleValueContainer().decode(String.self); self = .text(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(EnvVarRef.self); self = .envVarRef(value); return } catch {}
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching StringOrEnv branch"))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .text(let value): try value.encode(to: encoder)
+        case .envVarRef(let value): try value.encode(to: encoder)
+        }
+    }
+}
+
 /// A raw provider call with its required wire tag.
 public struct TaggedRawToolCall: Codable, Equatable, Sendable {
     public var dynamic: Bool?
@@ -6490,6 +6883,17 @@ public struct TaggedToolResult: Codable, Equatable, Sendable {
         try c.encode(self.toolCallId, forKey: .toolCallId)
         try c.encode(self.toolName, forKey: .toolName)
         try c.encode(self.type, forKey: .type)
+    }
+}
+
+/// Static description of one URL template parameter required by a preset provider.
+public struct TemplateParamDescriptor: Codable, Equatable, Sendable {
+    public var envVar: String
+    public var name: String
+
+    public init(envVar: String, name: String) {
+        self.envVar = envVar
+        self.name = name
     }
 }
 

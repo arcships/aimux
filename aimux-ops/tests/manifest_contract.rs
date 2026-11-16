@@ -21,6 +21,10 @@ const RFC_OPS: &[(&str, &str, &[&str])] = &[
     ("provider.invoke", "call", &["Provider"]),
     ("provider.wrap", "call", &["Provider"]),
     ("provider.custom", "call", &[]),
+    ("provider.descriptors", "call", &[]),
+    ("registry.fromConfig", "call", &[]),
+    ("registry.list", "call", &["Registry"]),
+    ("registry.update", "call", &["Registry"]),
     ("model.resolve", "call", &["Registry"]),
     (
         "model.info",
@@ -447,8 +451,21 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
             serde_json::json!({"package":"openai","settings":{"headers":{"x-custom":null},"fetch":"1"}}),
         ),
         (
+            "provider::ProviderDescriptorsParams",
+            serde_json::json!({"package":"openai"}),
+        ),
+        (
             "registry::RegistryCreateParams",
             serde_json::json!({"entries":[{"key":"vendor","provider":"1"}]}),
+        ),
+        (
+            "registry::RegistryFromConfigParams",
+            serde_json::json!({"namespace":"ns","config":{"providers":{"work":{"package":"openai","settings":{"apiKey":{"env":"OPENAI_API_KEY"}}}}}}),
+        ),
+        ("registry::RegistryListParams", serde_json::json!({})),
+        (
+            "registry::RegistryUpdateParams",
+            serde_json::json!({"set":[{"key":"vendor","provider":"1"}],"remove":["old"],"derive":true}),
         ),
         (
             "registry::ModelResolveParams",
@@ -552,8 +569,20 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
             serde_json::json!({"package":"openai","settings":{"unknown":true}}),
         ),
         (
+            "provider::ProviderCreateParams",
+            serde_json::json!({"package":"codex","settings":{"codexMode":{"type":"chatGptAccount","token":"t","unknown":true}}}),
+        ),
+        (
             "registry::RegistryCreateParams",
             serde_json::json!({"entries":[{"key":"k","provider":"1","unknown":true}]}),
+        ),
+        (
+            "registry::RegistryFromConfigParams",
+            serde_json::json!({"config":{"providers":{"work":{"package":"openai","settings":{"unknown":true}}}}}),
+        ),
+        (
+            "registry::RegistryUpdateParams",
+            serde_json::json!({"set":[{"key":"k","provider":"1","unknown":true}]}),
         ),
         (
             "composite::RouterParams",
@@ -632,6 +661,7 @@ fn packages_list_every_provider_create_package_once() {
         .collect();
     assert!(packages.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(packages.contains(&"jev"));
+    assert!(packages.contains(&"openai_compatible"));
     for name in aimux_providers::provider_names() {
         assert!(packages.contains(&name), "{name}");
     }

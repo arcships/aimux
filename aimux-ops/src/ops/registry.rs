@@ -1,12 +1,14 @@
 //! Explicit provider registries and model references. Resolution never uses a gateway.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::provider::{LanguageApi, Provider};
 use aimux_core::provider_registry::{
     ProviderRegistry, ProviderRegistryOptions, create_provider_registry,
 };
+use aimux_providers::{EnvLookupPolicy, ProviderConfigDocument, providers_from_config_with_policy};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -46,6 +48,7 @@ const fn descriptor(
         terminal_type: None,
         runtime_handle_fields: match name.as_bytes() {
             b"registry.create" => &[("entries.*.provider", &[HandleKind::Provider])],
+            b"registry.update" => &[("set.*.provider", &[HandleKind::Provider])],
             b"model.wrap" => &[("middleware.*", &[HandleKind::Middleware])],
             _ => &[],
         },
@@ -53,7 +56,10 @@ const fn descriptor(
         cancellation: Cancellation::None,
         result_ownership: "owned",
         request_byte_policy: RequestBytePolicy::Json,
-        side_effects: matches!(name.as_bytes(), b"registry.create"),
+        side_effects: matches!(
+            name.as_bytes(),
+            b"registry.create" | b"registry.fromConfig" | b"registry.update"
+        ),
         retry_owner: "none",
         source_symbols: symbols,
     }
@@ -68,11 +74,38 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         &["aimux_core::provider_registry::create_provider_registry"],
     ),
     descriptor(
+        "registry.fromConfig",
+        &[],
+        TypeRef::of::<RegistryFromConfigParams>(),
+        TypeRef::of::<HandleResult>(),
+        &[
+            "aimux_providers::providers_from_config_with_policy",
+            "aimux_core::provider_registry::create_provider_registry",
+        ],
+    ),
+    descriptor(
+        "registry.list",
+        &[HandleKind::Registry],
+        TypeRef::of::<RegistryListParams>(),
+        TypeRef::of::<RegistryListResult>(),
+        &["aimux_core::provider_registry::ProviderRegistry::provider_ids"],
+    ),
+    descriptor(
         "registry.provider",
         &[HandleKind::Registry],
         TypeRef::of::<RegistryProviderParams>(),
         TypeRef::of::<HandleResult>(),
         &["aimux_core::provider_registry::ProviderRegistry::provider"],
+    ),
+    descriptor(
+        "registry.update",
+        &[HandleKind::Registry],
+        TypeRef::of::<RegistryUpdateParams>(),
+        TypeRef::of::<RegistryUpdateResult>(),
+        &[
+            "aimux_core::provider_registry::ProviderRegistry::register",
+            "aimux_core::provider_registry::ProviderRegistry::unregister",
+        ],
     ),
     descriptor(
         "model.resolve",
@@ -103,7 +136,10 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (op, handler) in OPS.iter().zip([
         create as fn(Ctx, Target, Value) -> CallFuture,
+        from_config,
+        list,
         provider,
+        update,
         resolve,
         info,
         wrap,
@@ -117,7 +153,56 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 struct RegistryCreateParams {
     #[serde(default)]
     namespace: String,
+    #[serde(default)]
+    separator: Option<String>,
     entries: Vec<RegistryEntry>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistryFromConfigParams {
+    #[serde(default)]
+    namespace: String,
+    #[serde(default)]
+    separator: Option<String>,
+    #[serde(default)]
+    env_allowlist: Option<Vec<String>>,
+    config: ProviderConfigDocument,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RegistryListParams {}
+
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct RegistryListResult {
+    namespace: String,
+    separator: String,
+    keys: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistryUpdateParams {
+    #[serde(default)]
+    set: Vec<RegistryEntry>,
+    #[serde(default)]
+    remove: Vec<String>,
+    #[serde(default)]
+    replace: bool,
+    #[serde(default)]
+    derive: bool,
+}
+
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct RegistryUpdateResult {
+    keys: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    handle: Option<HandleId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<HandleKind>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -146,6 +231,10 @@ struct ModelRef {
 #[serde(rename_all = "camelCase")]
 enum ModelMethod {
     LanguageModel,
+    Chat,
+    Responses,
+    Completion,
+    Messages,
     EmbeddingModel,
     ImageModel,
     SpeechModel,
@@ -313,37 +402,57 @@ fn metadata(owner: Owner, entry: &Entry, update: Option<Metadata>) -> Option<Met
     None
 }
 
+fn parse_separator(separator: Option<String>) -> Result<String, OpsError> {
+    match separator {
+        Some(sep) if sep.is_empty() => Err(invalid("registry separator must not be empty")),
+        Some(sep) => Ok(sep),
+        None => Ok(ProviderRegistryOptions::default().separator),
+    }
+}
+
+fn resolve_entry_list(
+    ctx: &Ctx,
+    entries: Vec<RegistryEntry>,
+) -> Result<BTreeMap<String, Arc<dyn Provider>>, OpsError> {
+    let mut providers = BTreeMap::new();
+    for registration in entries {
+        if registration.key.is_empty() {
+            return Err(invalid("registry entry key must not be empty"));
+        }
+        if providers.contains_key(&registration.key) {
+            return Err(invalid(format!(
+                "duplicate registry key: {}",
+                registration.key
+            )));
+        }
+        let provider = resolve_secondary(
+            HandleRegistry::global(),
+            ctx,
+            &json!(handle(&registration.provider)?),
+            &[HandleKind::Provider],
+        )?;
+        let Entry::Provider(provider) = provider else {
+            return Err(wrong(&provider, &[HandleKind::Provider]));
+        };
+        providers.insert(registration.key, provider);
+    }
+    Ok(providers)
+}
+
 fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     Box::pin(async move {
         if let Target::Handle(entry) = target {
             return Err(wrong(&entry, &[]));
         }
         let params: RegistryCreateParams = decode(params)?;
-        let mut providers = BTreeMap::new();
-        for registration in params.entries {
-            if registration.key.is_empty() {
-                return Err(invalid("registry entry key must not be empty"));
-            }
-            if providers.contains_key(&registration.key) {
-                return Err(invalid(format!(
-                    "duplicate registry key: {}",
-                    registration.key
-                )));
-            }
-            let provider = resolve_secondary(
-                HandleRegistry::global(),
-                &ctx,
-                &json!(handle(&registration.provider)?),
-                &[HandleKind::Provider],
-            )?;
-            let Entry::Provider(provider) = provider else {
-                return Err(wrong(&provider, &[HandleKind::Provider]));
-            };
-            providers.insert(registration.key, provider);
-        }
+        let separator = parse_separator(params.separator)?;
+        let providers = resolve_entry_list(&ctx, params.entries)?;
         let entry = Entry::Registry(Arc::new(create_provider_registry(
             providers,
-            ProviderRegistryOptions::default(),
+            ProviderRegistryOptions {
+                separator,
+                ..ProviderRegistryOptions::default()
+            },
         )));
         metadata(
             ctx.owner,
@@ -351,6 +460,131 @@ fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             Some(Metadata::Namespace(params.namespace)),
         );
         insert(ctx.owner, entry)
+    })
+}
+
+fn from_config(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        if let Target::Handle(entry) = target {
+            return Err(wrong(&entry, &[]));
+        }
+        let params: RegistryFromConfigParams = decode(params)?;
+        let separator = parse_separator(params.separator)?;
+        let policy = match params.env_allowlist {
+            Some(vars) => EnvLookupPolicy::AllowList(vars.into_iter().collect()),
+            None => EnvLookupPolicy::AllowAll,
+        };
+        let providers =
+            providers_from_config_with_policy(&params.config, &policy).map_err(OpsError::AiMux)?;
+        let entry = Entry::Registry(Arc::new(create_provider_registry(
+            providers,
+            ProviderRegistryOptions {
+                separator,
+                ..ProviderRegistryOptions::default()
+            },
+        )));
+        metadata(
+            ctx.owner,
+            &entry,
+            Some(Metadata::Namespace(params.namespace)),
+        );
+        insert(ctx.owner, entry)
+    })
+}
+
+fn list(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        let entry = target_entry(target, &[HandleKind::Registry])?;
+        let _: RegistryListParams = decode(params)?;
+        let Entry::Registry(registry) = &entry else {
+            return Err(wrong(&entry, &[HandleKind::Registry]));
+        };
+        let namespace = match metadata(ctx.owner, &entry, None) {
+            Some(Metadata::Namespace(namespace)) => namespace,
+            _ => String::new(),
+        };
+        Ok(json!(RegistryListResult {
+            namespace,
+            separator: registry.separator().to_string(),
+            keys: registry.provider_ids(),
+        }))
+    })
+}
+
+fn update(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        let entry = target_entry(target, &[HandleKind::Registry])?;
+        let params: RegistryUpdateParams = decode(params)?;
+        let Entry::Registry(registry) = &entry else {
+            return Err(wrong(&entry, &[HandleKind::Registry]));
+        };
+        if params.replace && !params.remove.is_empty() {
+            return Err(invalid("remove cannot be combined with replace"));
+        }
+        let mut remove_set = BTreeSet::new();
+        for key in &params.remove {
+            if key.is_empty() {
+                return Err(invalid("registry removal key must not be empty"));
+            }
+            remove_set.insert(key.as_str());
+        }
+        let resolved_set = resolve_entry_list(&ctx, params.set)?;
+        for key in resolved_set.keys() {
+            if remove_set.contains(key.as_str()) {
+                return Err(invalid(format!(
+                    "key '{key}' cannot appear in both set and remove"
+                )));
+            }
+        }
+        if !params.derive {
+            if params.replace {
+                registry.replace_providers(resolved_set);
+            } else {
+                for key in &params.remove {
+                    registry.unregister(key);
+                }
+                if !resolved_set.is_empty() {
+                    registry.extend_providers(resolved_set);
+                }
+            }
+            return Ok(json!(RegistryUpdateResult {
+                keys: registry.provider_ids(),
+                handle: None,
+                kind: None,
+            }));
+        }
+
+        let derived = if params.replace {
+            registry.with_replaced_providers(resolved_set)
+        } else {
+            let mut next = if let Some(first) = params.remove.first() {
+                let mut tmp = registry.without_provider(first);
+                for key in &params.remove[1..] {
+                    tmp = tmp.without_provider(key);
+                }
+                tmp
+            } else {
+                registry.with_providers(Vec::new())
+            };
+            if !resolved_set.is_empty() {
+                next = next.with_providers(resolved_set);
+            }
+            next
+        };
+        let keys = derived.provider_ids();
+        let namespace = match metadata(ctx.owner, &entry, None) {
+            Some(Metadata::Namespace(namespace)) => namespace,
+            _ => String::new(),
+        };
+        let new_entry = Entry::Registry(Arc::new(derived));
+        metadata(ctx.owner, &new_entry, Some(Metadata::Namespace(namespace)));
+        let kind = new_entry.kind();
+        let id = HandleRegistry::global().insert(ctx.owner, new_entry)?;
+        Ok(json!(RegistryUpdateResult {
+            keys,
+            handle: Some(id),
+            kind: Some(kind),
+        }))
     })
 }
 
@@ -390,6 +624,16 @@ fn resolve(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
+fn offered_language_entry(
+    model: Option<Result<Arc<dyn aimux_core::language_model::LanguageModel>, AiMuxError>>,
+    id: &str,
+    method: &str,
+) -> Result<Entry, AiMuxError> {
+    model
+        .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, method)))
+        .map(Entry::Language)
+}
+
 fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<Entry, OpsError> {
     // Look up the exact key instead of constructing a combined id: both keys
     // and model ids may themselves contain the registry separator.
@@ -397,6 +641,26 @@ fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<En
     let id = reference.model_id.as_str();
     let result = match reference.method {
         ModelMethod::LanguageModel => provider.language_model(id).map(Entry::Language),
+        ModelMethod::Chat => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Chat, id),
+            id,
+            "chat",
+        ),
+        ModelMethod::Responses => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Responses, id),
+            id,
+            "responses",
+        ),
+        ModelMethod::Completion => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Completion, id),
+            id,
+            "completion",
+        ),
+        ModelMethod::Messages => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Messages, id),
+            id,
+            "messages",
+        ),
         ModelMethod::EmbeddingModel => provider.embedding_model(id).map(Entry::Embedding),
         ModelMethod::ImageModel => provider.image_model(id).map(Entry::Image),
         ModelMethod::SpeechModel => provider
@@ -888,5 +1152,141 @@ mod tests {
             wrap(ctx(owner), Target::Handle(input), json!({"middleware": []})).await,
             Err(OpsError::Binding(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn from_config_list_update_separator_and_chat_method_resolution_work() {
+        let owner = owner();
+        let created = from_config(
+            ctx(owner),
+            Target::Global,
+            json!({
+                "namespace": "cfg",
+                "separator": "/",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg = result_entry(owner, &created, HandleKind::Registry);
+        let listed = list(ctx(owner), Target::Handle(reg.clone()), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(listed["namespace"], "cfg");
+        assert_eq!(listed["separator"], "/");
+        assert_eq!(listed["keys"], json!(["gw"]));
+
+        // Direct sub-method resolution (`method: "chat"`) on config-built provider.
+        let model_ref = json!({
+            "modelRef": {
+                "namespace": "cfg",
+                "key": "gw",
+                "method": "chat",
+                "modelId": "llama3"
+            }
+        });
+        let resolved = resolve(ctx(owner), Target::Handle(reg.clone()), model_ref.clone())
+            .await
+            .unwrap();
+        let model = result_entry(owner, &resolved, HandleKind::Language);
+        let model_meta = info(ctx(owner), Target::Handle(model), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(model_meta["provider"], "gw.chat");
+        assert_eq!(
+            model_meta["source"]["references"],
+            json!([model_ref["modelRef"]])
+        );
+
+        // In-place update (`set` + `remove`).
+        let (extra_id, _) = fixture(owner);
+        let in_place = update(
+            ctx(owner),
+            Target::Handle(reg.clone()),
+            json!({
+                "set": [{"key": "extra", "provider": extra_id.0.to_string()}],
+                "remove": ["gw"]
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(in_place["keys"], json!(["extra"]));
+        assert!(in_place.get("handle").is_none());
+        assert_eq!(
+            list(ctx(owner), Target::Handle(reg.clone()), json!({}))
+                .await
+                .unwrap()["keys"],
+            json!(["extra"])
+        );
+
+        // Derived update (`derive: true`) leaves original intact and preserves namespace.
+        let (other_id, _) = fixture(owner);
+        let derived = update(
+            ctx(owner),
+            Target::Handle(reg.clone()),
+            json!({
+                "set": [{"key": "replacement", "provider": other_id.0.to_string()}],
+                "replace": true,
+                "derive": true
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(derived["kind"], "Registry");
+        assert_eq!(derived["keys"], json!(["replacement"]));
+        let derived_reg = result_entry(owner, &derived, HandleKind::Registry);
+        let derived_list = list(ctx(owner), Target::Handle(derived_reg.clone()), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(derived_list["namespace"], "cfg");
+        assert_eq!(derived_list["separator"], "/");
+        assert_eq!(derived_list["keys"], json!(["replacement"]));
+        assert_eq!(
+            list(ctx(owner), Target::Handle(reg), json!({}))
+                .await
+                .unwrap()["keys"],
+            json!(["extra"])
+        );
+
+        // Rejects empty separator and env var blocked by allowlist.
+        assert!(matches!(
+            create(
+                ctx(owner),
+                Target::Global,
+                json!({"separator": "", "entries": []})
+            )
+            .await,
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
+        ));
+        assert!(matches!(
+            from_config(
+                ctx(owner),
+                Target::Global,
+                json!({
+                    "envAllowlist": ["ALLOWED"],
+                    "config": {
+                        "providers": {
+                            "bad": {
+                                "package": "openai",
+                                "settings": { "apiKey": { "env": "DISALLOWED" } }
+                            }
+                        }
+                    }
+                })
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
+        ));
+        HandleRegistry::global().release_owner(owner);
     }
 }

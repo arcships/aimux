@@ -4,16 +4,66 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "accessKeyId": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "accessToken": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "apiKey": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "apiVersion": {
       "type": [
         "string",
         "null"
+      ]
+    },
+    "authToken": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "baseUrl": {
       "type": [
         "string",
         "null"
+      ]
+    },
+    "codexMode": {
+      "anyOf": [
+        {
+          "$ref": "CodexModeSpec.json"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "credentialResolver": {
@@ -24,6 +74,12 @@
         {
           "type": "null"
         }
+      ]
+    },
+    "cx": {
+      "type": [
+        "string",
+        "null"
       ]
     },
     "endpoint": {
@@ -52,7 +108,41 @@
       "default": {},
       "type": "object"
     },
+    "includeUsage": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "login": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "organization": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "originator": {
       "type": [
         "string",
         "null"
@@ -64,6 +154,16 @@
       },
       "default": {},
       "type": "object"
+    },
+    "password": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "probabilitySource": {
       "type": [
@@ -77,6 +177,69 @@
         "null"
       ]
     },
+    "queryParams": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "region": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resourceName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "secretAccessKey": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionToken": {
+      "anyOf": [
+        {
+          "$ref": "StringOrEnv.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "speechBaseUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "supportsMultiPartToolContent": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "supportsStructuredOutputs": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "useDeploymentBasedUrls": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "webSocket": {
       "anyOf": [
         {
@@ -85,6 +248,12 @@
         {
           "type": "null"
         }
+      ]
+    },
+    "workspaceId": {
+      "type": [
+        "string",
+        "null"
       ]
     }
   },

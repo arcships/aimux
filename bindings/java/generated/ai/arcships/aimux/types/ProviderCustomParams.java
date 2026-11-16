@@ -11,6 +11,10 @@ import java.util.*;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ProviderCustomParams {
+    @JsonProperty("chatModels")
+    private final Map<String, HandleIdInput> chatModels;
+    @JsonProperty("completionModels")
+    private final Map<String, HandleIdInput> completionModels;
     @JsonProperty("decisionModels")
     private final Map<String, HandleIdInput> decisionModels;
     @JsonProperty("defaultMethod")
@@ -29,8 +33,12 @@ public final class ProviderCustomParams {
     private final List<HandleIdInput> languageModelMiddleware;
     @JsonProperty("languageModels")
     private final Map<String, HandleIdInput> languageModels;
+    @JsonProperty("messagesModels")
+    private final Map<String, HandleIdInput> messagesModels;
     @JsonProperty("rerankingModels")
     private final Map<String, HandleIdInput> rerankingModels;
+    @JsonProperty("responsesModels")
+    private final Map<String, HandleIdInput> responsesModels;
     @JsonProperty("searchModels")
     private final Map<String, HandleIdInput> searchModels;
     @JsonProperty("speechModels")
@@ -42,6 +50,8 @@ public final class ProviderCustomParams {
 
     @JsonCreator
     public ProviderCustomParams(
+        @JsonProperty(value = "chatModels") Map<String, HandleIdInput> chatModels,
+        @JsonProperty(value = "completionModels") Map<String, HandleIdInput> completionModels,
         @JsonProperty(value = "decisionModels") Map<String, HandleIdInput> decisionModels,
         @JsonProperty(value = "defaultMethod") String defaultMethod,
         @JsonProperty(value = "embeddingModels") Map<String, HandleIdInput> embeddingModels,
@@ -51,11 +61,15 @@ public final class ProviderCustomParams {
         @JsonProperty(value = "imageModels") Map<String, HandleIdInput> imageModels,
         @JsonProperty(value = "languageModelMiddleware") List<HandleIdInput> languageModelMiddleware,
         @JsonProperty(value = "languageModels") Map<String, HandleIdInput> languageModels,
+        @JsonProperty(value = "messagesModels") Map<String, HandleIdInput> messagesModels,
         @JsonProperty(value = "rerankingModels") Map<String, HandleIdInput> rerankingModels,
+        @JsonProperty(value = "responsesModels") Map<String, HandleIdInput> responsesModels,
         @JsonProperty(value = "searchModels") Map<String, HandleIdInput> searchModels,
         @JsonProperty(value = "speechModels") Map<String, HandleIdInput> speechModels,
         @JsonProperty(value = "transcriptionModels") Map<String, HandleIdInput> transcriptionModels,
         @JsonProperty(value = "videoModels") Map<String, HandleIdInput> videoModels) {
+        this.chatModels = chatModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(chatModels));
+        this.completionModels = completionModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(completionModels));
         this.decisionModels = decisionModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(decisionModels));
         this.defaultMethod = defaultMethod;
         this.embeddingModels = embeddingModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(embeddingModels));
@@ -65,7 +79,9 @@ public final class ProviderCustomParams {
         this.imageModels = imageModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(imageModels));
         this.languageModelMiddleware = languageModelMiddleware == null ? null : Collections.unmodifiableList(new ArrayList<>(languageModelMiddleware));
         this.languageModels = languageModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(languageModels));
+        this.messagesModels = messagesModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(messagesModels));
         this.rerankingModels = rerankingModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(rerankingModels));
+        this.responsesModels = responsesModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(responsesModels));
         this.searchModels = searchModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(searchModels));
         this.speechModels = speechModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(speechModels));
         this.transcriptionModels = transcriptionModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(transcriptionModels));
@@ -73,6 +89,8 @@ public final class ProviderCustomParams {
     }
 
     public static Builder builder() { return new Builder(); }
+    public Map<String, HandleIdInput> getChatModels() { return chatModels; }
+    public Map<String, HandleIdInput> getCompletionModels() { return completionModels; }
     public Map<String, HandleIdInput> getDecisionModels() { return decisionModels; }
     public String getDefaultMethod() { return defaultMethod; }
     public Map<String, HandleIdInput> getEmbeddingModels() { return embeddingModels; }
@@ -82,13 +100,17 @@ public final class ProviderCustomParams {
     public Map<String, HandleIdInput> getImageModels() { return imageModels; }
     public List<HandleIdInput> getLanguageModelMiddleware() { return languageModelMiddleware; }
     public Map<String, HandleIdInput> getLanguageModels() { return languageModels; }
+    public Map<String, HandleIdInput> getMessagesModels() { return messagesModels; }
     public Map<String, HandleIdInput> getRerankingModels() { return rerankingModels; }
+    public Map<String, HandleIdInput> getResponsesModels() { return responsesModels; }
     public Map<String, HandleIdInput> getSearchModels() { return searchModels; }
     public Map<String, HandleIdInput> getSpeechModels() { return speechModels; }
     public Map<String, HandleIdInput> getTranscriptionModels() { return transcriptionModels; }
     public Map<String, HandleIdInput> getVideoModels() { return videoModels; }
 
     public static final class Builder {
+        private Map<String, HandleIdInput> chatModels;
+        private Map<String, HandleIdInput> completionModels;
         private Map<String, HandleIdInput> decisionModels;
         private String defaultMethod;
         private Map<String, HandleIdInput> embeddingModels;
@@ -98,11 +120,23 @@ public final class ProviderCustomParams {
         private Map<String, HandleIdInput> imageModels;
         private List<HandleIdInput> languageModelMiddleware;
         private Map<String, HandleIdInput> languageModels;
+        private Map<String, HandleIdInput> messagesModels;
         private Map<String, HandleIdInput> rerankingModels;
+        private Map<String, HandleIdInput> responsesModels;
         private Map<String, HandleIdInput> searchModels;
         private Map<String, HandleIdInput> speechModels;
         private Map<String, HandleIdInput> transcriptionModels;
         private Map<String, HandleIdInput> videoModels;
+
+        public Builder chatModels(Map<String, HandleIdInput> value) {
+            this.chatModels = value;
+            return this;
+        }
+
+        public Builder completionModels(Map<String, HandleIdInput> value) {
+            this.completionModels = value;
+            return this;
+        }
 
         public Builder decisionModels(Map<String, HandleIdInput> value) {
             this.decisionModels = value;
@@ -149,8 +183,18 @@ public final class ProviderCustomParams {
             return this;
         }
 
+        public Builder messagesModels(Map<String, HandleIdInput> value) {
+            this.messagesModels = value;
+            return this;
+        }
+
         public Builder rerankingModels(Map<String, HandleIdInput> value) {
             this.rerankingModels = value;
+            return this;
+        }
+
+        public Builder responsesModels(Map<String, HandleIdInput> value) {
+            this.responsesModels = value;
             return this;
         }
 
@@ -174,6 +218,6 @@ public final class ProviderCustomParams {
             return this;
         }
 
-        public ProviderCustomParams build() { return new ProviderCustomParams(decisionModels, defaultMethod, embeddingModels, fallbackProvider, files, imageModelMiddleware, imageModels, languageModelMiddleware, languageModels, rerankingModels, searchModels, speechModels, transcriptionModels, videoModels); }
+        public ProviderCustomParams build() { return new ProviderCustomParams(chatModels, completionModels, decisionModels, defaultMethod, embeddingModels, fallbackProvider, files, imageModelMiddleware, imageModels, languageModelMiddleware, languageModels, messagesModels, rerankingModels, responsesModels, searchModels, speechModels, transcriptionModels, videoModels); }
     }
 }

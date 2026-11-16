@@ -2934,6 +2934,67 @@ final class ChatCompletionUsage {
       };
 }
 
+/// Access mode for the `codex` package in declarative configuration.
+sealed class CodexModeSpec {
+  const CodexModeSpec();
+  String get type;
+  factory CodexModeSpec.fromJson(Map<String, dynamic> json) {
+    switch (json['type']) {
+      case 'apiKey':
+        return CodexModeSpecApiKey.fromJson(json);
+      case 'chatGptAccount':
+        return CodexModeSpecChatGptAccount.fromJson(json);
+      default:
+        throw FormatException('Unknown CodexModeSpec tag: ${json['type']}');
+    }
+  }
+
+  Map<String, dynamic> toJson();
+}
+
+final class CodexModeSpecApiKey extends CodexModeSpec {
+  final StringOrEnv? apiKey;
+  const CodexModeSpecApiKey({
+    this.apiKey,
+  });
+  @override
+  String get type => 'apiKey';
+  factory CodexModeSpecApiKey.fromJson(Map<String, dynamic> json) {
+    return CodexModeSpecApiKey(
+      apiKey:
+          json['apiKey'] == null ? null : StringOrEnv.fromJson(json['apiKey']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'apiKey',
+        if (apiKey != null) 'apiKey': apiKey!.toJson(),
+      };
+}
+
+final class CodexModeSpecChatGptAccount extends CodexModeSpec {
+  final String? accountId;
+  final StringOrEnv token;
+  const CodexModeSpecChatGptAccount({
+    this.accountId,
+    required this.token,
+  });
+  @override
+  String get type => 'chatGptAccount';
+  factory CodexModeSpecChatGptAccount.fromJson(Map<String, dynamic> json) {
+    return CodexModeSpecChatGptAccount(
+      accountId: json['accountId'] as String?,
+      token: StringOrEnv.fromJson(json['token']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': 'chatGptAccount',
+        if (accountId != null) 'accountId': accountId,
+        'token': token.toJson(),
+      };
+}
+
 final class CodexRefreshRequest {
   final String clientId;
   final String refreshToken;
@@ -4705,6 +4766,23 @@ final class EmptyParams {
   }
 
   Map<String, dynamic> toJson() => {};
+}
+
+/// Reference to an environment variable carrying a credential or secret.
+final class EnvVarRef {
+  final String env;
+  const EnvVarRef({
+    required this.env,
+  });
+  factory EnvVarRef.fromJson(Map<String, dynamic> json) {
+    return EnvVarRef(
+      env: json['env'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'env': env,
+      };
 }
 
 /// The error another error was built from: the AI SDK's `cause`.
@@ -6693,6 +6771,21 @@ final class InputTokenDetails {
       };
 }
 
+/// Language-model API variant exposed on a [`Provider`] alongside the default
+/// [`Provider::language_model`] constructor.
+enum LanguageApi {
+  chat('chat'),
+  responses('responses'),
+  completion('completion'),
+  messages('messages');
+
+  const LanguageApi(this.wireValue);
+  final String wireValue;
+  static LanguageApi fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
 /// A file in a provider's output: `LanguageModelV4File` /
 /// `LanguageModelV4ReasoningFile` (`provider`
 /// `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
@@ -7549,6 +7642,25 @@ enum Modality {
   String toJson() => wireValue;
 }
 
+/// Model modality supported by a provider package or registry resolution call.
+enum ModalityKind {
+  languageModel('languageModel'),
+  embeddingModel('embeddingModel'),
+  imageModel('imageModel'),
+  speechModel('speechModel'),
+  transcriptionModel('transcriptionModel'),
+  rerankingModel('rerankingModel'),
+  videoModel('videoModel'),
+  searchModel('searchModel'),
+  decision('decision');
+
+  const ModalityKind(this.wireValue);
+  final String wireValue;
+  static ModalityKind fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
 /// Model-level capability flags (more precise than provider-level `supports_*`).
 final class ModelCapabilities {
   /// Accepts multimodal attachments (image/audio/pdf input).
@@ -7822,6 +7934,10 @@ final class ModelMessageTool extends ModelMessage {
 
 enum ModelMethod {
   languageModel('languageModel'),
+  chat('chat'),
+  responses('responses'),
+  completion('completion'),
+  messages('messages'),
   embeddingModel('embeddingModel'),
   imageModel('imageModel'),
   speechModel('speechModel'),
@@ -8759,6 +8875,127 @@ final class OutputTokenDetails {
       };
 }
 
+/// Authentication mechanism implemented by a provider package.
+enum PackageAuthKind {
+  bearer('bearer'),
+  header('header'),
+  queryParam('queryParam'),
+  basic('basic'),
+  awsSigV4('awsSigV4'),
+  awsBearerOrSigV4('awsBearerOrSigV4'),
+  anthropicAws('anthropicAws'),
+  googleVertex('googleVertex'),
+  azureApiKeyOrToken('azureApiKeyOrToken'),
+  codexChannel('codexChannel'),
+  optionalBearer('optionalBearer'),
+  none('none');
+
+  const PackageAuthKind(this.wireValue);
+  final String wireValue;
+  static PackageAuthKind fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
+/// Secret-free static metadata describing a provider package.
+final class PackageDescriptor {
+  final String? apiKeyEnv;
+  final PackageAuthKind authKind;
+  final String? baseUrlEnv;
+  final String? defaultBaseUrl;
+  final ModalityKind? defaultMethod;
+  final String id;
+  final PackageKind kind;
+  final List<LanguageApi> languageApis;
+  final List<ModalityKind> modalities;
+  final List<SettingFieldSpec> settings;
+  final bool supportsDefaultInstance;
+  final bool supportsDiscovery;
+  final bool supportsFiles;
+  final bool supportsSkills;
+  final List<TemplateParamDescriptor> templateParams;
+  const PackageDescriptor({
+    this.apiKeyEnv,
+    required this.authKind,
+    this.baseUrlEnv,
+    this.defaultBaseUrl,
+    this.defaultMethod,
+    required this.id,
+    required this.kind,
+    required this.languageApis,
+    required this.modalities,
+    required this.settings,
+    required this.supportsDefaultInstance,
+    required this.supportsDiscovery,
+    required this.supportsFiles,
+    required this.supportsSkills,
+    required this.templateParams,
+  });
+  factory PackageDescriptor.fromJson(Map<String, dynamic> json) {
+    return PackageDescriptor(
+      apiKeyEnv: json['apiKeyEnv'] as String?,
+      authKind: PackageAuthKind.fromJson(json['authKind']),
+      baseUrlEnv: json['baseUrlEnv'] as String?,
+      defaultBaseUrl: json['defaultBaseUrl'] as String?,
+      defaultMethod: json['defaultMethod'] == null
+          ? null
+          : ModalityKind.fromJson(json['defaultMethod']),
+      id: json['id'] as String,
+      kind: PackageKind.fromJson(json['kind']),
+      languageApis: (json['languageApis'] as List)
+          .map((item) => LanguageApi.fromJson(item))
+          .toList(),
+      modalities: (json['modalities'] as List)
+          .map((item) => ModalityKind.fromJson(item))
+          .toList(),
+      settings: (json['settings'] as List)
+          .map(
+              (item) => SettingFieldSpec.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      supportsDefaultInstance: json['supportsDefaultInstance'] as bool,
+      supportsDiscovery: json['supportsDiscovery'] as bool,
+      supportsFiles: json['supportsFiles'] as bool,
+      supportsSkills: json['supportsSkills'] as bool,
+      templateParams: (json['templateParams'] as List)
+          .map((item) =>
+              TemplateParamDescriptor.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (apiKeyEnv != null) 'apiKeyEnv': apiKeyEnv,
+        'authKind': authKind.toJson(),
+        if (baseUrlEnv != null) 'baseUrlEnv': baseUrlEnv,
+        if (defaultBaseUrl != null) 'defaultBaseUrl': defaultBaseUrl,
+        if (defaultMethod != null) 'defaultMethod': defaultMethod!.toJson(),
+        'id': id,
+        'kind': kind.toJson(),
+        'languageApis': languageApis.map((item) => item.toJson()).toList(),
+        'modalities': modalities.map((item) => item.toJson()).toList(),
+        'settings': settings.map((item) => item.toJson()).toList(),
+        'supportsDefaultInstance': supportsDefaultInstance,
+        'supportsDiscovery': supportsDiscovery,
+        'supportsFiles': supportsFiles,
+        'supportsSkills': supportsSkills,
+        'templateParams': templateParams.map((item) => item.toJson()).toList(),
+      };
+}
+
+/// Architectural category of a provider package.
+enum PackageKind {
+  native('native'),
+  protocol('protocol'),
+  preset('preset'),
+  specialized('specialized');
+
+  const PackageKind(this.wireValue);
+  final String wireValue;
+  static PackageKind fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
 /// A prefix break between two consecutive records of a session.
 final class PrefixBreak {
   final String atRecordId;
@@ -8812,15 +9049,198 @@ final class PromptTokensDetails {
       };
 }
 
+/// Declarative provider registry configuration document.
+final class ProviderConfigDocument {
+  final Map<String, ProviderEntrySpec> providers;
+  const ProviderConfigDocument({
+    required this.providers,
+  });
+  factory ProviderConfigDocument.fromJson(Map<String, dynamic> json) {
+    return ProviderConfigDocument(
+      providers: (json['providers'] as Map).map((key, item) => MapEntry(
+          key as String,
+          ProviderEntrySpec.fromJson(item as Map<String, dynamic>))),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'providers': providers.map((key, item) => MapEntry(key, item.toJson())),
+      };
+}
+
+/// Secret-safe declarative settings shared across provider packages.
+final class ProviderConfigSettings {
+  final StringOrEnv? accessKeyId;
+  final StringOrEnv? accessToken;
+  final StringOrEnv? apiKey;
+  final String? apiVersion;
+  final StringOrEnv? authToken;
+  final String? baseUrl;
+  final CodexModeSpec? codexMode;
+  final String? cx;
+  final String? endpoint;
+  final Map<String, String?>? headers;
+  final bool? includeUsage;
+  final String? location;
+  final StringOrEnv? login;
+  final String? name;
+  final String? organization;
+  final String? originator;
+  final Map<String, String>? params;
+  final StringOrEnv? password;
+  final String? probabilitySource;
+  final String? project;
+  final Map<String, String>? queryParams;
+  final String? region;
+  final String? resourceName;
+  final StringOrEnv? secretAccessKey;
+  final StringOrEnv? sessionToken;
+  final String? speechBaseUrl;
+  final bool? supportsMultiPartToolContent;
+  final bool? supportsStructuredOutputs;
+  final bool? useDeploymentBasedUrls;
+  final String? workspaceId;
+  const ProviderConfigSettings({
+    this.accessKeyId,
+    this.accessToken,
+    this.apiKey,
+    this.apiVersion,
+    this.authToken,
+    this.baseUrl,
+    this.codexMode,
+    this.cx,
+    this.endpoint,
+    this.headers,
+    this.includeUsage,
+    this.location,
+    this.login,
+    this.name,
+    this.organization,
+    this.originator,
+    this.params,
+    this.password,
+    this.probabilitySource,
+    this.project,
+    this.queryParams,
+    this.region,
+    this.resourceName,
+    this.secretAccessKey,
+    this.sessionToken,
+    this.speechBaseUrl,
+    this.supportsMultiPartToolContent,
+    this.supportsStructuredOutputs,
+    this.useDeploymentBasedUrls,
+    this.workspaceId,
+  });
+  factory ProviderConfigSettings.fromJson(Map<String, dynamic> json) {
+    return ProviderConfigSettings(
+      accessKeyId: json['accessKeyId'] == null
+          ? null
+          : StringOrEnv.fromJson(json['accessKeyId']),
+      accessToken: json['accessToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['accessToken']),
+      apiKey:
+          json['apiKey'] == null ? null : StringOrEnv.fromJson(json['apiKey']),
+      apiVersion: json['apiVersion'] as String?,
+      authToken: json['authToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['authToken']),
+      baseUrl: json['baseUrl'] as String?,
+      codexMode: json['codexMode'] == null
+          ? null
+          : CodexModeSpec.fromJson(json['codexMode'] as Map<String, dynamic>),
+      cx: json['cx'] as String?,
+      endpoint: json['endpoint'] as String?,
+      headers: json['headers'] == null
+          ? null
+          : Map<String, String?>.from(json['headers'] as Map),
+      includeUsage: json['includeUsage'] as bool?,
+      location: json['location'] as String?,
+      login: json['login'] == null ? null : StringOrEnv.fromJson(json['login']),
+      name: json['name'] as String?,
+      organization: json['organization'] as String?,
+      originator: json['originator'] as String?,
+      params: json['params'] == null
+          ? null
+          : Map<String, String>.from(json['params'] as Map),
+      password: json['password'] == null
+          ? null
+          : StringOrEnv.fromJson(json['password']),
+      probabilitySource: json['probabilitySource'] as String?,
+      project: json['project'] as String?,
+      queryParams: json['queryParams'] == null
+          ? null
+          : Map<String, String>.from(json['queryParams'] as Map),
+      region: json['region'] as String?,
+      resourceName: json['resourceName'] as String?,
+      secretAccessKey: json['secretAccessKey'] == null
+          ? null
+          : StringOrEnv.fromJson(json['secretAccessKey']),
+      sessionToken: json['sessionToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['sessionToken']),
+      speechBaseUrl: json['speechBaseUrl'] as String?,
+      supportsMultiPartToolContent:
+          json['supportsMultiPartToolContent'] as bool?,
+      supportsStructuredOutputs: json['supportsStructuredOutputs'] as bool?,
+      useDeploymentBasedUrls: json['useDeploymentBasedUrls'] as bool?,
+      workspaceId: json['workspaceId'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (accessKeyId != null) 'accessKeyId': accessKeyId!.toJson(),
+        if (accessToken != null) 'accessToken': accessToken!.toJson(),
+        if (apiKey != null) 'apiKey': apiKey!.toJson(),
+        if (apiVersion != null) 'apiVersion': apiVersion,
+        if (authToken != null) 'authToken': authToken!.toJson(),
+        if (baseUrl != null) 'baseUrl': baseUrl,
+        if (codexMode != null) 'codexMode': codexMode!.toJson(),
+        if (cx != null) 'cx': cx,
+        if (endpoint != null) 'endpoint': endpoint,
+        if (headers != null) 'headers': headers,
+        if (includeUsage != null) 'includeUsage': includeUsage,
+        if (location != null) 'location': location,
+        if (login != null) 'login': login!.toJson(),
+        if (name != null) 'name': name,
+        if (organization != null) 'organization': organization,
+        if (originator != null) 'originator': originator,
+        if (params != null) 'params': params,
+        if (password != null) 'password': password!.toJson(),
+        if (probabilitySource != null) 'probabilitySource': probabilitySource,
+        if (project != null) 'project': project,
+        if (queryParams != null) 'queryParams': queryParams,
+        if (region != null) 'region': region,
+        if (resourceName != null) 'resourceName': resourceName,
+        if (secretAccessKey != null)
+          'secretAccessKey': secretAccessKey!.toJson(),
+        if (sessionToken != null) 'sessionToken': sessionToken!.toJson(),
+        if (speechBaseUrl != null) 'speechBaseUrl': speechBaseUrl,
+        if (supportsMultiPartToolContent != null)
+          'supportsMultiPartToolContent': supportsMultiPartToolContent,
+        if (supportsStructuredOutputs != null)
+          'supportsStructuredOutputs': supportsStructuredOutputs,
+        if (useDeploymentBasedUrls != null)
+          'useDeploymentBasedUrls': useDeploymentBasedUrls,
+        if (workspaceId != null) 'workspaceId': workspaceId,
+      };
+}
+
 final class ProviderCreateParams {
+  final List<String>? envAllowlist;
   final String package;
   final ProviderSettings? settings;
   const ProviderCreateParams({
+    this.envAllowlist,
     required this.package,
     this.settings,
   });
   factory ProviderCreateParams.fromJson(Map<String, dynamic> json) {
     return ProviderCreateParams(
+      envAllowlist: json['envAllowlist'] == null
+          ? null
+          : (json['envAllowlist'] as List).cast<String>(),
       package: json['package'] as String,
       settings: json['settings'] == null
           ? null
@@ -8829,12 +9249,15 @@ final class ProviderCreateParams {
   }
 
   Map<String, dynamic> toJson() => {
+        if (envAllowlist != null) 'envAllowlist': envAllowlist,
         'package': package,
         if (settings != null) 'settings': settings!.toJson(),
       };
 }
 
 final class ProviderCustomParams {
+  final Map<String, HandleIdInput>? chatModels;
+  final Map<String, HandleIdInput>? completionModels;
   final Map<String, HandleIdInput>? decisionModels;
   final String? defaultMethod;
   final Map<String, HandleIdInput>? embeddingModels;
@@ -8844,12 +9267,16 @@ final class ProviderCustomParams {
   final Map<String, HandleIdInput>? imageModels;
   final List<HandleIdInput>? languageModelMiddleware;
   final Map<String, HandleIdInput>? languageModels;
+  final Map<String, HandleIdInput>? messagesModels;
   final Map<String, HandleIdInput>? rerankingModels;
+  final Map<String, HandleIdInput>? responsesModels;
   final Map<String, HandleIdInput>? searchModels;
   final Map<String, HandleIdInput>? speechModels;
   final Map<String, HandleIdInput>? transcriptionModels;
   final Map<String, HandleIdInput>? videoModels;
   const ProviderCustomParams({
+    this.chatModels,
+    this.completionModels,
     this.decisionModels,
     this.defaultMethod,
     this.embeddingModels,
@@ -8859,7 +9286,9 @@ final class ProviderCustomParams {
     this.imageModels,
     this.languageModelMiddleware,
     this.languageModels,
+    this.messagesModels,
     this.rerankingModels,
+    this.responsesModels,
     this.searchModels,
     this.speechModels,
     this.transcriptionModels,
@@ -8867,6 +9296,14 @@ final class ProviderCustomParams {
   });
   factory ProviderCustomParams.fromJson(Map<String, dynamic> json) {
     return ProviderCustomParams(
+      chatModels: json['chatModels'] == null
+          ? null
+          : (json['chatModels'] as Map).map((key, item) =>
+              MapEntry(key as String, HandleIdInput.fromJson(item))),
+      completionModels: json['completionModels'] == null
+          ? null
+          : (json['completionModels'] as Map).map((key, item) =>
+              MapEntry(key as String, HandleIdInput.fromJson(item))),
       decisionModels: json['decisionModels'] == null
           ? null
           : (json['decisionModels'] as Map).map((key, item) =>
@@ -8899,9 +9336,17 @@ final class ProviderCustomParams {
           ? null
           : (json['languageModels'] as Map).map((key, item) =>
               MapEntry(key as String, HandleIdInput.fromJson(item))),
+      messagesModels: json['messagesModels'] == null
+          ? null
+          : (json['messagesModels'] as Map).map((key, item) =>
+              MapEntry(key as String, HandleIdInput.fromJson(item))),
       rerankingModels: json['rerankingModels'] == null
           ? null
           : (json['rerankingModels'] as Map).map((key, item) =>
+              MapEntry(key as String, HandleIdInput.fromJson(item))),
+      responsesModels: json['responsesModels'] == null
+          ? null
+          : (json['responsesModels'] as Map).map((key, item) =>
               MapEntry(key as String, HandleIdInput.fromJson(item))),
       searchModels: json['searchModels'] == null
           ? null
@@ -8923,6 +9368,12 @@ final class ProviderCustomParams {
   }
 
   Map<String, dynamic> toJson() => {
+        if (chatModels != null)
+          'chatModels':
+              chatModels!.map((key, item) => MapEntry(key, item.toJson())),
+        if (completionModels != null)
+          'completionModels': completionModels!
+              .map((key, item) => MapEntry(key, item.toJson())),
         if (decisionModels != null)
           'decisionModels':
               decisionModels!.map((key, item) => MapEntry(key, item.toJson())),
@@ -8945,9 +9396,15 @@ final class ProviderCustomParams {
         if (languageModels != null)
           'languageModels':
               languageModels!.map((key, item) => MapEntry(key, item.toJson())),
+        if (messagesModels != null)
+          'messagesModels':
+              messagesModels!.map((key, item) => MapEntry(key, item.toJson())),
         if (rerankingModels != null)
           'rerankingModels':
               rerankingModels!.map((key, item) => MapEntry(key, item.toJson())),
+        if (responsesModels != null)
+          'responsesModels':
+              responsesModels!.map((key, item) => MapEntry(key, item.toJson())),
         if (searchModels != null)
           'searchModels':
               searchModels!.map((key, item) => MapEntry(key, item.toJson())),
@@ -8976,6 +9433,46 @@ final class ProviderDefaultParams {
 
   Map<String, dynamic> toJson() => {
         'package': package,
+      };
+}
+
+final class ProviderDescriptorsParams {
+  final String? package;
+  const ProviderDescriptorsParams({
+    this.package,
+  });
+  factory ProviderDescriptorsParams.fromJson(Map<String, dynamic> json) {
+    return ProviderDescriptorsParams(
+      package: json['package'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (package != null) 'package': package,
+      };
+}
+
+/// Configuration for a single provider entry (`package` + typed `settings`).
+final class ProviderEntrySpec {
+  final String package;
+  final ProviderConfigSettings? settings;
+  const ProviderEntrySpec({
+    required this.package,
+    this.settings,
+  });
+  factory ProviderEntrySpec.fromJson(Map<String, dynamic> json) {
+    return ProviderEntrySpec(
+      package: json['package'] as String,
+      settings: json['settings'] == null
+          ? null
+          : ProviderConfigSettings.fromJson(
+              json['settings'] as Map<String, dynamic>),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'package': package,
+        if (settings != null) 'settings': settings!.toJson(),
       };
 }
 
@@ -9056,68 +9553,178 @@ final class ProviderRecord {
 }
 
 final class ProviderSettings {
-  final String? apiKey;
+  final StringOrEnv? accessKeyId;
+  final StringOrEnv? accessToken;
+  final StringOrEnv? apiKey;
+  final String? apiVersion;
+  final StringOrEnv? authToken;
   final String? baseUrl;
+  final CodexModeSpec? codexMode;
   final HandleIdInput? credentialResolver;
+  final String? cx;
   final String? endpoint;
   final HandleIdInput? fetch;
   final Map<String, String?>? headers;
+  final bool? includeUsage;
+  final String? location;
+  final StringOrEnv? login;
+  final String? name;
   final String? organization;
+  final String? originator;
   final Map<String, String>? params;
+  final StringOrEnv? password;
   final String? probabilitySource;
   final String? project;
+  final Map<String, String>? queryParams;
+  final String? region;
+  final String? resourceName;
+  final StringOrEnv? secretAccessKey;
+  final StringOrEnv? sessionToken;
+  final String? speechBaseUrl;
+  final bool? supportsMultiPartToolContent;
+  final bool? supportsStructuredOutputs;
+  final bool? useDeploymentBasedUrls;
   final HandleIdInput? webSocket;
+  final String? workspaceId;
   const ProviderSettings({
+    this.accessKeyId,
+    this.accessToken,
     this.apiKey,
+    this.apiVersion,
+    this.authToken,
     this.baseUrl,
+    this.codexMode,
     this.credentialResolver,
+    this.cx,
     this.endpoint,
     this.fetch,
     this.headers,
+    this.includeUsage,
+    this.location,
+    this.login,
+    this.name,
     this.organization,
+    this.originator,
     this.params,
+    this.password,
     this.probabilitySource,
     this.project,
+    this.queryParams,
+    this.region,
+    this.resourceName,
+    this.secretAccessKey,
+    this.sessionToken,
+    this.speechBaseUrl,
+    this.supportsMultiPartToolContent,
+    this.supportsStructuredOutputs,
+    this.useDeploymentBasedUrls,
     this.webSocket,
+    this.workspaceId,
   });
   factory ProviderSettings.fromJson(Map<String, dynamic> json) {
     return ProviderSettings(
-      apiKey: json['apiKey'] as String?,
+      accessKeyId: json['accessKeyId'] == null
+          ? null
+          : StringOrEnv.fromJson(json['accessKeyId']),
+      accessToken: json['accessToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['accessToken']),
+      apiKey:
+          json['apiKey'] == null ? null : StringOrEnv.fromJson(json['apiKey']),
+      apiVersion: json['apiVersion'] as String?,
+      authToken: json['authToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['authToken']),
       baseUrl: json['baseUrl'] as String?,
+      codexMode: json['codexMode'] == null
+          ? null
+          : CodexModeSpec.fromJson(json['codexMode'] as Map<String, dynamic>),
       credentialResolver: json['credentialResolver'] == null
           ? null
           : HandleIdInput.fromJson(json['credentialResolver']),
+      cx: json['cx'] as String?,
       endpoint: json['endpoint'] as String?,
       fetch:
           json['fetch'] == null ? null : HandleIdInput.fromJson(json['fetch']),
       headers: json['headers'] == null
           ? null
           : Map<String, String?>.from(json['headers'] as Map),
+      includeUsage: json['includeUsage'] as bool?,
+      location: json['location'] as String?,
+      login: json['login'] == null ? null : StringOrEnv.fromJson(json['login']),
+      name: json['name'] as String?,
       organization: json['organization'] as String?,
+      originator: json['originator'] as String?,
       params: json['params'] == null
           ? null
           : Map<String, String>.from(json['params'] as Map),
+      password: json['password'] == null
+          ? null
+          : StringOrEnv.fromJson(json['password']),
       probabilitySource: json['probabilitySource'] as String?,
       project: json['project'] as String?,
+      queryParams: json['queryParams'] == null
+          ? null
+          : Map<String, String>.from(json['queryParams'] as Map),
+      region: json['region'] as String?,
+      resourceName: json['resourceName'] as String?,
+      secretAccessKey: json['secretAccessKey'] == null
+          ? null
+          : StringOrEnv.fromJson(json['secretAccessKey']),
+      sessionToken: json['sessionToken'] == null
+          ? null
+          : StringOrEnv.fromJson(json['sessionToken']),
+      speechBaseUrl: json['speechBaseUrl'] as String?,
+      supportsMultiPartToolContent:
+          json['supportsMultiPartToolContent'] as bool?,
+      supportsStructuredOutputs: json['supportsStructuredOutputs'] as bool?,
+      useDeploymentBasedUrls: json['useDeploymentBasedUrls'] as bool?,
       webSocket: json['webSocket'] == null
           ? null
           : HandleIdInput.fromJson(json['webSocket']),
+      workspaceId: json['workspaceId'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        if (apiKey != null) 'apiKey': apiKey,
+        if (accessKeyId != null) 'accessKeyId': accessKeyId!.toJson(),
+        if (accessToken != null) 'accessToken': accessToken!.toJson(),
+        if (apiKey != null) 'apiKey': apiKey!.toJson(),
+        if (apiVersion != null) 'apiVersion': apiVersion,
+        if (authToken != null) 'authToken': authToken!.toJson(),
         if (baseUrl != null) 'baseUrl': baseUrl,
+        if (codexMode != null) 'codexMode': codexMode!.toJson(),
         if (credentialResolver != null)
           'credentialResolver': credentialResolver!.toJson(),
+        if (cx != null) 'cx': cx,
         if (endpoint != null) 'endpoint': endpoint,
         if (fetch != null) 'fetch': fetch!.toJson(),
         if (headers != null) 'headers': headers,
+        if (includeUsage != null) 'includeUsage': includeUsage,
+        if (location != null) 'location': location,
+        if (login != null) 'login': login!.toJson(),
+        if (name != null) 'name': name,
         if (organization != null) 'organization': organization,
+        if (originator != null) 'originator': originator,
         if (params != null) 'params': params,
+        if (password != null) 'password': password!.toJson(),
         if (probabilitySource != null) 'probabilitySource': probabilitySource,
         if (project != null) 'project': project,
+        if (queryParams != null) 'queryParams': queryParams,
+        if (region != null) 'region': region,
+        if (resourceName != null) 'resourceName': resourceName,
+        if (secretAccessKey != null)
+          'secretAccessKey': secretAccessKey!.toJson(),
+        if (sessionToken != null) 'sessionToken': sessionToken!.toJson(),
+        if (speechBaseUrl != null) 'speechBaseUrl': speechBaseUrl,
+        if (supportsMultiPartToolContent != null)
+          'supportsMultiPartToolContent': supportsMultiPartToolContent,
+        if (supportsStructuredOutputs != null)
+          'supportsStructuredOutputs': supportsStructuredOutputs,
+        if (useDeploymentBasedUrls != null)
+          'useDeploymentBasedUrls': useDeploymentBasedUrls,
         if (webSocket != null) 'webSocket': webSocket!.toJson(),
+        if (workspaceId != null) 'workspaceId': workspaceId,
       };
 }
 
@@ -9774,9 +10381,11 @@ enum RecordingOperation {
 final class RegistryCreateParams {
   final List<RegistryEntry> entries;
   final String? namespace;
+  final String? separator;
   const RegistryCreateParams({
     required this.entries,
     this.namespace,
+    this.separator,
   });
   factory RegistryCreateParams.fromJson(Map<String, dynamic> json) {
     return RegistryCreateParams(
@@ -9784,12 +10393,14 @@ final class RegistryCreateParams {
           .map((item) => RegistryEntry.fromJson(item as Map<String, dynamic>))
           .toList(),
       namespace: json['namespace'] as String?,
+      separator: json['separator'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'entries': entries.map((item) => item.toJson()).toList(),
         if (namespace != null) 'namespace': namespace,
+        if (separator != null) 'separator': separator,
       };
 }
 
@@ -9813,6 +10424,70 @@ final class RegistryEntry {
       };
 }
 
+final class RegistryFromConfigParams {
+  final ProviderConfigDocument config;
+  final List<String>? envAllowlist;
+  final String? namespace;
+  final String? separator;
+  const RegistryFromConfigParams({
+    required this.config,
+    this.envAllowlist,
+    this.namespace,
+    this.separator,
+  });
+  factory RegistryFromConfigParams.fromJson(Map<String, dynamic> json) {
+    return RegistryFromConfigParams(
+      config: ProviderConfigDocument.fromJson(
+          json['config'] as Map<String, dynamic>),
+      envAllowlist: json['envAllowlist'] == null
+          ? null
+          : (json['envAllowlist'] as List).cast<String>(),
+      namespace: json['namespace'] as String?,
+      separator: json['separator'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'config': config.toJson(),
+        if (envAllowlist != null) 'envAllowlist': envAllowlist,
+        if (namespace != null) 'namespace': namespace,
+        if (separator != null) 'separator': separator,
+      };
+}
+
+final class RegistryListParams {
+  const RegistryListParams();
+  factory RegistryListParams.fromJson(Map<String, dynamic> json) {
+    return RegistryListParams();
+  }
+
+  Map<String, dynamic> toJson() => {};
+}
+
+final class RegistryListResult {
+  final List<String> keys;
+  final String namespace;
+  final String separator;
+  const RegistryListResult({
+    required this.keys,
+    required this.namespace,
+    required this.separator,
+  });
+  factory RegistryListResult.fromJson(Map<String, dynamic> json) {
+    return RegistryListResult(
+      keys: (json['keys'] as List).cast<String>(),
+      namespace: json['namespace'] as String,
+      separator: json['separator'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'keys': keys,
+        'namespace': namespace,
+        'separator': separator,
+      };
+}
+
 final class RegistryProviderParams {
   final String key;
   const RegistryProviderParams({
@@ -9826,6 +10501,65 @@ final class RegistryProviderParams {
 
   Map<String, dynamic> toJson() => {
         'key': key,
+      };
+}
+
+final class RegistryUpdateParams {
+  final bool? derive;
+  final List<String>? remove;
+  final bool? replace;
+  final List<RegistryEntry>? set_;
+  const RegistryUpdateParams({
+    this.derive,
+    this.remove,
+    this.replace,
+    this.set_,
+  });
+  factory RegistryUpdateParams.fromJson(Map<String, dynamic> json) {
+    return RegistryUpdateParams(
+      derive: json['derive'] as bool?,
+      remove: json['remove'] == null
+          ? null
+          : (json['remove'] as List).cast<String>(),
+      replace: json['replace'] as bool?,
+      set_: json['set'] == null
+          ? null
+          : (json['set'] as List)
+              .map((item) =>
+                  RegistryEntry.fromJson(item as Map<String, dynamic>))
+              .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (derive != null) 'derive': derive,
+        if (remove != null) 'remove': remove,
+        if (replace != null) 'replace': replace,
+        if (set_ != null) 'set': set_!.map((item) => item.toJson()).toList(),
+      };
+}
+
+final class RegistryUpdateResult {
+  final HandleId? handle;
+  final List<String> keys;
+  final HandleKind? kind;
+  const RegistryUpdateResult({
+    this.handle,
+    required this.keys,
+    this.kind,
+  });
+  factory RegistryUpdateResult.fromJson(Map<String, dynamic> json) {
+    return RegistryUpdateResult(
+      handle: json['handle'] == null ? null : HandleId.fromJson(json['handle']),
+      keys: (json['keys'] as List).cast<String>(),
+      kind: json['kind'] == null ? null : HandleKind.fromJson(json['kind']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (handle != null) 'handle': handle!.toJson(),
+        'keys': keys,
+        if (kind != null) 'kind': kind!.toJson(),
       };
 }
 
@@ -11049,6 +11783,55 @@ final class SessionView {
       };
 }
 
+/// Wire shape of a setting field accepted by a provider package.
+enum SettingFieldKind {
+  string('string'),
+  credential('credential'),
+  boolean('boolean'),
+  headerMap('headerMap'),
+  stringMap('stringMap'),
+  codexMode('codexMode');
+
+  const SettingFieldKind(this.wireValue);
+  final String wireValue;
+  static SettingFieldKind fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
+/// Static description of one setting accepted when constructing a provider package.
+final class SettingFieldSpec {
+  final bool credential;
+  final String? envVar;
+  final SettingFieldKind kind;
+  final String name;
+  final bool required_;
+  const SettingFieldSpec({
+    required this.credential,
+    this.envVar,
+    required this.kind,
+    required this.name,
+    required this.required_,
+  });
+  factory SettingFieldSpec.fromJson(Map<String, dynamic> json) {
+    return SettingFieldSpec(
+      credential: json['credential'] as bool,
+      envVar: json['envVar'] as String?,
+      kind: SettingFieldKind.fromJson(json['kind']),
+      name: json['name'] as String,
+      required_: json['required'] as bool,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'credential': credential,
+        if (envVar != null) 'envVar': envVar,
+        'kind': kind.toJson(),
+        'name': name,
+        'required': required_,
+      };
+}
+
 /// Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
 ///
 /// Newtype that enforces the `WxH` format used by V4 image `size` and video
@@ -12104,6 +12887,38 @@ final class StreamOptions {
       };
 }
 
+/// Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
+sealed class StringOrEnv {
+  const StringOrEnv();
+  factory StringOrEnv.fromJson(Object? value) {
+    try {
+      return StringOrEnvBranchText.fromJson(value);
+    } catch (_) {
+      // Try the next branch in declaration order.
+    }
+    return StringOrEnvBranchEnvVarRef.fromJson(value);
+  }
+
+  Object? toJson();
+}
+
+final class StringOrEnvBranchText extends StringOrEnv {
+  final String value;
+  const StringOrEnvBranchText(this.value);
+  factory StringOrEnvBranchText.fromJson(Object? value) =>
+      StringOrEnvBranchText(value as String);
+  Object? toJson() => value;
+}
+
+final class StringOrEnvBranchEnvVarRef extends StringOrEnv {
+  final EnvVarRef value;
+  const StringOrEnvBranchEnvVarRef(this.value);
+  factory StringOrEnvBranchEnvVarRef.fromJson(Object? value) =>
+      StringOrEnvBranchEnvVarRef(
+          EnvVarRef.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
 /// A raw provider call with its required wire tag.
 final class TaggedRawToolCall {
   final bool? dynamic_;
@@ -12208,6 +13023,27 @@ final class TaggedToolResult {
         'toolCallId': toolCallId,
         'toolName': toolName,
         'type': type,
+      };
+}
+
+/// Static description of one URL template parameter required by a preset provider.
+final class TemplateParamDescriptor {
+  final String envVar;
+  final String name;
+  const TemplateParamDescriptor({
+    required this.envVar,
+    required this.name,
+  });
+  factory TemplateParamDescriptor.fromJson(Map<String, dynamic> json) {
+    return TemplateParamDescriptor(
+      envVar: json['envVar'] as String,
+      name: json['name'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'envVar': envVar,
+        'name': name,
       };
 }
 

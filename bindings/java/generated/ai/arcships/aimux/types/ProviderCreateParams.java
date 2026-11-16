@@ -11,6 +11,8 @@ import java.util.*;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ProviderCreateParams {
+    @JsonProperty("envAllowlist")
+    private final List<String> envAllowlist;
     @JsonProperty("package")
     private final String package_;
     @JsonProperty("settings")
@@ -18,19 +20,28 @@ public final class ProviderCreateParams {
 
     @JsonCreator
     public ProviderCreateParams(
+        @JsonProperty(value = "envAllowlist") List<String> envAllowlist,
         @JsonProperty(value = "package", required = true) String package_,
         @JsonProperty(value = "settings") ProviderSettings settings) {
+        this.envAllowlist = envAllowlist == null ? null : Collections.unmodifiableList(new ArrayList<>(envAllowlist));
         this.package_ = package_;
         this.settings = settings;
     }
 
     public static Builder builder() { return new Builder(); }
+    public List<String> getEnvAllowlist() { return envAllowlist; }
     public String getPackage_() { return package_; }
     public ProviderSettings getSettings() { return settings; }
 
     public static final class Builder {
+        private List<String> envAllowlist;
         private String package_;
         private ProviderSettings settings;
+
+        public Builder envAllowlist(List<String> value) {
+            this.envAllowlist = value;
+            return this;
+        }
 
         public Builder package_(String value) {
             this.package_ = value;
@@ -42,6 +53,6 @@ public final class ProviderCreateParams {
             return this;
         }
 
-        public ProviderCreateParams build() { return new ProviderCreateParams(package_, settings); }
+        public ProviderCreateParams build() { return new ProviderCreateParams(envAllowlist, package_, settings); }
     }
 }

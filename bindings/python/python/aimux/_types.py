@@ -956,6 +956,24 @@ class ChatCompletionUsage(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["completion_tokens_details", "prompt_tokens_details"])
 
 
+class CodexModeSpecApiKey(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["apiKey"] = Field(default="apiKey", alias="type")
+    api_key: Optional["_dto.StringOrEnv"] = Field(default=None, alias="apiKey")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["api_key"])
+
+
+class CodexModeSpecChatGptAccount(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["chatGptAccount"] = Field(default="chatGptAccount", alias="type")
+    account_id: Optional[str] = Field(default=None, alias="accountId")
+    token: "_dto.StringOrEnv" = Field(alias="token")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["account_id"])
+
+
+#: Access mode for the `codex` package in declarative configuration.
+CodexModeSpec = TypeAliasType("CodexModeSpec", Annotated[Union["CodexModeSpecApiKey", "CodexModeSpecChatGptAccount"], Field(discriminator="type")])
+
 class CodexRefreshRequest(_Wire):
     model_config = ConfigDict(extra="forbid")
     client_id: str = Field(alias="clientId")
@@ -1467,6 +1485,12 @@ class EmbeddingUsage(_Wire):
 
 class EmptyParams(_Wire):
     model_config = ConfigDict(extra="forbid")
+
+
+#: Reference to an environment variable carrying a credential or secret.
+class EnvVarRef(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    env: str = Field(alias="env")
 
 
 #: The error another error was built from: the AI SDK's `cause`.
@@ -2073,6 +2097,10 @@ class InputTokenDetails(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["cache_read_tokens", "cache_write_tokens", "no_cache_tokens"])
 
 
+#: Language-model API variant exposed on a [`Provider`] alongside the default
+#: [`Provider::language_model`] constructor.
+LanguageApi = TypeAliasType("LanguageApi", Literal["chat", "responses", "completion", "messages"])
+
 #: A file in a provider's output: `LanguageModelV4File` /
 #: `LanguageModelV4ReasoningFile` (`provider`
 #: `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
@@ -2316,6 +2344,9 @@ class MoaParams(_Wire):
 #: A single input or output modality.
 Modality = TypeAliasType("Modality", Literal["Text", "Image", "Audio", "Video", "Pdf", "Other", "Embedding", "Score"])
 
+#: Model modality supported by a provider package or registry resolution call.
+ModalityKind = TypeAliasType("ModalityKind", Literal["languageModel", "embeddingModel", "imageModel", "speechModel", "transcriptionModel", "rerankingModel", "videoModel", "searchModel", "decision"])
+
 #: Model-level capability flags (more precise than provider-level `supports_*`).
 class ModelCapabilities(_Wire):
     #: Accepts multimodal attachments (image/audio/pdf input).
@@ -2392,7 +2423,7 @@ class ModelMessageTool(_Wire):
 #: A single user-facing chat message, a union by role.
 ModelMessage = TypeAliasType("ModelMessage", Annotated[Union["ModelMessageSystem", "ModelMessageUser", "ModelMessageAssistant", "ModelMessageTool"], Field(discriminator="role")])
 
-ModelMethod = TypeAliasType("ModelMethod", Literal["languageModel", "embeddingModel", "imageModel", "speechModel", "transcriptionModel", "rerankingModel", "videoModel", "searchModel", "decision"])
+ModelMethod = TypeAliasType("ModelMethod", Literal["languageModel", "chat", "responses", "completion", "messages", "embeddingModel", "imageModel", "speechModel", "transcriptionModel", "rerankingModel", "videoModel", "searchModel", "decision"])
 
 #: Input/output modality sets.
 class ModelModalities(_Wire):
@@ -2661,6 +2692,33 @@ class OutputTokenDetails(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["reasoning_tokens", "text_tokens"])
 
 
+#: Authentication mechanism implemented by a provider package.
+PackageAuthKind = TypeAliasType("PackageAuthKind", Literal["bearer", "header", "queryParam", "basic", "awsSigV4", "awsBearerOrSigV4", "anthropicAws", "googleVertex", "azureApiKeyOrToken", "codexChannel", "optionalBearer", "none"])
+
+#: Secret-free static metadata describing a provider package.
+class PackageDescriptor(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    api_key_env: Optional[str] = Field(default=None, alias="apiKeyEnv")
+    auth_kind: "_dto.PackageAuthKind" = Field(alias="authKind")
+    base_url_env: Optional[str] = Field(default=None, alias="baseUrlEnv")
+    default_base_url: Optional[str] = Field(default=None, alias="defaultBaseUrl")
+    default_method: Optional["_dto.ModalityKind"] = Field(default=None, alias="defaultMethod")
+    id: str = Field(alias="id")
+    kind: "_dto.PackageKind" = Field(alias="kind")
+    language_apis: List["_dto.LanguageApi"] = Field(alias="languageApis")
+    modalities: List["_dto.ModalityKind"] = Field(alias="modalities")
+    settings: List["_dto.SettingFieldSpec"] = Field(alias="settings")
+    supports_default_instance: bool = Field(alias="supportsDefaultInstance")
+    supports_discovery: bool = Field(alias="supportsDiscovery")
+    supports_files: bool = Field(alias="supportsFiles")
+    supports_skills: bool = Field(alias="supportsSkills")
+    template_params: List["_dto.TemplateParamDescriptor"] = Field(alias="templateParams")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["api_key_env", "base_url_env", "default_base_url", "default_method"])
+
+
+#: Architectural category of a provider package.
+PackageKind = TypeAliasType("PackageKind", Literal["native", "protocol", "preset", "specialized"])
+
 #: A prefix break between two consecutive records of a session.
 class PrefixBreak(_Wire):
     at_record_id: str = Field(alias="atRecordId")
@@ -2676,15 +2734,60 @@ class PromptTokensDetails(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["cache_write_tokens"])
 
 
+#: Declarative provider registry configuration document.
+class ProviderConfigDocument(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    providers: Dict[str, "_dto.ProviderEntrySpec"] = Field(alias="providers")
+
+
+#: Secret-safe declarative settings shared across provider packages.
+class ProviderConfigSettings(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    access_key_id: Optional["_dto.StringOrEnv"] = Field(default=None, alias="accessKeyId")
+    access_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="accessToken")
+    api_key: Optional["_dto.StringOrEnv"] = Field(default=None, alias="apiKey")
+    api_version: Optional[str] = Field(default=None, alias="apiVersion")
+    auth_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="authToken")
+    base_url: Optional[str] = Field(default=None, alias="baseUrl")
+    codex_mode: Optional["_dto.CodexModeSpec"] = Field(default=None, alias="codexMode")
+    cx: Optional[str] = Field(default=None, alias="cx")
+    endpoint: Optional[str] = Field(default=None, alias="endpoint")
+    headers: Optional[Dict[str, Optional[str]]] = Field(default=None, alias="headers")
+    include_usage: Optional[bool] = Field(default=None, alias="includeUsage")
+    location: Optional[str] = Field(default=None, alias="location")
+    login: Optional["_dto.StringOrEnv"] = Field(default=None, alias="login")
+    name: Optional[str] = Field(default=None, alias="name")
+    organization: Optional[str] = Field(default=None, alias="organization")
+    originator: Optional[str] = Field(default=None, alias="originator")
+    params: Optional[Dict[str, str]] = Field(default=None, alias="params")
+    password: Optional["_dto.StringOrEnv"] = Field(default=None, alias="password")
+    probability_source: Optional[str] = Field(default=None, alias="probabilitySource")
+    project: Optional[str] = Field(default=None, alias="project")
+    query_params: Optional[Dict[str, str]] = Field(default=None, alias="queryParams")
+    region: Optional[str] = Field(default=None, alias="region")
+    resource_name: Optional[str] = Field(default=None, alias="resourceName")
+    secret_access_key: Optional["_dto.StringOrEnv"] = Field(default=None, alias="secretAccessKey")
+    session_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="sessionToken")
+    speech_base_url: Optional[str] = Field(default=None, alias="speechBaseUrl")
+    supports_multi_part_tool_content: Optional[bool] = Field(default=None, alias="supportsMultiPartToolContent")
+    supports_structured_outputs: Optional[bool] = Field(default=None, alias="supportsStructuredOutputs")
+    use_deployment_based_urls: Optional[bool] = Field(default=None, alias="useDeploymentBasedUrls")
+    workspace_id: Optional[str] = Field(default=None, alias="workspaceId")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["access_key_id", "access_token", "api_key", "api_version", "auth_token", "base_url", "codex_mode", "cx", "endpoint", "headers", "include_usage", "location", "login", "name", "organization", "originator", "params", "password", "probability_source", "project", "query_params", "region", "resource_name", "secret_access_key", "session_token", "speech_base_url", "supports_multi_part_tool_content", "supports_structured_outputs", "use_deployment_based_urls", "workspace_id"])
+
+
 class ProviderCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
+    env_allowlist: Optional[List[str]] = Field(default=None, alias="envAllowlist")
     package: str = Field(alias="package")
     settings: Optional["_dto.ProviderSettings"] = Field(default=None, alias="settings")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["settings"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["env_allowlist", "settings"])
 
 
 class ProviderCustomParams(_Wire):
     model_config = ConfigDict(extra="forbid")
+    chat_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="chatModels")
+    completion_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="completionModels")
     decision_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="decisionModels")
     default_method: Optional[str] = Field(default=None, alias="defaultMethod")
     embedding_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="embeddingModels")
@@ -2694,17 +2797,33 @@ class ProviderCustomParams(_Wire):
     image_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="imageModels")
     language_model_middleware: Optional[List["_dto.HandleIdInput"]] = Field(default=None, alias="languageModelMiddleware")
     language_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="languageModels")
+    messages_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="messagesModels")
     reranking_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="rerankingModels")
+    responses_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="responsesModels")
     search_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="searchModels")
     speech_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="speechModels")
     transcription_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="transcriptionModels")
     video_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="videoModels")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["decision_models", "default_method", "embedding_models", "fallback_provider", "files", "image_model_middleware", "image_models", "language_model_middleware", "language_models", "reranking_models", "search_models", "speech_models", "transcription_models", "video_models"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["chat_models", "completion_models", "decision_models", "default_method", "embedding_models", "fallback_provider", "files", "image_model_middleware", "image_models", "language_model_middleware", "language_models", "messages_models", "reranking_models", "responses_models", "search_models", "speech_models", "transcription_models", "video_models"])
 
 
 class ProviderDefaultParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     package: str = Field(alias="package")
+
+
+class ProviderDescriptorsParams(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    package: Optional[str] = Field(default=None, alias="package")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["package"])
+
+
+#: Configuration for a single provider entry (`package` + typed `settings`).
+class ProviderEntrySpec(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    package: str = Field(alias="package")
+    settings: Optional["_dto.ProviderConfigSettings"] = Field(default=None, alias="settings")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["settings"])
 
 
 class ProviderInvokeParams(_Wire):
@@ -2738,18 +2857,40 @@ class ProviderRecord(_Wire):
 
 class ProviderSettings(_Wire):
     model_config = ConfigDict(extra="forbid")
-    api_key: Optional[str] = Field(default=None, alias="apiKey")
+    access_key_id: Optional["_dto.StringOrEnv"] = Field(default=None, alias="accessKeyId")
+    access_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="accessToken")
+    api_key: Optional["_dto.StringOrEnv"] = Field(default=None, alias="apiKey")
+    api_version: Optional[str] = Field(default=None, alias="apiVersion")
+    auth_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="authToken")
     base_url: Optional[str] = Field(default=None, alias="baseUrl")
+    codex_mode: Optional["_dto.CodexModeSpec"] = Field(default=None, alias="codexMode")
     credential_resolver: Optional["_dto.HandleIdInput"] = Field(default=None, alias="credentialResolver")
+    cx: Optional[str] = Field(default=None, alias="cx")
     endpoint: Optional[str] = Field(default=None, alias="endpoint")
     fetch: Optional["_dto.HandleIdInput"] = Field(default=None, alias="fetch")
     headers: Optional[Dict[str, Optional[str]]] = Field(default=None, alias="headers")
+    include_usage: Optional[bool] = Field(default=None, alias="includeUsage")
+    location: Optional[str] = Field(default=None, alias="location")
+    login: Optional["_dto.StringOrEnv"] = Field(default=None, alias="login")
+    name: Optional[str] = Field(default=None, alias="name")
     organization: Optional[str] = Field(default=None, alias="organization")
+    originator: Optional[str] = Field(default=None, alias="originator")
     params: Optional[Dict[str, str]] = Field(default=None, alias="params")
+    password: Optional["_dto.StringOrEnv"] = Field(default=None, alias="password")
     probability_source: Optional[str] = Field(default=None, alias="probabilitySource")
     project: Optional[str] = Field(default=None, alias="project")
+    query_params: Optional[Dict[str, str]] = Field(default=None, alias="queryParams")
+    region: Optional[str] = Field(default=None, alias="region")
+    resource_name: Optional[str] = Field(default=None, alias="resourceName")
+    secret_access_key: Optional["_dto.StringOrEnv"] = Field(default=None, alias="secretAccessKey")
+    session_token: Optional["_dto.StringOrEnv"] = Field(default=None, alias="sessionToken")
+    speech_base_url: Optional[str] = Field(default=None, alias="speechBaseUrl")
+    supports_multi_part_tool_content: Optional[bool] = Field(default=None, alias="supportsMultiPartToolContent")
+    supports_structured_outputs: Optional[bool] = Field(default=None, alias="supportsStructuredOutputs")
+    use_deployment_based_urls: Optional[bool] = Field(default=None, alias="useDeploymentBasedUrls")
     web_socket: Optional["_dto.HandleIdInput"] = Field(default=None, alias="webSocket")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["api_key", "base_url", "credential_resolver", "endpoint", "fetch", "headers", "organization", "params", "probability_source", "project", "web_socket"])
+    workspace_id: Optional[str] = Field(default=None, alias="workspaceId")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["access_key_id", "access_token", "api_key", "api_version", "auth_token", "base_url", "codex_mode", "credential_resolver", "cx", "endpoint", "fetch", "headers", "include_usage", "location", "login", "name", "organization", "originator", "params", "password", "probability_source", "project", "query_params", "region", "resource_name", "secret_access_key", "session_token", "speech_base_url", "supports_multi_part_tool_content", "supports_structured_outputs", "use_deployment_based_urls", "web_socket", "workspace_id"])
 
 
 #: A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -2951,7 +3092,8 @@ class RegistryCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     entries: List["_dto.RegistryEntry"] = Field(alias="entries")
     namespace: Optional[str] = Field(default=None, alias="namespace")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["namespace"])
+    separator: Optional[str] = Field(default=None, alias="separator")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["namespace", "separator"])
 
 
 class RegistryEntry(_Wire):
@@ -2960,9 +3102,44 @@ class RegistryEntry(_Wire):
     provider: str = Field(alias="provider")
 
 
+class RegistryFromConfigParams(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    config: "_dto.ProviderConfigDocument" = Field(alias="config")
+    env_allowlist: Optional[List[str]] = Field(default=None, alias="envAllowlist")
+    namespace: Optional[str] = Field(default=None, alias="namespace")
+    separator: Optional[str] = Field(default=None, alias="separator")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["env_allowlist", "namespace", "separator"])
+
+
+class RegistryListParams(_Wire):
+    model_config = ConfigDict(extra="forbid")
+
+
+class RegistryListResult(_Wire):
+    keys: List[str] = Field(alias="keys")
+    namespace: str = Field(alias="namespace")
+    separator: str = Field(alias="separator")
+
+
 class RegistryProviderParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     key: str = Field(alias="key")
+
+
+class RegistryUpdateParams(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    derive: Optional[bool] = Field(default=None, alias="derive")
+    remove: Optional[List[str]] = Field(default=None, alias="remove")
+    replace: Optional[bool] = Field(default=None, alias="replace")
+    set: Optional[List["_dto.RegistryEntry"]] = Field(default=None, alias="set")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["derive", "remove", "replace", "set"])
+
+
+class RegistryUpdateResult(_Wire):
+    handle: Optional["_dto.HandleId"] = Field(default=None, alias="handle")
+    keys: List[str] = Field(alias="keys")
+    kind: Optional["_dto.HandleKind"] = Field(default=None, alias="kind")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["handle", "kind"])
 
 
 #: A replacement raw call whose tag is optional on input.
@@ -3342,6 +3519,20 @@ class SessionView(_Wire):
     source: "_dto.SessionSource" = Field(alias="source")
 
 
+#: Wire shape of a setting field accepted by a provider package.
+SettingFieldKind = TypeAliasType("SettingFieldKind", Literal["string", "credential", "boolean", "headerMap", "stringMap", "codexMode"])
+
+#: Static description of one setting accepted when constructing a provider package.
+class SettingFieldSpec(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    credential: bool = Field(alias="credential")
+    env_var: Optional[str] = Field(default=None, alias="envVar")
+    kind: "_dto.SettingFieldKind" = Field(alias="kind")
+    name: str = Field(alias="name")
+    required: bool = Field(alias="required")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["env_var"])
+
+
 #: Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
 #:
 #: Newtype that enforces the `WxH` format used by V4 image `size` and video
@@ -3670,6 +3861,9 @@ class StreamOptions(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["include_reasoning", "include_usage"])
 
 
+#: Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
+StringOrEnv = TypeAliasType("StringOrEnv", Annotated[Union[str, "_dto.EnvVarRef"], Field(union_mode="left_to_right")])
+
 #: A raw provider call with its required wire tag.
 class TaggedRawToolCall(_Wire):
     dynamic: Optional[bool] = Field(default=None, alias="dynamic")
@@ -3702,6 +3896,13 @@ class TaggedToolResult(_Wire):
     #: Required value: "tool-result".
     type: Literal["tool-result"] = Field(alias="type")
     _omit_null: ClassVar[frozenset[str]] = frozenset(["dynamic", "preliminary", "provider_executed", "provider_metadata"])
+
+
+#: Static description of one URL template parameter required by a preset provider.
+class TemplateParamDescriptor(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    env_var: str = Field(alias="envVar")
+    name: str = Field(alias="name")
 
 
 class TerminalSummary(_Wire):
@@ -5353,6 +5554,8 @@ ChatCompletionFunction.model_rebuild(_types_namespace=globals())
 ChatCompletionMessage.model_rebuild(_types_namespace=globals())
 ChatCompletionToolCall.model_rebuild(_types_namespace=globals())
 ChatCompletionUsage.model_rebuild(_types_namespace=globals())
+CodexModeSpecApiKey.model_rebuild(_types_namespace=globals())
+CodexModeSpecChatGptAccount.model_rebuild(_types_namespace=globals())
 CodexRefreshRequest.model_rebuild(_types_namespace=globals())
 CodexTokens.model_rebuild(_types_namespace=globals())
 CompletionTokensDetails.model_rebuild(_types_namespace=globals())
@@ -5400,6 +5603,7 @@ EmbeddingResponse.model_rebuild(_types_namespace=globals())
 EmbeddingResult.model_rebuild(_types_namespace=globals())
 EmbeddingUsage.model_rebuild(_types_namespace=globals())
 EmptyParams.model_rebuild(_types_namespace=globals())
+EnvVarRef.model_rebuild(_types_namespace=globals())
 ErrorEnvelope.model_rebuild(_types_namespace=globals())
 FileDataData.model_rebuild(_types_namespace=globals())
 FileDataUrl.model_rebuild(_types_namespace=globals())
@@ -5495,11 +5699,16 @@ OutputChoice.model_rebuild(_types_namespace=globals())
 OutputJson.model_rebuild(_types_namespace=globals())
 OutputChunkTimingStats.model_rebuild(_types_namespace=globals())
 OutputTokenDetails.model_rebuild(_types_namespace=globals())
+PackageDescriptor.model_rebuild(_types_namespace=globals())
 PrefixBreak.model_rebuild(_types_namespace=globals())
 PromptTokensDetails.model_rebuild(_types_namespace=globals())
+ProviderConfigDocument.model_rebuild(_types_namespace=globals())
+ProviderConfigSettings.model_rebuild(_types_namespace=globals())
 ProviderCreateParams.model_rebuild(_types_namespace=globals())
 ProviderCustomParams.model_rebuild(_types_namespace=globals())
 ProviderDefaultParams.model_rebuild(_types_namespace=globals())
+ProviderDescriptorsParams.model_rebuild(_types_namespace=globals())
+ProviderEntrySpec.model_rebuild(_types_namespace=globals())
 ProviderInvokeParams.model_rebuild(_types_namespace=globals())
 ProviderModelParams.model_rebuild(_types_namespace=globals())
 ProviderRecord.model_rebuild(_types_namespace=globals())
@@ -5520,7 +5729,12 @@ RecorderStatsJsonl.model_rebuild(_types_namespace=globals())
 Recording.model_rebuild(_types_namespace=globals())
 RegistryCreateParams.model_rebuild(_types_namespace=globals())
 RegistryEntry.model_rebuild(_types_namespace=globals())
+RegistryFromConfigParams.model_rebuild(_types_namespace=globals())
+RegistryListParams.model_rebuild(_types_namespace=globals())
+RegistryListResult.model_rebuild(_types_namespace=globals())
 RegistryProviderParams.model_rebuild(_types_namespace=globals())
+RegistryUpdateParams.model_rebuild(_types_namespace=globals())
+RegistryUpdateResult.model_rebuild(_types_namespace=globals())
 RepairedToolCall.model_rebuild(_types_namespace=globals())
 ReplayCreateParams.model_rebuild(_types_namespace=globals())
 ReplayInspection.model_rebuild(_types_namespace=globals())
@@ -5556,6 +5770,7 @@ SessionStoreCallsParams.model_rebuild(_types_namespace=globals())
 SessionStoreCreateParams.model_rebuild(_types_namespace=globals())
 SessionStoreHandle.model_rebuild(_types_namespace=globals())
 SessionView.model_rebuild(_types_namespace=globals())
+SettingFieldSpec.model_rebuild(_types_namespace=globals())
 SourceUrl.model_rebuild(_types_namespace=globals())
 SourceDocument.model_rebuild(_types_namespace=globals())
 SourceError.model_rebuild(_types_namespace=globals())
@@ -5578,6 +5793,7 @@ StreamFrameEnd.model_rebuild(_types_namespace=globals())
 StreamOptions.model_rebuild(_types_namespace=globals())
 TaggedRawToolCall.model_rebuild(_types_namespace=globals())
 TaggedToolResult.model_rebuild(_types_namespace=globals())
+TemplateParamDescriptor.model_rebuild(_types_namespace=globals())
 TerminalSummary.model_rebuild(_types_namespace=globals())
 TextPart.model_rebuild(_types_namespace=globals())
 TextRequest.model_rebuild(_types_namespace=globals())
@@ -5743,6 +5959,7 @@ DTO_TYPES = {
     "ChatCompletionMessage": ChatCompletionMessage,
     "ChatCompletionToolCall": ChatCompletionToolCall,
     "ChatCompletionUsage": ChatCompletionUsage,
+    "CodexModeSpec": CodexModeSpec,
     "CodexRefreshRequest": CodexRefreshRequest,
     "CodexTokens": CodexTokens,
     "CompletionTokensDetails": CompletionTokensDetails,
@@ -5765,6 +5982,7 @@ DTO_TYPES = {
     "EmbeddingResult": EmbeddingResult,
     "EmbeddingUsage": EmbeddingUsage,
     "EmptyParams": EmptyParams,
+    "EnvVarRef": EnvVarRef,
     "ErrorCause": ErrorCause,
     "ErrorCauseInput": ErrorCauseInput,
     "ErrorDomain": ErrorDomain,
@@ -5803,6 +6021,7 @@ DTO_TYPES = {
     "InputAudioFormat": InputAudioFormat,
     "InputRecord": InputRecord,
     "InputTokenDetails": InputTokenDetails,
+    "LanguageApi": LanguageApi,
     "LanguageModelFile": LanguageModelFile,
     "LanguageModelMessage": LanguageModelMessage,
     "LanguageModelReasoningPart": LanguageModelReasoningPart,
@@ -5819,6 +6038,7 @@ DTO_TYPES = {
     "MoaFailMode": MoaFailMode,
     "MoaParams": MoaParams,
     "Modality": Modality,
+    "ModalityKind": ModalityKind,
     "ModelCapabilities": ModelCapabilities,
     "ModelCost": ModelCost,
     "ModelInfo": ModelInfo,
@@ -5849,11 +6069,18 @@ DTO_TYPES = {
     "Output": Output,
     "OutputChunkTimingStats": OutputChunkTimingStats,
     "OutputTokenDetails": OutputTokenDetails,
+    "PackageAuthKind": PackageAuthKind,
+    "PackageDescriptor": PackageDescriptor,
+    "PackageKind": PackageKind,
     "PrefixBreak": PrefixBreak,
     "PromptTokensDetails": PromptTokensDetails,
+    "ProviderConfigDocument": ProviderConfigDocument,
+    "ProviderConfigSettings": ProviderConfigSettings,
     "ProviderCreateParams": ProviderCreateParams,
     "ProviderCustomParams": ProviderCustomParams,
     "ProviderDefaultParams": ProviderDefaultParams,
+    "ProviderDescriptorsParams": ProviderDescriptorsParams,
+    "ProviderEntrySpec": ProviderEntrySpec,
     "ProviderInvokeParams": ProviderInvokeParams,
     "ProviderModelParams": ProviderModelParams,
     "ProviderRecord": ProviderRecord,
@@ -5877,7 +6104,12 @@ DTO_TYPES = {
     "RecordingOperation": RecordingOperation,
     "RegistryCreateParams": RegistryCreateParams,
     "RegistryEntry": RegistryEntry,
+    "RegistryFromConfigParams": RegistryFromConfigParams,
+    "RegistryListParams": RegistryListParams,
+    "RegistryListResult": RegistryListResult,
     "RegistryProviderParams": RegistryProviderParams,
+    "RegistryUpdateParams": RegistryUpdateParams,
+    "RegistryUpdateResult": RegistryUpdateResult,
     "RepairedToolCall": RepairedToolCall,
     "ReplayCreateParams": ReplayCreateParams,
     "ReplayInspection": ReplayInspection,
@@ -5915,6 +6147,8 @@ DTO_TYPES = {
     "SessionStoreCreateParams": SessionStoreCreateParams,
     "SessionStoreHandle": SessionStoreHandle,
     "SessionView": SessionView,
+    "SettingFieldKind": SettingFieldKind,
+    "SettingFieldSpec": SettingFieldSpec,
     "Size": Size,
     "Source": Source,
     "SourceError": SourceError,
@@ -5934,8 +6168,10 @@ DTO_TYPES = {
     "StreamEvent": StreamEvent,
     "StreamFrame": StreamFrame,
     "StreamOptions": StreamOptions,
+    "StringOrEnv": StringOrEnv,
     "TaggedRawToolCall": TaggedRawToolCall,
     "TaggedToolResult": TaggedToolResult,
+    "TemplateParamDescriptor": TemplateParamDescriptor,
     "TerminalSummary": TerminalSummary,
     "TextPart": TextPart,
     "TextRequest": TextRequest,
@@ -6110,6 +6346,9 @@ __all__ = [
     "ChatCompletionMessage",
     "ChatCompletionToolCall",
     "ChatCompletionUsage",
+    "CodexModeSpec",
+    "CodexModeSpecApiKey",
+    "CodexModeSpecChatGptAccount",
     "CodexRefreshRequest",
     "CodexTokens",
     "CompletionTokensDetails",
@@ -6162,6 +6401,7 @@ __all__ = [
     "EmbeddingResult",
     "EmbeddingUsage",
     "EmptyParams",
+    "EnvVarRef",
     "ErrorCause",
     "ErrorCauseInput",
     "ErrorDomain",
@@ -6218,6 +6458,7 @@ __all__ = [
     "InputAudioFormat",
     "InputRecord",
     "InputTokenDetails",
+    "LanguageApi",
     "LanguageModelFile",
     "LanguageModelMessage",
     "LanguageModelMessageSystem",
@@ -6250,6 +6491,7 @@ __all__ = [
     "MoaFailMode",
     "MoaParams",
     "Modality",
+    "ModalityKind",
     "ModelCapabilities",
     "ModelCost",
     "ModelInfo",
@@ -6292,11 +6534,18 @@ __all__ = [
     "OutputJson",
     "OutputChunkTimingStats",
     "OutputTokenDetails",
+    "PackageAuthKind",
+    "PackageDescriptor",
+    "PackageKind",
     "PrefixBreak",
     "PromptTokensDetails",
+    "ProviderConfigDocument",
+    "ProviderConfigSettings",
     "ProviderCreateParams",
     "ProviderCustomParams",
     "ProviderDefaultParams",
+    "ProviderDescriptorsParams",
+    "ProviderEntrySpec",
     "ProviderInvokeParams",
     "ProviderModelParams",
     "ProviderRecord",
@@ -6324,7 +6573,12 @@ __all__ = [
     "RecordingOperation",
     "RegistryCreateParams",
     "RegistryEntry",
+    "RegistryFromConfigParams",
+    "RegistryListParams",
+    "RegistryListResult",
     "RegistryProviderParams",
+    "RegistryUpdateParams",
+    "RegistryUpdateResult",
     "RepairedToolCall",
     "ReplayCreateParams",
     "ReplayInspection",
@@ -6364,6 +6618,8 @@ __all__ = [
     "SessionStoreCreateParams",
     "SessionStoreHandle",
     "SessionView",
+    "SettingFieldKind",
+    "SettingFieldSpec",
     "Size",
     "Source",
     "SourceUrl",
@@ -6389,8 +6645,10 @@ __all__ = [
     "StreamFrameEvent",
     "StreamFrameEnd",
     "StreamOptions",
+    "StringOrEnv",
     "TaggedRawToolCall",
     "TaggedToolResult",
+    "TemplateParamDescriptor",
     "TerminalSummary",
     "TextPart",
     "TextRequest",
