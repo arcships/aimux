@@ -50,6 +50,9 @@ pub struct CustomProviderOptions {
     /// fallback provider's discovery is used.
     pub discovery: Option<Arc<dyn ProviderDiscovery>>,
     /// Consulted when a requested model is not in the alias tables.
+    /// Named language models (for example `("chat", id)` or `("responses", id)`),
+    /// explicitly registered without falling back to `fallback_provider`.
+    pub named_language_models: HashMap<(String, String), Arc<dyn LanguageModel>>,
     pub fallback_provider: Option<Arc<dyn Provider>>,
 }
 
@@ -165,6 +168,28 @@ impl Provider for CustomProvider {
         o.skills
             .clone()
             .or_else(|| o.fallback_provider.as_ref()?.skills())
+    }
+
+    fn language_model_named(
+        &self,
+        method: &str,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let o = &self.options;
+        let has_method = o
+            .named_language_models
+            .keys()
+            .any(|(registered_method, _)| registered_method == method);
+        if !has_method {
+            return None;
+        }
+        if let Some(model) = o
+            .named_language_models
+            .get(&(method.to_string(), id.to_string()))
+        {
+            return Some(Ok(Arc::clone(model)));
+        }
+        Some(Err(AiMuxError::no_such_model(id, method)))
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {

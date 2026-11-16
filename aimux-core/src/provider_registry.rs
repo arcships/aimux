@@ -47,7 +47,7 @@ impl Default for ProviderRegistryOptions {
 
 /// A set of providers addressed by id; see [`create_provider_registry`].
 pub struct ProviderRegistry {
-    providers: BTreeMap<String, Arc<dyn Provider>>,
+    providers: std::sync::RwLock<BTreeMap<String, Arc<dyn Provider>>>,
     separator: String,
     language_model_middleware: Vec<Arc<dyn LanguageModelMiddleware>>,
     image_model_middleware: Vec<Arc<dyn ImageModelMiddleware>>,
@@ -60,7 +60,7 @@ pub fn create_provider_registry(
     options: ProviderRegistryOptions,
 ) -> ProviderRegistry {
     ProviderRegistry {
-        providers,
+        providers: std::sync::RwLock::new(providers),
         separator: options.separator,
         language_model_middleware: options.language_model_middleware,
         image_model_middleware: options.image_model_middleware,
@@ -73,24 +73,179 @@ impl ProviderRegistry {
     /// # Errors
     ///
     /// [`AiMuxError::NoSuchProvider`] for an id that is not registered.
-    pub fn provider(&self, id: &str) -> Result<&Arc<dyn Provider>, AiMuxError> {
+    pub fn provider(&self, id: &str) -> Result<Arc<dyn Provider>, AiMuxError> {
         self.get_provider(id, "")
     }
 
-    fn get_provider(&self, id: &str, model_type: &str) -> Result<&Arc<dyn Provider>, AiMuxError> {
-        self.providers
+    fn get_provider(&self, id: &str, model_type: &str) -> Result<Arc<dyn Provider>, AiMuxError> {
+        let providers = self
+            .providers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        providers
             .get(id)
+            .cloned()
             .ok_or_else(|| AiMuxError::NoSuchProvider {
                 provider_id: id.to_string(),
                 model_id: id.to_string(),
                 model_type: model_type.to_string(),
-                available_providers: self.providers.keys().cloned().collect(),
+                available_providers: providers.keys().cloned().collect(),
             })
     }
 
     /// The registered provider ids, in order.
-    pub fn provider_ids(&self) -> impl Iterator<Item = &str> {
-        self.providers.keys().map(String::as_str)
+    pub fn provider_ids(&self) -> Vec<String> {
+        let providers = self
+            .providers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        providers.keys().cloned().collect()
+    }
+
+    /// Whether a provider with `id` is currently registered.
+    #[must_use]
+    pub fn contains_provider(&self, id: &str) -> bool {
+        self.providers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(id)
+    }
+
+    /// Number of providers currently registered.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.providers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// Whether the registry currently holds no providers.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Separator between provider id and model id when resolving compound ids.
+    #[must_use]
+    pub fn separator(&self) -> &str {
+        &self.separator
+    }
+
+    /// Insert or replace `id` in place, returning the previous provider if any.
+    pub fn register(
+        &self,
+        id: impl Into<String>,
+        provider: Arc<dyn Provider>,
+    ) -> Option<Arc<dyn Provider>> {
+        self.providers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.into(), provider)
+    }
+
+    /// Remove `id` in place, returning it when present.
+    pub fn unregister(&self, id: &str) -> Option<Arc<dyn Provider>> {
+        self.providers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(id)
+    }
+
+    /// Insert or replace multiple providers in place.
+    pub fn extend_providers(&self, entries: impl IntoIterator<Item = (String, Arc<dyn Provider>)>) {
+        self.providers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(entries);
+    }
+
+    /// Atomically replace the entire provider map in place.
+    pub fn replace_providers(&self, providers: BTreeMap<String, Arc<dyn Provider>>) {
+        let mut guard = self
+            .providers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = providers;
+    }
+
+    fn derive_with(&self, mutate: impl FnOnce(&mut BTreeMap<String, Arc<dyn Provider>>)) -> Self {
+        let mut next = self
+            .providers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        mutate(&mut next);
+        Self {
+            providers: std::sync::RwLock::new(next),
+            separator: self.separator.clone(),
+            language_model_middleware: self.language_model_middleware.clone(),
+            image_model_middleware: self.image_model_middleware.clone(),
+        }
+    }
+
+    /// Return a new registry with `id` added or replaced without mutating `self`.
+    #[must_use]
+    pub fn with_provider(&self, id: impl Into<String>, provider: Arc<dyn Provider>) -> Self {
+        self.derive_with(|next| {
+            next.insert(id.into(), provider);
+        })
+    }
+
+    /// Return a new registry without `id` without mutating `self`.
+    #[must_use]
+    pub fn without_provider(&self, id: &str) -> Self {
+        self.derive_with(|next| {
+            next.remove(id);
+        })
+    }
+
+    /// Return a new registry with all `entries` added or replaced without mutating `self`.
+    #[must_use]
+    pub fn with_providers(
+        &self,
+        entries: impl IntoIterator<Item = (String, Arc<dyn Provider>)>,
+    ) -> Self {
+        self.derive_with(|next| {
+            next.extend(entries);
+        })
+    }
+
+    /// Return a new registry with the provider map replaced wholesale without mutating `self`.
+    #[must_use]
+    pub fn with_replaced_providers(&self, providers: BTreeMap<String, Arc<dyn Provider>>) -> Self {
+        self.derive_with(|next| {
+            *next = providers;
+        })
+    }
+
+    /// Resolve a language model using a named provider constructor (for example
+    /// `"chat"`, `"responses"`, `"completion"`, `"messages"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::NoSuchProvider`] or [`AiMuxError::NoSuchModel`] when
+    /// the provider or named method is unavailable, or whatever the provider
+    /// returns.
+    pub fn language_model_named(
+        &self,
+        method: &str,
+        id: &str,
+    ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        let (provider, model_id) = self.resolve(id, method)?;
+        let model = provider
+            .language_model_named(method, model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, method)))?;
+        if self.language_model_middleware.is_empty() {
+            Ok(model)
+        } else {
+            Ok(crate::language_model_middleware::wrap_language_model(
+                model,
+                &self.language_model_middleware,
+                None,
+                None,
+            ))
+        }
     }
 
     /// Split `id` at the first separator and look the provider up.
@@ -98,7 +253,7 @@ impl ProviderRegistry {
         &self,
         id: &'a str,
         model_type: &str,
-    ) -> Result<(&Arc<dyn Provider>, &'a str), AiMuxError> {
+    ) -> Result<(Arc<dyn Provider>, &'a str), AiMuxError> {
         let (provider_id, model_id) = id
             .split_once(self.separator.as_str())
             .ok_or_else(|| AiMuxError::no_such_model(id, model_type))?;

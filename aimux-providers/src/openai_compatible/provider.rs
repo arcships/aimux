@@ -325,6 +325,18 @@ impl Provider for OpenAICompatibleProvider {
         Ok(Arc::new(self.image(model_id)))
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match method {
+            "chat" => Some(Ok(Arc::new(self.chat(model_id)))),
+            "completion" => Some(Ok(Arc::new(self.completion(model_id)))),
+            _ => None,
+        }
+    }
+
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
     /// Laya, vLLM, SGLang, Cloudflare); any other preset offers none.
     fn decision_model(

@@ -33,6 +33,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageResult};
 use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model_middleware::LanguageModelMiddleware;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
@@ -48,6 +49,7 @@ use aimux_core::transcription_model::{
 use aimux_core::video_model::{
     VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus,
 };
+use aimux_core::wrap_provider::wrap_provider;
 use aimux_core::{CustomProviderOptions, custom_provider};
 
 /// A stub whose only identity is the id it was created with; none of its
@@ -207,6 +209,14 @@ impl Provider for Fallback {
         self.record("decision_model", id);
         self.decision
             .then(|| Ok(Arc::new(MockDecision("fallback")) as _))
+    }
+    fn language_model_named(
+        &self,
+        method: &str,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.record("language_model_named", id);
+        (method == "chat").then(|| Ok(Arc::new(MockLanguage("fallback")) as _))
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         self.record("files", "");
@@ -647,4 +657,124 @@ fn registry_reports_missing_decision_models() {
         "provider:model",
         "decisionModel",
     );
+}
+
+struct OverrideProviderName(&'static str);
+
+impl LanguageModelMiddleware for OverrideProviderName {
+    fn override_provider(&self, _: &dyn LanguageModel) -> Option<String> {
+        Some(self.0.to_string())
+    }
+}
+
+#[test]
+fn custom_provider_named_language_models_do_not_fall_back_to_fallback_provider() {
+    let fallback = Arc::new(Fallback::default());
+    let custom = custom_provider(CustomProviderOptions {
+        named_language_models: HashMap::from([(
+            ("chat".to_string(), "m1".to_string()),
+            Arc::new(MockLanguage("explicit-chat")) as Arc<dyn LanguageModel>,
+        )]),
+        fallback_provider: Some(fallback.clone()),
+        ..Default::default()
+    });
+    let hit = custom
+        .language_model_named("chat", "m1")
+        .expect("registered named method")
+        .unwrap();
+    assert_eq!(hit.model_id(), "explicit-chat");
+    assert!(custom.language_model_named("responses", "m1").is_none());
+    let miss = custom
+        .language_model_named("chat", "missing")
+        .expect("registered method rejects missing id");
+    assert_no_such_model(miss, "missing", "chat");
+    assert!(fallback.calls().is_empty());
+}
+
+#[test]
+fn wrap_provider_wraps_named_language_models_and_preserves_none() {
+    let inner = Arc::new(Fallback::default());
+    let wrapped = wrap_provider(
+        inner,
+        &[Arc::new(OverrideProviderName("wrapped.provider"))],
+        &[],
+    );
+    let model = wrapped
+        .language_model_named("chat", "m1")
+        .expect("chat supported")
+        .unwrap();
+    assert_eq!(model.provider(), "wrapped.provider");
+    assert!(wrapped.language_model_named("responses", "m1").is_none());
+}
+
+#[test]
+fn registry_supports_dynamic_mutations_derived_clones_and_named_methods() {
+    let base = create_provider_registry(
+        BTreeMap::from([(
+            "alpha".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        )]),
+        ProviderRegistryOptions {
+            separator: ":".to_string(),
+            language_model_middleware: vec![Arc::new(OverrideProviderName("reg.wrapped"))],
+            image_model_middleware: Vec::new(),
+        },
+    );
+    assert_eq!(base.separator(), ":");
+    assert!(base.contains_provider("alpha"));
+    assert_eq!(base.len(), 1);
+    assert!(!base.is_empty());
+    assert_eq!(base.provider_ids(), vec!["alpha".to_string()]);
+
+    let named = base.language_model_named("chat", "alpha:gpt").unwrap();
+    assert_eq!(named.provider(), "reg.wrapped");
+    assert!(base.language_model_named("unknown", "alpha:gpt").is_err());
+
+    let derived = base.with_provider("beta", Arc::new(Fallback::default()));
+    assert!(!base.contains_provider("beta"));
+    assert_eq!(
+        derived.provider_ids(),
+        vec!["alpha".to_string(), "beta".to_string()]
+    );
+    let derived_removed = derived.without_provider("alpha");
+    assert_eq!(derived_removed.provider_ids(), vec!["beta".to_string()]);
+    assert!(derived.contains_provider("alpha"));
+
+    let derived_multi = base.with_providers([
+        (
+            "gamma".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        ),
+        (
+            "delta".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        ),
+    ]);
+    assert_eq!(
+        derived_multi.provider_ids(),
+        vec![
+            "alpha".to_string(),
+            "delta".to_string(),
+            "gamma".to_string()
+        ]
+    );
+
+    assert!(
+        base.register("dyn", Arc::new(Fallback::default()))
+            .is_none()
+    );
+    assert!(base.contains_provider("dyn"));
+    base.extend_providers([(
+        "dyn2".to_string(),
+        Arc::new(Fallback::default()) as Arc<dyn Provider>,
+    )]);
+    assert_eq!(base.len(), 3);
+    assert!(base.unregister("dyn").is_some());
+    assert!(!base.contains_provider("dyn"));
+
+    base.replace_providers(BTreeMap::from([(
+        "only".to_string(),
+        Arc::new(Fallback::default()) as Arc<dyn Provider>,
+    )]));
+    assert_eq!(base.provider_ids(), vec!["only".to_string()]);
 }

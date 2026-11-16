@@ -107,6 +107,16 @@ impl Provider for WrappedProvider {
         self.provider.search_model(id)
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.provider.language_model_named(method, id).map(|res| {
+            res.map(|model| wrap_language_model(model, &self.language_model_middleware, None, None))
+        })
+    }
+
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         self.provider.discovery()
     }

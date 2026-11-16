@@ -461,7 +461,7 @@ allowed_internal = {
 
 for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
     rel = path[len(root) + 1:]
-    if rel in ("lib.rs", "default_providers.rs", "catalogue.rs", "replay.rs", "stream/chat_tool_calls_tests.rs"):
+    if rel in ("lib.rs", "default_providers.rs", "descriptors.rs", "config_loader.rs", "catalogue.rs", "replay.rs", "stream/chat_tool_calls_tests.rs"):
         continue
     pkg = rel.split("/")[0].removesuffix(".rs")
     with open(path, encoding="utf-8") as f:

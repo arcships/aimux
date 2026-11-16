@@ -159,6 +159,14 @@ impl Provider for DeepSeekProvider {
         Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (method == "chat").then(|| Ok(Arc::new(self.chat(model_id)) as _))
+    }
+
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Err(AiMuxError::no_such_model(model_id, "imageModel"))
     }

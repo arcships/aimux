@@ -209,6 +209,14 @@ impl Provider for XAIProvider {
         Some(Ok(Arc::new(self.speech())))
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (method == "responses").then(|| Ok(Arc::new(self.responses(model_id)) as _))
+    }
+
     fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.video(model_id))))
     }

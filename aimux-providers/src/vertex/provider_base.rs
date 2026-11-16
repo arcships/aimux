@@ -572,6 +572,14 @@ impl Provider for VertexProvider {
         Some(Ok(self.transcription(model_id)))
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (method == "chat").then(|| Ok(Arc::new(self.chat(model_id)) as _))
+    }
+
     fn video_model(&self, model_id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
         Some(Ok(Arc::new(self.video(model_id))))
     }

@@ -371,6 +371,17 @@ impl Provider for GoogleProvider {
         ))))
     }
 
+    fn language_model_named(
+        &self,
+        method: &str,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match method {
+            "chat" | "generativeAI" | "generative_ai" => Some(Ok(Arc::new(self.chat(model_id)))),
+            _ => None,
+        }
+    }
+
     fn files(&self) -> Option<Arc<dyn Files>> {
         Some(Arc::new(self.files()))
     }

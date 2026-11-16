@@ -362,7 +362,7 @@ fn provider(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             return Err(wrong(&entry, &[HandleKind::Registry]));
         };
         let provider = registry.provider(&params.key).map_err(OpsError::AiMux)?;
-        insert(ctx.owner, Entry::Provider(Arc::clone(provider)))
+        insert(ctx.owner, Entry::Provider(provider))
     })
 }
 

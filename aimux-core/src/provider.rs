@@ -136,6 +136,18 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// aimux extension: named language-model constructors (for example
+    /// `"chat"`, `"responses"`, `"completion"`, `"messages"`).
+    ///
+    /// Returns `None` when this provider does not expose `method`.
+    fn language_model_named(
+        &self,
+        _method: &str,
+        _id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        None
+    }
+
     /// aimux extension: this provider's model-discovery side, when it has one
     /// (see [`ProviderDiscovery`]). `None` for vendors without a `/models`
     /// endpoint.
@@ -203,6 +215,13 @@ impl<P: Provider + ?Sized> Provider for &P {
     }
     fn search_model(&self, id: &str) -> Option<Result<Arc<dyn SearchModel>, AiMuxError>> {
         (**self).search_model(id)
+    }
+    fn language_model_named(
+        &self,
+        method: &str,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).language_model_named(method, id)
     }
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         (**self).discovery()
