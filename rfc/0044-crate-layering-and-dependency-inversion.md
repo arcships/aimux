@@ -41,6 +41,18 @@
 | `tools/aimux-codegen` | ops | 553 | 483 | |
 | `bindings/node`、`bindings/python` | core、ops | — | — | 不在 workspace 内 |
 
+上表行数是基线 `5743a40a` 的快照（`git grep -c ''`，只计 `.rs`），动工前按当时的 HEAD 重测。按 `master@c5a408370`（2026-11-16）重测，依赖边不变（另 `tools/aimux-codegen` 多了对 `aimux-web` 的依赖），体量变化较大的几行：
+
+| crate | src 行数 | tests/ 行数 | 说明 |
+|---|---|---|---|
+| `aimux-core` | 37,575 | 7,895 | |
+| `aimux-provider-utils` | 9,981 | 3,496 | RFC-0046 R1 补齐的通用函数及其上游测试 |
+| `aimux-providers` | 253,428 | 29,729 | 厂商测试按 RFC-0046 移入 `src/<vendor>/tests/`（222 个文件），`tests/` 剩 78 个文件 |
+| `aimux-ops` | 11,119 | 9,975 | |
+| `tools/aimux-codegen` | 5,573 | 475 | #268 的业务 DTO 生成 |
+
+`aimux-stream`、`aimux-ffi`、`aimux-cli`、`aimux-replay`、`aimux-web` 基本未变；preset 数据行仍为 282，厂商仍为 48。
+
 目标（对齐文档 §2.1）是 `aimux-provider` 在最底层且不依赖任何 aimux crate；现在最底层是包含运行时的 `aimux-core`，`aimux-provider` 和 `aimux-devtools` 都不存在。crates.io 上 `aimux`、`aimux-provider`、`aimux-devtools` 三个名字目前未被占用（2026-10-19 查询）。
 
 ### 2.2 同一个文件里混着两层
