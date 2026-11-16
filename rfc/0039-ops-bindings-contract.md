@@ -1,10 +1,10 @@
 # RFC-0039：ops、FFI 与八种语言绑定契约
 
-> **状态**：Draft；以 PR [#200](https://github.com/arcships/aimux/pull/200) §0.4 的全链路 V4、一次性 breaking 切换和全语言宿主回调后置为设计目标，不表示 #200 已合并或本 RFC 已被接受。
+> **状态**：部分实现。ops 层、C ABI 与八种语言绑定随 #265 合并，业务 DTO 生成（D8）随 #268 合并，0.6.0 发布（ABI 1 / ops 1.0，现为 0.6.1）。未实现：§8 stdio（本文自述后置）、§11 的发布证据包与 1.0 冻结；逐项差异见 [docs/rfc-0039-implementation.md](../docs/rfc-0039-implementation.md) 与 [docs/rfc-0039-conformance.md](../docs/rfc-0039-conformance.md)，剩余工作见 #274（stdio、原生透传、宿主回调）、#273（发布证据）。设计目标仍是 PR [#200](https://github.com/arcships/aimux/pull/200) §0.4 的全链路 V4、一次性 breaking 切换和全语言宿主回调后置。
 >
 > **日期**：2026-10-03
 >
-> **事实基线**：`origin/master@72a37b5058ecd620d75dfe66bee34ef51f89294a`；#200 审阅版本 `d8c3d15a9b84eaa176b64fe9c5f84d678498634d`。ROADMAP 取自该 master，不把未合并的 roadmap 状态修订当作已生效路线。
+> **事实基线**：设计时 `origin/master@72a37b5058ecd620d75dfe66bee34ef51f89294a`（§1.1 表为该基线的核对结果）；实现状态按 `master@c5a408370` 核对；#200 审阅版本 `d8c3d15a9b84eaa176b64fe9c5f84d678498634d`。ROADMAP 取自该 master，不把未合并的 roadmap 状态修订当作已生效路线。
 >
 > **范围**：#166 C1–C4、D1–D8、ops schema、stdio 与 1.0 契约冻结；补足 #200 的跨语言执行、资源、交付与验收规则。
 >
@@ -21,6 +21,7 @@
 5. C、Go、Java、Kotlin、Swift、Flutter 走同步 C ABI；Node 保留 napi-rs、Python 保留 PyO3，直接调用共享异步 dispatch，禁止经同步 C ABI 嵌套 `block_on`。
 6. provider/model/fetch/token/telemetry 的任意宿主控制流回调在**所有八种接口**后置。结果流的搬运 callback、取消通知和 RFC-0035 已有宿主侧修复能力仍在范围内。
 7. D8（业务 DTO 与语言类型生成）在本次 ops/ABI 切换之后按 RFC-0042 交付，不是切换前提。切换时 descriptor → manifest → codegen 负责控制对象 Schema、头文件及操作常量；业务类型暂由现有 ts-rs / `scripts/gen_ts_types.py` 链生成，并保留其漂移门禁。D8 完成时业务 Schema 与语言 DTO 收束到同源生成链，同时删除过渡 ts-rs 链及其门禁；不长期维护两份业务类型权威。
+   - 已完成：D8 随 #268 交付。`aimux-codegen` 从 manifest 的 `typeDefs` 生成业务 Schema（`schema/types/*.json`）和各语言 DTO，ts-rs 与 `scripts/gen_ts_types.py` 已删除，CI 以 `cargo run -p aimux-codegen -- --check` 检查（见 `tools/aimux-codegen/README.md`）。
 8. 当前切换只交付已有能力的清理、V4 对齐和缺陷修复。stdio 服务、新的一次性二进制上传接口、任意 native passthrough、新模态均需单独通过后续范围门禁。
 9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到 #268 之后单独的后续 PR，该 PR 在发版前迁至 schema 3 并移除 schema-2 及更早格式的读取（§7.1）。
 
@@ -53,6 +54,8 @@
 
 ### 1.1 已核对的实现
 
+下表是事实基线 `72a37b50` 上的核对结果，保留作切换前的对照，不是现状。切换后的位置见表后「现状」。
+
 | 位置 | 事实及影响 |
 |---|---|
 | `aimux-ffi/src/lib.rs::HandleEntry`、`NEXT_HANDLE`、`ffi_block_on` | 当前是单调 `u64` + `HashMap` + typed enum；model/provider 八模态、Files、TranscriptionSession、Abort 在同一表；已有线程局部重入保护 |
@@ -68,6 +71,20 @@
 | `scripts/gen_ts_types.py`、`contract-tests/fixtures`、`.github/workflows/ci.yml` | 当前生成门禁以 TS 为主；各语言有合同测试；新生成链必须接管完整文件集与 stale-file 检查 |
 
 基线中的队列终结缺陷、Python 阻塞以及 Swift 异步包装的实际执行方式是待验收项目，不宣称当前代码已经满足后文契约。本 RFC 只完成设计与源码核对，不声称运行了实现测试。
+
+**现状（`master@c5a408370`）**：上表的位置大多已随 #265、#268 消失。
+
+| 基线位置 | 现在 |
+|---|---|
+| `aimux-ffi/src/lib.rs` 句柄表、`ffi_block_on` | `aimux-ffi/src/lib.rs` 只导出 `abi` 模块；句柄表移到 `aimux-ops/src/handle.rs::HandleRegistry`（非零 `u64` 计数 + `HashMap`，带 owner），23 种 kind（§3.1） |
+| 同文件 `aimux_error_*`、`aimux_trace_*`、`aimux_session_*`、`aimux_recording_*`、`aimux_router_new`、`aimux_moa_new` | 具名导出全部删除，改为通用 call/stream 原语（`aimux-ffi/src/abi.rs`）；错误是 `aimux-ops` 的四域信封 `OpsError::{AiMux, Recording, Binding, Protocol}`（§6）；trace、session、recording、composite 是 op（`trace.*`、`session.*`、`recording.*`、`composite.router`、`composite.moa`） |
+| `aimux-ffi/src/transcription_session.rs` | 文件已删除；队列上限在 `aimux-ops/src/limits.rs`（音频输入 64 项、输出 256 项），清理上限 5 秒在 `aimux-ops/src/operation.rs`；终结状态有单独的槽位，不再因输出满而丢失 |
+| `aimux-core/src/error.rs::retry_after_hint` | 仍在，并有 `retry_after_ms_from_headers`；信封不再带 retry hint（§6.2） |
+| `bindings/node/src/lib.rs` | napi-rs 直接调用 `aimux_ops::dispatch`，没有 64 项通道和 AbortBridge |
+| `bindings/python/src/lib.rs` | PyO3 直接调用 `aimux_ops::dispatch`，所有入口经 `bridge::wait_call` 并在 `allow_threads` 中等待，不再有具名阻塞入口 |
+| `bindings/java/build.gradle.kts`、`bindings/kotlin/build.gradle.kts` | Java 仍以 Java 8 为目标；Kotlin 不再有独立 JNA 实现，依赖 `ai.arcships:aimux-java`，JVM 17 |
+| Go、Swift、Flutter | Go 用 `cgo.Handle` 存回调状态，`Operation` 有 `Cancel()` 和 finalizer；Swift 流是 `AsyncSequence`（`BoundedStream`、`AimuxStream`），不是 `AsyncThrowingStream`；Flutter 仍用 `NativeFinalizer` |
+| `scripts/gen_ts_types.py` | 已删除；生成门禁是 `aimux-codegen --check`（§0.1.7） |
 
 ### 1.2 能力保留清单
 
@@ -114,7 +131,7 @@ resultOwnership, requestBytePolicy, retryOwner, sourceSymbolInventory
 
 - `Provider`：叶子注册条目，保留扩展、source 与 descriptor
 - `Registry`：显式 registry；不能擦除成只有 Provider trait 的对象
-- `Language`、`Embedding`、`Image`、`Speech`、`Transcription`、`Reranking`、`Video`、`Search`
+- `Language`、`Embedding`、`Image`、`Speech`、`Transcription`、`Reranking`、`Video`、`Search`、`Decision`（九类 Model；`Decision` 由 RFC-0037 加入，见 `aimux-ops/src/handle.rs`、`ops/registry.rs::MODELS`）
 - `Files`、`Operation`、`Abort`
 - `Fetch`、`WebSocket`、`Download`、`CredentialResolver`、`Middleware`：只指向 Rust 内建能力
 - `TraceStore`、`Recorder`、`SessionStore`、`ReplaySession`
@@ -139,8 +156,8 @@ resultOwnership, requestBytePolicy, retryOwner, sourceSymbolInventory
 | `provider.wrap` | Provider | 内建 Middleware；逐能力检查 | call → Provider，保留可用扩展/source |
 | `provider.custom` | G | 显式现有模型映射/默认模型/内建包装能力 | call → Provider；禁止宿主函数对象 |
 | `model.resolve` | Registry | modelRef 的 namespace/key/method/modelId | call → Model；不得去 Vercel Gateway |
-| `model.info` | 所有八类 Model | 无 | call → provider/modelId/modality、能力与 source 摘要；不返回 settings/key |
-| `model.wrap` | 所有八类 Model | 类型相容的内建 Middleware | call → 同模态 Model |
+| `model.info` | 所有九类 Model | 无 | call → provider/modelId/modality、能力与 source 摘要；不返回 settings/key |
+| `model.wrap` | 所有九类 Model | 类型相容的内建 Middleware | call → 同模态 Model |
 | `composite.router` | G | 非空 Language children，逐 child retry 预算与显式策略 | call → Language；clone 全部引用 |
 | `composite.moa` | G | Language references 与必需 aggregator | call → Language；不把 child 列表序列化成可重建身份 |
 | `text.generate`, `text.generateObject`, `text.consume`, `text.generateOpenAI` | Language | Abort 可选；操作 options、registry/modelRef 在 DTO lift 时解析 | call → 对应结果 |
