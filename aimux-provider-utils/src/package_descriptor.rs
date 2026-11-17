@@ -104,6 +104,18 @@ pub enum ModalityKind {
     Decision,
 }
 
+/// Specific language-model constructor method exposed on a [`Provider`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum LanguageModelMethod {
+    Chat,
+    Responses,
+    Completion,
+    Messages,
+}
+
 /// Wire shape of a setting field accepted by a provider package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -153,7 +165,7 @@ pub struct PackageDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_method: Option<ModalityKind>,
     pub modalities: Vec<ModalityKind>,
-    pub named_language_methods: Vec<String>,
+    pub language_methods: Vec<LanguageModelMethod>,
     pub supports_discovery: bool,
     pub supports_files: bool,
     pub supports_skills: bool,

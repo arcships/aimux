@@ -180,12 +180,8 @@ impl Provider for CohereProvider {
         Err(AiMuxError::no_such_model(model_id, "imageModel"))
     }
 
-    fn language_model_named(
-        &self,
-        method: &str,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        (method == "chat").then(|| Ok(Arc::new(self.chat(model_id)) as _))
+    fn chat(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.chat(model_id))))
     }
 
     fn reranking_model(

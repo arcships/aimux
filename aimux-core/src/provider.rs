@@ -136,15 +136,35 @@ pub trait Provider: Send + Sync {
         None
     }
 
-    /// aimux extension: named language-model constructors (for example
-    /// `"chat"`, `"responses"`, `"completion"`, `"messages"`).
+    /// aimux extension: Chat Completions constructor (e.g. `openai.chat(id)`).
     ///
-    /// Returns `None` when this provider does not expose `method`.
-    fn language_model_named(
-        &self,
-        _method: &str,
-        _id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+    /// Returns `None` when this provider does not expose `.chat(id)`.
+    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let _ = id;
+        None
+    }
+
+    /// aimux extension: OpenAI Responses API constructor (e.g. `openai.responses(id)`).
+    ///
+    /// Returns `None` when this provider does not expose `.responses(id)`.
+    fn responses(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let _ = id;
+        None
+    }
+
+    /// aimux extension: Legacy Completions constructor (e.g. `openai.completion(id)`).
+    ///
+    /// Returns `None` when this provider does not expose `.completion(id)`.
+    fn completion(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let _ = id;
+        None
+    }
+
+    /// aimux extension: Anthropic Messages API constructor (e.g. `anthropic.messages(id)`).
+    ///
+    /// Returns `None` when this provider does not expose `.messages(id)`.
+    fn messages(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let _ = id;
         None
     }
 
@@ -216,12 +236,17 @@ impl<P: Provider + ?Sized> Provider for &P {
     fn search_model(&self, id: &str) -> Option<Result<Arc<dyn SearchModel>, AiMuxError>> {
         (**self).search_model(id)
     }
-    fn language_model_named(
-        &self,
-        method: &str,
-        id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        (**self).language_model_named(method, id)
+    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).chat(id)
+    }
+    fn responses(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).responses(id)
+    }
+    fn completion(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).completion(id)
+    }
+    fn messages(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).messages(id)
     }
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         (**self).discovery()

@@ -117,14 +117,24 @@ fn package_descriptors_cover_all_packages_in_sorted_order_and_match_helpers() {
     assert!(!openai.supports_skills);
     assert_eq!(openai.default_method, Some(ModalityKind::LanguageModel));
     assert_eq!(
-        openai.named_language_methods,
-        vec!["chat", "responses", "completion"]
+        openai.language_methods,
+        vec![
+            aimux_provider_utils::LanguageModelMethod::Chat,
+            aimux_provider_utils::LanguageModelMethod::Responses,
+            aimux_provider_utils::LanguageModelMethod::Completion,
+        ]
     );
 
     let anthropic = package_descriptor("anthropic").unwrap();
     assert!(anthropic.supports_files);
     assert!(anthropic.supports_skills);
-    assert_eq!(anthropic.named_language_methods, vec!["messages", "chat"]);
+    assert_eq!(
+        anthropic.language_methods,
+        vec![
+            aimux_provider_utils::LanguageModelMethod::Messages,
+            aimux_provider_utils::LanguageModelMethod::Chat,
+        ]
+    );
 
     let compat = package_descriptor("openai_compatible").unwrap();
     assert_eq!(compat.kind, PackageKind::Protocol);
@@ -159,41 +169,47 @@ fn package_descriptors_cover_all_packages_in_sorted_order_and_match_helpers() {
 }
 
 #[test]
-fn named_language_methods_are_exposed_across_language_vendors() {
-    let cases: &[(&str, &str)] = &[
-        ("openai", "chat"),
-        ("openai", "responses"),
-        ("openai", "completion"),
-        ("anthropic", "messages"),
-        ("anthropic", "chat"),
-        ("anthropic_aws", "messages"),
-        ("anthropic_aws", "chat"),
-        ("azure", "chat"),
-        ("azure", "responses"),
-        ("codex", "responses"),
-        ("xai", "responses"),
-        ("huggingface", "responses"),
-        ("google", "chat"),
-        ("google", "generativeAI"),
-        ("google", "generative_ai"),
-        ("google_vertex", "chat"),
-        ("amazon_bedrock", "chat"),
-        ("mistral", "chat"),
-        ("groq", "chat"),
-        ("deepseek", "chat"),
-        ("cohere", "chat"),
-        ("ollama", "chat"),
-        ("ollama", "completion"),
+fn explicit_language_methods_are_exposed_across_language_vendors() {
+    use aimux_provider_utils::LanguageModelMethod;
+
+    let cases: &[(&str, LanguageModelMethod)] = &[
+        ("openai", LanguageModelMethod::Chat),
+        ("openai", LanguageModelMethod::Responses),
+        ("openai", LanguageModelMethod::Completion),
+        ("anthropic", LanguageModelMethod::Messages),
+        ("anthropic", LanguageModelMethod::Chat),
+        ("anthropic_aws", LanguageModelMethod::Messages),
+        ("anthropic_aws", LanguageModelMethod::Chat),
+        ("azure", LanguageModelMethod::Chat),
+        ("azure", LanguageModelMethod::Responses),
+        ("codex", LanguageModelMethod::Responses),
+        ("xai", LanguageModelMethod::Responses),
+        ("huggingface", LanguageModelMethod::Responses),
+        ("google", LanguageModelMethod::Chat),
+        ("google_vertex", LanguageModelMethod::Chat),
+        ("amazon_bedrock", LanguageModelMethod::Chat),
+        ("mistral", LanguageModelMethod::Chat),
+        ("groq", LanguageModelMethod::Chat),
+        ("deepseek", LanguageModelMethod::Chat),
+        ("cohere", LanguageModelMethod::Chat),
+        ("ollama", LanguageModelMethod::Chat),
+        ("ollama", LanguageModelMethod::Completion),
     ];
     for &(package, method) in cases {
         let provider = aimux_providers::create_provider(package, Default::default()).unwrap();
-        let model = provider
-            .language_model_named(method, "model-id")
-            .unwrap_or_else(|| panic!("{package} missing named method {method}"))
-            .unwrap();
+        let model = match method {
+            LanguageModelMethod::Chat => provider.chat("model-id"),
+            LanguageModelMethod::Responses => provider.responses("model-id"),
+            LanguageModelMethod::Completion => provider.completion("model-id"),
+            LanguageModelMethod::Messages => provider.messages("model-id"),
+        }
+        .unwrap_or_else(|| panic!("{package} missing method {method:?}"))
+        .unwrap();
         assert_eq!(model.model_id(), "model-id");
-        assert!(provider.language_model_named("nonexistent", "m").is_none());
     }
+
+    let google = aimux_providers::create_provider("google", Default::default()).unwrap();
+    assert!(google.responses("m").is_none());
 
     let compat = provider_from_config(&ProviderEntrySpec {
         package: "openai_compatible".into(),
@@ -205,24 +221,21 @@ fn named_language_methods_are_exposed_across_language_vendors() {
     })
     .unwrap();
     assert_eq!(
-        compat
-            .language_model_named("chat", "m")
-            .unwrap()
-            .unwrap()
-            .provider(),
+        compat.chat("m").unwrap().unwrap().provider(),
         "custom-compat.chat"
     );
     assert_eq!(
-        compat
-            .language_model_named("completion", "m")
-            .unwrap()
-            .unwrap()
-            .provider(),
+        compat.completion("m").unwrap().unwrap().provider(),
         "custom-compat.completion"
     );
+    assert!(compat.responses("m").is_none());
+    assert!(compat.messages("m").is_none());
 
     let elevenlabs = aimux_providers::create_provider("elevenlabs", Default::default()).unwrap();
-    assert!(elevenlabs.language_model_named("chat", "m").is_none());
+    assert!(elevenlabs.chat("m").is_none());
+    assert!(elevenlabs.responses("m").is_none());
+    assert!(elevenlabs.completion("m").is_none());
+    assert!(elevenlabs.messages("m").is_none());
 }
 
 #[test]

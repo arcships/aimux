@@ -210,13 +210,9 @@ impl Provider for Fallback {
         self.decision
             .then(|| Ok(Arc::new(MockDecision("fallback")) as _))
     }
-    fn language_model_named(
-        &self,
-        method: &str,
-        id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        self.record("language_model_named", id);
-        (method == "chat").then(|| Ok(Arc::new(MockLanguage("fallback")) as _))
+    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.record("chat", id);
+        Some(Ok(Arc::new(MockLanguage("fallback"))))
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         self.record("files", "");
@@ -668,47 +664,43 @@ impl LanguageModelMiddleware for OverrideProviderName {
 }
 
 #[test]
-fn custom_provider_named_language_models_do_not_fall_back_to_fallback_provider() {
+fn custom_provider_explicit_language_methods_do_not_fall_back_to_fallback_provider() {
     let fallback = Arc::new(Fallback::default());
     let custom = custom_provider(CustomProviderOptions {
-        named_language_models: HashMap::from([(
-            ("chat".to_string(), "m1".to_string()),
+        chat_models: HashMap::from([(
+            "m1".to_string(),
             Arc::new(MockLanguage("explicit-chat")) as Arc<dyn LanguageModel>,
         )]),
         fallback_provider: Some(fallback.clone()),
         ..Default::default()
     });
-    let hit = custom
-        .language_model_named("chat", "m1")
-        .expect("registered named method")
-        .unwrap();
+    let hit = custom.chat("m1").expect("registered chat method").unwrap();
     assert_eq!(hit.model_id(), "explicit-chat");
-    assert!(custom.language_model_named("responses", "m1").is_none());
+    assert!(custom.responses("m1").is_none());
+    assert!(custom.completion("m1").is_none());
+    assert!(custom.messages("m1").is_none());
     let miss = custom
-        .language_model_named("chat", "missing")
+        .chat("missing")
         .expect("registered method rejects missing id");
     assert_no_such_model(miss, "missing", "chat");
     assert!(fallback.calls().is_empty());
 }
 
 #[test]
-fn wrap_provider_wraps_named_language_models_and_preserves_none() {
+fn wrap_provider_wraps_explicit_language_methods_and_preserves_none() {
     let inner = Arc::new(Fallback::default());
     let wrapped = wrap_provider(
         inner,
         &[Arc::new(OverrideProviderName("wrapped.provider"))],
         &[],
     );
-    let model = wrapped
-        .language_model_named("chat", "m1")
-        .expect("chat supported")
-        .unwrap();
+    let model = wrapped.chat("m1").expect("chat supported").unwrap();
     assert_eq!(model.provider(), "wrapped.provider");
-    assert!(wrapped.language_model_named("responses", "m1").is_none());
+    assert!(wrapped.responses("m1").is_none());
 }
 
 #[test]
-fn registry_supports_dynamic_mutations_derived_clones_and_named_methods() {
+fn registry_supports_dynamic_mutations_derived_clones_and_direct_methods() {
     let base = create_provider_registry(
         BTreeMap::from([(
             "alpha".to_string(),
@@ -726,9 +718,9 @@ fn registry_supports_dynamic_mutations_derived_clones_and_named_methods() {
     assert!(!base.is_empty());
     assert_eq!(base.provider_ids(), vec!["alpha".to_string()]);
 
-    let named = base.language_model_named("chat", "alpha:gpt").unwrap();
-    assert_eq!(named.provider(), "reg.wrapped");
-    assert!(base.language_model_named("unknown", "alpha:gpt").is_err());
+    let chat_model = base.chat("alpha:gpt").unwrap();
+    assert_eq!(chat_model.provider(), "reg.wrapped");
+    assert!(base.responses("alpha:gpt").is_err());
 
     let derived = base.with_provider("beta", Arc::new(Fallback::default()));
     assert!(!base.contains_provider("beta"));

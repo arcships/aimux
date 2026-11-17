@@ -307,15 +307,12 @@ impl Provider for AnthropicProvider {
         Some(Arc::new(self.files()))
     }
 
-    fn language_model_named(
-        &self,
-        method: &str,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        match method {
-            "messages" | "chat" => Some(Ok(Arc::new(self.messages(model_id)))),
-            _ => None,
-        }
+    fn messages(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.messages(model_id))))
+    }
+
+    fn chat(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.chat(model_id))))
     }
 
     fn skills(&self) -> Option<Arc<dyn aimux_core::skills_model::Skills>> {

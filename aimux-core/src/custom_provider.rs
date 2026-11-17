@@ -49,10 +49,19 @@ pub struct CustomProviderOptions {
     /// aimux extension: a model-discovery interface. Without one, the
     /// fallback provider's discovery is used.
     pub discovery: Option<Arc<dyn ProviderDiscovery>>,
+    /// Chat Completions models (`provider.chat(id)`), registered explicitly
+    /// without falling back to `fallback_provider`.
+    pub chat_models: HashMap<String, Arc<dyn LanguageModel>>,
+    /// Responses API models (`provider.responses(id)`), registered explicitly
+    /// without falling back to `fallback_provider`.
+    pub responses_models: HashMap<String, Arc<dyn LanguageModel>>,
+    /// Legacy Completions models (`provider.completion(id)`), registered
+    /// explicitly without falling back to `fallback_provider`.
+    pub completion_models: HashMap<String, Arc<dyn LanguageModel>>,
+    /// Anthropic Messages API models (`provider.messages(id)`), registered
+    /// explicitly without falling back to `fallback_provider`.
+    pub messages_models: HashMap<String, Arc<dyn LanguageModel>>,
     /// Consulted when a requested model is not in the alias tables.
-    /// Named language models (for example `("chat", id)` or `("responses", id)`),
-    /// explicitly registered without falling back to `fallback_provider`.
-    pub named_language_models: HashMap<(String, String), Arc<dyn LanguageModel>>,
     pub fallback_provider: Option<Arc<dyn Provider>>,
 }
 
@@ -170,26 +179,20 @@ impl Provider for CustomProvider {
             .or_else(|| o.fallback_provider.as_ref()?.skills())
     }
 
-    fn language_model_named(
-        &self,
-        method: &str,
-        id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        let o = &self.options;
-        let has_method = o
-            .named_language_models
-            .keys()
-            .any(|(registered_method, _)| registered_method == method);
-        if !has_method {
-            return None;
-        }
-        if let Some(model) = o
-            .named_language_models
-            .get(&(method.to_string(), id.to_string()))
-        {
-            return Some(Ok(Arc::clone(model)));
-        }
-        Some(Err(AiMuxError::no_such_model(id, method)))
+    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        lookup_explicit_language(&self.options.chat_models, "chat", id)
+    }
+
+    fn responses(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        lookup_explicit_language(&self.options.responses_models, "responses", id)
+    }
+
+    fn completion(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        lookup_explicit_language(&self.options.completion_models, "completion", id)
+    }
+
+    fn messages(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        lookup_explicit_language(&self.options.messages_models, "messages", id)
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
@@ -198,4 +201,18 @@ impl Provider for CustomProvider {
             .as_deref()
             .or_else(|| o.fallback_provider.as_ref()?.discovery())
     }
+}
+
+fn lookup_explicit_language(
+    models: &HashMap<String, Arc<dyn LanguageModel>>,
+    method: &str,
+    id: &str,
+) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+    if models.is_empty() {
+        return None;
+    }
+    if let Some(model) = models.get(id) {
+        return Some(Ok(Arc::clone(model)));
+    }
+    Some(Err(AiMuxError::no_such_model(id, method)))
 }

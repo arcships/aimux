@@ -219,33 +219,67 @@ impl ProviderRegistry {
         })
     }
 
-    /// Resolve a language model using a named provider constructor (for example
-    /// `"chat"`, `"responses"`, `"completion"`, `"messages"`).
+    fn offered_language_model(
+        &self,
+        id: &str,
+        model_type: &str,
+        select: impl FnOnce(
+            &(dyn Provider + 'static),
+            &str,
+        ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>>,
+    ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        let (provider, model_id) = self.resolve(id, model_type)?;
+        let model = offered(select(provider.as_ref(), model_id), id, model_type)?;
+        Ok(wrap_language_model(
+            model,
+            &self.language_model_middleware,
+            None,
+            None,
+        ))
+    }
+
+    /// Resolve a language model via the provider's `.chat(id)` constructor.
     ///
     /// # Errors
     ///
     /// Returns [`AiMuxError::NoSuchProvider`] or [`AiMuxError::NoSuchModel`] when
-    /// the provider or named method is unavailable, or whatever the provider
+    /// the provider or `.chat` method is unavailable, or whatever the provider
     /// returns.
-    pub fn language_model_named(
-        &self,
-        method: &str,
-        id: &str,
-    ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        let (provider, model_id) = self.resolve(id, method)?;
-        let model = provider
-            .language_model_named(method, model_id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, method)))?;
-        if self.language_model_middleware.is_empty() {
-            Ok(model)
-        } else {
-            Ok(crate::language_model_middleware::wrap_language_model(
-                model,
-                &self.language_model_middleware,
-                None,
-                None,
-            ))
-        }
+    pub fn chat(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        self.offered_language_model(id, "chat", Provider::chat)
+    }
+
+    /// Resolve a language model via the provider's `.responses(id)` constructor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::NoSuchProvider`] or [`AiMuxError::NoSuchModel`] when
+    /// the provider or `.responses` method is unavailable, or whatever the provider
+    /// returns.
+    pub fn responses(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        self.offered_language_model(id, "responses", Provider::responses)
+    }
+
+    /// Resolve a language model via the provider's `.completion(id)` constructor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::NoSuchProvider`] or [`AiMuxError::NoSuchModel`] when
+    /// the provider or `.completion` method is unavailable, or whatever the provider
+    /// returns.
+    pub fn completion(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        self.offered_language_model(id, "completion", Provider::completion)
+    }
+
+    /// Resolve a language model via the provider's `.messages(id)` constructor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::NoSuchProvider`] or [`AiMuxError::NoSuchModel`] when
+    /// the provider or `.messages` method is unavailable, or whatever the provider
+    /// returns.
+    pub fn messages(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+        self.offered_language_model(id, "messages", Provider::messages)
     }
 
     /// Split `id` at the first separator and look the provider up.

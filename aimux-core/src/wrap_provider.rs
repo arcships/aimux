@@ -107,19 +107,35 @@ impl Provider for WrappedProvider {
         self.provider.search_model(id)
     }
 
-    fn language_model_named(
-        &self,
-        method: &str,
-        id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        self.provider.language_model_named(method, id).map(|res| {
-            res.map(|model| wrap_language_model(model, &self.language_model_middleware, None, None))
-        })
+    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        wrap_offered_language(self.provider.chat(id), &self.language_model_middleware)
+    }
+
+    fn responses(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        wrap_offered_language(self.provider.responses(id), &self.language_model_middleware)
+    }
+
+    fn completion(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        wrap_offered_language(
+            self.provider.completion(id),
+            &self.language_model_middleware,
+        )
+    }
+
+    fn messages(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        wrap_offered_language(self.provider.messages(id), &self.language_model_middleware)
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         self.provider.discovery()
     }
+}
+
+fn wrap_offered_language(
+    result: Option<Result<Arc<dyn LanguageModel>, AiMuxError>>,
+    middleware: &[Arc<dyn LanguageModelMiddleware>],
+) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+    result.map(|res| res.map(|model| wrap_language_model(model, middleware, None, None)))
 }
 
 #[cfg(test)]

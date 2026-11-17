@@ -182,12 +182,8 @@ impl Provider for HuggingFaceProvider {
         Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
-    fn language_model_named(
-        &self,
-        method: &str,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        (method == "responses").then(|| Ok(Arc::new(self.responses(model_id)) as _))
+    fn responses(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.responses(model_id))))
     }
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
