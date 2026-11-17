@@ -104,7 +104,7 @@ pub enum ModalityKind {
     Decision,
 }
 
-/// Specific language-model constructor method exposed on a [`Provider`].
+/// Specific language-model constructor method exposed on a `Provider`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
