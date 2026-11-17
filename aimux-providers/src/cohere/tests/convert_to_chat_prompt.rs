@@ -540,3 +540,41 @@ mod convert_to_cohere_chat_prompt {
         }
     }
 }
+
+/// aimux's own: an image part's `cohere` options are parsed against
+/// `cohereImagePartProviderOptions`. A `detail` outside its enum, of the
+/// wrong type or `null` fails with the upstream message.
+mod image_part_options_schema {
+    use super::*;
+
+    #[test]
+    fn a_detail_outside_the_schema_fails() {
+        for detail in [json!("medium"), json!(1), json!(null)] {
+            let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
+                content: vec![UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Binary(vec![0, 1, 2, 3]),
+                    },
+                    media_type: "image/png".into(),
+                    filename: None,
+                    provider_options: Some(
+                        provider_namespace(NAMESPACE, json!({ "detail": detail })).unwrap(),
+                    ),
+                })],
+                provider_options: None,
+            }];
+            let Err(error) = convert_prompt_to_cohere(&prompt) else {
+                panic!("{detail} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {detail}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid cohere provider options",
+                "{detail}"
+            );
+            assert!(cause.is_some(), "{detail}");
+        }
+    }
+}

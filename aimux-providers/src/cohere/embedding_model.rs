@@ -71,11 +71,11 @@ impl EmbeddingModel for CohereEmbeddingModel {
             json!(
                 cohere_options
                     .input_type
-                    .unwrap_or_else(|| "search_query".to_string())
+                    .map_or("search_query", |input_type| input_type.as_str())
             ),
         );
         if let Some(truncate) = cohere_options.truncate {
-            body.insert("truncate".to_string(), json!(truncate));
+            body.insert("truncate".to_string(), json!(truncate.as_str()));
         }
         if let Some(output_dimension) = cohere_options.output_dimension {
             body.insert("output_dimension".to_string(), json!(output_dimension));

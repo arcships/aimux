@@ -237,3 +237,44 @@ mod do_rerank {
         }
     }
 }
+
+/// aimux's own: the `cohere` namespace is parsed against
+/// `cohereRerankingModelOptionsSchema` with `parseProviderOptions`. A wrong
+/// type or an explicit `null` fails with the upstream message and nothing is
+/// sent.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for cohere in [
+            json!({ "maxTokensPerDoc": "1000" }),
+            json!({ "priority": null }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let mut options = RerankingCallOptions::new("rainy day", text_documents());
+            options.provider_options = Some(
+                serde_json::from_value::<SharedProviderOptions>(json!({ "cohere": cohere }))
+                    .unwrap(),
+            );
+            let Err(error) = provider(&fetch)
+                .reranking("rerank-english-v3.0")
+                .do_rerank(&options)
+                .await
+            else {
+                panic!("{cohere} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {cohere}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid cohere provider options",
+                "{cohere}"
+            );
+            assert!(cause.is_some(), "{cohere}");
+            assert!(fetch.seen().is_empty(), "{cohere}");
+        }
+    }
+}

@@ -564,41 +564,23 @@ pub fn build_request_body(
 /// - other reasoning levels → `{ type: "enabled", token_budget: <n> }`.
 ///
 /// # Errors
-/// Rejects non-object thinking options, unknown types and nonnumeric budgets.
+/// `InvalidArgument` "invalid cohere provider options" when
+/// `providerOptions.cohere` does not match `cohereLanguageModelChatOptions`.
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
     provider_options: &Option<SharedProviderOptions>,
     warnings: &mut Vec<Warning>,
 ) -> Result<Option<Value>, AiMuxError> {
     // Provider options take precedence.
-    if let Some(cohere) =
-        super::chat_language_model_options::cohere_options(provider_options.as_ref())
-        && let Some(thinking) = cohere.get("thinking")
-    {
-        if !thinking.is_object() {
-            return Err(AiMuxError::invalid_argument(
-                "cohere.thinking must be an object",
-            ));
-        }
-        let t_type = match thinking.get("type") {
-            None => "enabled",
-            Some(value) => match value.as_str() {
-                Some(value @ ("enabled" | "disabled")) => value,
-                _ => {
-                    return Err(AiMuxError::invalid_argument(
-                        "cohere.thinking.type must be enabled or disabled",
-                    ));
-                }
-            },
-        };
-        let mut obj = json!({ "type": t_type });
-        if let Some(budget) = thinking.get("tokenBudget") {
-            if !budget.is_number() {
-                return Err(AiMuxError::invalid_argument(
-                    "cohere.thinking.tokenBudget must be a number",
-                ));
-            }
-            obj["token_budget"] = budget.clone();
+    let cohere: Option<super::chat_language_model_options::CohereChatOptions> =
+        super::chat_language_model_options::parse(provider_options.as_ref())?;
+    if let Some(thinking) = cohere.and_then(|cohere| cohere.thinking) {
+        let kind = thinking
+            .kind
+            .unwrap_or(super::chat_language_model_options::CohereThinkingType::Enabled);
+        let mut obj = json!({ "type": kind.as_str() });
+        if let Some(budget) = thinking.token_budget {
+            obj["token_budget"] = json!(budget);
         }
         return Ok(Some(obj));
     }

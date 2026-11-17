@@ -1337,3 +1337,41 @@ mod do_stream {
         }
     }
 }
+
+/// aimux's own: `providerOptions.cohere` is parsed against
+/// `cohereLanguageModelChatOptions` with `parseProviderOptions`
+/// (cohere-chat-language-model.ts:99-103). A value outside the schema fails
+/// with the upstream message and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    use aimux_core::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for cohere in [
+            json!({ "thinking": "on" }),
+            json!({ "thinking": { "type": "auto" } }),
+            json!({ "thinking": { "tokenBudget": "1000" } }),
+            json!({ "thinking": null }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let call = CallOptions {
+                provider_options: Some(provider_options(json!({ "cohere": cohere }))),
+                ..options()
+            };
+            let Err(error) = provider(&fetch).chat(MODEL).do_generate(&call).await else {
+                panic!("a value outside the schema fails: {cohere}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {cohere}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid cohere provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+}

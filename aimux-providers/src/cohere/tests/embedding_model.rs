@@ -374,3 +374,58 @@ mod do_embed {
         );
     }
 }
+
+/// aimux's own: `providerOptions.cohere` is parsed against
+/// `cohereEmbeddingModelOptions` with `parseProviderOptions`. A value
+/// outside the schema fails with the upstream message and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    use aimux_core::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for cohere in [
+            json!({ "inputType": "search" }),
+            json!({ "truncate": "none" }),
+            json!({ "outputDimension": 300 }),
+            json!({ "outputDimension": null }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let Err(error) = provider(&fetch)
+                .embedding("embed-english-v3.0")
+                .do_embed(&options(json!({ "cohere": cohere })))
+                .await
+            else {
+                panic!("a value outside the schema fails: {cohere}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {cohere}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid cohere provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_schema_values_reach_the_body() {
+        let fetch = embedding_fetch();
+        provider(&fetch)
+            .embedding("embed-english-v3.0")
+            .do_embed(&options(json!({ "cohere": {
+                "inputType": "classification",
+                "truncate": "END",
+                "outputDimension": 1024.0,
+            } })))
+            .await
+            .expect("the options are valid");
+        let body = fetch.seen()[0].json_body();
+        assert_eq!(body["input_type"], "classification");
+        assert_eq!(body["truncate"], "END");
+        assert_eq!(body["output_dimension"], 1024);
+    }
+}

@@ -195,16 +195,10 @@ fn image_part(
     provider_options: &Option<SharedProviderOptions>,
 ) -> Result<Value, AiMuxError> {
     let mut image = json!({ "url": url });
-    if let Some(detail) =
-        super::chat_language_model_options::cohere_options(provider_options.as_ref())
-            .and_then(|options| options.get("detail"))
-    {
-        if !matches!(detail.as_str(), Some("auto" | "low" | "high")) {
-            return Err(AiMuxError::invalid_argument(
-                "cohere.detail must be auto, low or high",
-            ));
-        }
-        image["detail"] = detail.clone();
+    let options: Option<super::chat_language_model_options::CohereImagePartOptions> =
+        super::chat_language_model_options::parse(provider_options.as_ref())?;
+    if let Some(detail) = options.and_then(|options| options.detail) {
+        image["detail"] = json!(detail.as_str());
     }
     Ok(json!({ "type": "image_url", "image_url": image }))
 }
