@@ -53,7 +53,7 @@ cause 也取 `errors` 的最后一个。
 | Python | `__cause__`：嵌套错误是对应子类，底层错误是 `SourceError` |
 | Java / Kotlin | `getCause()` 链上的 `ErrorCause` |
 | Go | `Unwrap()` 返回 `*aimux.Cause`，`errors.Unwrap` / `errors.As` 可用 |
-| Swift / Flutter | `cause` 属性 |
+| Swift / Flutter | `cause` 属性，类型是生成的 `ErrorCause` |
 | C / C++ | 错误 JSON 的 `error.cause`；C++ 的 `aimux::NativeError::json()` |
 
 ops 信封的四个域用同一个形状：`aimux` 域是上面的错误 payload，`recording` 域的
