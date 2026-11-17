@@ -1,19 +1,26 @@
 # Roadmap：0.6.0 → 1.0
 
-> 基线：v0.6.0（2026-11-03 发布）。方向依据 [RFC-0036](rfc/0036-positioning-and-layered-architecture.md)
+> 基线：v0.6.1（2026-11-05 发布；0.6.0 于 2026-11-03 发布）。方向依据 [RFC-0036](rfc/0036-positioning-and-layered-architecture.md)
 > （定位与分层架构）；本文档只做排期，单项设计与差距分析在各 issue / RFC 内。
-> 上次复核：2026-10-03；代码基线：`a8e3a996`（含 #200 / #221 / #213 / #226 / #203 的 master）。阶段划分沿用已合并的 #197 / #198；完成状态以合并记录和源码为准，未合并提案单独列出。
+> 上次复核：2026-11-16；代码基线：`c5a408370`（v0.6.1 之后的 master）。阶段划分沿用已合并的 #197 / #198；完成状态以合并记录和源码为准，未合并提案单独列出。
 >
 > 位置说明：放在仓库根目录而非 `docs/plan/`——后者计划在 E1 文档重组时整体归档，目前仍保留；`docs/` 的英文约定不适用于本文。
 >
 > **0.6.0 发布说明**：实际发布范围以 [#273](https://github.com/arcships/aimux/issues/273) 为准；本页 0.6.0 章节保留原规划，未完成的 P/S3/D5 等项顺延到后续版本。
 
-## 当前状态（2026-10-03）
+## 当前状态（2026-11-16）
 
-- **已合并的路线基线**：[#198](https://github.com/arcships/aimux/pull/198)（`cddfee7`）加入定位与分层架构 RFC，[#197](https://github.com/arcships/aimux/pull/197)（`9ce501a`）加入本文的 0.6 → 1.0 分期。RFC 文件仍标 Draft，设计状态需与决策记录同步。
-- **已完成的前置工作**：#164 请求管线、[#169](https://github.com/arcships/aimux/pull/169) A1 脚本与依赖清理、[#196](https://github.com/arcships/aimux/pull/196) iOS staticlib 体积修复已合并；其后 master 又合入 [#213](https://github.com/arcships/aimux/pull/213)（`d3e3a290`，SSE 解码换用 sse-stream）、[#221](https://github.com/arcships/aimux/pull/221)（`0b365b39`，稳定 decision API 与官方 TypeSafe Jev provider）、[#226](https://github.com/arcships/aimux/pull/226)（`3f0673f2`，官方 decision providers、候选打分与原生媒体）、[#203](https://github.com/arcships/aimux/pull/203)（`a8e3a996`，A2 过期审计产物与未用 runner 清理）。A1 以 #169 的实际保留/删除清单为准；#196 不代表桌面 S1 或全产物 S2 已完成。
-- **仍待实施**：RFC-0032 / 0033 入库、B1（形式已按 #200 §0.7 调整为 descriptor 数据源 + `create_xxx` 工厂；C2 转发 shim 与“旧导出共存一个 minor”已撤销）、桌面 S1、全产物 S2、性能门禁 P、ops 协议与 L0 passthrough（后两项按 #200 §0.7 后置到切换之后）。RFC-0031 当前位于 [docs/ai-sdk-request-pipeline.md](docs/ai-sdk-request-pipeline.md)，迁入 `rfc/` 属文档整理，不是重新实现请求管线。
-- **对齐设计已入库**：[#200](https://github.com/arcships/aimux/pull/200)（`d8fb4ac5`）已合并为 [docs/aisdk-architecture-alignment.md](docs/aisdk-architecture-alignment.md)，不占 RFC 编号；其对本文与 RFC-0036 既有承诺的逐项定性见其 §0.7，本文受影响条目已加注指向该节。
+- **已发布**：0.6.0（2026-11-03）一次性把全部绑定切到共享的 ops ABI（ABI 1 / ops 1.0，#265），公开 JSON 对齐 AI SDK V4，绑定 DTO 由 Rust 类型生成（D8，#268），错误带可序列化的 cause 链（RFC-0047，#289 / #290 / #293）；0.6.1（2026-11-05）是补丁版本，ABI 与 ops 版本不变。C ABI 现在是 14 个 `extern "C"` 通用原语（#166 基线 109，切换前 123），具名构造器与 getter 全部删除。
+- **原跟踪 issue 已关闭**：#166 代码缩减总纲及其子项、#95 错误体系已于 2026-10-12 关闭。provider 工厂与包内鉴权随 #253 / #259 / #265 落地；剩余工作按主题分入下列 issue。
+- **S1 已完成**：`staticlib-release` profile、发布档案去 sysroot bitcode、合并目标文件加 strip（#375 / #377 / #378），CI 实测 Linux x86_64、Windows、macOS 的 `.a` 在 70 MB 以内（RFC-0043 §15.6；其 §13 验收待发布 run 的字节数回填后再勾）。S2 各产物阈值、性能门禁 P、S3 未做。
+- **当前跟踪项**：
+  - 发布门禁：#273（S2、P、S3、发布证据）、#267（固定 Rust toolchain、产物体积门禁）、#372（发布产物 panic 策略）、#405（运行时内存占用）
+  - 录制与治理：#270（录制 schema 3 与传输层回放，RFC-0048）、#272（probe / replay / diff 命令行、漂移检测、能力矩阵）、#271（registry 维护工具，RFC-0033）
+  - ops 与 provider：#274（stdio 入口、L0 原生透传、宿主回调）、#275（provider 构造与配置的迁移遗留）、#276（core 运行时与 AI SDK 的剩余差距）、#328（RFC-0044 crate 拆分与 RFC-0046 provider 重构的实施进度）
+  - 错误与测试：#327（RFC-0047 错误 cause 的后续）、#278（补迁上游 AI SDK 测试）
+  - 文档与规范：#277（ROADMAP、RFC 状态与 API 文档）、#365（原生重构规范）
+  - 其他：#373（A2Agent 集成测试）；小项 #179、#180、#181
+- **设计依据**：[docs/aisdk-architecture-alignment.md](docs/aisdk-architecture-alignment.md)（#200）对本文与 RFC-0036 既有承诺的逐项定性见其 §0.7，下文受影响条目已加注指向该节。
 
 阶段中的版本和工期为规划估算，不是已承诺发布日期。完成项附合并 PR。
 
@@ -31,22 +38,22 @@ aimux 是 **provider 接入与治理的运行时**：
 ## 1. 依赖全景
 
 ```
-#166 代码缩减总纲（25 PR，净 ≈ −44k 行）——保留，按 RFC-0036 §8 重新归类
+#166 代码缩减总纲（25 PR，净 ≈ −44k 行；issue 已关闭，余项见「当前状态」的跟踪项）——按 RFC-0036 §8 归类
 ├─ A 轨 机械清理            A1 ✅(#169)；A2–A5 互相独立
-├─ B 轨 protocol registry = L1 协议层（RFC-0032，需先入库）
-│   ├─→ #174 Auth L1 ──→ #175 Auth L2          ← 依赖 B1
-│   └─→ #167 transport-level replay ──→ #179 replay 子命令   ← 依赖 B1
-├─ C 轨 FFI（现 123 个 extern "C"，#166 基线 109）→ ops 协议（C1 升级为传输无关协议：op 表 / 二进制帧 / 版本协商）
+├─ B 轨 L1 协议层：provider 工厂 + descriptor（#253 / #259 / #265 已切换；遗留见 #275，provider 内部重构见 RFC-0046 / #328）
+│   ├─→ auth：包内 headers 闭包 / fetch 装饰器已随 #253 落地；凭证协调与 `credential.create` 见 #274
+│   └─→ transport-level replay（#270，RFC-0048）──→ #179 replay 子命令
+├─ C 轨 FFI（现 14 个 extern "C"，#166 基线 109，切换前 123）→ ops 协议（C1 升级为传输无关协议：op 表 / 二进制帧 / 版本协商；FFI 一半已随 #265 落地，stdio 见 #274）
 │   └─ C2 构造器转发 shim 取消：B4/B5 的直接构造调用点随 provider 工厂切换一次迁移（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）
-├─ D 轨 8 种绑定重写为 ops 薄封装（依赖 C1）+ D8 类型镜像生成
+├─ D 轨 8 种绑定重写为 ops 薄封装（依赖 C1）+ D8 类型镜像生成（✅ #265、#268）
 ├─ E 轨 内部清理（#164 已合入，改为 master 上独立 PR）+ 文档三层重组
 │
-├── 新增（RFC-0036）：L0 native passthrough | ops 协议 schema | stdio CLI | 性能门禁 P
-├── 独立项：#185 ToolInput 类型化 + tracker 对齐上游并移入 provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)
-├── 独立项：#170 registry 维护自动化 → #171 triage（前半：27 个 base_url 分歧）
+├── 新增（RFC-0036）：L0 native passthrough（#274）| ops 协议 schema（✅ #265）| stdio CLI（#274）| 性能门禁 P（#273）
+├── 独立项：工具参数类型化由 RFC-0042 承接（T1–T5 已交付）；tracker 已删除，chat 流累积器留在 aimux-providers（RFC-0042 T2）
+├── 独立项：registry 维护自动化与 base_url 分歧 triage（#271）
 └── 小项（随时插空）：#181 session 后续 | #180 cache probe §10
 
-常设跟踪：#95 错误体系（新错误相关 PR 挂此 issue）
+常设跟踪：#327 错误体系（RFC-0047 的后续；新错误相关 PR 挂此 issue）
 ```
 
 ## 2. 阶段划分
@@ -55,20 +62,20 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 项 | 内容 |
 |---|---|
-| RFC | RFC-0031 / 0032（写入 #166 的 7 条修正）/ 0033 入库——B1、#170、#174、#175 均引用它们 |
+| RFC | RFC-0031 / 0032（写入 #166 的 7 条修正）/ 0033 入库——B1、registry 维护与 auth 均引用它们（RFC-0033 已入库，仍为 Draft；RFC-0031 在 `docs/ai-sdk-request-pipeline.md`） |
 | **S1** | 桌面 `.a` 切 LTO-off staticlib profile（`ios-release` 改名 `staticlib-release`）。**只改 staticlib job**：`aimux-ffi` 同时产出 cdylib，`.so/.dylib/.dll` 保持 fat-LTO。实测 138.4 → 66.5 MB |
 | **S2** | 体积门禁推广到所有发布产物，**每个产物给具体阈值**（初期取当前值 +10%），CI 输出体积报告 |
 | **P** | 性能回归门禁：单请求开销、流式吞吐、RSS 增长 |
 | A2–A5 | 删 `ProviderName` 枚举及各语言副本；归档 `provider-inventory/`；aimux-web 类型副本；Flutter example 桌面脚手架 |
 | E1 | 内部清理 + 文档三层重组 |
-| #185 | `ToolInput{Raw,Parsed}`；tracker 不删，改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils（#204）；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系) |
-| #170 / #171 前半 | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
+| 工具参数类型化 | ✅ 按 RFC-0042 交付：provider 输出 `RawToolCall`（原文），core 输出解析后的 `ToolCall`；tracker 已删除，chat 流的累积器在 `aimux-providers/src/stream/`（RFC-0042 T2） |
+| registry 维护（#271） | sync/probe 脚本 + scheduled Action；27 个 base_url 分歧 triage |
 | **B1 + C2** | 解锁项：protocol 列 + `from_resolved`；40 个 FFI 构造器转发 shim（B1 形式由 descriptor 数据源 + `create_xxx` 工厂替代，C2 shim 已取消；调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | **ops 协议 schema** | op 表、消息与错误信封、二进制帧、版本协商——先以文档 + 测试落地（RFC-0036 §4）；后置到全链路对齐切换之后，设计由 RFC-0039 承接（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | **L0 passthrough** | 原样调用任意 provider 端点，享受 auth / 重试 / 录制；后置到全链路对齐切换之后，作为新增能力单独评审（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 
 版本语义：
-- **Rust 层 breaking**：A2 删枚举、#185 换类型。
+- **Rust 层 breaking**：A2 删枚举、工具参数换类型。
 - **绑定源码级 breaking**：A2 删除 Go / Java / Kotlin / Swift / Flutter / Node / Python 的 `ProviderName` 类型化常量，改为字符串，Node 也不保留 string-literal union（overlay 注册的名字无法进入编译期联合类型，保留它就是保留第二条路径）；CHANGELOG 需给迁移说明。
 - binding wire 与 C ABI 不变。
 
@@ -77,7 +84,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | B2–B8 | 17 个 LanguageModel 实现 → ~7 个协议；33 个 wrapper 退役；responses 家族合并（遵循 #166 修正 3/6） |
-| #174 / #175 | registry `auth` 列作为 preset descriptor 数据，鉴权在各厂商包内以 headers 闭包 / fetch 装饰器实现；CredentialStore + TokenRefresher 随宿主回调后置（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
+| auth | registry `auth` 列作为 preset descriptor 数据，鉴权在各厂商包内以 headers 闭包 / fetch 装饰器实现；CredentialStore + TokenRefresher 随宿主回调后置（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | L2 补齐 | `StreamPart::Raw` / `provider_metadata` 在各协议接线——投影不下的不得静默丢弃 |
 | **S3** | `cargo-bloat` 审计 0.5.0 增重（Android `.so` 13.4 → 21 MB）；feature gating 仅作可选小体积路径，默认全量 |
 | ~~调研 RFC~~ | ~~L2 数据模型选型（AI SDK 形态 / Open Responses items / 自有），指标见 RFC-0036 §3~~ 撤销：选型已定为 AI SDK V4 形态（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
@@ -100,10 +107,10 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 项 | 内容 |
 |---|---|
-| #167 | transport-level replay：mock 挂 HTTP 层跑真协议代码，覆盖全协议 / 全模态；录制只存身份，不保存可重建的 `ProviderRecord`（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
-| 漂移检测 | #170 扩展：定期重录，与 cassette 字节级 diff |
+| 传输层回放（#270） | transport-level replay：mock 挂 HTTP 层跑真协议代码，覆盖全协议 / 全模态；录制只存身份，不保存可重建的 `ProviderRecord`（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
+| 漂移检测 | #272：定期重录，与 cassette 字节级 diff |
 | 能力矩阵 | provider × 能力，每格由探测或录制支撑；后置到全链路对齐迁移之后（见 §6.1） |
-| CLI | `aimux probe / replay / diff`（#179 replay 子命令并入）；#181 debug CLI 并入 |
+| CLI | `aimux probe / replay / diff`（#272；#179 replay 子命令并入）；#181 debug CLI 并入 |
 
 ### 1.0 ——「冻结」（~1-2 周）
 
@@ -111,25 +118,24 @@ aimux 是 **provider 接入与治理的运行时**：
 |---|---|
 | ~~C4~~ | ~~8 种绑定全部迁移后删除旧导出、旧头文件、旧 FFI 测试~~ 取消：旧导出在切换时随绑定一起删除，1.0 不再补删（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
 | 冻结范围 | ops 协议与 L0 / L1 契约。**L2 独立版本化，不随 1.0 冻结** |
-| 发布判据 | #166 ledger 全勾（B9 / #171 后半除外）；错误模型 #95 与请求管线 #164 稳定一个周期；各门禁（S2 / P）连续绿 |
+| 发布判据 | #273 的发布门禁与证据全部完成；错误模型（#327）与请求管线 #164 稳定一个周期；各门禁（S2 / P）连续绿 |
 
 ## 3. 贯穿原则（沿用 #166 ground rules）
 
 - **一个方向一个 PR**；providers 先于 bindings；最高确定性的删除先落。
 - **Cassettes 是字节级回归门禁**：2,799 份录音只增不减。
 - **文档重组而非删除**：`git mv` + 链接修复；`archive/` 只留 README 指向 git 历史。
-- **Scheduled registry 报告永不阻塞合并**（#170 验收条件）。
+- **Scheduled registry 报告永不阻塞合并**（#271 验收条件）。
 - **瘦身不改变对外 API**（§6.1）。
 - 语言规则：`docs/` 与 `bindings/*/README` 英文，`rfc/` 中文。
 
 ## 4. 近期入口与依赖门
 
-1. **状态与方向对齐**：#166 A1 按 #169 的实际交付补勾，E1 改为 master 上独立 PR；#200 已合并为 [docs/aisdk-architecture-alignment.md](docs/aisdk-architecture-alignment.md)，与现行路线的关系见其 §0.7，不再有同号待厘清项。不在本轮文档维护中决定 ABI 切换方式或 #185 的最终类型架构。
-2. **RFC-0032 / 0033 入库**：B1 与 #174 的规范前提。纳入 #166 已记录的修正；不能以未合并分支中的文档替代 master 的规范。
-3. **S1 / S2 / P**：S1 只改 staticlib job，cdylib 保持现有 profile；S2 给出各发布产物的基线与阈值；P 明确测量方法、回归阈值与基线更新规则，再作为发布门禁。
-4. **A2–A5 与 #185**：按现有独立 PR 边界推进；涉及公开类型、绑定生成或 provider/core 边界的部分，先核对 #200（[§0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)）的决策影响，避免重复实施。A2 的源码迁移说明保留。
-5. **B1**：后续 provider 删除的解锁项；B1 形式已按 #200 §0.7 调整为 descriptor 数据源 + `create_xxx` 工厂，C2 转发 shim 已撤销；B4/B5 还需完成直接构造调用点迁移。#174 依赖 B1，#175 依赖 #174。
-6. **ops schema / L0 passthrough**：分别明确跟踪项和验收条件。ops 至少覆盖 op×handle、错误信封、二进制帧、版本协商与取消；passthrough 覆盖字节保真及 auth / 重试 / 录制的共享路径。
+1. **provider 重构与 crate 拆分**（#328）：RFC-0046 的 R1 serde 后续、R6 去重、R7 其余厂商搬移先合，RFC-0044 的 C0–C7 排在各厂商搬移之后，避免两边同时搬文件。
+2. **录制 schema 3 与传输层回放**（#270，RFC-0048）：排在 RFC-0044 C6 之后；之后才有 0.9 的治理命令（#272）。
+3. **发布门禁**（#273、#267）：S2 给出各发布产物的基线与阈值，P 明确测量方法、回归阈值与基线更新规则，再作为发布门禁；固定 toolchain 是字节数可复现的前提。panic 策略（#372）定了以后再登记基线。
+4. **ops 后置能力**（#274）：stdio 入口、L0 原生透传、宿主回调分别有验收条件；ops 至少覆盖 op×handle、错误信封、二进制帧、版本协商与取消，passthrough 覆盖字节保真及 auth / 重试 / 录制的共享路径。
+5. **迁移遗留**：provider 构造与配置（#275）、core 运行时差距（#276）、上游测试补迁（#278）按各 issue 的清单推进。
 
 每项记录依赖、验收条件、关联 PR 和复核日期；方向变更确认后再调整版本归属。
 
@@ -145,7 +151,7 @@ aimux 是 **provider 接入与治理的运行时**：
 
 合计约 4-5.5 个月。产出节奏参照 0.3.0 → 0.5.0（6 周 13 PR），按 2-3 PR/周推进；各阶段允许交叠，A/E 轨与 B1/C2 无依赖可同批，#180 / #181 随时插空。
 
-**不排期**（RFC-0036 已定方向）：UDS / HTTP 传输、`aimux-proxy` 扩展包——有真实需求时另立 RFC。**降级**：B9、#171 后半（补 116 个 provider），机会性推进。
+**不排期**（RFC-0036 已定方向）：UDS / HTTP 传输、`aimux-proxy` 扩展包——有真实需求时另立 RFC。**降级**：B9、补 models.dev 上缺的 116 个 provider，机会性推进。
 
 ## 6. 横切需求
 
@@ -170,10 +176,10 @@ aimux 是 **provider 接入与治理的运行时**：
 
 | 周期 | 内容 | 产出 |
 |---|---|---|
-| 每周 | models.dev registry diff（#170） | 报告贴固定 issue，不阻塞合并 |
-| 每月 | reachability probe（#170） | 同上 |
+| 每周 | models.dev registry diff（#271） | 报告贴固定 issue，不阻塞合并 |
+| 每月 | reachability probe（#271） | 同上 |
 | 每月 | 上游参照系 diff：AI SDK、pi-ai、Open Responses 规范变更 | 差异清单；超过 2 个版本未跟进的升 issue |
 | 每季度 | 协议新鲜度审计：各 provider 官方 changelog 对照，过时 cassette 标记 | 审计报告 + 协议转换 issue |
 | 每季度 | 新机制评估（新模态 / 新协议特性）→ DRAFT RFC 或明确记录不做 | RFC 决策记录 |
 
-0.9 的漂移检测落地后，协议新鲜度从文档对照升级为字节级验证（#167）。
+0.9 的漂移检测落地后，协议新鲜度从文档对照升级为字节级验证（#270、#272）。
