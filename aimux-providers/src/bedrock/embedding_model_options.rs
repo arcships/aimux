@@ -1,9 +1,13 @@
 //! Settings and provider options of the Amazon Bedrock embedding model
 //! (amazon-bedrock-embedding-model-options.ts).
 
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
+
 use super::options;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
+use aimux_provider_utils::optional_field;
 
 /// The embedding families supported by the upstream provider.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,94 +33,114 @@ pub(super) struct BedrockEmbeddingProviderOptions {
     pub(super) output_dimension: Option<u32>,
 }
 
-/// Parse Bedrock embedding provider options.
+/// `amazonBedrockEmbeddingModelOptionsSchema`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EmbeddingOptions {
+    /// `z.union([z.literal(1024), z.literal(512), z.literal(256)])`.
+    #[serde(default, deserialize_with = "dimensions")]
+    dimensions: Option<u32>,
+    #[serde(default, deserialize_with = "optional_field")]
+    normalize: Option<bool>,
+    /// `z.union([z.literal(256), z.literal(384), z.literal(1024), z.literal(3072)])`.
+    #[serde(default, deserialize_with = "embedding_dimension")]
+    embedding_dimension: Option<u32>,
+    #[serde(default, deserialize_with = "embedding_purpose")]
+    embedding_purpose: Option<String>,
+    #[serde(default, deserialize_with = "input_type")]
+    input_type: Option<String>,
+    #[serde(default, deserialize_with = "truncate")]
+    truncate: Option<String>,
+    /// `z.union([z.literal(256), z.literal(512), z.literal(1024), z.literal(1536)])`.
+    #[serde(default, deserialize_with = "output_dimension")]
+    output_dimension: Option<u32>,
+}
+
+/// One of `allowed`, as zod's union of number literals reads it (`512.0`
+/// is `512`).
+fn literal<'de, D: Deserializer<'de>>(d: D, allowed: &[u32]) -> Result<Option<u32>, D::Error> {
+    let value = f64::deserialize(d)?;
+    allowed
+        .iter()
+        .copied()
+        .find(|allowed| f64::from(*allowed) == value)
+        .map(Some)
+        .ok_or_else(|| D::Error::custom(format!("expected one of {allowed:?}")))
+}
+
+/// One of `allowed` (`z.enum`).
+fn one_of<'de, D: Deserializer<'de>>(d: D, allowed: &[&str]) -> Result<Option<String>, D::Error> {
+    let value = String::deserialize(d)?;
+    if allowed.contains(&value.as_str()) {
+        Ok(Some(value))
+    } else {
+        Err(D::Error::custom(format!("expected one of {allowed:?}")))
+    }
+}
+
+fn dimensions<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+    literal(d, &[1024, 512, 256])
+}
+
+fn embedding_dimension<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+    literal(d, &[256, 384, 1024, 3072])
+}
+
+fn output_dimension<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+    literal(d, &[256, 512, 1024, 1536])
+}
+
+fn embedding_purpose<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    one_of(
+        d,
+        &[
+            "GENERIC_INDEX",
+            "TEXT_RETRIEVAL",
+            "IMAGE_RETRIEVAL",
+            "VIDEO_RETRIEVAL",
+            "DOCUMENT_RETRIEVAL",
+            "AUDIO_RETRIEVAL",
+            "GENERIC_RETRIEVAL",
+            "CLASSIFICATION",
+            "CLUSTERING",
+        ],
+    )
+}
+
+fn input_type<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    one_of(
+        d,
+        &[
+            "search_document",
+            "search_query",
+            "classification",
+            "clustering",
+        ],
+    )
+}
+
+fn truncate<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    one_of(d, &["NONE", "START", "END"])
+}
+
+/// Parse Bedrock embedding provider options: `amazonBedrock`, else the
+/// legacy `bedrock` key (amazon-bedrock-embedding-model.ts:88-99).
 ///
-/// Reads the `amazonBedrock` key only.
+/// # Errors
+///
+/// `InvalidArgument` "invalid amazonBedrock provider options" (or `bedrock`)
+/// when the namespace does not match the schema.
 pub(super) fn parse_bedrock_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Result<BedrockEmbeddingProviderOptions, AiMuxError> {
-    let provider_opts = options::read(options);
-    if let Some(opts) = provider_opts {
-        let valid_dimensions = [
-            ("dimensions", &[1024, 512, 256][..]),
-            ("embeddingDimension", &[256, 384, 1024, 3072][..]),
-            ("outputDimension", &[256, 512, 1024, 1536][..]),
-        ]
-        .iter()
-        .all(|(key, allowed)| {
-            opts.get(*key).is_none_or(|v| {
-                v.as_f64()
-                    .is_some_and(|n| allowed.iter().any(|allowed| n == f64::from(*allowed)))
-            })
-        });
-        let valid_enums = [
-            (
-                "embeddingPurpose",
-                &[
-                    "GENERIC_INDEX",
-                    "TEXT_RETRIEVAL",
-                    "IMAGE_RETRIEVAL",
-                    "VIDEO_RETRIEVAL",
-                    "DOCUMENT_RETRIEVAL",
-                    "AUDIO_RETRIEVAL",
-                    "GENERIC_RETRIEVAL",
-                    "CLASSIFICATION",
-                    "CLUSTERING",
-                ][..],
-            ),
-            (
-                "inputType",
-                &[
-                    "search_document",
-                    "search_query",
-                    "classification",
-                    "clustering",
-                ][..],
-            ),
-            ("truncate", &["NONE", "START", "END"][..]),
-        ]
-        .iter()
-        .all(|(key, allowed)| {
-            opts.get(*key)
-                .is_none_or(|v| v.as_str().is_some_and(|s| allowed.contains(&s)))
-        });
-        if !valid_dimensions
-            || !valid_enums
-            || opts.get("normalize").is_some_and(|v| !v.is_boolean())
-        {
-            return Err(AiMuxError::invalid_argument(
-                "invalid amazonBedrock provider options",
-            ));
-        }
-    }
-
+    let parsed: EmbeddingOptions = options::parse(options)?.unwrap_or_default();
     Ok(BedrockEmbeddingProviderOptions {
-        dimensions: provider_opts
-            .and_then(|o| o.get("dimensions"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
-        normalize: provider_opts
-            .and_then(|o| o.get("normalize"))
-            .and_then(serde_json::Value::as_bool),
-        embedding_dimension: provider_opts
-            .and_then(|o| o.get("embeddingDimension"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
-        embedding_purpose: provider_opts
-            .and_then(|o| o.get("embeddingPurpose"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        input_type: provider_opts
-            .and_then(|o| o.get("inputType"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        truncate: provider_opts
-            .and_then(|o| o.get("truncate"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        output_dimension: provider_opts
-            .and_then(|o| o.get("outputDimension"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
+        dimensions: parsed.dimensions,
+        normalize: parsed.normalize,
+        embedding_dimension: parsed.embedding_dimension,
+        embedding_purpose: parsed.embedding_purpose,
+        input_type: parsed.input_type,
+        truncate: parsed.truncate,
+        output_dimension: parsed.output_dimension,
     })
 }

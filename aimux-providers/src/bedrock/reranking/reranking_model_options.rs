@@ -1,40 +1,41 @@
 //! Provider options of the Bedrock reranking model (amazon-bedrock-reranking-model-options.ts).
 
+use serde::Deserialize;
+use serde_json::{Map, Value};
+
 use super::super::options;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
-use serde_json::Value;
+use aimux_provider_utils::optional_field;
 
-/// Bedrock provider-specific reranking options.
-#[derive(Debug, Clone, Default)]
+/// `amazonBedrockRerankingModelOptionsSchema`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct BedrockRerankingOptions {
+    #[serde(default, deserialize_with = "optional_field")]
     pub(super) next_token: Option<String>,
-    pub(super) additional_model_request_fields: Option<Value>,
+    /// `z.record(z.string(), z.any())`.
+    #[serde(default, deserialize_with = "optional_field")]
+    additional_model_request_fields: Option<Map<String, Value>>,
 }
 
+impl BedrockRerankingOptions {
+    pub(super) fn additional_model_request_fields(&self) -> Option<Value> {
+        self.additional_model_request_fields
+            .clone()
+            .map(Value::Object)
+    }
+}
+
+/// Parse Bedrock reranking provider options: `amazonBedrock`, else the
+/// legacy `bedrock` key (amazon-bedrock-reranking-model.ts:48-58).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid amazonBedrock provider options" (or `bedrock`)
+/// when the namespace does not match the schema.
 pub(super) fn parse_bedrock_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> Result<BedrockRerankingOptions, AiMuxError> {
-    let mut opts = BedrockRerankingOptions::default();
-    if let Some(po) = provider_options {
-        let bedrock = options::read(Some(po));
-        if let Some(bedrock) = bedrock {
-            if bedrock.get("nextToken").is_some_and(|v| !v.is_string())
-                || bedrock
-                    .get("additionalModelRequestFields")
-                    .is_some_and(|v| !v.is_object())
-            {
-                return Err(AiMuxError::invalid_argument(
-                    "invalid amazonBedrock provider options",
-                ));
-            }
-            if let Some(token) = bedrock.get("nextToken").and_then(|v| v.as_str()) {
-                opts.next_token = Some(token.to_string());
-            }
-            if let Some(fields) = bedrock.get("additionalModelRequestFields") {
-                opts.additional_model_request_fields = Some(fields.clone());
-            }
-        }
-    }
-    Ok(opts)
+    Ok(options::parse(provider_options)?.unwrap_or_default())
 }

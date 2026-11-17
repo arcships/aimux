@@ -866,3 +866,71 @@ mod bedrock_upstream_e2e {
         assert!(result.response.is_none());
     }
 }
+
+/// aimux's own: `amazonBedrock` (else `bedrock`) is parsed against
+/// `amazonBedrockEmbeddingModelOptionsSchema` with `parseProviderOptions`.
+/// A value outside it fails with the upstream message and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for (namespace, bedrock) in [
+            ("amazonBedrock", json!({ "dimensions": 300 })),
+            ("amazonBedrock", json!({ "embeddingPurpose": "SEARCH" })),
+            ("amazonBedrock", json!({ "normalize": "yes" })),
+            ("bedrock", json!({ "truncate": "end" })),
+            ("bedrock", json!({ "outputDimension": null })),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let model = embedding_model(
+                "amazon.titan-embed-text-v2:0",
+                &[],
+                fake_fetch_with_auth(&mock),
+            );
+            let Err(error) = model
+                .do_embed(&EmbeddingCallOptions {
+                    provider_options: Some(provider_options(namespace, bedrock.clone())),
+                    ..options(&["sunny day at the beach"])
+                })
+                .await
+            else {
+                panic!("a value outside the schema fails: {bedrock}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {bedrock}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(mock.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_whole_number_float_matches_its_literal() {
+        let mock = MockFetch::new(vec![titan_response()]);
+        let model = embedding_model(
+            "amazon.titan-embed-text-v2:0",
+            &[],
+            fake_fetch_with_auth(&mock),
+        );
+        model
+            .do_embed(&EmbeddingCallOptions {
+                provider_options: Some(provider_options(
+                    "amazonBedrock",
+                    json!({ "dimensions": 512.0, "normalize": true }),
+                )),
+                ..options(&["sunny day at the beach"])
+            })
+            .await
+            .expect("512.0 is the literal 512");
+        let body = mock.seen()[0].json_body();
+        assert_eq!(body["dimensions"], 512);
+        assert_eq!(body["normalize"], true);
+    }
+}
