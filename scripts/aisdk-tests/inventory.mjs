@@ -38,6 +38,29 @@ function parseArgs(argv) {
 const git = (repo, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
 
+// In a blobless clone `git cat-file` fetches each missing blob in its own
+// request, a few hundred round trips per run; fetch them all in one instead.
+function prefetch(repo, oids) {
+  const remote = git(repo, 'config', '--get-regexp', String.raw`^remote\..*\.promisor$`)
+    .split('\n')
+    .find((l) => l.endsWith(' true'))
+    ?.replace(/^remote\.(.*)\.promisor true$/, '$1');
+  if (!remote) return;
+  const checked = execFileSync('git', ['-C', repo, 'cat-file', '--batch-check=%(objectname)'], {
+    input: oids.join('\n') + '\n',
+    env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+    encoding: 'utf8',
+    maxBuffer: 1 << 28,
+  });
+  const missing = checked.split('\n').filter((l) => l.endsWith(' missing')).map((l) => l.split(' ')[0]);
+  if (!missing.length) return;
+  execFileSync('git', ['-C', repo, '-c', 'fetch.negotiationAlgorithm=noop', 'fetch', '--quiet', '--no-tags',
+    '--no-write-fetch-head', '--recurse-submodules=no', '--filter=blob:none', '--stdin', remote], {
+    input: missing.join('\n') + '\n',
+    stdio: ['pipe', 'ignore', 'inherit'],
+  });
+}
+
 function readBlobs(repo, specs) {
   const out = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], {
     input: specs.join('\n') + '\n',
@@ -61,12 +84,15 @@ const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequen
 // A `/` after one of these starts a regular expression, otherwise it divides.
 const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
 
-// Returns `{ line, chain }` for every case in a TypeScript test file. A small
+// Returns `{ line, chain, start, end }` for every case in a TypeScript test
+// file; `start` and `end` are the offsets of the call (from `it` to its
+// closing `)`). A small
 // lexer skips comments, strings, template literals and regular expressions,
 // so brackets inside them do not move the `describe` scope.
 export function listCases(src) {
   const cases = [];
   const scopes = []; // open `describe` calls: { name, depth }
+  const open = []; // cases whose call is not closed yet: { kase, depth }
   const templates = []; // bracket depth of each open `${`
   let depth = 0;
   let line = 1;
@@ -163,6 +189,7 @@ export function listCases(src) {
       }
       depth--;
       while (scopes.length && scopes[scopes.length - 1].depth > depth) scopes.pop();
+      while (open.length && open[open.length - 1].depth > depth) open.pop().kase.end = i + 1;
       prev = c;
       i++;
       return;
@@ -170,6 +197,7 @@ export function listCases(src) {
     if (/[A-Za-z_$]/.test(c)) {
       const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i, i + 64));
       const word = m[0];
+      const start = i;
       const afterDot = prev === '.';
       i += word.length;
       prev = word;
@@ -199,7 +227,11 @@ export function listCases(src) {
       const callDepth = depth;
       const name = readName() ?? '<computed>';
       if (word === 'describe') scopes.push({ name, depth: callDepth });
-      else cases.push({ line: at, chain: [...scopes.map((s) => s.name), name] });
+      else {
+        const kase = { line: at, chain: [...scopes.map((s) => s.name), name], start, end: src.length };
+        cases.push(kase);
+        open.push({ kase, depth: callDepth });
+      }
       prev = 'str';
       return;
     }
@@ -211,21 +243,46 @@ export function listCases(src) {
   return cases;
 }
 
+// Lists the test files of `packages` (`[{ name, version }]`), each read from
+// tag `<name>@<version>`. A file is its path in the vercel/ai repo, and every
+// case carries its source text in `body` (from the call to its closing `)`).
+export function readPackages(repo, packages) {
+  const listed = packages.map(({ name, version }) => {
+    const tag = `${name}@${version}`;
+    const dir = `packages/${name.replace(/^@ai-sdk\//, '')}`;
+    const files = git(repo, 'ls-tree', '-r', tag, '--', dir)
+      .split('\n')
+      .map((l) => /^\d+ blob ([0-9a-f]+)\t(.*\.test\.tsx?)$/.exec(l))
+      .filter(Boolean)
+      .map(([, oid, file]) => ({ oid, file }))
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+    return { name, version, tag, files };
+  });
+  const all = listed.flatMap((p) => p.files);
+  prefetch(repo, [...new Set(all.map((f) => f.oid))]);
+  const blobs = readBlobs(repo, all.map((f) => f.oid));
+  let k = 0;
+  return listed.map(({ name, version, tag, files }) => ({
+    package: name,
+    version,
+    tag,
+    files: files.map(({ file }) => {
+      const src = blobs[k++];
+      return { file, cases: listCases(src).map((c) => ({ ...c, body: src.slice(c.start, c.end) })) };
+    }),
+  }));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const versions = JSON.parse(fs.readFileSync(args.versions, 'utf8'));
-  const report = [];
-  for (const [name, { version }] of Object.entries(versions)) {
-    const tag = `${name}@${version}`;
-    const dir = `packages/${name.replace(/^@ai-sdk\//, '')}`;
-    const files = git(args.repo, 'ls-tree', '-r', '--name-only', tag, '--', dir)
-      .split('\n')
-      .filter((f) => /\.test\.tsx?$/.test(f))
-      .sort();
-    const blobs = readBlobs(args.repo, files.map((f) => `${tag}:${f}`));
-    const entries = files.map((file, k) => ({ file, cases: listCases(blobs[k]) }));
-    report.push({ package: name, version, tag, files: entries });
-  }
+  const report = readPackages(
+    args.repo,
+    Object.entries(versions).map(([name, { version }]) => ({ name, version })),
+  ).map((p) => ({
+    ...p,
+    files: p.files.map(({ file, cases }) => ({ file, cases: cases.map(({ line, chain }) => ({ line, chain })) })),
+  }));
 
   let totalFiles = 0;
   let totalCases = 0;

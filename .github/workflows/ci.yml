@@ -164,6 +164,8 @@ jobs:
             $(job flutter-example-build aimux-ffi bindings/flutter)
             $(job swift-contract-tests aimux-ffi bindings/swift)
             $(job web-typecheck bindings/node)
+            \"upstream-tests\": $(changed ':(glob)**/*.rs' ':(glob)*/layout.toml' \
+              fixtures/aisdk/VERSIONS.json scripts/aisdk-tests .github/workflows/ci.yml),
             \"contract-tests\": $code}"
           run=$(jq -c . <<< "$run")
           printf 'code=%s\nshared=%s\nplatforms=%s\nrun=%s\n' \
@@ -850,7 +852,7 @@ jobs:
         with:
           node-version: 24
       - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers, upstream test inventory)
-        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs scripts/aisdk-tests/check.test.mjs
       # Web console typecheck: every @aimux/types import must still resolve.
       # The console imports the generated DTOs from bindings/node/src/generated.
       # The drift check above only compares files; this type-checks every
@@ -862,6 +864,38 @@ jobs:
         run: |
           npm ci
           npm run typecheck
+
+  # Every upstream test marker in the Rust tests and every hand-written
+  # exclusion in a layout.toml must name a case of the vercel/ai tag locked in
+  # fixtures/aisdk/VERSIONS.json (RFC-0045 §7). The progress of each upstream
+  # test file goes to the job summary. Runs when Rust code, a layout.toml, the
+  # lock or the checker changed.
+  upstream-tests:
+    name: Upstream test markers
+    runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['upstream-tests']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The npm tarballs leave the tests out, so they come from the git tags.
+      # A shallow blobless fetch of the tags is about a megabyte; check.mjs
+      # then fetches the test files it reads in one request.
+      - name: Fetch the locked vercel/ai tags
+        run: |
+          repo="$RUNNER_TEMP/vercel-ai"
+          git init -q "$repo"
+          git -C "$repo" remote add origin https://github.com/vercel/ai
+          git -C "$repo" config remote.origin.promisor true
+          git -C "$repo" config remote.origin.partialclonefilter blob:none
+          node scripts/aisdk-tests/check.mjs tags | sed 's|.*|+refs/tags/&:refs/tags/&|' \
+            | xargs git -C "$repo" fetch -q --depth=1 --filter=blob:none --no-tags origin
+      - name: Check the markers and layout.toml exclusions (scripts/aisdk-tests/check.mjs)
+        run: node scripts/aisdk-tests/check.mjs --repo "$RUNNER_TEMP/vercel-ai"
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
@@ -907,6 +941,7 @@ jobs:
       - ffi-linux-arm
       - flutter-example-build
       - contract-tests
+      - upstream-tests
       - swift-contract-tests
     runs-on: ubuntu-latest
     steps:
