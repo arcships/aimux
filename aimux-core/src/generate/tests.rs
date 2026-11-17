@@ -1684,3 +1684,775 @@ async fn a_repeated_tool_call_id_maps_to_the_first_call_when_generated() {
         .collect();
     assert_eq!(inputs, [&json!({ "q": "first" }), &json!({ "q": "first" })]);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RFC-0042 §8.1 cancellation & repair-timeout matrix
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct DropFlag(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+struct GatedProviderStream {
+    parts: std::collections::VecDeque<Result<StreamPart, AiMuxError>>,
+    gate_after: usize,
+    emitted: usize,
+    gate: Option<Pin<Box<dyn std::future::Future<Output = ()> + Send>>>,
+    polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    polls_after_abort: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    abort_signal: AbortSignal,
+    dropped_tx: tokio::sync::watch::Sender<bool>,
+}
+
+impl Stream for GatedProviderStream {
+    type Item = Result<StreamPart, AiMuxError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use std::sync::atomic::Ordering;
+
+        if self.abort_signal.is_aborted() {
+            self.polls_after_abort.fetch_add(1, Ordering::SeqCst);
+        }
+        self.polls.fetch_add(1, Ordering::SeqCst);
+        if self.emitted >= self.gate_after
+            && let Some(gate) = self.gate.as_mut()
+        {
+            match gate.as_mut().poll(cx) {
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+                std::task::Poll::Ready(()) => self.gate = None,
+            }
+        }
+        match self.parts.pop_front() {
+            Some(item) => {
+                self.emitted += 1;
+                std::task::Poll::Ready(Some(item))
+            }
+            None => std::task::Poll::Ready(None),
+        }
+    }
+}
+
+impl Drop for GatedProviderStream {
+    fn drop(&mut self) {
+        let _ = self.dropped_tx.send(true);
+    }
+}
+
+struct GatedStreamHandle {
+    gate_tx: tokio::sync::watch::Sender<bool>,
+    dropped_rx: tokio::sync::watch::Receiver<bool>,
+    polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    polls_after_abort: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+struct TrackingModel {
+    supported_urls_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    generate_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    stream_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    generate_result: Option<GenerateResult>,
+    stream: Mutex<Option<GatedProviderStream>>,
+}
+
+impl TrackingModel {
+    fn gated(
+        parts: Vec<StreamPart>,
+        gate_after: usize,
+        abort_signal: AbortSignal,
+    ) -> (Self, GatedStreamHandle) {
+        let (gate_tx, mut gate_rx) = tokio::sync::watch::channel(false);
+        let (dropped_tx, dropped_rx) = tokio::sync::watch::channel(false);
+        let polls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let polls_after_abort = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let stream = GatedProviderStream {
+            parts: parts.into_iter().map(Ok).collect(),
+            gate_after,
+            emitted: 0,
+            gate: Some(Box::pin(async move {
+                let _ = gate_rx.wait_for(|&open| open).await;
+            })),
+            polls: std::sync::Arc::clone(&polls),
+            polls_after_abort: std::sync::Arc::clone(&polls_after_abort),
+            abort_signal,
+            dropped_tx,
+        };
+        let model = Self {
+            supported_urls_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            generate_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            stream_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            generate_result: None,
+            stream: Mutex::new(Some(stream)),
+        };
+        let handle = GatedStreamHandle {
+            gate_tx,
+            dropped_rx,
+            polls,
+            polls_after_abort,
+        };
+        (model, handle)
+    }
+
+    fn generating(result: GenerateResult) -> Self {
+        Self {
+            supported_urls_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            generate_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            stream_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            generate_result: Some(result),
+            stream: Mutex::new(None),
+        }
+    }
+}
+
+#[async_trait]
+impl LanguageModel for TrackingModel {
+    fn provider(&self) -> &str {
+        "mock.chat"
+    }
+
+    fn model_id(&self) -> &str {
+        "mock-model"
+    }
+
+    async fn supported_urls(&self) -> crate::language_model::SupportedUrls {
+        self.supported_urls_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        crate::language_model::SupportedUrls(HashMap::new())
+    }
+
+    async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        self.generate_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(self
+            .generate_result
+            .clone()
+            .expect("tracking generate result"))
+    }
+
+    async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        self.stream_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let stream = self
+            .stream
+            .lock()
+            .unwrap()
+            .take()
+            .expect("tracking gated stream");
+        Ok(StreamResult {
+            stream: Box::pin(stream),
+            request: None,
+            response: None,
+        })
+    }
+}
+
+fn weather_tool() -> Tool {
+    Tool::Function(crate::tool::FunctionTool::new(
+        "weather",
+        json!({
+            "type": "object",
+            "properties": { "city": { "type": "string" } },
+            "required": ["city"],
+        }),
+    ))
+}
+
+fn tool_input_stream_with_trailing(prefix: Vec<StreamPart>) -> Vec<StreamPart> {
+    let mut parts = prefix;
+    parts.extend([
+        StreamPart::ToolInputEnd {
+            id: "call-1".into(),
+            provider_metadata: None,
+        },
+        StreamPart::ToolCall(RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "weather".into(),
+            input: r#"{"city":"Paris"}"#.into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        }),
+        StreamPart::Finish {
+            finish_reason: finish(FinishReasonUnified::ToolCalls, "tool_calls"),
+            usage: usage(10, 0, 5, 0),
+            provider_metadata: None,
+        },
+    ]);
+    parts
+}
+
+fn hung_repair() -> (
+    ToolCallRepair,
+    std::sync::Arc<tokio::sync::Notify>,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let repair = ToolCallRepair::new({
+        let entered = std::sync::Arc::clone(&entered);
+        let dropped = std::sync::Arc::clone(&dropped);
+        move |_context| {
+            let entered = std::sync::Arc::clone(&entered);
+            let dropped = std::sync::Arc::clone(&dropped);
+            async move {
+                let _guard = DropFlag(dropped);
+                entered.notify_one();
+                std::future::pending::<()>().await;
+                unreachable!("pending repair future must be dropped on cancel/timeout")
+            }
+        }
+    });
+    (repair, entered, dropped)
+}
+
+async fn assert_aborted_during_tool_input_deltas(
+    prefix_parts: Vec<StreamPart>,
+    abort_after_deltas: usize,
+    expected_kinds: &[&str],
+) {
+    use std::sync::atomic::Ordering;
+
+    let gate_after = prefix_parts.len();
+    let all_parts = tool_input_stream_with_trailing(prefix_parts);
+    let signal = AbortSignal::new();
+    let (model, mut handle) = TrackingModel::gated(all_parts, gate_after, signal.clone());
+    let result = stream_text(
+        &model,
+        "hi",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            abort_signal: Some(signal.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut stream = result.stream;
+    let mut observed = Vec::new();
+    let mut deltas_seen = 0;
+    while let Some(part) = stream.next().await {
+        let part = part.expect("no transport error");
+        observed.push(part.clone());
+        if matches!(part, TextStreamPart::ToolInputDelta { .. }) {
+            deltas_seen += 1;
+            if deltas_seen == abort_after_deltas {
+                signal.abort();
+                // Even if the provider immediately has trailing parts ready,
+                // the pump must not poll the provider stream again.
+                let _ = handle.gate_tx.send(true);
+            }
+        }
+    }
+
+    let kinds: Vec<String> = observed.iter().map(kind).collect();
+    assert_eq!(kinds, expected_kinds);
+    assert!(matches!(
+        observed.last(),
+        Some(TextStreamPart::Abort { reason: Some(reason) }) if reason == "request aborted"
+    ));
+    assert!(!observed.iter().any(|part| matches!(
+        part,
+        TextStreamPart::ToolCall(_)
+            | TextStreamPart::FinishStep { .. }
+            | TextStreamPart::Finish { .. }
+    )));
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        handle.dropped_rx.wait_for(|&dropped| dropped),
+    )
+    .await
+    .expect("provider stream must drop promptly")
+    .unwrap();
+    tokio::task::yield_now().await;
+    assert_eq!(handle.polls_after_abort.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn pre_start_abort_cancels_before_polling_the_model() {
+    use std::sync::atomic::Ordering;
+
+    let pre_aborted = AbortSignal::new();
+    pre_aborted.abort();
+
+    let (stream_model, _stream_handle) = TrackingModel::gated(
+        tool_input_stream_with_trailing(vec![StreamPart::StreamStart { warnings: vec![] }]),
+        0,
+        pre_aborted.clone(),
+    );
+    let Err(stream_err) = stream_text(
+        &stream_model,
+        "hi",
+        GenerateTextOptions {
+            abort_signal: Some(pre_aborted.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    else {
+        panic!("pre-aborted stream_text must fail");
+    };
+    assert!(
+        matches!(stream_err, AiMuxError::Aborted(ref msg) if msg == "request aborted"),
+        "{stream_err:?}"
+    );
+    assert_eq!(stream_model.supported_urls_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(stream_model.stream_calls.load(Ordering::SeqCst), 0);
+
+    let gen_model = TrackingModel::generating(generated(
+        vec![text_content("should never be generated")],
+        FinishReasonUnified::Stop,
+    ));
+    let gen_err = generate_text(
+        &gen_model,
+        "hi",
+        GenerateTextOptions {
+            abort_signal: Some(pre_aborted.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(gen_err, AiMuxError::Aborted(ref msg) if msg == "request aborted"),
+        "{gen_err:?}"
+    );
+    assert_eq!(gen_model.supported_urls_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(gen_model.generate_calls.load(Ordering::SeqCst), 0);
+
+    let replay_err = generate_text_from_language_model_prompt(
+        &gen_model,
+        vec![crate::language_model_message::LanguageModelMessage::user_text("hi")],
+        vec![ModelMessage::user("hi")],
+        GenerateTextOptions {
+            abort_signal: Some(pre_aborted),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(replay_err, AiMuxError::Aborted(ref msg) if msg == "request aborted"),
+        "{replay_err:?}"
+    );
+    assert_eq!(gen_model.generate_calls.load(Ordering::SeqCst), 0);
+
+    // Abort after setup returns Ok(StreamTextResult) and before the consumer polls
+    // the stream at all: only `start` and `abort` are emitted, no step/finish,
+    // and the provider stream is never polled.
+    let signal = AbortSignal::new();
+    let (model, mut handle) = TrackingModel::gated(
+        tool_input_stream_with_trailing(vec![StreamPart::StreamStart { warnings: vec![] }]),
+        0,
+        signal.clone(),
+    );
+    let result = stream_text(
+        &model,
+        "hi",
+        GenerateTextOptions {
+            abort_signal: Some(signal.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    signal.abort();
+    let _ = handle.gate_tx.send(true);
+    let parts = collect(result).await;
+    let kinds: Vec<String> = parts.iter().map(kind).collect();
+    assert_eq!(kinds, ["start", "abort"]);
+    assert!(matches!(
+        &parts[1],
+        TextStreamPart::Abort { reason: Some(reason) } if reason == "request aborted"
+    ));
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        handle.dropped_rx.wait_for(|&dropped| dropped),
+    )
+    .await
+    .expect("provider stream must drop promptly")
+    .unwrap();
+    assert_eq!(handle.polls_after_abort.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn abort_mid_tool_input_delta_emits_abort_and_stops_polling() {
+    assert_aborted_during_tool_input_deltas(
+        vec![
+            StreamPart::StreamStart { warnings: vec![] },
+            StreamPart::ToolInputStart {
+                id: "call-1".into(),
+                tool_name: "weather".into(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            },
+            StreamPart::ToolInputDelta {
+                id: "call-1".into(),
+                delta: r#"{"city":"#.into(),
+                provider_metadata: None,
+            },
+        ],
+        1,
+        &[
+            "start",
+            "start-step",
+            "tool-input-start",
+            "tool-input-delta",
+            "abort",
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn abort_before_tool_input_end_never_flushes_tool_call() {
+    assert_aborted_during_tool_input_deltas(
+        vec![
+            StreamPart::StreamStart { warnings: vec![] },
+            StreamPart::ToolInputStart {
+                id: "call-1".into(),
+                tool_name: "weather".into(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            },
+            StreamPart::ToolInputDelta {
+                id: "call-1".into(),
+                delta: r#"{"city":"#.into(),
+                provider_metadata: None,
+            },
+            StreamPart::ToolInputDelta {
+                id: "call-1".into(),
+                delta: r#""Paris"}"#.into(),
+                provider_metadata: None,
+            },
+        ],
+        2,
+        &[
+            "start",
+            "start-step",
+            "tool-input-start",
+            "tool-input-delta",
+            "tool-input-delta",
+            "abort",
+        ],
+    )
+    .await;
+}
+
+fn invalid_weather_generate_result() -> GenerateResult {
+    generated(
+        vec![GenerateContent::ToolCall(RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "weather".into(),
+            input: "{bad".into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })],
+        FinishReasonUnified::ToolCalls,
+    )
+}
+
+fn invalid_weather_tool_call_stream() -> Vec<Result<StreamPart, AiMuxError>> {
+    vec![
+        Ok(StreamPart::StreamStart { warnings: vec![] }),
+        Ok(StreamPart::ToolInputStart {
+            id: "call-1".into(),
+            tool_name: "weather".into(),
+            provider_executed: None,
+            dynamic: None,
+            title: None,
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::ToolInputDelta {
+            id: "call-1".into(),
+            delta: "{bad".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::ToolInputEnd {
+            id: "call-1".into(),
+            provider_metadata: None,
+        }),
+        Ok(StreamPart::ToolCall(RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "weather".into(),
+            input: "{bad".into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        })),
+        Ok(StreamPart::Finish {
+            finish_reason: finish(FinishReasonUnified::ToolCalls, "tool_calls"),
+            usage: usage(10, 0, 5, 0),
+            provider_metadata: None,
+        }),
+    ]
+}
+
+#[tokio::test]
+async fn hung_repair_abort_cancels_generate_text_and_drops_repair_future() {
+    use std::sync::atomic::Ordering;
+
+    let model = ScriptedModel::generating(invalid_weather_generate_result());
+    let signal = AbortSignal::new();
+    let (repair, entered, dropped) = hung_repair();
+    let options = GenerateTextOptions {
+        tools: Some(vec![weather_tool()]),
+        repair_tool_call: Some(repair),
+        abort_signal: Some(signal.clone()),
+        ..GenerateTextOptions::default()
+    };
+
+    let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        tokio::join!(generate_text(&model, "hi", options), async {
+            entered.notified().await;
+            signal.abort();
+        })
+    })
+    .await
+    .expect("aborted generate_text must complete promptly");
+
+    assert!(
+        matches!(result, Err(AiMuxError::Aborted(ref msg)) if msg == "request aborted"),
+        "{result:?}"
+    );
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "repair future must be dropped on abort"
+    );
+}
+
+#[tokio::test]
+async fn hung_repair_abort_cancels_stream_text_and_drops_repair_future() {
+    use std::sync::atomic::Ordering;
+
+    let model = ScriptedModel::streaming(invalid_weather_tool_call_stream());
+    let signal = AbortSignal::new();
+    let (repair, entered, dropped) = hung_repair();
+    let result = stream_text(
+        &model,
+        "hi",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            repair_tool_call: Some(repair),
+            abort_signal: Some(signal.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let (parts, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        tokio::join!(collect(result), async {
+            entered.notified().await;
+            signal.abort();
+        })
+    })
+    .await
+    .expect("aborted stream_text must complete promptly");
+
+    let kinds: Vec<String> = parts.iter().map(kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            "start",
+            "start-step",
+            "tool-input-start",
+            "tool-input-delta",
+            "tool-input-end",
+            "abort",
+        ]
+    );
+    assert!(matches!(
+        parts.last(),
+        Some(TextStreamPart::Abort { reason: Some(reason) }) if reason == "request aborted"
+    ));
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "repair future must be dropped on abort"
+    );
+
+    // Also verify `.consume()` fails with Aborted and drops the repair future.
+    let model = ScriptedModel::streaming(invalid_weather_tool_call_stream());
+    let signal = AbortSignal::new();
+    let (repair, entered, dropped) = hung_repair();
+    let result = stream_text(
+        &model,
+        "hi",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            repair_tool_call: Some(repair),
+            abort_signal: Some(signal.clone()),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (consumed, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        tokio::join!(result.consume(), async {
+            entered.notified().await;
+            signal.abort();
+        })
+    })
+    .await
+    .expect("aborted stream consume must complete promptly");
+    assert!(
+        matches!(consumed, Err(AiMuxError::Aborted(ref msg)) if msg == "request aborted"),
+        "{consumed:?}"
+    );
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
+#[tokio::test(start_paused = true)]
+async fn hung_repair_respects_operation_timeout_in_generate_and_stream() {
+    use std::sync::atomic::Ordering;
+
+    for (timeout_config, expected_message) in [
+        (
+            crate::options::TimeoutConfiguration {
+                total_ms: Some(10),
+                ..Default::default()
+            },
+            "Total timeout of 10ms exceeded",
+        ),
+        (
+            crate::options::TimeoutConfiguration {
+                step_ms: Some(10),
+                ..Default::default()
+            },
+            "Step timeout of 10ms exceeded",
+        ),
+    ] {
+        let gen_model = ScriptedModel::generating(invalid_weather_generate_result());
+        let (repair, _entered, dropped) = hung_repair();
+        let gen_err = generate_text(
+            &gen_model,
+            "hi",
+            GenerateTextOptions {
+                tools: Some(vec![weather_tool()]),
+                repair_tool_call: Some(repair),
+                timeout: Some(timeout_config),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(gen_err, AiMuxError::Timeout(ref msg) if msg == expected_message),
+            "{gen_err:?}"
+        );
+        assert!(dropped.load(Ordering::SeqCst));
+
+        let stream_model = ScriptedModel::streaming(invalid_weather_tool_call_stream());
+        let (repair, _entered, dropped) = hung_repair();
+        let result = stream_text(
+            &stream_model,
+            "hi",
+            GenerateTextOptions {
+                tools: Some(vec![weather_tool()]),
+                repair_tool_call: Some(repair),
+                timeout: Some(timeout_config),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+        let items: Vec<Result<TextStreamPart, AiMuxError>> = result.stream.collect().await;
+        let ok_kinds: Vec<String> = items
+            .iter()
+            .filter_map(|item| item.as_ref().ok().map(kind))
+            .collect();
+        assert_eq!(
+            ok_kinds,
+            [
+                "start",
+                "start-step",
+                "tool-input-start",
+                "tool-input-delta",
+                "tool-input-end",
+            ]
+        );
+        assert!(
+            matches!(items.last(), Some(Err(AiMuxError::Timeout(msg))) if msg == expected_message),
+            "{items:?}"
+        );
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+}
+
+#[tokio::test]
+async fn consumer_drop_mid_tool_input_delta_stops_pump_cleanly() {
+    use std::sync::atomic::Ordering;
+
+    let prefix = vec![
+        StreamPart::StreamStart { warnings: vec![] },
+        StreamPart::ToolInputStart {
+            id: "call-1".into(),
+            tool_name: "weather".into(),
+            provider_executed: None,
+            dynamic: None,
+            title: None,
+            provider_metadata: None,
+        },
+        StreamPart::ToolInputDelta {
+            id: "call-1".into(),
+            delta: r#"{"city":"#.into(),
+            provider_metadata: None,
+        },
+    ];
+    let gate_after = prefix.len();
+    let all_parts = tool_input_stream_with_trailing(prefix);
+    let signal = AbortSignal::new();
+    let (model, mut handle) = TrackingModel::gated(all_parts, gate_after, signal);
+    let mut result = stream_text(
+        &model,
+        "hi",
+        GenerateTextOptions {
+            tools: Some(vec![weather_tool()]),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut observed_kinds = Vec::new();
+    while let Some(part) = result.stream.next().await {
+        let part = part.expect("no transport error");
+        observed_kinds.push(kind(&part));
+        if matches!(part, TextStreamPart::ToolInputDelta { .. }) {
+            break;
+        }
+    }
+    assert_eq!(
+        observed_kinds,
+        [
+            "start",
+            "start-step",
+            "tool-input-start",
+            "tool-input-delta"
+        ]
+    );
+    let polls_at_drop = handle.polls.load(Ordering::SeqCst);
+    drop(result);
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        handle.dropped_rx.wait_for(|&dropped| dropped),
+    )
+    .await
+    .expect("pump must drop provider stream after consumer drop")
+    .unwrap();
+    let _ = handle.gate_tx.send(true);
+    tokio::task::yield_now().await;
+    assert_eq!(handle.polls.load(Ordering::SeqCst), polls_at_drop);
+}
