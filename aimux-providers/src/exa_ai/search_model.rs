@@ -1,23 +1,13 @@
-//! Exa AI provider — search modality only.
-//!
-//! Implements the `SearchModel` trait against the Exa search API
-//! (`POST https://api.exa.ai/search`). Uses `x-api-key` header auth
-//! via `EXA_API_KEY`.
-//!
-//! [`create_exa_ai`] takes [`ExaAiProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`ExaAiProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `EXA_API_KEY`.
-//! [`exa_ai()`] is the default instance; it reads nothing and cannot fail.
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, define_vendor_provider, post_json_search};
+use crate::shared::{EndpointConfig, post_json_search};
+
+const MODEL_ID: &str = "exa-search";
 
 fn exa_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -35,36 +25,6 @@ fn exa_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
         }
     })
 }
-
-const MODEL_ID: &str = "exa-search";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.exa.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "EXA_API_KEY";
-const DEFAULT_NAME: &str = "exa_ai";
-
-define_vendor_provider! {
-    settings: ExaAiProviderSettings,
-    provider: ExaAiProvider,
-    create: create_exa_ai,
-    singleton: exa_ai,
-    display: "Exa AI",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("x-api-key"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl ExaAiProvider {
-    /// The search model; `provider()` is `"{name}.search"`.
-    #[must_use]
-    pub fn search_model(&self) -> ExaAiSearchModel {
-        ExaAiSearchModel::from_config(self.model_config("search"))
-    }
-}
-
-crate::impl_single_modality_provider!(ExaAiProvider, search_model, |p, _id| p.search_model());
 
 fn build_request_body(options: &SearchCallOptions) -> Value {
     let mut body = json!({

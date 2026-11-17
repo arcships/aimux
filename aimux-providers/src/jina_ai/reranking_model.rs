@@ -1,17 +1,3 @@
-//! Jina AI provider — rerank modality only.
-//!
-//! Implements the `RerankingModel` trait against the Jina AI rerank API
-//! (`POST https://api.jina.ai/v1/rerank`).
-//!
-//! Jina AI is a modality-specific provider: it exposes a native rerank
-//! protocol (query + documents → relevance scores) and does not support
-//! language models.
-//!
-//! [`create_jina_ai`] takes [`JinaAiProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`JinaAiProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `JINA_AI_API_KEY`.
-//! [`jina_ai()`] is the default instance; it reads nothing and cannot fail.
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -23,9 +9,11 @@ use aimux_core::reranking_model::{
 };
 use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, define_vendor_provider, namespaced_options};
+use crate::shared::{EndpointConfig, namespaced_options};
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "jina";
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
 ///
@@ -46,38 +34,6 @@ fn jina_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
         }
     })
 }
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "jina";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.jina.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "JINA_AI_API_KEY";
-const DEFAULT_NAME: &str = "jina_ai";
-
-define_vendor_provider! {
-    settings: JinaAiProviderSettings,
-    provider: JinaAiProvider,
-    create: create_jina_ai,
-    singleton: jina_ai,
-    display: "Jina AI",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl JinaAiProvider {
-    /// A reranking model (e.g. `"jina-reranker-v2-base-multilingual"`); `provider()` is `"{name}.reranking"`.
-    #[must_use]
-    pub fn reranking_model(&self, model_id: &str) -> JinaAiRerankingModel {
-        JinaAiRerankingModel::from_config(model_id.to_string(), self.model_config("reranking"))
-    }
-}
-
-crate::impl_single_modality_provider!(JinaAiProvider, reranking_model, |p, id| p
-    .reranking_model(id));
 
 /// Jina AI provider-specific reranking options.
 #[derive(Debug, Clone, Default)]

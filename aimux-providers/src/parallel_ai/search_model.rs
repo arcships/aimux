@@ -1,29 +1,15 @@
-//! Parallel AI provider — search modality only.
-//!
-//! Implements the `SearchModel` trait against the Parallel AI search API
-//! (`POST https://api.parallel.ai/v1/search`).
-//!
-//! Parallel AI is a modality-specific provider: it exposes a native web
-//! search protocol (objective + search queries → results) and does not
-//! support language models. The single `query` is mapped to the
-//! `search_queries` array (and used as the `objective`).
-//!
-//! [`create_parallel_ai`] takes [`ParallelAiProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`ParallelAiProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `PARALLEL_API_KEY`.
-//! [`parallel_ai()`] is the default instance; it reads nothing and cannot fail.
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, define_vendor_provider, post_json_search};
+use crate::shared::{EndpointConfig, post_json_search};
 
 /// Fixed model ID for the Parallel AI search model.
+const MODEL_ID: &str = "parallel-search";
+
 /// Failed-response handler of the Parallel AI endpoint: `message`, and `type`
 /// else `code` as the provider code, from the body's `error` object, or from
 /// the top level when there is none. This is the mapping the endpoint used
@@ -31,36 +17,6 @@ use crate::shared::{EndpointConfig, define_vendor_provider, post_json_search};
 fn parallel_ai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     crate::shared::message_type_error_response_handler()
 }
-
-const MODEL_ID: &str = "parallel-search";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.parallel.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "PARALLEL_API_KEY";
-const DEFAULT_NAME: &str = "parallel_ai";
-
-define_vendor_provider! {
-    settings: ParallelAiProviderSettings,
-    provider: ParallelAiProvider,
-    create: create_parallel_ai,
-    singleton: parallel_ai,
-    display: "Parallel AI",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("x-api-key"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl ParallelAiProvider {
-    /// The search model; `provider()` is `"{name}.search"`.
-    #[must_use]
-    pub fn search_model(&self) -> ParallelAiSearchModel {
-        ParallelAiSearchModel::from_config(self.model_config("search"))
-    }
-}
-
-crate::impl_single_modality_provider!(ParallelAiProvider, search_model, |p, _id| p.search_model());
 
 /// Build the Parallel AI `/v1/search` request body (pure function).
 ///

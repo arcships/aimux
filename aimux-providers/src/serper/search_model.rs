@@ -1,23 +1,11 @@
-//! Serper provider — search modality only.
-//!
-//! Implements the `SearchModel` trait against the Serper search API
-//! (`POST https://google.serper.dev/search`). Uses `X-API-KEY` header auth
-//! via `SERPER_API_KEY`.
-//!
-//! [`create_serper`] takes [`SerperProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`SerperProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `SERPER_API_KEY`.
-//! [`serper()`] is the default instance; it reads nothing and cannot fail.
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, define_vendor_provider, post_json_search};
+use crate::shared::{EndpointConfig, post_json_search};
 
 /// Failed-response handler of the Serper endpoint: `message`, and `type`
 /// else `code` as the provider code, from the body's `error` object, or from
@@ -28,34 +16,6 @@ fn serper_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
 }
 
 const MODEL_ID: &str = "serper-search";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://google.serper.dev";
-pub(crate) const API_KEY_ENV_VAR: &str = "SERPER_API_KEY";
-const DEFAULT_NAME: &str = "serper";
-
-define_vendor_provider! {
-    settings: SerperProviderSettings,
-    provider: SerperProvider,
-    create: create_serper,
-    singleton: serper,
-    display: "Serper",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("X-API-KEY"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl SerperProvider {
-    /// The search model; `provider()` is `"{name}.search"`.
-    #[must_use]
-    pub fn search_model(&self) -> SerperSearchModel {
-        SerperSearchModel::from_config(self.model_config("search"))
-    }
-}
-
-crate::impl_single_modality_provider!(SerperProvider, search_model, |p, _id| p.search_model());
 
 fn build_request_body(options: &SearchCallOptions) -> Value {
     let mut body = json!({
