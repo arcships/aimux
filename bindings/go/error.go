@@ -73,9 +73,20 @@ func decodeError(data []byte) (*Error, error) {
 	if err := validateJSON("error envelope", data); err != nil {
 		return nil, err
 	}
-	var envelope ErrorEnvelope
-	if err := json.Unmarshal(data, &envelope); err != nil {
+	var raw struct {
+		Kind    ErrorDomain     `json:"kind"`
+		Code    int32           `json:"code"`
+		Message string          `json:"message"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
+	}
+	envelope := ErrorEnvelope{
+		Kind:    raw.Kind,
+		Code:    raw.Code,
+		Message: raw.Message,
+		Error:   raw.Error,
 	}
 	return &Error{Envelope: envelope, RawEnvelope: append(json.RawMessage(nil), data...)}, nil
 }

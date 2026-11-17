@@ -56,7 +56,7 @@ public final class DtoJson {
 
     /** Checked unsigned identifier; its wire form remains a string. */
     public static long u64(String value) {
-        if (!value.matches("0|[1-9][0-9]*")) {
+        if (value == null || !value.matches("0|[1-9][0-9]*")) {
             throw new IllegalArgumentException("Invalid uint64 string: " + value);
         }
         return Long.parseUnsignedLong(value);

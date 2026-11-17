@@ -18,7 +18,7 @@ only evidence of the narrower behavior its name describes.
 All `path#test` references below name tests present in this tree, including
 macro-emitted tests. Paths into source modules identify embedded unit tests.
 The [implementation document](rfc-0039-implementation.md#registered-differences-from-rfc-0039)
-defines D1–D19, G-a–G-i and G-k; these are not waivers declaring release readiness.
+defines D1–D20, G-a–G-i and G-k; these are not waivers declaring release readiness.
 The [coverage ledger](rfc-0039-coverage-ledger.md) covers old APIs separately.
 
 Generated-output tests exist; this documentation audit does not claim they
@@ -265,7 +265,7 @@ unless explicitly labelled as a file-level reference.
 | R125 | §7.3 | Future negotiated old minor sends exactly that control schema; missing requiredOps fails. | unknown, schema | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Negotiated old-minor stdio projection is deferred. |
 | R126 | §9 | Expose Provider, Registry, typed models, Operation/stream, Abort, devtools and structured errors; typed and raw JSON layers behave identically. | inventory, dtovectors | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Current resources expose the ops and every binding has generated typed DTOs, but typed/raw equivalence is checked only for the 101 vector types (positive round trips), not for every business DTO or modality. |
 | R127 | §9.1 | Generate aimux.h/op constants/opaque error and ownership comments; C++ examples use RAII for owned strings/errors/handles with no exception crossing ABI. | gen, exports | met |
-| R128 | §9.1 | Named provider/model convenience APIs implement the new contract; old aimux_openai_new-style symbols disappear and exact export allowlist is published. | gen, exports | met |
+| R128 | §9.1 | Named provider/model convenience APIs implement the new contract; old aimux_openai_new-style symbols disappear and exact export allowlist is published. | gen, exports | gap — [G-c/D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Legacy `aimux_openai_new`-style exports are removed and the exact 14-symbol export allowlist is enforced (`aimux-ffi/tests/exports_smoke_test.rs`), while `aimux-ffi/include/aimux.h` intentionally exports only the 14 C ABI primitives and `AIMUX_OP_*` constants per §0.1.3 rather than named provider/model C convenience wrappers. |
 | R129 | §9.1 | Run C11/C++ compile/link/runtime, every error free, NULL output sentinels, invalid UTF-8, oversized length, callback lifetime, drop races, full wrong-kind matrix and ASan/LSan; distinguish cross-compile from executed targets. | abi, callback | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Native tests exist; all-platform runtime/ASan/LSan and accepted live callback coverage are incomplete. |
 | R130 | §9.2 | Keep cgo; explicit Close and runtime.KeepAlive guard native resources; context cancellation aborts; cgo.Handle stores only callback context and no retained Go pointers in Rust. | goclose | met |
 | R131 | §9.2 | Use bounded Go channel, producer as only closer, Err readable only after close, and cancellation-select on full-queue callback send. | go | met |

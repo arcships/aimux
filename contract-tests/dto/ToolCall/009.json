@@ -1,0 +1,15 @@
+{
+  "toolCallId": "call-9",
+  "toolName": "broken",
+  "input": "{\"a\":",
+  "invalid": true,
+  "error": {
+    "name": "AI_InvalidToolInputError",
+    "toolName": "broken",
+    "toolInput": "{\"a\":",
+    "cause": {
+      "name": "AI_JSONParseError",
+      "message": "Unexpected end of JSON input"
+    }
+  }
+}

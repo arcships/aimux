@@ -1,0 +1,5 @@
+{
+  "toolCallId": "call-3",
+  "toolName": "jsonString",
+  "input": "{\"x\":1}"
+}

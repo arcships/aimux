@@ -776,3 +776,124 @@ fn manifest_records_generator_version_and_upstream_sources() {
         .collect();
     assert_eq!(actual_sources, &expected_sources);
 }
+
+#[test]
+fn encoded_positive_dto_vectors_decode_through_rust() {
+    fn round_trip_json<T: serde::Serialize + serde::de::DeserializeOwned>(
+        encoded: &str,
+        expected: &Value,
+        label: &str,
+    ) {
+        let decoded: T = serde_json::from_str(encoded)
+            .unwrap_or_else(|error| panic!("{label}: initial Rust decode failed: {error}"));
+        let reencoded = serde_json::to_string(&decoded)
+            .unwrap_or_else(|error| panic!("{label}: Rust re-encode failed: {error}"));
+        let redecoded: T = serde_json::from_str(&reencoded)
+            .unwrap_or_else(|error| panic!("{label}: second Rust decode failed: {error}"));
+        let actual_value = serde_json::to_value(&redecoded).unwrap();
+        assert_eq!(&actual_value, expected, "{label}");
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract-tests/dto");
+    let index: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("index.json")).unwrap()).unwrap();
+
+    let mut tool_inputs_checked = 0usize;
+    let mut positive_checked = 0usize;
+    for entry in &index {
+        if entry["expectError"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let kind = entry["type"].as_str().unwrap();
+        let file = entry["file"].as_str().unwrap();
+        let raw_json = std::fs::read_to_string(root.join(file)).unwrap();
+        let expected_path = entry["expect"]
+            .as_str()
+            .map_or_else(|| root.join(file), |expect_file| root.join(expect_file));
+        let expected: Value =
+            serde_json::from_str(&std::fs::read_to_string(&expected_path).unwrap()).unwrap();
+
+        match kind {
+            "RawToolCall" => {
+                round_trip_json::<aimux_core::tool::RawToolCall>(&raw_json, &expected, file);
+                tool_inputs_checked += 1;
+                positive_checked += 1;
+            }
+            "ToolCall" | "ToolCallInput" => {
+                round_trip_json::<aimux_core::tool::ToolCall>(&raw_json, &expected, file);
+                tool_inputs_checked += 1;
+                positive_checked += 1;
+            }
+            "AiMuxError" | "AiMuxErrorInput" => {
+                round_trip_json::<aimux_core::error::AiMuxError>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ErrorEnvelope" => {
+                round_trip_json::<aimux_ops::ErrorEnvelope>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "FinishReasonUnified" => {
+                round_trip_json::<aimux_core::types::FinishReasonUnified>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "GenerateContent" => {
+                round_trip_json::<aimux_core::result::GenerateContent>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "GenerateTextResult" => {
+                round_trip_json::<aimux_core::generate::GenerateTextResult>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "HandleId" | "HandleIdInput" => {
+                round_trip_json::<aimux_ops::HandleId>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ModelLimits" => {
+                round_trip_json::<aimux_core::model_catalogue::ModelLimits>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "Recording" => {
+                round_trip_json::<aimux_core::recording::Recording>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ContentPart" | "ContentPartInput" => {
+                round_trip_json::<aimux_core::result::ContentPart>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "TextStreamPart" => {
+                round_trip_json::<aimux_core::stream_part::TextStreamPart>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "TraceRecord" => {
+                round_trip_json::<aimux_core::trace::TraceRecord>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        tool_inputs_checked >= 19,
+        "tool_inputs_checked={tool_inputs_checked}"
+    );
+    assert!(
+        positive_checked >= 60,
+        "positive_checked={positive_checked}"
+    );
+
+    // Verify scientific notation & duplicate-key binding/wire forms decode cleanly into Rust ToolCall / RawToolCall.
+    let raw_sci: aimux_core::tool::RawToolCall =
+        serde_json::from_str(r#"{"toolCallId":"call-sci","toolName":"calc","input":" 1e2 "}"#)
+            .unwrap();
+    assert_eq!(raw_sci.input, " 1e2 ");
+    let parsed_sci: aimux_core::tool::ToolCall =
+        serde_json::from_str(r#"{"toolCallId":"call-sci","toolName":"calc","input":1e2}"#).unwrap();
+    assert_eq!(parsed_sci.input.as_f64(), Some(100.0));
+}

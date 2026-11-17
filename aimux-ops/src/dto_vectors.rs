@@ -143,6 +143,9 @@ fn dto_vectors_round_trip_through_rust() {
             }
             "ModelPrompt" => round_trip::<aimux_core::message::ModelPrompt>(value.clone()),
             "NamespacedKind" => round_trip::<aimux_core::types::NamespacedKind>(value.clone()),
+            "OperationNextParams" => {
+                round_trip::<crate::ops::operation::OperationNextParams>(value.clone())
+            }
             "Output" => round_trip::<aimux_core::output::Output>(value.clone()),
             "OutputTokenDetails" => {
                 round_trip::<aimux_core::types::OutputTokenDetails>(value.clone())
@@ -241,8 +244,15 @@ fn dto_vectors_round_trip_through_rust() {
             "VideoResult" => round_trip::<aimux_core::video_model::VideoResult>(value.clone()),
             "Warning" => round_trip::<aimux_core::types::Warning>(value.clone()),
             name => panic!("unregistered vector type {name}: {file}"),
+        };
+        if entry["expectError"].as_bool().unwrap_or(false) {
+            assert!(
+                result.is_err(),
+                "{file}: expected error on negative vector, got {result:?}"
+            );
+            continue;
         }
-        .unwrap_or_else(|error| panic!("{file}: {error}"));
+        let result = result.unwrap_or_else(|error| panic!("{file}: {error}"));
         let expected = entry["expect"].as_str().map_or(value, |file| {
             assert!(
                 std::path::Path::new(file)

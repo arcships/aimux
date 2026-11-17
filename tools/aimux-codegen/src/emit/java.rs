@@ -482,7 +482,12 @@ fn wrapper(out: &mut String, n: &str, ty: &Ty, parent: Option<&str>) {
     if parent.is_some() {
         out.push('\n');
     }
-    writeln!(out, "{indent}@JsonDeserialize(using = JsonDeserializer.None.class)\n{indent}{declaration} {{\n{i}@JsonValue\n{i}private final {t} value;\n\n{i}@JsonCreator(mode = JsonCreator.Mode.DELEGATING)\n{i}public {n}({t} value) {{ this.value = {}; }}\n\n{i}public {t} getValue() {{ return {}; }}", copy(ty, "value"), getter(ty, "value")).unwrap();
+    let validation = if matches!(ty, Ty::Codec(Codec::U64String, _)) {
+        " DtoJson.u64(value);"
+    } else {
+        ""
+    };
+    writeln!(out, "{indent}@JsonDeserialize(using = JsonDeserializer.None.class)\n{indent}{declaration} {{\n{i}@JsonValue\n{i}private final {t} value;\n\n{i}@JsonCreator(mode = JsonCreator.Mode.DELEGATING)\n{i}public {n}({t} value) {{{validation} this.value = {}; }}\n\n{i}public {t} getValue() {{ return {}; }}", copy(ty, "value"), getter(ty, "value")).unwrap();
     writeln!(out, "{indent}}}").unwrap();
 }
 
@@ -543,7 +548,7 @@ public final class DtoJson {
 
     /** Checked unsigned identifier; its wire form remains a string. */
     public static long u64(String value) {
-        if (!value.matches("0|[1-9][0-9]*")) {
+        if (value == null || !value.matches("0|[1-9][0-9]*")) {
             throw new IllegalArgumentException("Invalid uint64 string: " + value);
         }
         return Long.parseUnsignedLong(value);

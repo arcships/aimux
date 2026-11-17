@@ -1333,6 +1333,26 @@ public struct CatalogueFetchRequest: Codable, Equatable, Sendable {
         self.abort = abort
         self.sourceUrl = sourceUrl
     }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case sourceUrl = "sourceUrl"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.sourceUrl = try c.decodeIfPresent(String.self, forKey: .sourceUrl)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encodeIfPresent(self.sourceUrl, forKey: .sourceUrl)
+    }
 }
 
 /// Where a [`ModelSpec`] came from.
@@ -1601,6 +1621,26 @@ public struct CodexRefreshRequest: Codable, Equatable, Sendable {
     public init(clientId: String, refreshToken: String) {
         self.clientId = clientId
         self.refreshToken = refreshToken
+    }
+    private enum CodingKeys: String, CodingKey {
+        case clientId = "clientId"
+        case refreshToken = "refreshToken"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.clientId = try c.decode(String.self, forKey: .clientId)
+        self.refreshToken = try c.decode(String.self, forKey: .refreshToken)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.clientId, forKey: .clientId)
+        try c.encode(self.refreshToken, forKey: .refreshToken)
     }
 }
 
@@ -2060,6 +2100,26 @@ public struct CreateRecorderParams: Codable, Equatable, Sendable {
         self.backend = backend
         self.capturePolicy = capturePolicy
     }
+    private enum CodingKeys: String, CodingKey {
+        case backend = "backend"
+        case capturePolicy = "capturePolicy"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.backend = try c.decode(BackendConfig.self, forKey: .backend)
+        self.capturePolicy = try c.decode(CapturePolicy.self, forKey: .capturePolicy)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.backend, forKey: .backend)
+        try c.encode(self.capturePolicy, forKey: .capturePolicy)
+    }
 }
 
 public struct CredentialParams: Codable, Equatable, Sendable {
@@ -2067,6 +2127,23 @@ public struct CredentialParams: Codable, Equatable, Sendable {
 
     public init(kind: String) {
         self.kind = kind
+    }
+    private enum CodingKeys: String, CodingKey {
+        case kind = "kind"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.kind = try c.decode(String.self, forKey: .kind)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.kind, forKey: .kind)
     }
 }
 
@@ -2100,6 +2177,38 @@ public struct DecideOptions: Codable, Equatable, Sendable {
         self.questions = questions
         self.state = state
         self.timeout = timeout
+    }
+    private enum CodingKeys: String, CodingKey {
+        case headers = "headers"
+        case maxRetries = "maxRetries"
+        case providerOptions = "providerOptions"
+        case questions = "questions"
+        case state = "state"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.questions = try c.decode([String: DecisionQuestion].self, forKey: .questions)
+        self.state = try c.decode(DecisionInput.self, forKey: .state)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encode(self.questions, forKey: .questions)
+        try c.encode(self.state, forKey: .state)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
     }
 }
 
@@ -2211,6 +2320,12 @@ public struct DecisionBooleanCriteria: Codable, Equatable, Sendable {
         case `true` = "true"
     }
     public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`false` = try c.decodePresence(DecisionInput.self, forKey: .`false`)
         self.`true` = try c.decodePresence(DecisionInput.self, forKey: .`true`)
@@ -2232,6 +2347,26 @@ public struct DecisionDecideRequest: Codable, Equatable, Sendable {
     public init(abort: HandleIdInput? = nil, options: DecideOptions) {
         self.abort = abort
         self.options = options
+    }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case options = "options"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.options = try c.decode(DecideOptions.self, forKey: .options)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encode(self.options, forKey: .options)
     }
 }
 
@@ -2341,6 +2476,35 @@ public struct EmbeddingCallOptions: Codable, Equatable, Sendable {
         self.timeout = timeout
         self.values = values
     }
+    private enum CodingKeys: String, CodingKey {
+        case headers = "headers"
+        case maxRetries = "maxRetries"
+        case providerOptions = "providerOptions"
+        case timeout = "timeout"
+        case values = "values"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+        self.values = try c.decode([String].self, forKey: .values)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+        try c.encode(self.values, forKey: .values)
+    }
 }
 
 /// Debugging response info specific to embedding calls.
@@ -2409,7 +2573,10 @@ public struct EmptyParams: Codable, Equatable, Sendable {
     public init() {
     }
     public init(from decoder: any Decoder) throws {
-        _ = try decoder.container(keyedBy: WireKey.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        if let unexpected = raw.allKeys.first {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [unexpected], debugDescription: "Unknown field \(unexpected.stringValue)"))
+        }
     }
     public func encode(to encoder: any Encoder) throws {
         _ = encoder.container(keyedBy: WireKey.self)
@@ -2940,6 +3107,80 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
         self.topK = topK
         self.topP = topP
     }
+    private enum CodingKeys: String, CodingKey {
+        case frequencyPenalty = "frequencyPenalty"
+        case headers = "headers"
+        case includeRawChunks = "includeRawChunks"
+        case instructions = "instructions"
+        case maxOutputTokens = "maxOutputTokens"
+        case maxRetries = "maxRetries"
+        case output = "output"
+        case presencePenalty = "presencePenalty"
+        case providerOptions = "providerOptions"
+        case reasoning = "reasoning"
+        case seed = "seed"
+        case sessionId = "sessionId"
+        case stopSequences = "stopSequences"
+        case strictStream = "strictStream"
+        case temperature = "temperature"
+        case timeout = "timeout"
+        case toolChoice = "toolChoice"
+        case tools = "tools"
+        case topK = "topK"
+        case topP = "topP"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.frequencyPenalty = try c.decodeIfPresent(Double.self, forKey: .frequencyPenalty)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.includeRawChunks = try c.decodeIfPresent(Bool.self, forKey: .includeRawChunks)
+        self.instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
+        self.maxOutputTokens = try c.decodeIfPresent(UInt32.self, forKey: .maxOutputTokens)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.output = try c.decodeIfPresent(Output.self, forKey: .output)
+        self.presencePenalty = try c.decodeIfPresent(Double.self, forKey: .presencePenalty)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.reasoning = try c.decodeIfPresent(ReasoningEffort.self, forKey: .reasoning)
+        self.seed = try c.decodeIfPresent(UInt64.self, forKey: .seed)
+        self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        self.stopSequences = try c.decodeIfPresent([String].self, forKey: .stopSequences)
+        self.strictStream = try c.decodeIfPresent(Bool.self, forKey: .strictStream)
+        self.temperature = try c.decodeIfPresent(Double.self, forKey: .temperature)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+        self.toolChoice = try c.decodeIfPresent(ToolChoice.self, forKey: .toolChoice)
+        self.tools = try c.decodeIfPresent([Tool].self, forKey: .tools)
+        self.topK = try c.decodeIfPresent(Double.self, forKey: .topK)
+        self.topP = try c.decodeIfPresent(Double.self, forKey: .topP)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.frequencyPenalty, forKey: .frequencyPenalty)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.includeRawChunks, forKey: .includeRawChunks)
+        try c.encodeIfPresent(self.instructions, forKey: .instructions)
+        try c.encodeIfPresent(self.maxOutputTokens, forKey: .maxOutputTokens)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.output, forKey: .output)
+        try c.encodeIfPresent(self.presencePenalty, forKey: .presencePenalty)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.reasoning, forKey: .reasoning)
+        try c.encodeIfPresent(self.seed, forKey: .seed)
+        try c.encodeIfPresent(self.sessionId, forKey: .sessionId)
+        try c.encodeIfPresent(self.stopSequences, forKey: .stopSequences)
+        try c.encodeIfPresent(self.strictStream, forKey: .strictStream)
+        try c.encodeIfPresent(self.temperature, forKey: .temperature)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+        try c.encodeIfPresent(self.toolChoice, forKey: .toolChoice)
+        try c.encodeIfPresent(self.tools, forKey: .tools)
+        try c.encodeIfPresent(self.topK, forKey: .topK)
+        try c.encodeIfPresent(self.topP, forKey: .topP)
+    }
 }
 
 /// Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -3313,6 +3554,53 @@ public struct ImageCallOptions: Codable, Equatable, Sendable {
         self.size = size
         self.timeout = timeout
     }
+    private enum CodingKeys: String, CodingKey {
+        case aspectRatio = "aspectRatio"
+        case files = "files"
+        case headers = "headers"
+        case mask = "mask"
+        case maxRetries = "maxRetries"
+        case n = "n"
+        case prompt = "prompt"
+        case providerOptions = "providerOptions"
+        case seed = "seed"
+        case size = "size"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.aspectRatio = try c.decodeIfPresent(AspectRatio.self, forKey: .aspectRatio)
+        self.files = try c.decodeIfPresent([ImageFile].self, forKey: .files)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.mask = try c.decodeIfPresent(ImageFile.self, forKey: .mask)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.n = try c.decode(UInt32.self, forKey: .n)
+        self.prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
+        self.providerOptions = try c.decode([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.seed = try c.decodeIfPresent(UInt64.self, forKey: .seed)
+        self.size = try c.decodeIfPresent(Size.self, forKey: .size)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.aspectRatio, forKey: .aspectRatio)
+        try c.encodeIfPresent(self.files, forKey: .files)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.mask, forKey: .mask)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encode(self.n, forKey: .n)
+        try c.encodeIfPresent(self.prompt, forKey: .prompt)
+        try c.encode(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.seed, forKey: .seed)
+        try c.encodeIfPresent(self.size, forKey: .size)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+    }
 }
 
 /// An image file used for image editing or variation generation.
@@ -3442,6 +3730,26 @@ public struct InputAudioFormat: Codable, Equatable, Sendable {
     public init(formatType: String, rate: UInt32? = nil) {
         self.formatType = formatType
         self.rate = rate
+    }
+    private enum CodingKeys: String, CodingKey {
+        case formatType = "formatType"
+        case rate = "rate"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.formatType = try c.decode(String.self, forKey: .formatType)
+        self.rate = try c.decodeIfPresent(UInt32.self, forKey: .rate)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.formatType, forKey: .formatType)
+        try c.encodeIfPresent(self.rate, forKey: .rate)
     }
 }
 
@@ -3814,6 +4122,23 @@ public struct LoggingConfig: Codable, Equatable, Sendable {
     public init(level: LogLevel) {
         self.level = level
     }
+    private enum CodingKeys: String, CodingKey {
+        case level = "level"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.level = try c.decode(LogLevel.self, forKey: .level)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.level, forKey: .level)
+    }
 }
 
 public enum MiddlewareAuditMode: String, Codable, Equatable, Sendable {
@@ -3833,6 +4158,32 @@ public struct MiddlewareParams: Codable, Equatable, Sendable {
         self.kind = kind
         self.scopeName = scopeName
         self.traceStore = traceStore
+    }
+    private enum CodingKeys: String, CodingKey {
+        case auditMode = "auditMode"
+        case kind = "kind"
+        case scopeName = "scopeName"
+        case traceStore = "traceStore"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.auditMode = try c.decodeIfPresent(MiddlewareAuditMode.self, forKey: .auditMode)
+        self.kind = try c.decode(String.self, forKey: .kind)
+        self.scopeName = try c.decodeIfPresent(String.self, forKey: .scopeName)
+        self.traceStore = try c.decodeIfPresent(HandleIdInput.self, forKey: .traceStore)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.auditMode, forKey: .auditMode)
+        try c.encode(self.kind, forKey: .kind)
+        try c.encodeIfPresent(self.scopeName, forKey: .scopeName)
+        try c.encodeIfPresent(self.traceStore, forKey: .traceStore)
     }
 }
 
@@ -3869,6 +4220,41 @@ public struct MoaParams: Codable, Equatable, Sendable {
         self.providerName = providerName
         self.references = references
         self.stripReferenceTools = stripReferenceTools
+    }
+    private enum CodingKeys: String, CodingKey {
+        case aggregator = "aggregator"
+        case aggregatorInstructions = "aggregatorInstructions"
+        case failMode = "failMode"
+        case modelId = "modelId"
+        case providerName = "providerName"
+        case references = "references"
+        case stripReferenceTools = "stripReferenceTools"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.aggregator = try c.decode(String.self, forKey: .aggregator)
+        self.aggregatorInstructions = try c.decodeIfPresent(String.self, forKey: .aggregatorInstructions)
+        self.failMode = try c.decodeIfPresent(MoaFailMode.self, forKey: .failMode)
+        self.modelId = try c.decodeIfPresent(String.self, forKey: .modelId)
+        self.providerName = try c.decodeIfPresent(String.self, forKey: .providerName)
+        self.references = try c.decode([String].self, forKey: .references)
+        self.stripReferenceTools = try c.decodeIfPresent(Bool.self, forKey: .stripReferenceTools)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.aggregator, forKey: .aggregator)
+        try c.encodeIfPresent(self.aggregatorInstructions, forKey: .aggregatorInstructions)
+        try c.encodeIfPresent(self.failMode, forKey: .failMode)
+        try c.encodeIfPresent(self.modelId, forKey: .modelId)
+        try c.encodeIfPresent(self.providerName, forKey: .providerName)
+        try c.encode(self.references, forKey: .references)
+        try c.encodeIfPresent(self.stripReferenceTools, forKey: .stripReferenceTools)
     }
 }
 
@@ -3940,7 +4326,10 @@ public struct ModelInfoParams: Codable, Equatable, Sendable {
     public init() {
     }
     public init(from decoder: any Decoder) throws {
-        _ = try decoder.container(keyedBy: WireKey.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        if let unexpected = raw.allKeys.first {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [unexpected], debugDescription: "Unknown field \(unexpected.stringValue)"))
+        }
     }
     public func encode(to encoder: any Encoder) throws {
         _ = encoder.container(keyedBy: WireKey.self)
@@ -4071,6 +4460,32 @@ public struct ModelRef: Codable, Equatable, Sendable {
         self.modelId = modelId
         self.namespace = namespace
     }
+    private enum CodingKeys: String, CodingKey {
+        case key = "key"
+        case method = "method"
+        case modelId = "modelId"
+        case namespace = "namespace"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.key = try c.decode(String.self, forKey: .key)
+        self.method = try c.decode(ModelMethod.self, forKey: .method)
+        self.modelId = try c.decode(String.self, forKey: .modelId)
+        self.namespace = try c.decode(String.self, forKey: .namespace)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.key, forKey: .key)
+        try c.encode(self.method, forKey: .method)
+        try c.encode(self.modelId, forKey: .modelId)
+        try c.encode(self.namespace, forKey: .namespace)
+    }
 }
 
 public struct ModelResolveParams: Codable, Equatable, Sendable {
@@ -4078,6 +4493,23 @@ public struct ModelResolveParams: Codable, Equatable, Sendable {
 
     public init(modelRef: ModelRef) {
         self.modelRef = modelRef
+    }
+    private enum CodingKeys: String, CodingKey {
+        case modelRef = "modelRef"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.modelRef = try c.decode(ModelRef.self, forKey: .modelRef)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.modelRef, forKey: .modelRef)
     }
 }
 
@@ -4132,6 +4564,23 @@ public struct ModelWrapParams: Codable, Equatable, Sendable {
     public init(middleware: [String]) {
         self.middleware = middleware
     }
+    private enum CodingKeys: String, CodingKey {
+        case middleware = "middleware"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.middleware = try c.decode([String].self, forKey: .middleware)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.middleware, forKey: .middleware)
+    }
 }
 
 /// A `${string}.${string}` identifier, `<provider-id>.<name>`: the V4
@@ -4152,6 +4601,26 @@ public struct OpenAiOutputRequest: Codable, Equatable, Sendable {
         self.metadataNamespace = metadataNamespace
         self.result = result
     }
+    private enum CodingKeys: String, CodingKey {
+        case metadataNamespace = "metadataNamespace"
+        case result = "result"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.metadataNamespace = try c.decode(String.self, forKey: .metadataNamespace)
+        self.result = try c.decode(GenerateTextResultInput.self, forKey: .result)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.metadataNamespace, forKey: .metadataNamespace)
+        try c.encode(self.result, forKey: .result)
+    }
 }
 
 public struct OpenAiTextRequest: Codable, Equatable, Sendable {
@@ -4165,6 +4634,32 @@ public struct OpenAiTextRequest: Codable, Equatable, Sendable {
         self.options = options
         self.prompt = prompt
         self.streamOptions = streamOptions
+    }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case options = "options"
+        case prompt = "prompt"
+        case streamOptions = "streamOptions"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.options = try c.decodeIfPresent(Options.self, forKey: .options)
+        self.prompt = try c.decode(ModelPrompt.self, forKey: .prompt)
+        self.streamOptions = try c.decodeIfPresent(StreamOptions.self, forKey: .streamOptions)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encodeIfPresent(self.options, forKey: .options)
+        try c.encode(self.prompt, forKey: .prompt)
+        try c.encodeIfPresent(self.streamOptions, forKey: .streamOptions)
     }
 }
 
@@ -4187,6 +4682,23 @@ public struct OperationNextParams: Codable, Equatable, Sendable {
 
     public init(timeoutMs: UInt64? = nil) {
         self.timeoutMs = timeoutMs
+    }
+    private enum CodingKeys: String, CodingKey {
+        case timeoutMs = "timeoutMs"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.timeoutMs = try c.decodeIfPresent(UInt64.self, forKey: .timeoutMs)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.timeoutMs, forKey: .timeoutMs)
     }
 }
 
@@ -4340,6 +4852,80 @@ public struct Options: Codable, Equatable, Sendable {
         self.tools = tools
         self.topK = topK
         self.topP = topP
+    }
+    private enum CodingKeys: String, CodingKey {
+        case frequencyPenalty = "frequencyPenalty"
+        case headers = "headers"
+        case includeRawChunks = "includeRawChunks"
+        case instructions = "instructions"
+        case maxOutputTokens = "maxOutputTokens"
+        case maxRetries = "maxRetries"
+        case output = "output"
+        case presencePenalty = "presencePenalty"
+        case providerOptions = "providerOptions"
+        case reasoning = "reasoning"
+        case seed = "seed"
+        case sessionId = "sessionId"
+        case stopSequences = "stopSequences"
+        case strictStream = "strictStream"
+        case temperature = "temperature"
+        case timeout = "timeout"
+        case toolChoice = "toolChoice"
+        case tools = "tools"
+        case topK = "topK"
+        case topP = "topP"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.frequencyPenalty = try c.decodeIfPresent(Double.self, forKey: .frequencyPenalty)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.includeRawChunks = try c.decodeIfPresent(Bool.self, forKey: .includeRawChunks)
+        self.instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
+        self.maxOutputTokens = try c.decodeIfPresent(UInt32.self, forKey: .maxOutputTokens)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.output = try c.decodeIfPresent(Output.self, forKey: .output)
+        self.presencePenalty = try c.decodeIfPresent(Double.self, forKey: .presencePenalty)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.reasoning = try c.decodeIfPresent(ReasoningEffort.self, forKey: .reasoning)
+        self.seed = try c.decodeIfPresent(UInt64.self, forKey: .seed)
+        self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        self.stopSequences = try c.decodeIfPresent([String].self, forKey: .stopSequences)
+        self.strictStream = try c.decodeIfPresent(Bool.self, forKey: .strictStream)
+        self.temperature = try c.decodeIfPresent(Double.self, forKey: .temperature)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+        self.toolChoice = try c.decodeIfPresent(ToolChoice.self, forKey: .toolChoice)
+        self.tools = try c.decodeIfPresent([Tool].self, forKey: .tools)
+        self.topK = try c.decodeIfPresent(Double.self, forKey: .topK)
+        self.topP = try c.decodeIfPresent(Double.self, forKey: .topP)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.frequencyPenalty, forKey: .frequencyPenalty)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.includeRawChunks, forKey: .includeRawChunks)
+        try c.encodeIfPresent(self.instructions, forKey: .instructions)
+        try c.encodeIfPresent(self.maxOutputTokens, forKey: .maxOutputTokens)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.output, forKey: .output)
+        try c.encodeIfPresent(self.presencePenalty, forKey: .presencePenalty)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.reasoning, forKey: .reasoning)
+        try c.encodeIfPresent(self.seed, forKey: .seed)
+        try c.encodeIfPresent(self.sessionId, forKey: .sessionId)
+        try c.encodeIfPresent(self.stopSequences, forKey: .stopSequences)
+        try c.encodeIfPresent(self.strictStream, forKey: .strictStream)
+        try c.encodeIfPresent(self.temperature, forKey: .temperature)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+        try c.encodeIfPresent(self.toolChoice, forKey: .toolChoice)
+        try c.encodeIfPresent(self.tools, forKey: .tools)
+        try c.encodeIfPresent(self.topK, forKey: .topK)
+        try c.encodeIfPresent(self.topP, forKey: .topP)
     }
 }
 
@@ -4530,6 +5116,26 @@ public struct ProviderCreateParams: Codable, Equatable, Sendable {
         self.package = package
         self.settings = settings
     }
+    private enum CodingKeys: String, CodingKey {
+        case package = "package"
+        case settings = "settings"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.package = try c.decode(String.self, forKey: .package)
+        self.settings = try c.decodeIfPresent(ProviderSettings.self, forKey: .settings)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.package, forKey: .package)
+        try c.encodeIfPresent(self.settings, forKey: .settings)
+    }
 }
 
 public struct ProviderCustomParams: Codable, Equatable, Sendable {
@@ -4564,6 +5170,62 @@ public struct ProviderCustomParams: Codable, Equatable, Sendable {
         self.transcriptionModels = transcriptionModels
         self.videoModels = videoModels
     }
+    private enum CodingKeys: String, CodingKey {
+        case decisionModels = "decisionModels"
+        case defaultMethod = "defaultMethod"
+        case embeddingModels = "embeddingModels"
+        case fallbackProvider = "fallbackProvider"
+        case files = "files"
+        case imageModelMiddleware = "imageModelMiddleware"
+        case imageModels = "imageModels"
+        case languageModelMiddleware = "languageModelMiddleware"
+        case languageModels = "languageModels"
+        case rerankingModels = "rerankingModels"
+        case searchModels = "searchModels"
+        case speechModels = "speechModels"
+        case transcriptionModels = "transcriptionModels"
+        case videoModels = "videoModels"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.decisionModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .decisionModels)
+        self.defaultMethod = try c.decodeIfPresent(String.self, forKey: .defaultMethod)
+        self.embeddingModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .embeddingModels)
+        self.fallbackProvider = try c.decodeIfPresent(HandleIdInput.self, forKey: .fallbackProvider)
+        self.files = try c.decodeIfPresent(HandleIdInput.self, forKey: .files)
+        self.imageModelMiddleware = try c.decodeIfPresent([HandleIdInput].self, forKey: .imageModelMiddleware)
+        self.imageModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .imageModels)
+        self.languageModelMiddleware = try c.decodeIfPresent([HandleIdInput].self, forKey: .languageModelMiddleware)
+        self.languageModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .languageModels)
+        self.rerankingModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .rerankingModels)
+        self.searchModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .searchModels)
+        self.speechModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .speechModels)
+        self.transcriptionModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .transcriptionModels)
+        self.videoModels = try c.decodeIfPresent([String: HandleIdInput].self, forKey: .videoModels)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.decisionModels, forKey: .decisionModels)
+        try c.encodeIfPresent(self.defaultMethod, forKey: .defaultMethod)
+        try c.encodeIfPresent(self.embeddingModels, forKey: .embeddingModels)
+        try c.encodeIfPresent(self.fallbackProvider, forKey: .fallbackProvider)
+        try c.encodeIfPresent(self.files, forKey: .files)
+        try c.encodeIfPresent(self.imageModelMiddleware, forKey: .imageModelMiddleware)
+        try c.encodeIfPresent(self.imageModels, forKey: .imageModels)
+        try c.encodeIfPresent(self.languageModelMiddleware, forKey: .languageModelMiddleware)
+        try c.encodeIfPresent(self.languageModels, forKey: .languageModels)
+        try c.encodeIfPresent(self.rerankingModels, forKey: .rerankingModels)
+        try c.encodeIfPresent(self.searchModels, forKey: .searchModels)
+        try c.encodeIfPresent(self.speechModels, forKey: .speechModels)
+        try c.encodeIfPresent(self.transcriptionModels, forKey: .transcriptionModels)
+        try c.encodeIfPresent(self.videoModels, forKey: .videoModels)
+    }
 }
 
 public struct ProviderDefaultParams: Codable, Equatable, Sendable {
@@ -4571,6 +5233,23 @@ public struct ProviderDefaultParams: Codable, Equatable, Sendable {
 
     public init(package: String) {
         self.package = package
+    }
+    private enum CodingKeys: String, CodingKey {
+        case package = "package"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.package = try c.decode(String.self, forKey: .package)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.package, forKey: .package)
     }
 }
 
@@ -4582,6 +5261,26 @@ public struct ProviderInvokeParams: Codable, Equatable, Sendable {
         self.abort = abort
         self.method = method
     }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case method = "method"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.method = try c.decode(String.self, forKey: .method)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encode(self.method, forKey: .method)
+    }
 }
 
 public struct ProviderModelParams: Codable, Equatable, Sendable {
@@ -4591,6 +5290,26 @@ public struct ProviderModelParams: Codable, Equatable, Sendable {
     public init(method: String? = nil, modelId: String) {
         self.method = method
         self.modelId = modelId
+    }
+    private enum CodingKeys: String, CodingKey {
+        case method = "method"
+        case modelId = "modelId"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.method = try c.decodeIfPresent(String.self, forKey: .method)
+        self.modelId = try c.decode(String.self, forKey: .modelId)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.method, forKey: .method)
+        try c.encode(self.modelId, forKey: .modelId)
     }
 }
 
@@ -4641,6 +5360,53 @@ public struct ProviderSettings: Codable, Equatable, Sendable {
         self.project = project
         self.webSocket = webSocket
     }
+    private enum CodingKeys: String, CodingKey {
+        case apiKey = "apiKey"
+        case baseUrl = "baseUrl"
+        case credentialResolver = "credentialResolver"
+        case endpoint = "endpoint"
+        case fetch = "fetch"
+        case headers = "headers"
+        case organization = "organization"
+        case params = "params"
+        case probabilitySource = "probabilitySource"
+        case project = "project"
+        case webSocket = "webSocket"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.apiKey = try c.decodeIfPresent(String.self, forKey: .apiKey)
+        self.baseUrl = try c.decodeIfPresent(String.self, forKey: .baseUrl)
+        self.credentialResolver = try c.decodeIfPresent(HandleIdInput.self, forKey: .credentialResolver)
+        self.endpoint = try c.decodeIfPresent(String.self, forKey: .endpoint)
+        self.fetch = try c.decodeIfPresent(HandleIdInput.self, forKey: .fetch)
+        self.headers = try c.decodeIfPresent([String: String?].self, forKey: .headers)
+        self.organization = try c.decodeIfPresent(String.self, forKey: .organization)
+        self.params = try c.decodeIfPresent([String: String].self, forKey: .params)
+        self.probabilitySource = try c.decodeIfPresent(String.self, forKey: .probabilitySource)
+        self.project = try c.decodeIfPresent(String.self, forKey: .project)
+        self.webSocket = try c.decodeIfPresent(HandleIdInput.self, forKey: .webSocket)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.apiKey, forKey: .apiKey)
+        try c.encodeIfPresent(self.baseUrl, forKey: .baseUrl)
+        try c.encodeIfPresent(self.credentialResolver, forKey: .credentialResolver)
+        try c.encodeIfPresent(self.endpoint, forKey: .endpoint)
+        try c.encodeIfPresent(self.fetch, forKey: .fetch)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.organization, forKey: .organization)
+        try c.encodeIfPresent(self.params, forKey: .params)
+        try c.encodeIfPresent(self.probabilitySource, forKey: .probabilitySource)
+        try c.encodeIfPresent(self.project, forKey: .project)
+        try c.encodeIfPresent(self.webSocket, forKey: .webSocket)
+    }
 }
 
 /// A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -4681,6 +5447,26 @@ public struct ProviderWrapParams: Codable, Equatable, Sendable {
     public init(imageModelMiddleware: [HandleIdInput]? = nil, languageModelMiddleware: [HandleIdInput]? = nil) {
         self.imageModelMiddleware = imageModelMiddleware
         self.languageModelMiddleware = languageModelMiddleware
+    }
+    private enum CodingKeys: String, CodingKey {
+        case imageModelMiddleware = "imageModelMiddleware"
+        case languageModelMiddleware = "languageModelMiddleware"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.imageModelMiddleware = try c.decodeIfPresent([HandleIdInput].self, forKey: .imageModelMiddleware)
+        self.languageModelMiddleware = try c.decodeIfPresent([HandleIdInput].self, forKey: .languageModelMiddleware)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.imageModelMiddleware, forKey: .imageModelMiddleware)
+        try c.encodeIfPresent(self.languageModelMiddleware, forKey: .languageModelMiddleware)
     }
 }
 
@@ -4997,6 +5783,26 @@ public struct RegistryCreateParams: Codable, Equatable, Sendable {
         self.entries = entries
         self.namespace = namespace
     }
+    private enum CodingKeys: String, CodingKey {
+        case entries = "entries"
+        case namespace = "namespace"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.entries = try c.decode([RegistryEntry].self, forKey: .entries)
+        self.namespace = try c.decodeIfPresent(String.self, forKey: .namespace)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.entries, forKey: .entries)
+        try c.encodeIfPresent(self.namespace, forKey: .namespace)
+    }
 }
 
 public struct RegistryEntry: Codable, Equatable, Sendable {
@@ -5007,6 +5813,26 @@ public struct RegistryEntry: Codable, Equatable, Sendable {
         self.key = key
         self.provider = provider
     }
+    private enum CodingKeys: String, CodingKey {
+        case key = "key"
+        case provider = "provider"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.key = try c.decode(String.self, forKey: .key)
+        self.provider = try c.decode(String.self, forKey: .provider)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.key, forKey: .key)
+        try c.encode(self.provider, forKey: .provider)
+    }
 }
 
 public struct RegistryProviderParams: Codable, Equatable, Sendable {
@@ -5014,6 +5840,23 @@ public struct RegistryProviderParams: Codable, Equatable, Sendable {
 
     public init(key: String) {
         self.key = key
+    }
+    private enum CodingKeys: String, CodingKey {
+        case key = "key"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.key = try c.decode(String.self, forKey: .key)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.key, forKey: .key)
     }
 }
 
@@ -5074,6 +5917,23 @@ public struct ReplayCreateParams: Codable, Equatable, Sendable {
     public init(recordingsJsonl: String) {
         self.recordingsJsonl = recordingsJsonl
     }
+    private enum CodingKeys: String, CodingKey {
+        case recordingsJsonl = "recordingsJsonl"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.recordingsJsonl = try c.decode(String.self, forKey: .recordingsJsonl)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.recordingsJsonl, forKey: .recordingsJsonl)
+    }
 }
 
 public struct ReplayInspection: Codable, Equatable, Sendable {
@@ -5093,6 +5953,29 @@ public struct ReplayLiveParams: Codable, Equatable, Sendable {
         self.abort = abort
         self.callId = callId
         self.target = target
+    }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case callId = "callId"
+        case target = "target"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.callId = try c.decode(String.self, forKey: .callId)
+        self.target = try c.decode(LiveTarget.self, forKey: .target)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encode(self.callId, forKey: .callId)
+        try c.encode(self.target, forKey: .target)
     }
 }
 
@@ -5224,6 +6107,41 @@ public struct RerankingCallOptions: Codable, Equatable, Sendable {
         self.query = query
         self.timeout = timeout
         self.topN = topN
+    }
+    private enum CodingKeys: String, CodingKey {
+        case documents = "documents"
+        case headers = "headers"
+        case maxRetries = "maxRetries"
+        case providerOptions = "providerOptions"
+        case query = "query"
+        case timeout = "timeout"
+        case topN = "topN"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.documents = try c.decode(RerankingDocuments.self, forKey: .documents)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.query = try c.decode(String.self, forKey: .query)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+        self.topN = try c.decodeIfPresent(UInt32.self, forKey: .topN)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.documents, forKey: .documents)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encode(self.query, forKey: .query)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+        try c.encodeIfPresent(self.topN, forKey: .topN)
     }
 }
 
@@ -5455,6 +6373,35 @@ public struct RouterParams: Codable, Equatable, Sendable {
         self.providerName = providerName
         self.strategy = strategy
     }
+    private enum CodingKeys: String, CodingKey {
+        case children = "children"
+        case fallback = "fallback"
+        case modelId = "modelId"
+        case providerName = "providerName"
+        case strategy = "strategy"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.children = try c.decode([String].self, forKey: .children)
+        self.fallback = try c.decodeIfPresent(Fallback.self, forKey: .fallback)
+        self.modelId = try c.decodeIfPresent(String.self, forKey: .modelId)
+        self.providerName = try c.decodeIfPresent(String.self, forKey: .providerName)
+        self.strategy = try c.decode(Strategy.self, forKey: .strategy)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.children, forKey: .children)
+        try c.encodeIfPresent(self.fallback, forKey: .fallback)
+        try c.encodeIfPresent(self.modelId, forKey: .modelId)
+        try c.encodeIfPresent(self.providerName, forKey: .providerName)
+        try c.encode(self.strategy, forKey: .strategy)
+    }
 }
 
 public struct RuntimeConfigureParams: Codable, Equatable, Sendable {
@@ -5465,6 +6412,26 @@ public struct RuntimeConfigureParams: Codable, Equatable, Sendable {
         self.logging = logging
         self.proxy = proxy
     }
+    private enum CodingKeys: String, CodingKey {
+        case logging = "logging"
+        case proxy = "proxy"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.logging = try c.decodeIfPresent(LoggingConfig.self, forKey: .logging)
+        self.proxy = try c.decodeIfPresent(TransportProxy.self, forKey: .proxy)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.logging, forKey: .logging)
+        try c.encodeIfPresent(self.proxy, forKey: .proxy)
+    }
 }
 
 public struct RuntimeDescribeParams: Codable, Equatable, Sendable {
@@ -5472,7 +6439,10 @@ public struct RuntimeDescribeParams: Codable, Equatable, Sendable {
     public init() {
     }
     public init(from decoder: any Decoder) throws {
-        _ = try decoder.container(keyedBy: WireKey.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        if let unexpected = raw.allKeys.first {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [unexpected], debugDescription: "Unknown field \(unexpected.stringValue)"))
+        }
     }
     public func encode(to encoder: any Encoder) throws {
         _ = encoder.container(keyedBy: WireKey.self)
@@ -5547,6 +6517,50 @@ public struct SearchCallOptions: Codable, Equatable, Sendable {
         self.query = query
         self.timeRange = timeRange
         self.timeout = timeout
+    }
+    private enum CodingKeys: String, CodingKey {
+        case excludeDomains = "excludeDomains"
+        case headers = "headers"
+        case includeDomains = "includeDomains"
+        case includeRawContent = "includeRawContent"
+        case maxResults = "maxResults"
+        case maxRetries = "maxRetries"
+        case providerOptions = "providerOptions"
+        case query = "query"
+        case timeRange = "timeRange"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.excludeDomains = try c.decodeIfPresent([String].self, forKey: .excludeDomains)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.includeDomains = try c.decodeIfPresent([String].self, forKey: .includeDomains)
+        self.includeRawContent = try c.decodeIfPresent(Bool.self, forKey: .includeRawContent)
+        self.maxResults = try c.decodeIfPresent(UInt32.self, forKey: .maxResults)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.query = try c.decode(String.self, forKey: .query)
+        self.timeRange = try c.decodeIfPresent(String.self, forKey: .timeRange)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.excludeDomains, forKey: .excludeDomains)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.includeDomains, forKey: .includeDomains)
+        try c.encodeIfPresent(self.includeRawContent, forKey: .includeRawContent)
+        try c.encodeIfPresent(self.maxResults, forKey: .maxResults)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encode(self.query, forKey: .query)
+        try c.encodeIfPresent(self.timeRange, forKey: .timeRange)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
     }
 }
 
@@ -5695,6 +6709,23 @@ public struct SessionStoreCallsParams: Codable, Equatable, Sendable {
     public init(sessionId: String) {
         self.sessionId = sessionId
     }
+    private enum CodingKeys: String, CodingKey {
+        case sessionId = "sessionId"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.sessionId = try c.decode(String.self, forKey: .sessionId)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.sessionId, forKey: .sessionId)
+    }
 }
 
 public struct SessionStoreCreateParams: Codable, Equatable, Sendable {
@@ -5702,6 +6733,23 @@ public struct SessionStoreCreateParams: Codable, Equatable, Sendable {
 
     public init(infer: Bool) {
         self.infer = infer
+    }
+    private enum CodingKeys: String, CodingKey {
+        case infer = "infer"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.infer = try c.decode(Bool.self, forKey: .infer)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.infer, forKey: .infer)
     }
 }
 
@@ -5858,6 +6906,50 @@ public struct SpeechCallOptions: Codable, Equatable, Sendable {
         self.text = text
         self.timeout = timeout
         self.voice = voice
+    }
+    private enum CodingKeys: String, CodingKey {
+        case headers = "headers"
+        case instructions = "instructions"
+        case language = "language"
+        case maxRetries = "maxRetries"
+        case outputFormat = "outputFormat"
+        case providerOptions = "providerOptions"
+        case speed = "speed"
+        case text = "text"
+        case timeout = "timeout"
+        case voice = "voice"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
+        self.language = try c.decodeIfPresent(String.self, forKey: .language)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.outputFormat = try c.decodeIfPresent(String.self, forKey: .outputFormat)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.speed = try c.decodeIfPresent(Double.self, forKey: .speed)
+        self.text = try c.decode(String.self, forKey: .text)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+        self.voice = try c.decodeIfPresent(String.self, forKey: .voice)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.instructions, forKey: .instructions)
+        try c.encodeIfPresent(self.language, forKey: .language)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.outputFormat, forKey: .outputFormat)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.speed, forKey: .speed)
+        try c.encode(self.text, forKey: .text)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+        try c.encodeIfPresent(self.voice, forKey: .voice)
     }
 }
 
@@ -6373,6 +7465,26 @@ public struct StreamOptions: Codable, Equatable, Sendable {
         self.includeReasoning = includeReasoning
         self.includeUsage = includeUsage
     }
+    private enum CodingKeys: String, CodingKey {
+        case includeReasoning = "includeReasoning"
+        case includeUsage = "includeUsage"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.includeReasoning = try c.decodeIfPresent(Bool.self, forKey: .includeReasoning)
+        self.includeUsage = try c.decodeIfPresent(Bool.self, forKey: .includeUsage)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.includeReasoning, forKey: .includeReasoning)
+        try c.encodeIfPresent(self.includeUsage, forKey: .includeUsage)
+    }
 }
 
 /// A raw provider call with its required wire tag.
@@ -6523,6 +7635,29 @@ public struct TextRequest: Codable, Equatable, Sendable {
         self.abort = abort
         self.options = options
         self.prompt = prompt
+    }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case options = "options"
+        case prompt = "prompt"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.options = try c.decodeIfPresent(Options.self, forKey: .options)
+        self.prompt = try c.decode(ModelPrompt.self, forKey: .prompt)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encodeIfPresent(self.options, forKey: .options)
+        try c.encode(self.prompt, forKey: .prompt)
     }
 }
 
@@ -6915,6 +8050,32 @@ public struct TimeoutConfiguration: Codable, Equatable, Sendable {
         self.firstChunkMs = firstChunkMs
         self.stepMs = stepMs
         self.totalMs = totalMs
+    }
+    private enum CodingKeys: String, CodingKey {
+        case chunkMs = "chunkMs"
+        case firstChunkMs = "firstChunkMs"
+        case stepMs = "stepMs"
+        case totalMs = "totalMs"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.chunkMs = try c.decodeIfPresent(UInt64.self, forKey: .chunkMs)
+        self.firstChunkMs = try c.decodeIfPresent(UInt64.self, forKey: .firstChunkMs)
+        self.stepMs = try c.decodeIfPresent(UInt64.self, forKey: .stepMs)
+        self.totalMs = try c.decodeIfPresent(UInt64.self, forKey: .totalMs)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.chunkMs, forKey: .chunkMs)
+        try c.encodeIfPresent(self.firstChunkMs, forKey: .firstChunkMs)
+        try c.encodeIfPresent(self.stepMs, forKey: .stepMs)
+        try c.encodeIfPresent(self.totalMs, forKey: .totalMs)
     }
 }
 
@@ -7441,6 +8602,29 @@ public struct ToolRepairApplyRequest: Codable, Equatable, Sendable {
         self.reply = reply
         self.toolCall = toolCall
     }
+    private enum CodingKeys: String, CodingKey {
+        case options = "options"
+        case reply = "reply"
+        case toolCall = "toolCall"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.options = try c.decodeIfPresent(GenerateTextOptions.self, forKey: .options)
+        self.reply = try c.decode(ToolCallRepairReply.self, forKey: .reply)
+        self.toolCall = try c.decode(ToolCallInput.self, forKey: .toolCall)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.options, forKey: .options)
+        try c.encode(self.reply, forKey: .reply)
+        try c.encode(self.toolCall, forKey: .toolCall)
+    }
 }
 
 public struct ToolRepairApplyResultRequest: Codable, Equatable, Sendable {
@@ -7455,6 +8639,32 @@ public struct ToolRepairApplyResultRequest: Codable, Equatable, Sendable {
         self.result = result
         self.toolCallId = toolCallId
     }
+    private enum CodingKeys: String, CodingKey {
+        case options = "options"
+        case reply = "reply"
+        case result = "result"
+        case toolCallId = "toolCallId"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.options = try c.decodeIfPresent(GenerateTextOptions.self, forKey: .options)
+        self.reply = try c.decode(ToolCallRepairReply.self, forKey: .reply)
+        self.result = try c.decode(GenerateTextResultInput.self, forKey: .result)
+        self.toolCallId = try c.decode(String.self, forKey: .toolCallId)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.options, forKey: .options)
+        try c.encode(self.reply, forKey: .reply)
+        try c.encode(self.result, forKey: .result)
+        try c.encode(self.toolCallId, forKey: .toolCallId)
+    }
 }
 
 public struct ToolRepairContextRequest: Codable, Equatable, Sendable {
@@ -7466,6 +8676,29 @@ public struct ToolRepairContextRequest: Codable, Equatable, Sendable {
         self.options = options
         self.prompt = prompt
         self.toolCall = toolCall
+    }
+    private enum CodingKeys: String, CodingKey {
+        case options = "options"
+        case prompt = "prompt"
+        case toolCall = "toolCall"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.options = try c.decodeIfPresent(GenerateTextOptions.self, forKey: .options)
+        self.prompt = try c.decode(ModelPrompt.self, forKey: .prompt)
+        self.toolCall = try c.decode(ToolCallInput.self, forKey: .toolCall)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.options, forKey: .options)
+        try c.encode(self.prompt, forKey: .prompt)
+        try c.encode(self.toolCall, forKey: .toolCall)
     }
 }
 
@@ -7842,6 +9075,32 @@ public struct TraceAggregateFilter: Codable, Equatable, Sendable {
         self.sessionId = sessionId
         self.sinceUnixMs = sinceUnixMs
     }
+    private enum CodingKeys: String, CodingKey {
+        case model = "model"
+        case provider = "provider"
+        case sessionId = "sessionId"
+        case sinceUnixMs = "sinceUnixMs"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.model = try c.decodeIfPresent(String.self, forKey: .model)
+        self.provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        self.sinceUnixMs = try c.decodeIfPresent(Int64.self, forKey: .sinceUnixMs)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.model, forKey: .model)
+        try c.encodeIfPresent(self.provider, forKey: .provider)
+        try c.encodeIfPresent(self.sessionId, forKey: .sessionId)
+        try c.encodeIfPresent(self.sinceUnixMs, forKey: .sinceUnixMs)
+    }
 }
 
 public struct TraceAggregateParams: Codable, Equatable, Sendable {
@@ -7849,6 +9108,23 @@ public struct TraceAggregateParams: Codable, Equatable, Sendable {
 
     public init(filter: TraceAggregateFilter? = nil) {
         self.filter = filter
+    }
+    private enum CodingKeys: String, CodingKey {
+        case filter = "filter"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.filter = try c.decodeIfPresent(TraceAggregateFilter.self, forKey: .filter)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.filter, forKey: .filter)
     }
 }
 
@@ -7867,6 +9143,29 @@ public struct TraceCreateParams: Codable, Equatable, Sendable {
         self.auditMode = auditMode
         self.capacity = capacity
         self.perScopeCapacity = perScopeCapacity
+    }
+    private enum CodingKeys: String, CodingKey {
+        case auditMode = "auditMode"
+        case capacity = "capacity"
+        case perScopeCapacity = "perScopeCapacity"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.auditMode = try c.decodeIfPresent(TraceAuditMode.self, forKey: .auditMode)
+        self.capacity = try c.decodeIfPresent(UInt64.self, forKey: .capacity)
+        self.perScopeCapacity = try c.decodeIfPresent(UInt64.self, forKey: .perScopeCapacity)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.auditMode, forKey: .auditMode)
+        try c.encodeIfPresent(self.capacity, forKey: .capacity)
+        try c.encodeIfPresent(self.perScopeCapacity, forKey: .perScopeCapacity)
     }
 }
 
@@ -7923,6 +9222,23 @@ public struct TraceSessionParams: Codable, Equatable, Sendable {
 
     public init(sessionId: String) {
         self.sessionId = sessionId
+    }
+    private enum CodingKeys: String, CodingKey {
+        case sessionId = "sessionId"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.sessionId = try c.decode(String.self, forKey: .sessionId)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.sessionId, forKey: .sessionId)
     }
 }
 
@@ -7986,6 +9302,38 @@ public struct TranscriptionCallOptions: Codable, Equatable, Sendable {
         self.mediaType = mediaType
         self.providerOptions = providerOptions
         self.timeout = timeout
+    }
+    private enum CodingKeys: String, CodingKey {
+        case audio = "audio"
+        case headers = "headers"
+        case maxRetries = "maxRetries"
+        case mediaType = "mediaType"
+        case providerOptions = "providerOptions"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.audio = try c.decode(AudioInput.self, forKey: .audio)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.mediaType = try c.decode(String.self, forKey: .mediaType)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(self.audio, forKey: .audio)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encode(self.mediaType, forKey: .mediaType)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
     }
 }
 
@@ -8102,6 +9450,38 @@ public struct TranscriptionStartParams: Codable, Equatable, Sendable {
         self.inputAudioFormat = inputAudioFormat
         self.providerOptions = providerOptions
         self.timeout = timeout
+    }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case headers = "headers"
+        case includeRawChunks = "includeRawChunks"
+        case inputAudioFormat = "inputAudioFormat"
+        case providerOptions = "providerOptions"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.includeRawChunks = try c.decodeIfPresent(Bool.self, forKey: .includeRawChunks)
+        self.inputAudioFormat = try c.decodeIfPresent(InputAudioFormat.self, forKey: .inputAudioFormat)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.includeRawChunks, forKey: .includeRawChunks)
+        try c.encodeIfPresent(self.inputAudioFormat, forKey: .inputAudioFormat)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
     }
 }
 
@@ -8280,6 +9660,26 @@ public struct TransportProxy: Codable, Equatable, Sendable {
         case httpUrl = "http_url"
         case httpsUrl = "https_url"
         case noProxy = "no_proxy"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.allUrl = try c.decodeIfPresent(String.self, forKey: .allUrl)
+        self.httpUrl = try c.decodeIfPresent(String.self, forKey: .httpUrl)
+        self.httpsUrl = try c.decodeIfPresent(String.self, forKey: .httpsUrl)
+        self.noProxy = try c.decodeIfPresent(String.self, forKey: .noProxy)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.allUrl, forKey: .allUrl)
+        try c.encodeIfPresent(self.httpUrl, forKey: .httpUrl)
+        try c.encodeIfPresent(self.httpsUrl, forKey: .httpsUrl)
+        try c.encodeIfPresent(self.noProxy, forKey: .noProxy)
     }
 }
 
@@ -8600,6 +10000,35 @@ public struct UploadFileParams: Codable, Equatable, Sendable {
         self.mediaType = mediaType
         self.providerOptions = providerOptions
     }
+    private enum CodingKeys: String, CodingKey {
+        case abort = "abort"
+        case data = "data"
+        case filename = "filename"
+        case mediaType = "mediaType"
+        case providerOptions = "providerOptions"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.abort = try c.decodeIfPresent(HandleIdInput.self, forKey: .abort)
+        self.data = try c.decode(UploadFileData.self, forKey: .data)
+        self.filename = try c.decodeIfPresent(String.self, forKey: .filename)
+        self.mediaType = try c.decode(String.self, forKey: .mediaType)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.abort, forKey: .abort)
+        try c.encode(self.data, forKey: .data)
+        try c.encodeIfPresent(self.filename, forKey: .filename)
+        try c.encode(self.mediaType, forKey: .mediaType)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+    }
 }
 
 /// Result of [`Files::upload_file`].
@@ -8864,6 +10293,68 @@ public struct VideoCallOptions: Codable, Equatable, Sendable {
         self.seed = seed
         self.timeout = timeout
     }
+    private enum CodingKeys: String, CodingKey {
+        case aspectRatio = "aspectRatio"
+        case duration = "duration"
+        case fps = "fps"
+        case frameImages = "frameImages"
+        case generateAudio = "generateAudio"
+        case headers = "headers"
+        case image = "image"
+        case inputReferences = "inputReferences"
+        case maxRetries = "maxRetries"
+        case n = "n"
+        case poll = "poll"
+        case prompt = "prompt"
+        case providerOptions = "providerOptions"
+        case resolution = "resolution"
+        case seed = "seed"
+        case timeout = "timeout"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.aspectRatio = try c.decodeIfPresent(AspectRatio.self, forKey: .aspectRatio)
+        self.duration = try c.decodeIfPresent(UInt32.self, forKey: .duration)
+        self.fps = try c.decodeIfPresent(UInt32.self, forKey: .fps)
+        self.frameImages = try c.decodeIfPresent([VideoFrameImage].self, forKey: .frameImages)
+        self.generateAudio = try c.decodeIfPresent(Bool.self, forKey: .generateAudio)
+        self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.image = try c.decodeIfPresent(VideoFile.self, forKey: .image)
+        self.inputReferences = try c.decodeIfPresent([VideoFile].self, forKey: .inputReferences)
+        self.maxRetries = try c.decodeIfPresent(UInt32.self, forKey: .maxRetries)
+        self.n = try c.decodeIfPresent(UInt32.self, forKey: .n)
+        self.poll = try c.decodeIfPresent(VideoPollOptions.self, forKey: .poll)
+        self.prompt = try c.decodeIfPresent(String.self, forKey: .prompt)
+        self.providerOptions = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions)
+        self.resolution = try c.decodeIfPresent(Size.self, forKey: .resolution)
+        self.seed = try c.decodeIfPresent(UInt64.self, forKey: .seed)
+        self.timeout = try c.decodeIfPresent(TimeoutConfiguration.self, forKey: .timeout)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.aspectRatio, forKey: .aspectRatio)
+        try c.encodeIfPresent(self.duration, forKey: .duration)
+        try c.encodeIfPresent(self.fps, forKey: .fps)
+        try c.encodeIfPresent(self.frameImages, forKey: .frameImages)
+        try c.encodeIfPresent(self.generateAudio, forKey: .generateAudio)
+        try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.image, forKey: .image)
+        try c.encodeIfPresent(self.inputReferences, forKey: .inputReferences)
+        try c.encodeIfPresent(self.maxRetries, forKey: .maxRetries)
+        try c.encodeIfPresent(self.n, forKey: .n)
+        try c.encodeIfPresent(self.poll, forKey: .poll)
+        try c.encodeIfPresent(self.prompt, forKey: .prompt)
+        try c.encodeIfPresent(self.providerOptions, forKey: .providerOptions)
+        try c.encodeIfPresent(self.resolution, forKey: .resolution)
+        try c.encodeIfPresent(self.seed, forKey: .seed)
+        try c.encodeIfPresent(self.timeout, forKey: .timeout)
+    }
 }
 
 /// Generated video data: a URL, base64-encoded string, or binary data.
@@ -9002,6 +10493,26 @@ public struct VideoPollOptions: Codable, Equatable, Sendable {
     public init(intervalMs: UInt64? = nil, timeoutMs: UInt64? = nil) {
         self.intervalMs = intervalMs
         self.timeoutMs = timeoutMs
+    }
+    private enum CodingKeys: String, CodingKey {
+        case intervalMs = "intervalMs"
+        case timeoutMs = "timeoutMs"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.intervalMs = try c.decodeIfPresent(UInt64.self, forKey: .intervalMs)
+        self.timeoutMs = try c.decodeIfPresent(UInt64.self, forKey: .timeoutMs)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.intervalMs, forKey: .intervalMs)
+        try c.encodeIfPresent(self.timeoutMs, forKey: .timeoutMs)
     }
 }
 
