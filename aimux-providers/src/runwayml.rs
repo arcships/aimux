@@ -14,21 +14,21 @@
 //! there: it is loaded for every request, from the setting or from `RUNWAYML_API_SECRET`.
 //! [`runwayml()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFrameType, VideoModel, VideoOperationStart,
+    VideoCallOptions, VideoData, VideoFrameType, VideoModel, VideoOperationStart,
     VideoOperationStatus, VideoResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, task_failed, video_response};
-use aimux_provider_utils::{Credential, ProviderHeaders};
+use crate::shared::{
+    EndpointConfig, define_vendor_provider, task_failed, video_file_to_url_or_base64,
+    video_response,
+};
 
 const PROVIDER_NAME: &str = "runwayml";
 const RUNWAY_VERSION: &str = "2024-11-06";
@@ -53,104 +53,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "RUNWAYML_API_SECRET";
 const DEFAULT_NAME: &str = "runwayml";
 
-/// Settings of [`create_runwayml`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct RunwaymlProviderSettings {
-    /// Base URL for the API calls. Default `https://api.dev.runwayml.com`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `RUNWAYML_API_SECRET` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.video"`).
-    /// Default `"runwayml"`. The providerOptions key stays `runwayml`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for RunwaymlProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RunwaymlProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a RunwayML provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_runwayml(settings: RunwaymlProviderSettings) -> Result<RunwaymlProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(RunwaymlProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "RunwayML"),
-            vec![("X-Runway-Version".to_string(), RUNWAY_VERSION.to_string())],
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_runwayml` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn runwayml() -> &'static RunwaymlProvider {
-    static DEFAULT: OnceLock<RunwaymlProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_runwayml(RunwaymlProviderSettings::default())
-            .expect("default RunwayML settings are always valid")
-    })
-}
-
-/// A RunwayML provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct RunwaymlProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+define_vendor_provider! {
+    settings: RunwaymlProviderSettings,
+    provider: RunwaymlProvider,
+    create: create_runwayml,
+    singleton: runwayml,
+    display: "RunwayML",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Bearer,
+    extra_headers: vec![("X-Runway-Version".to_string(), RUNWAY_VERSION.to_string())],
+    package: None,
 }
 
 impl RunwaymlProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// A video model (e.g. `"gen4_turbo"`); `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> RunwaymlVideoModel {
@@ -159,17 +76,6 @@ impl RunwaymlProvider {
 }
 
 crate::impl_single_modality_provider!(RunwaymlProvider, video_model, |p, id| p.video(id));
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-/// Convert a [`VideoFile`] into the string RunwayML accepts as `promptImage`
-/// (a URL, or base64-encoded data for inline files).
-fn video_file_to_prompt_image(file: &VideoFile) -> String {
-    match file {
-        VideoFile::Url { url, .. } => url.clone(),
-        VideoFile::File { data, .. } => aimux_provider_utils::convert_to_base64(data).into_owned(),
-    }
-}
 
 // ── Response schema (private wire types) ────────────────────────────────────
 
@@ -222,13 +128,13 @@ impl VideoModel for RunwaymlVideoModel {
         let image_input: Option<String> = options
             .image
             .as_ref()
-            .map(video_file_to_prompt_image)
+            .map(video_file_to_url_or_base64)
             .or_else(|| {
                 options.frame_images.as_ref().and_then(|frames| {
                     frames
                         .iter()
                         .find(|f| f.frame_type == VideoFrameType::FirstFrame)
-                        .map(|f| video_file_to_prompt_image(&f.image))
+                        .map(|f| video_file_to_url_or_base64(&f.image))
                 })
             });
         let is_image_to_video = image_input.is_some();

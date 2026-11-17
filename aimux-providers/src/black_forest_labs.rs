@@ -12,7 +12,6 @@
 //! [`black_forest_labs()`] is the default instance; it reads nothing and cannot fail.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -22,15 +21,13 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
-use aimux_provider_utils::HttpRequest;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{AuthScheme, HttpRequest};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, image_response, is_poll_control_key,
-    namespaced_options, poll_interval_ms, poll_until, retry_download, size_to_aspect_ratio,
-    task_failed, unsupported,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, define_vendor_provider, image_response,
+    is_poll_control_key, namespaced_options, poll_interval_ms, poll_until, retry_download,
+    size_to_aspect_ratio, task_failed, unsupported,
 };
-use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
 /// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
@@ -96,106 +93,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.bfl.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
 const DEFAULT_NAME: &str = "blackForestLabs";
 
-/// Settings of [`create_black_forest_labs`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct BlackForestLabsProviderSettings {
-    /// Base URL for the API calls. Default `https://api.bfl.ai`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `BFL_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
-    /// Default `"blackForestLabs"`. The providerOptions key stays `blackForestLabs`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for BlackForestLabsProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlackForestLabsProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a Black Forest Labs provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_black_forest_labs(
+define_vendor_provider! {
     settings: BlackForestLabsProviderSettings,
-) -> Result<BlackForestLabsProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(BlackForestLabsProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Black Forest Labs"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_black_forest_labs` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn black_forest_labs() -> &'static BlackForestLabsProvider {
-    static DEFAULT: OnceLock<BlackForestLabsProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_black_forest_labs(BlackForestLabsProviderSettings::default())
-            .expect("default Black Forest Labs settings are always valid")
-    })
-}
-
-/// A Black Forest Labs provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct BlackForestLabsProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+    provider: BlackForestLabsProvider,
+    create: create_black_forest_labs,
+    singleton: black_forest_labs,
+    display: "Black Forest Labs",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Bearer,
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl BlackForestLabsProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// An image model (e.g. `"flux-pro-1.1"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> BlackForestLabsImageModel {

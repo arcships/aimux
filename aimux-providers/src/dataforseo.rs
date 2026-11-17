@@ -20,12 +20,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::search_model::{
-    SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
-};
+use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, EndpointHeaders};
+use crate::shared::{EndpointConfig, EndpointHeaders, post_json_search};
 use aimux_provider_utils::Credential;
 
 /// Fixed model id for the DataForSEO search model.
@@ -269,43 +267,24 @@ impl SearchModel for DataforseoSearchModel {
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let depth = resolve_depth(options.max_results);
         let body = build_request_body(&options.query, depth);
-        let exchange = self.config.exchange(options.headers.as_ref()).await?;
-
-        let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(
-                exchange.url("/v3/serp/google/organic/live/advanced"),
-                options,
-            ),
+        post_json_search(
+            &self.config,
+            "/v3/serp/google/organic/live/advanced",
+            options,
             body,
-            aimux_provider_utils::create_json_response_handler::<DataforseoResponse>(),
             dataforseo_failed_response_handler(),
+            |data: DataforseoResponse| {
+                // Flatten tasks[].result[].organic[] preserving provider order.
+                let results = data
+                    .tasks
+                    .into_iter()
+                    .flat_map(|t| t.result)
+                    .flat_map(|r| r.organic)
+                    .map(map_result)
+                    .collect();
+                (results, None)
+            },
         )
-        .await?;
-
-        // Capture response headers.
-        let response_headers = resp.response_headers;
-
-        let raw_body = resp.raw_value.unwrap_or(Value::Null);
-        let data = resp.value;
-
-        // Flatten tasks[].result[].organic[] preserving provider order.
-        let results: Vec<SearchResultItem> = data
-            .tasks
-            .into_iter()
-            .flat_map(|t| t.result)
-            .flat_map(|r| r.organic)
-            .map(map_result)
-            .collect();
-
-        Ok(SearchResult {
-            results,
-            answer: None,
-            provider_metadata: None,
-            warnings: Vec::new(),
-            response: Some(SearchResponse {
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            }),
-        })
+        .await
     }
 }

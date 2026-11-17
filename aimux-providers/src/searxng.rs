@@ -19,16 +19,12 @@ use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::search_model::{
-    SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
-};
+use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{BaseUrl, EndpointConfig, HttpEndpoint};
+use crate::shared::{BaseUrl, EndpointConfig, HttpEndpoint, get_query_search};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Fixed model ID for the SearXNG search model.
@@ -209,37 +205,18 @@ impl SearchModel for SearxngSearchModel {
     }
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
-        let exchange = self.config.exchange(options.headers.as_ref()).await?;
-
-        let mut url =
-            url::Url::parse(&exchange.url("/search")).map_err(|e| AiMuxError::InvalidArgument {
-                message: format!("invalid searxng endpoint: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            })?;
-        url.query_pairs_mut()
-            .append_pair("q", &options.query)
-            .append_pair("format", "json");
-
-        let resp = aimux_provider_utils::get_from_api(
-            exchange.request(url.to_string(), options),
-            aimux_provider_utils::create_json_response_handler::<SearxngResponse>(),
+        get_query_search(
+            &self.config,
+            Some("/search"),
+            options,
+            |url| {
+                url.query_pairs_mut()
+                    .append_pair("q", &options.query)
+                    .append_pair("format", "json");
+            },
             aimux_provider_utils::create_status_code_error_response_handler(),
+            |data: SearxngResponse| (map_results(data.results), None),
         )
-        .await?;
-        let response_headers = resp.response_headers;
-
-        let raw_body = resp.raw_value.unwrap_or(Value::Null);
-        let data = resp.value;
-
-        Ok(SearchResult {
-            results: map_results(data.results),
-            answer: None,
-            provider_metadata: None,
-            warnings: Vec::new(),
-            response: Some(SearchResponse {
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            }),
-        })
+        .await
     }
 }

@@ -13,28 +13,25 @@
 //! there: it is loaded for every request, from the setting or from `ASSEMBLYAI_API_KEY`.
 //! [`assemblyai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResult, TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResult,
+    TranscriptionSegment,
 };
-use aimux_provider_utils::HttpBody;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::{AuthScheme, HttpBody};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, namespaced_options,
-    poll_interval_ms, poll_until, task_failed, transcription_response, unsupported,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, define_vendor_provider,
+    is_poll_control_key, namespaced_options, poll_interval_ms, poll_until, task_failed,
+    transcription_response, unsupported,
 };
-use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// AssemblyAI errors: `{"error": "..."}` where `error` is a plain string
 /// (e.g. `"Authentication error, API token missing/invalid."`). No machine
@@ -79,107 +76,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
 const DEFAULT_NAME: &str = "assemblyai";
 
-/// Settings of [`create_assemblyai`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct AssemblyAIProviderSettings {
-    /// Base URL for the API calls. Default `https://api.assemblyai.com`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `ASSEMBLYAI_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.transcription"`).
-    /// Default `"assemblyai"`. The providerOptions key stays `assemblyai`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for AssemblyAIProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AssemblyAIProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a AssemblyAI provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_assemblyai(
+define_vendor_provider! {
     settings: AssemblyAIProviderSettings,
-) -> Result<AssemblyAIProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(AssemblyAIProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::new(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "AssemblyAI"),
-            AuthScheme::Header("Authorization"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_assemblyai` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn assemblyai() -> &'static AssemblyAIProvider {
-    static DEFAULT: OnceLock<AssemblyAIProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_assemblyai(AssemblyAIProviderSettings::default())
-            .expect("default AssemblyAI settings are always valid")
-    })
-}
-
-/// A AssemblyAI provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct AssemblyAIProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+    provider: AssemblyAIProvider,
+    create: create_assemblyai,
+    singleton: assemblyai,
+    display: "AssemblyAI",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Header("Authorization"),
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl AssemblyAIProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// A transcription (STT) model (e.g. `"universal-3-5-pro"`); `provider()` is `"{name}.transcription"`.
     #[must_use]
     pub fn transcription(&self, model_id: &str) -> AssemblyAITranscriptionModel {
@@ -242,18 +153,6 @@ struct AssemblyAITranscriptResponse {
 }
 
 // ── Model ───────────────────────────────────────────────────────────────────
-
-fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
-    match audio {
-        AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
-            .map_err(|e| AiMuxError::InvalidArgument {
-                message: format!("invalid base64: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            }),
-        AudioInput::Url(_) => Err(AudioInput::url_error()),
-    }
-}
 
 pub struct AssemblyAITranscriptionModel {
     model_id: String,

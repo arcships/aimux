@@ -14,8 +14,6 @@
 //! there: it is loaded for every request, from the setting or from `STABILITY_API_KEY`.
 //! [`stability()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::Value;
@@ -24,13 +22,12 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
-use aimux_provider_utils::{HttpBody, MultipartForm};
+use aimux_provider_utils::{AuthScheme, HttpBody, MultipartForm};
 
 use crate::shared::{
-    EndpointConfig, image_response, namespaced_options, size_to_aspect_ratio, unsupported,
+    EndpointConfig, define_vendor_provider, image_response, namespaced_options,
+    size_to_aspect_ratio, unsupported,
 };
-use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
 ///
@@ -126,106 +123,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.stability.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
 const DEFAULT_NAME: &str = "stability";
 
-/// Settings of [`create_stability`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct StabilityProviderSettings {
-    /// Base URL for the API calls. Default `https://api.stability.ai`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `STABILITY_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.image"`).
-    /// Default `"stability"`. The providerOptions key stays `stability`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for StabilityProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StabilityProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a Stability provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_stability(
+define_vendor_provider! {
     settings: StabilityProviderSettings,
-) -> Result<StabilityProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(StabilityProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Stability"),
-            vec![("Accept".to_string(), "image/*".to_string())],
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_stability` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn stability() -> &'static StabilityProvider {
-    static DEFAULT: OnceLock<StabilityProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_stability(StabilityProviderSettings::default())
-            .expect("default Stability settings are always valid")
-    })
-}
-
-/// A Stability provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct StabilityProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+    provider: StabilityProvider,
+    create: create_stability,
+    singleton: stability,
+    display: "Stability",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Bearer,
+    extra_headers: vec![("Accept".to_string(), "image/*".to_string())],
+    package: None,
 }
 
 impl StabilityProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// An image model (e.g. `"stable-image-core"`); `provider()` is `"{name}.image"`.
     #[must_use]
     pub fn image(&self, model_id: &str) -> StabilityImageModel {

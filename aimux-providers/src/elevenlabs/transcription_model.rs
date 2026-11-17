@@ -10,16 +10,15 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResponse,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_bytes};
 
 use super::error::elevenlabs_failed_response_handler;
 use super::options;
@@ -291,18 +290,6 @@ impl ElevenLabsTranscriptionModel {
     }
 }
 
-fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
-    match audio {
-        AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
-            .map_err(|e| AiMuxError::InvalidArgument {
-                message: format!("invalid base64: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            }),
-        AudioInput::Url(_) => Err(AudioInput::url_error()),
-    }
-}
-
 /// Realtime streaming model IDs (`scribe_v2_realtime*`) use the WebSocket
 /// realtime endpoint; every other model uses the batch REST endpoint.
 /// Wire shape per the public API reference (2026-09, RFC-0034 §3).
@@ -334,7 +321,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
 
         let mut warnings: Vec<Warning> = Vec::new();
 
-        let audio_bytes = audio_input_to_bytes_stt(&options.audio)?;
+        let audio_bytes = audio_input_to_bytes(&options.audio)?;
         let file_extension = media_type_to_extension(&options.media_type);
         let filename = format!("audio.{file_extension}");
 

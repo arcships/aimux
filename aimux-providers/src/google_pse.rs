@@ -20,15 +20,12 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::search_model::{
-    SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
-};
+use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
 use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{EndpointConfig, get_query_search_with_exchange, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Fixed model ID for the Google PSE search model.
@@ -264,42 +261,23 @@ impl SearchModel for GooglePseSearchModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let api_key = self.credential.secret().await?.unwrap_or_default();
 
-        let mut url =
-            url::Url::parse(exchange.base_url()).map_err(|e| AiMuxError::InvalidArgument {
-                message: format!("invalid google_pse endpoint: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            })?;
-        {
-            let mut qp = url.query_pairs_mut();
-            qp.append_pair("key", &api_key)
-                .append_pair("cx", &cx)
-                .append_pair("q", &options.query);
-            if let Some(num) = options.max_results {
-                qp.append_pair("num", &num.to_string());
-            }
-        }
-
-        let resp = aimux_provider_utils::get_from_api(
-            exchange.request(url.to_string(), options),
-            aimux_provider_utils::create_json_response_handler::<GooglePseResponse>(),
+        get_query_search_with_exchange(
+            &exchange,
+            None,
+            &self.config.provider,
+            options,
+            |url| {
+                let mut qp = url.query_pairs_mut();
+                qp.append_pair("key", &api_key)
+                    .append_pair("cx", &cx)
+                    .append_pair("q", &options.query);
+                if let Some(num) = options.max_results {
+                    qp.append_pair("num", &num.to_string());
+                }
+            },
             google_pse_failed_response_handler(),
+            |data: GooglePseResponse| (map_results(data.items), None),
         )
-        .await?;
-
-        let response_headers = resp.response_headers;
-
-        let raw_body = resp.raw_value.unwrap_or(Value::Null);
-        let data = resp.value;
-
-        Ok(SearchResult {
-            results: map_results(data.items),
-            answer: None,
-            provider_metadata: None,
-            warnings: Vec::new(),
-            response: Some(SearchResponse {
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            }),
-        })
+        .await
     }
 }

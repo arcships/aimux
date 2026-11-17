@@ -13,21 +13,14 @@
 //! there: it is loaded for every request, from the setting or from `YDC_API_KEY`.
 //! [`you_com()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::search_model::{
-    SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
-};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult, SearchResultItem};
+use aimux_provider_utils::AuthScheme;
 
-use crate::shared::EndpointConfig;
-use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
+use crate::shared::{EndpointConfig, define_vendor_provider, get_query_search};
 
 /// Fixed model id for the You.com search model.
 /// Failed-response handler of the You.com endpoint: `message`, and `type`
@@ -49,105 +42,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://ydc-index.io";
 pub(crate) const API_KEY_ENV_VAR: &str = "YDC_API_KEY";
 const DEFAULT_NAME: &str = "you_com";
 
-/// Settings of [`create_you_com`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct YouComProviderSettings {
-    /// Base URL for the API calls. Default `https://ydc-index.io`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `YDC_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.search"`).
-    /// Default `"you_com"`. The providerOptions key stays `you_com`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for YouComProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("YouComProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a You.com provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_you_com(settings: YouComProviderSettings) -> Result<YouComProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(YouComProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::new(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "You.com"),
-            AuthScheme::Header("X-API-Key"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_you_com` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn you_com() -> &'static YouComProvider {
-    static DEFAULT: OnceLock<YouComProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_you_com(YouComProviderSettings::default())
-            .expect("default You.com settings are always valid")
-    })
-}
-
-/// A You.com provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct YouComProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+define_vendor_provider! {
+    settings: YouComProviderSettings,
+    provider: YouComProvider,
+    create: create_you_com,
+    singleton: you_com,
+    display: "You.com",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Header("X-API-Key"),
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl YouComProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// The search model; `provider()` is `"{name}.search"`.
     #[must_use]
     pub fn search_model(&self) -> YouComSearchModel {
@@ -221,42 +130,18 @@ impl SearchModel for YouComSearchModel {
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let count = options.max_results.unwrap_or(DEFAULT_COUNT);
-        let exchange = self.config.exchange(options.headers.as_ref()).await?;
-
-        let mut url = url::Url::parse(&exchange.url("/v1/search")).map_err(|e| {
-            AiMuxError::InvalidArgument {
-                message: format!("invalid you_com endpoint: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            }
-        })?;
-        url.query_pairs_mut()
-            .append_pair("query", &options.query)
-            .append_pair("count", &count.to_string());
-
-        let resp = aimux_provider_utils::get_from_api(
-            exchange.request(url.to_string(), options),
-            aimux_provider_utils::create_json_response_handler::<YoucomSearchResponse>(),
+        get_query_search(
+            &self.config,
+            Some("/v1/search"),
+            options,
+            |url| {
+                url.query_pairs_mut()
+                    .append_pair("query", &options.query)
+                    .append_pair("count", &count.to_string());
+            },
             you_com_failed_response_handler(),
+            |data: YoucomSearchResponse| (data.results.into_iter().map(map_result).collect(), None),
         )
-        .await?;
-
-        // Capture response headers.
-        let response_headers = resp.response_headers;
-
-        let raw_body = resp.raw_value.unwrap_or(Value::Null);
-        let data = resp.value;
-
-        let results: Vec<SearchResultItem> = data.results.into_iter().map(map_result).collect();
-
-        Ok(SearchResult {
-            results,
-            answer: None,
-            provider_metadata: None,
-            warnings: Vec::new(),
-            response: Some(SearchResponse {
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            }),
-        })
+        .await
     }
 }

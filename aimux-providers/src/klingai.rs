@@ -14,8 +14,6 @@
 //! there: it is loaded for every request, from the setting or from `KLINGAI_API_KEY`.
 //! [`klingai()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -24,10 +22,12 @@ use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus, VideoResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, namespaced_options, task_failed, video_response};
-use aimux_provider_utils::{Credential, ProviderHeaders};
+use crate::shared::{
+    EndpointConfig, define_vendor_provider, namespaced_options, task_failed,
+    video_file_to_url_or_base64, video_response,
+};
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -51,104 +51,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
 const DEFAULT_NAME: &str = "klingai";
 
-/// Settings of [`create_klingai`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct KlingAIProviderSettings {
-    /// Base URL for the API calls. Default `https://api.klingai.com`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `KLINGAI_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.video"`).
-    /// Default `"klingai"`. The providerOptions key stays `klingai`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for KlingAIProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KlingAIProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a KlingAI provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_klingai(settings: KlingAIProviderSettings) -> Result<KlingAIProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(KlingAIProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "KlingAI"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_klingai` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn klingai() -> &'static KlingAIProvider {
-    static DEFAULT: OnceLock<KlingAIProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_klingai(KlingAIProviderSettings::default())
-            .expect("default KlingAI settings are always valid")
-    })
-}
-
-/// A KlingAI provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct KlingAIProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+define_vendor_provider! {
+    settings: KlingAIProviderSettings,
+    provider: KlingAIProvider,
+    create: create_klingai,
+    singleton: klingai,
+    display: "KlingAI",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Bearer,
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl KlingAIProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// A video model (e.g. `"kling-v2.6-t2v"`); `provider()` is `"{name}.video"`.
     #[must_use]
     pub fn video(&self, model_id: &str) -> KlingAIVideoModel {
@@ -240,15 +157,6 @@ fn mode_path(mode: &str) -> &'static str {
     }
 }
 
-fn video_file_to_image_string(file: &aimux_core::video_model::VideoFile) -> String {
-    match file {
-        aimux_core::video_model::VideoFile::Url { url, .. } => url.clone(),
-        aimux_core::video_model::VideoFile::File { data, .. } => {
-            aimux_provider_utils::convert_to_base64(data).into_owned()
-        }
-    }
-}
-
 #[async_trait]
 impl VideoModel for KlingAIVideoModel {
     fn provider(&self) -> &str {
@@ -298,7 +206,7 @@ impl VideoModel for KlingAIVideoModel {
             if let Some(ref image) = options.image {
                 body.insert(
                     "image".to_string(),
-                    json!(video_file_to_image_string(image)),
+                    json!(video_file_to_url_or_base64(image)),
                 );
             } else if let Some(frame_images) = &options.frame_images
                 && let Some(first_frame) = frame_images
@@ -307,7 +215,7 @@ impl VideoModel for KlingAIVideoModel {
             {
                 body.insert(
                     "image".to_string(),
-                    json!(video_file_to_image_string(&first_frame.image)),
+                    json!(video_file_to_url_or_base64(&first_frame.image)),
                 );
             }
         }

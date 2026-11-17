@@ -20,8 +20,6 @@
 //! there: it is loaded for every request, from the setting or from `HUME_API_KEY`.
 //! [`hume()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -30,10 +28,11 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, namespaced_options, speech_response, unsupported};
-use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
+use crate::shared::{
+    EndpointConfig, define_vendor_provider, namespaced_options, speech_response, unsupported,
+};
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
 /// (https://dev.hume.ai/docs/resources/errors); the nested `{error:
@@ -73,105 +72,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.hume.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "HUME_API_KEY";
 const DEFAULT_NAME: &str = "hume";
 
-/// Settings of [`create_hume`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct HumeProviderSettings {
-    /// Base URL for the API calls. Default `https://api.hume.ai`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `HUME_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.speech"`).
-    /// Default `"hume"`. The providerOptions key stays `hume`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for HumeProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HumeProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a Hume provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_hume(settings: HumeProviderSettings) -> Result<HumeProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(HumeProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::new(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Hume"),
-            AuthScheme::Header("X-Hume-Api-Key"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_hume` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn hume() -> &'static HumeProvider {
-    static DEFAULT: OnceLock<HumeProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_hume(HumeProviderSettings::default())
-            .expect("default Hume settings are always valid")
-    })
-}
-
-/// A Hume provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct HumeProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+define_vendor_provider! {
+    settings: HumeProviderSettings,
+    provider: HumeProvider,
+    create: create_hume,
+    singleton: hume,
+    display: "Hume",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Header("X-Hume-Api-Key"),
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl HumeProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// The speech (TTS) model. Hume does not use model ids for TTS, so the model id is always an empty string; `provider()` is `"{name}.speech"`.
     #[must_use]
     pub fn speech(&self) -> HumeSpeechModel {

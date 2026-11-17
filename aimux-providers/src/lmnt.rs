@@ -18,8 +18,6 @@
 //! there: it is loaded for every request, from the setting or from `LMNT_API_KEY`.
 //! [`lmnt()`] is the default instance; it reads nothing and cannot fail.
 
-use std::sync::OnceLock;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -28,10 +26,11 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
+use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{EndpointConfig, namespaced_options, speech_response, unsupported};
-use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
+use crate::shared::{
+    EndpointConfig, define_vendor_provider, namespaced_options, speech_response, unsupported,
+};
 
 fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     crate::shared::nested_error_response_handler("LMNT request failed")
@@ -46,105 +45,21 @@ pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lmnt.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "LMNT_API_KEY";
 const DEFAULT_NAME: &str = "lmnt";
 
-/// Settings of [`create_lmnt`].
-///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are
-/// evaluated on every request.
-#[derive(Clone, Default)]
-pub struct LMNTProviderSettings {
-    /// Base URL for the API calls. Default `https://api.lmnt.com`; a
-    /// trailing slash is removed.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `LMNT_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment. A [`Resolvable::Future`] is awaited once, an
-    /// [`Resolvable::AsyncFn`] on every request.
-    pub api_key: Option<Resolvable<String>>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including the credential. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of the `provider()` strings (`"{name}.speech"`).
-    /// Default `"lmnt"`. The providerOptions key stays `lmnt`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-}
-
-impl std::fmt::Debug for LMNTProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LMNTProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create a LMNT provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
-pub fn create_lmnt(settings: LMNTProviderSettings) -> Result<LMNTProvider, AiMuxError> {
-    let base_url = match settings.base_url.as_deref() {
-        Some(url) => validate_base_url(url)?,
-        None => DEFAULT_BASE_URL.to_string(),
-    };
-    Ok(LMNTProvider {
-        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
-        base_url,
-        headers: ProviderHeaders::new(
-            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "LMNT"),
-            AuthScheme::Header("x-api-key"),
-            Vec::new(),
-            settings.headers,
-        ),
-        fetch: settings.fetch,
-    })
-}
-
-/// The default provider: `create_lmnt` with default settings, created on
-/// first use. Creating it reads nothing from the environment and cannot fail;
-/// a missing key surfaces from the first request instead.
-pub fn lmnt() -> &'static LMNTProvider {
-    static DEFAULT: OnceLock<LMNTProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_lmnt(LMNTProviderSettings::default())
-            .expect("default LMNT settings are always valid")
-    })
-}
-
-/// A LMNT provider. Cheap to clone the models out of; it holds no HTTP
-/// client.
-pub struct LMNTProvider {
-    name: String,
-    base_url: String,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
+define_vendor_provider! {
+    settings: LMNTProviderSettings,
+    provider: LMNTProvider,
+    create: create_lmnt,
+    singleton: lmnt,
+    display: "LMNT",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Header("x-api-key"),
+    extra_headers: Vec::new(),
+    package: None,
 }
 
 impl LMNTProvider {
-    fn model_config(&self, method: &str) -> EndpointConfig {
-        EndpointConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        )
-    }
-
     /// A speech (TTS) model (e.g. `"aurora"`); `provider()` is `"{name}.speech"`.
     #[must_use]
     pub fn speech(&self, model_id: &str) -> LMNTSpeechModel {

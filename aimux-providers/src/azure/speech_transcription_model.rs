@@ -2,12 +2,10 @@
 
 use std::collections::HashSet;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionResponse, TranscriptionResult,
-    TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{HttpBody, MultipartForm};
 use serde::Deserialize;
@@ -17,6 +15,7 @@ use super::options::NAMESPACE;
 use super::speech_transcription_model_options::Timestamps;
 use super::transcription_model_options::{AzureOptions, is_default_speech};
 use crate::openai::internal::OpenAIModelConfig;
+use crate::shared::audio_input_to_bytes;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,15 +62,7 @@ pub(super) async fn do_generate(
     mut azure: AzureOptions,
 ) -> Result<TranscriptionResult, AiMuxError> {
     let timestamp = aimux_core::Timestamp::now();
-    let audio = match &options.audio {
-        AudioInput::Url(_) => return Err(AudioInput::url_error()),
-        AudioInput::Binary(audio) => audio.clone(),
-        AudioInput::Base64(audio) => aimux_provider_utils::convert_base64_to_uint8_array(audio)
-            .map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid base64: {error}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?,
-    };
+    let audio = audio_input_to_bytes(&options.audio)?;
     let mut definition = json!({"enhancedMode": {
         "enabled": true,
         "model": if is_default_speech(model_id) { "MAI-Transcribe-2" } else { model_id },
