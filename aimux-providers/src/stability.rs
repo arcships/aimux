@@ -29,7 +29,7 @@ use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{HttpBody, MultipartForm};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
@@ -119,7 +119,8 @@ fn model_id_to_subpath(model_id: &str) -> &str {
     }
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "stability";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.stability.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
@@ -276,7 +277,7 @@ impl ImageModel for StabilityImageModel {
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let mut warnings: Vec<Warning> = Vec::new();
 
-        let stability_opts = options::stability_options(Some(&options.provider_options));
+        let stability_opts = namespaced_options(Some(&options.provider_options), NAMESPACE);
 
         // Resolve aspect ratio: explicit option > provider option > derived from size.
         let aspect_ratio: Option<String> = if let Some(ar) = options.aspect_ratio {

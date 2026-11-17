@@ -31,8 +31,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
-    poll_until,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, namespaced_options,
+    poll_interval_ms, poll_until,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -65,7 +65,8 @@ const POLL_INTERVAL_MS: u64 = 100;
 /// minutes at the default interval).
 const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "gladia";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.gladia.io";
 pub(crate) const API_KEY_ENV_VAR: &str = "GLADIA_API_KEY";
@@ -272,7 +273,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         let filename = format!("audio.{file_extension}");
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let gladia_options = options::gladia_options(options.provider_options.as_ref());
+        let gladia_options = namespaced_options(options.provider_options.as_ref(), NAMESPACE);
 
         // Step 1: Upload audio. One attempt: an upload is never replayed
         // implicitly.
@@ -387,7 +388,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         let timestamp = aimux_core::Timestamp::now();
 
         let provider_metadata: Option<SharedProviderMetadata> =
-            Some(provider_namespace(options::NAMESPACE, raw_body.clone())?);
+            Some(provider_namespace(NAMESPACE, raw_body.clone())?);
         Ok(TranscriptionResult {
             text: result.transcription.full_transcript,
             segments,

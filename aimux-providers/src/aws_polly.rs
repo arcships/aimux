@@ -40,7 +40,7 @@ use aimux_provider_utils::{
     default_fetch, load_optional_setting, load_setting, validate_base_url,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint};
+use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint, namespaced_options};
 
 /// AWS service name used for SigV4 signing.
 const SERVICE_NAME: &str = "polly";
@@ -88,7 +88,8 @@ fn aws_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "aws_polly";
 
 const DEFAULT_NAME: &str = "amazon-polly";
 const REGION_ENV_VAR: &str = "AWS_REGION";
@@ -543,7 +544,7 @@ struct PollySpeechProviderOptions {
 fn parse_polly_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<PollySpeechProviderOptions> {
-    let opts = options::aws_polly_options(options)?;
+    let opts = namespaced_options(options, NAMESPACE)?;
 
     Some(PollySpeechProviderOptions {
         engine: opts

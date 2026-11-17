@@ -26,7 +26,7 @@ use aimux_core::search_model::{
 use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Fixed model ID for the Linkup search model.
@@ -66,7 +66,7 @@ struct LinkupOptions {
 
 fn parse_linkup_options(provider_options: Option<&SharedProviderOptions>) -> LinkupOptions {
     let mut opts = LinkupOptions::default();
-    if let Some(linkup) = options::linkup_options(provider_options) {
+    if let Some(linkup) = namespaced_options(provider_options, NAMESPACE) {
         if let Some(v) = linkup.get("depth").and_then(|v| v.as_str()) {
             opts.depth = Some(v.to_string());
         }
@@ -77,7 +77,8 @@ fn parse_linkup_options(provider_options: Option<&SharedProviderOptions>) -> Lin
     opts
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "linkup";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.linkup.so";
 pub(crate) const API_KEY_ENV_VAR: &str = "LINKUP_API_KEY";

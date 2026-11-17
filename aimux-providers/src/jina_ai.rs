@@ -27,7 +27,7 @@ use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
@@ -50,7 +50,8 @@ fn jina_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
     })
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "jina";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.jina.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "JINA_AI_API_KEY";
@@ -174,7 +175,7 @@ fn parse_jina_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> JinaRerankingOptions {
     let mut opts = JinaRerankingOptions::default();
-    if let Some(jina) = options::jina_options(provider_options)
+    if let Some(jina) = namespaced_options(provider_options, NAMESPACE)
         && let Some(v) = jina
             .get("returnDocuments")
             .and_then(serde_json::Value::as_bool)

@@ -11,7 +11,6 @@
 //! (`api.voyageai.com/v1/embeddings`).
 
 pub mod embedding;
-pub(crate) mod options;
 pub mod reranking;
 
 pub use crate::shared::TransformRequestBody;
@@ -25,6 +24,9 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 
 use crate::shared::EndpointConfig;
 use aimux_provider_utils::{Credential, ProviderHeaders};
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "voyage";
 
 pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {

@@ -32,7 +32,7 @@ use aimux_core::speech_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
@@ -70,7 +70,8 @@ fn hume_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "hume";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.hume.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "HUME_API_KEY";
@@ -342,7 +343,7 @@ struct HumeSpeechProviderOptions {
 fn parse_hume_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<HumeSpeechProviderOptions> {
-    let opts = options::hume_options(options)?;
+    let opts = namespaced_options(options, NAMESPACE)?;
     let context = opts.get("context").and_then(|c| c.as_object())?;
 
     // The context can be either { generationId: "..." } or { utterances: [...] }.

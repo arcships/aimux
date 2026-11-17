@@ -32,7 +32,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, poll_interval_ms, poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, namespaced_options, poll_interval_ms,
+    poll_until, retry_download,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -65,7 +66,8 @@ const POLL_INTERVAL_MS: u64 = 100;
 /// default interval).
 const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "revai";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.rev.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "REVAI_API_KEY";
@@ -305,7 +307,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         })?;
         let submission_language = submit_response.language;
         let poll_interval = Duration::from_millis(poll_interval_ms(
-            options::revai_options(options.provider_options.as_ref()),
+            namespaced_options(options.provider_options.as_ref(), NAMESPACE),
             POLL_INTERVAL_MS_KEY,
             POLL_INTERVAL_MS,
         ));

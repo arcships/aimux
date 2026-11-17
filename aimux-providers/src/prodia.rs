@@ -23,7 +23,7 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -55,7 +55,8 @@ fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiM
     })
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "prodia";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://prodia.com/api";
 pub(crate) const API_KEY_ENV_VAR: &str = "PRODIA_API_KEY";
@@ -281,7 +282,7 @@ impl ImageModel for ProdiaImageModel {
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
-        let prodia_opts = options::prodia_options(Some(&options.provider_options));
+        let prodia_opts = namespaced_options(Some(&options.provider_options), NAMESPACE);
 
         // Build job config
         let mut job_config = Map::new();
@@ -374,7 +375,7 @@ impl ImageModel for ProdiaImageModel {
         let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
-        metadata.insert(options::NAMESPACE.into(), prodia_meta);
+        metadata.insert(NAMESPACE.into(), prodia_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

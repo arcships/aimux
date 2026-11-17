@@ -28,7 +28,7 @@ use aimux_core::search_model::{
 use aimux_core::shared::SharedProviderOptions;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Fixed model ID for the Google PSE search model.
@@ -55,7 +55,8 @@ fn google_pse_failed_response_handler() -> aimux_provider_utils::ResponseHandler
     })
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "google_pse";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://www.googleapis.com/customsearch/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_API_KEY";
@@ -191,7 +192,7 @@ fn resolve_cx(
     if let Some(cx) = setting_cx {
         return Some(cx.to_string());
     }
-    if let Some(cx) = options::google_pse_options(provider_options)
+    if let Some(cx) = namespaced_options(provider_options, NAMESPACE)
         .and_then(|options| options.get("cx"))
         .and_then(Value::as_str)
     {

@@ -23,7 +23,8 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, is_poll_control_key, poll_interval_ms, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, is_poll_control_key, namespaced_options,
+    poll_interval_ms, retry_download,
 };
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
@@ -53,7 +54,8 @@ fn replicate_failed_response_handler() -> aimux_provider_utils::ResponseHandler<
 /// (`providerOptions.replicate.pollIntervalMs` overrides it for one call).
 const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "replicate";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.replicate.com/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "REPLICATE_API_TOKEN";
@@ -240,7 +242,7 @@ impl ImageModel for ReplicateImageModel {
             .split_once(':')
             .unwrap_or((&self.model_id, ""));
 
-        let replicate_opts = options::replicate_options(Some(&options.provider_options));
+        let replicate_opts = namespaced_options(Some(&options.provider_options), NAMESPACE);
         let max_wait = replicate_opts
             .and_then(|o| o.get("maxWaitTimeInSeconds"))
             .and_then(serde_json::Value::as_u64);

@@ -30,7 +30,7 @@ use aimux_core::speech_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -55,7 +55,8 @@ fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "lmnt";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lmnt.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "LMNT_API_KEY";
@@ -333,7 +334,7 @@ struct LMNTSpeechProviderOptions {
 fn parse_lmnt_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<LMNTSpeechProviderOptions> {
-    let opts = options::lmnt_options(options)?;
+    let opts = namespaced_options(options, NAMESPACE)?;
 
     Some(LMNTSpeechProviderOptions {
         conversational: opts

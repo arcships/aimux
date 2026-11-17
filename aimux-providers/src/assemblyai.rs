@@ -32,8 +32,8 @@ use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
-    poll_until,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, namespaced_options,
+    poll_interval_ms, poll_until,
 };
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
@@ -77,7 +77,8 @@ const POLL_INTERVAL_MS: u64 = 100;
 /// at the default interval).
 const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "assemblyai";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
@@ -289,7 +290,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         let audio_bytes = audio_input_to_bytes(&options.audio)?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        let aai_options = options::assemblyai_options(options.provider_options.as_ref());
+        let aai_options = namespaced_options(options.provider_options.as_ref(), NAMESPACE);
 
         // Step 1: Upload audio. One attempt: an upload is never replayed
         // implicitly.
@@ -475,7 +476,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             );
         }
         if !aai_meta.is_empty() {
-            md.insert(options::NAMESPACE.to_string(), aai_meta);
+            md.insert(NAMESPACE.to_string(), aai_meta);
             provider_metadata = Some(md);
         }
 

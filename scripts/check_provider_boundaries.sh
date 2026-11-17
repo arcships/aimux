@@ -21,7 +21,7 @@
 #   8. Azure, xAI, Mistral, Cohere, Hugging Face, Codex, Open Responses, Voyage
 #      and ElevenLabs keep no builder-era config state (and `StaticBearerConfig`
 #      stays deleted), and their providerOptions / providerMetadata keys are
-#      spelled once, in each package's `options.rs`.
+#      spelled once, in each package's `options.rs` or `NAMESPACE` constant.
 #
 #   9. No provider code calls the operation-level retry: `prepare_retries` and
 #      `aimux_core::retry` are not used anywhere in aimux-providers/src (the
@@ -31,7 +31,7 @@
 #  10. The single-modality vendor packages (search, speech, transcription,
 #      image, video, reranking) keep no builder-era config state, and their
 #      providerOptions namespace keys are spelled once, in each package's
-#      `options.rs`.
+#      `options.rs` or `NAMESPACE` constant.
 #  11. Vendor packages never reach into another vendor package except through
 #      the four upstream internal surfaces (`openai::internal`,
 #      `anthropic::internal`, `google::internal`,
@@ -296,10 +296,11 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # No `XxxConfig` / `AzureAuth` / `TokenProvider` / `StaticBearerConfig` /
 # `body_overrides` / `api_key_source` / `from_env`, and the namespace keys
 # (`azure`, `xai`, `mistral`, `cohere`, `huggingface`, `voyage`, `elevenlabs`)
-# are quoted only in the package's `options.rs`, or its
+# are quoted only in the package's `options.rs`, its
 # `*_language_model_options.rs` once the package follows the upstream file
-# layout (RFC-0046 §4.2; comments, unit tests and the `DEFAULT_NAME`
-# provider-name constants aside). Codex reads the OpenAI
+# layout (RFC-0046 §4.2), or its `NAMESPACE` constant when the package reads
+# its options through `shared::namespaced_options` (RFC-0046 §3.6; comments,
+# unit tests and the `DEFAULT_NAME` provider-name constants aside). Codex reads the OpenAI
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
 vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex.rs aimux-providers/src/open_responses aimux-providers/src/elevenlabs'
@@ -319,12 +320,12 @@ rule8b_hits="$(
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
             in_tests { next }
             /^[[:space:]]*\/\// { next }
-            /"(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)"/ && !/DEFAULT_NAME/ {
+            /"(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)"/ && !/DEFAULT_NAME/ && !/const NAMESPACE: &str = / {
                 printf "%s:%d:%s\n", FILENAME, FNR, $0
             }
         ' || true
 )"
-violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs' "$rule8b_hits"
+violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs / NAMESPACE constant' "$rule8b_hits"
 
 # ── Rule 9: no operation-level retry inside aimux-providers/src ──────────────
 #
@@ -343,8 +344,10 @@ violation 'prepare_retries / aimux_core::retry used in aimux-providers/src (exce
 # and the namespace keys (`lmnt`, `hume`, `deepgram`, `cartesia`, `stability`,
 # `aws_polly`, `prodia`, `luma`, `klingai`, `replicate`, `fal`, `recraft`,
 # `gladia`, `blackForestLabs`, `assemblyai`, `revai`, `linkup`, `jina`,
-# `google_pse`) are quoted only in the package's `options.rs` (comments, unit
-# tests and the `DEFAULT_NAME` provider-name constants aside).
+# `google_pse`) are quoted only in the package's `options.rs`, or its
+# `NAMESPACE` constant when the package reads its options through
+# `shared::namespaced_options` (RFC-0046 §3.6; comments, unit tests and the
+# `DEFAULT_NAME` provider-name constants aside).
 single_family='serper prodia deepgram you_com luma lmnt klingai dataforseo replicate fal recraft aws_polly jina_ai gladia tavily linkup tinyfish black_forest_labs assemblyai revai hume cartesia searxng parallel_ai firecrawl runwayml exa_ai stability google_pse'
 single_paths=''
 for name in $single_family; do
@@ -369,12 +372,12 @@ rule10b_hits="$(
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
             in_tests { next }
             /^[[:space:]]*\/\// { next }
-            /"(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)"/ && !/DEFAULT_NAME/ {
+            /"(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)"/ && !/DEFAULT_NAME/ && !/const NAMESPACE: &str = / {
                 printf "%s:%d:%s\n", FILENAME, FNR, $0
             }
         ' || true
 )"
-violation 'single-modality providerOptions namespace key spelled outside the package options.rs' "$rule10b_hits"
+violation 'single-modality providerOptions namespace key spelled outside the package options.rs / NAMESPACE constant' "$rule10b_hits"
 
 # ── Rule 11: cross-vendor references go only through <vendor>::internal ──────
 #

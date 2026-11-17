@@ -29,8 +29,8 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
-    poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, namespaced_options,
+    poll_interval_ms, poll_until, retry_download,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -91,7 +91,8 @@ struct BflResult {
     duration: Option<Value>,
 }
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "blackForestLabs";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.bfl.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
@@ -270,7 +271,7 @@ impl ImageModel for BlackForestLabsImageModel {
             warnings.push(Warning::Unsupported { feature: "size".into(), details: Some("Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them".into()) });
         }
 
-        let bfl_opts = options::black_forest_labs_options(Some(&options.provider_options));
+        let bfl_opts = namespaced_options(Some(&options.provider_options), NAMESPACE);
         let (width_str, height_str) = options
             .size
             .map(|s| (s.width().to_string(), s.height().to_string()))
@@ -542,7 +543,7 @@ impl ImageModel for BlackForestLabsImageModel {
             img_meta.insert("outputMegapixels".into(), o.clone());
         }
         bfl_meta.insert("images".into(), json!([Value::Object(img_meta)]));
-        metadata.insert(options::NAMESPACE.into(), bfl_meta);
+        metadata.insert(NAMESPACE.into(), bfl_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

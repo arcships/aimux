@@ -27,7 +27,7 @@ use aimux_core::video_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -49,7 +49,8 @@ fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "klingai";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
@@ -280,9 +281,10 @@ impl VideoModel for KlingAIVideoModel {
         if let Some(ref prompt) = options.prompt {
             body.insert("prompt".to_string(), json!(prompt));
         }
-        if let Some(negative_prompt) = options::klingai_options(Some(&options.provider_options))
-            .and_then(|v| v.get("negativePrompt"))
-            .and_then(|v| v.as_str())
+        if let Some(negative_prompt) =
+            namespaced_options(Some(&options.provider_options), NAMESPACE)
+                .and_then(|v| v.get("negativePrompt"))
+                .and_then(|v| v.as_str())
         {
             body.insert("negative_prompt".to_string(), json!(negative_prompt));
         }

@@ -37,7 +37,7 @@ use aimux_core::speech_model::{
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn cartesia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -71,7 +71,8 @@ const SAMPLE_RATES: &[u32] = &[8000, 16000, 22050, 24000, 44100, 48000];
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "cartesia";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.cartesia.ai";
 pub(crate) const API_KEY_ENV_VAR: &str = "CARTESIA_API_KEY";
@@ -606,7 +607,7 @@ struct CartesiaSpeechProviderOptions {
 fn parse_cartesia_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Option<CartesiaSpeechProviderOptions> {
-    let opts = options::cartesia_options(options)?;
+    let opts = namespaced_options(options, NAMESPACE)?;
 
     Some(CartesiaSpeechProviderOptions {
         container: opts
@@ -730,7 +731,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
         // Parse provider options.
         let mut language: Option<String> = None;
         let mut timestamp_granularities: Option<Vec<String>> = None;
-        if let Some(cartesia) = options::cartesia_options(options.provider_options.as_ref()) {
+        if let Some(cartesia) = namespaced_options(options.provider_options.as_ref(), NAMESPACE) {
             if let Some(l) = cartesia.get("language").and_then(|v| v.as_str()) {
                 language = Some(l.to_string());
             }

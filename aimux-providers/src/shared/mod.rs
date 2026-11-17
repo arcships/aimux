@@ -9,6 +9,7 @@ pub(crate) mod aisdk_pins;
 mod discovery;
 mod exchange;
 mod poll;
+mod provider_options;
 
 pub(crate) use discovery::{ModelListEntry, list_data_models};
 pub(crate) use exchange::{
@@ -19,6 +20,7 @@ pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
     poll_interval_ms, poll_until, retry_download,
 };
+pub(crate) use provider_options::namespaced_options;
 
 use std::sync::Arc;
 

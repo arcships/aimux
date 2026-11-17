@@ -28,7 +28,9 @@ use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, POLL_INTERVAL_MS_KEY, poll_interval_ms, retry_download};
+use crate::shared::{
+    EndpointConfig, POLL_INTERVAL_MS_KEY, namespaced_options, poll_interval_ms, retry_download,
+};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -53,7 +55,8 @@ fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
 /// (`providerOptions.recraft.pollIntervalMs` overrides it for one call).
 const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
-pub(crate) mod options;
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "recraft";
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "RECRAFT_API_TOKEN";
@@ -194,7 +197,7 @@ struct RecraftOptions {
 fn parse_recraft_options(
     provider_options: &aimux_core::shared::SharedProviderOptions,
 ) -> RecraftOptions {
-    let recraft = options::recraft_options(Some(provider_options));
+    let recraft = namespaced_options(Some(provider_options), NAMESPACE);
     RecraftOptions {
         style: recraft.and_then(|o| o.get("style")).cloned(),
         style_id: recraft.and_then(|o| o.get("styleId")).cloned(),
@@ -360,7 +363,7 @@ impl ImageModel for RecraftImageModel {
             options.abort_signal.clone(),
             exchange.base_url(),
             Duration::from_millis(poll_interval_ms(
-                options::recraft_options(Some(&options.provider_options)),
+                namespaced_options(Some(&options.provider_options), NAMESPACE),
                 POLL_INTERVAL_MS_KEY,
                 DOWNLOAD_RETRY_INTERVAL_MS,
             )),
