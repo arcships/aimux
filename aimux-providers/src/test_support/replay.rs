@@ -62,7 +62,7 @@
 //! use reqwest::Client;
 //!
 //! let server = MockServer::start().await;
-//! common::replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
+//! aimux_providers::test_support::replay::mount_cassettes(&server, "tests/cassettes/anthropic").await;
 //!
 //! let provider = create_anthropic(AnthropicProviderSettings {
 //!     api_key: Some("test-key".to_string()),

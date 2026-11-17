@@ -419,5 +419,6 @@ pub use decision_support::DecisionProbabilitySource;
 mod runtime_decision;
 mod systemone;
 
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;

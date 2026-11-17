@@ -4,8 +4,6 @@
 //! Community catalogue (`get_model_specs`) is tested separately — the two are
 //! deliberately decoupled.
 
-mod common;
-
 use std::path::Path;
 
 use serde_json::Value;

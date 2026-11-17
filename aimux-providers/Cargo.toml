@@ -34,14 +34,19 @@ url = { workspace = true }
 percent-encoding = "2"
 regex = "1"
 ring = "0.17"
+wiremock = { version = "0.6", optional = true }
 
 [features]
 default = ["realtime"]
 # Realtime (WebSocket) provider paths — RFC-0028. Disable with
 # `--no-default-features` to compile out tokio-tungstenite entirely.
 realtime = ["aimux-provider-utils/ws"]
+# Expose `test_support` (`mock_fetch`, `replay`) to integration tests and
+# downstream test suites without shipping `wiremock` in normal builds.
+test-support = ["dep:wiremock"]
 
 [dev-dependencies]
+aimux-providers = { path = ".", default-features = false, features = ["test-support"] }
 # WebSocket server side for realtime transcription integration tests.
 tokio-tungstenite = { workspace = true }
 aimux-core = { workspace = true }

@@ -9,9 +9,7 @@
 //! finish reason, usage, tool calls, stream parts) without asserting on
 //! specific text content (which varies by model).
 
-mod common;
-
-use common::replay::mount_cassettes;
+use aimux_providers::test_support::replay::mount_cassettes;
 use futures::StreamExt;
 use std::sync::Arc;
 use wiremock::MockServer;
