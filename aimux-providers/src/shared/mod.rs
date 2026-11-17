@@ -7,11 +7,15 @@
 
 pub(crate) mod aisdk_pins;
 mod discovery;
+mod error_body;
 mod exchange;
 mod poll;
 mod provider_options;
 
 pub(crate) use discovery::{ModelListEntry, list_data_models};
+pub(crate) use error_body::{
+    json_error_code, message_type_error_response_handler, nested_error_response_handler,
+};
 pub(crate) use exchange::{
     BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, HttpEndpoint, ResolveEndpoint,
     SupportedUrlsSource,

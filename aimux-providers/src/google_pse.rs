@@ -36,23 +36,7 @@ const MODEL_ID: &str = "google-pse-search";
 
 /// Google PSE error response structure: `{ "error": { "code", "message" } }`.
 fn google_pse_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error");
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .and_then(|value| value.get("message"))
-                .and_then(Value::as_str)
-                .unwrap_or("Google PSE request failed")
-                .to_string(),
-            provider_code: error.and_then(|value| value.get("code")).and_then(
-                |value| match value {
-                    Value::String(s) => Some(s.clone()),
-                    Value::Number(n) => Some(n.to_string()),
-                    _ => None,
-                },
-            ),
-        }
-    })
+    crate::shared::nested_error_response_handler("Google PSE request failed")
 }
 
 /// The providerOptions key, read whatever the provider is named.

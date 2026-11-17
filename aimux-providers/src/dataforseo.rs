@@ -46,11 +46,9 @@ fn dataforseo_failed_response_handler() -> aimux_provider_utils::ResponseHandler
                 .and_then(Value::as_str)
                 .unwrap_or("DataForSEO request failed")
                 .to_string(),
-            provider_code: data.get("status_code").and_then(|value| match value {
-                Value::String(s) => Some(s.clone()),
-                Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            }),
+            provider_code: data
+                .get("status_code")
+                .and_then(crate::shared::json_error_code),
         }
     })
 }

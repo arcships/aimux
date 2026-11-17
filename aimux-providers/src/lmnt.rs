@@ -34,23 +34,7 @@ use crate::shared::{EndpointConfig, namespaced_options};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error");
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .and_then(|value| value.get("message"))
-                .and_then(Value::as_str)
-                .unwrap_or("LMNT request failed")
-                .to_string(),
-            provider_code: error.and_then(|value| value.get("code")).and_then(
-                |value| match value {
-                    Value::String(s) => Some(s.clone()),
-                    Value::Number(n) => Some(n.to_string()),
-                    _ => None,
-                },
-            ),
-        }
-    })
+    crate::shared::nested_error_response_handler("LMNT request failed")
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────

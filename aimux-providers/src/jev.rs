@@ -19,21 +19,7 @@ use crate::systemone::{ResponseProfile, WireResponse};
 /// the top level when there is none. This is the mapping the endpoint used
 /// with the removed shared handler; it is not an AI SDK schema.
 fn jev_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("type")
-                .or_else(|| error.get("code"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        }
-    })
+    crate::shared::message_type_error_response_handler()
 }
 
 /// Jev rounds probabilities and scores to two decimals.

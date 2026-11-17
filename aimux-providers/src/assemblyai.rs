@@ -56,11 +56,7 @@ fn assemblyai_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorPa
         message,
         provider_code: error
             .and_then(|value| value.get("code"))
-            .and_then(|value| match value {
-                Value::String(s) => Some(s.clone()),
-                Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            }),
+            .and_then(crate::shared::json_error_code),
     }
 }
 
