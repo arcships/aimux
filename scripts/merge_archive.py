@@ -12,21 +12,29 @@ This script does that work once, at release time:
 1. the exported C API is read twice and must agree: the `aimux_*` functions
    declared in `aimux-ffi/include/aimux.h`, and the `aimux_*` symbols the
    `aimux_ffi` members define (`llvm-nm`);
-2. `ld -r --gc-sections -u <export>...` links every member into one
-   relocatable object and drops every section no export reaches (GNU ld, the
-   linker the archive's consumers use: the file it writes is what they read).
-   A COFF archive is merged without `--gc-sections`: GNU ld's PE garbage
-   collection in a relocatable link drops the `.text$f` of an unreferenced
-   gcc-built function (ring's C code) but keeps its `.pdata$f`/`.xdata$f`,
-   whose relocations then overflow in the consumer's link ("relocation
-   truncated to fit: IMAGE_REL_AMD64_ADDR32NB"), and it removed 77 KB of a
-   42 MB object in the first place;
-3. `llvm-strip --strip-unneeded` removes the local symbols the merged object
-   no longer needs for relocation;
-4. `llvm-ar` writes the archive back with the merged object as its first
-   member, named `aimux_ffi.merged.o` so `check_native_artifact.py` still
-   finds a workspace crate among the members; an archive that already starts
-   with that member is left alone, so the step can run twice.
+2. on ELF and COFF, `ld -r --gc-sections -u <export>...` links every member
+   into one relocatable object and drops every section no export reaches
+   (GNU ld, the linker the archive's consumers use: the file it writes is what
+   they read). A COFF archive is merged without `--gc-sections`: GNU ld's PE
+   garbage collection in a relocatable link drops the `.text$f` of an
+   unreferenced gcc-built function (ring's C code) but keeps its
+   `.pdata$f`/`.xdata$f`, whose relocations then overflow in the consumer's
+   link ("relocation truncated to fit: IMAGE_REL_AMD64_ADDR32NB"), and it
+   removed 77 KB of a 42 MB object in the first place;
+   on Mach-O, Apple `ld -r -exported_symbols_list <list> -filelist <members>`
+   merges all members into one object (dropping any `__LLVM,__bitcode`
+   sections and per-member symbol/string/header tables), keeping the
+   `_aimux_*` C API exports plus `_rust_eh_personality` when defined in the
+   archive (`__LD,__compact_unwind` references it and `strip -S -x` would
+   remove it once `ld -r` internalizes unexported globals);
+3. `llvm-strip --strip-unneeded` (or Apple `strip -S -x` on Mach-O) removes
+   the debug and local symbols the merged object no longer needs for
+   relocation;
+4. `llvm-ar` (or system `ar rcs` on Mach-O) writes the archive back with the
+   merged object as its first member, named `aimux_ffi.merged.o` so
+   `check_native_artifact.py` still finds a workspace crate among the
+   members; an archive that already starts with that member is left alone, so
+   the step can run twice.
 
 A windows-gnu archive also carries import-library members (`<dll>.dllh.o`,
 `<dll>.dlls00000.o`, `<dll>.dllt.o`: one import descriptor, stub and
@@ -40,11 +48,10 @@ not code of ours and gain nothing from merging, so they are kept as they
 are, after the merged object, and the consumer's linker pulls them as it
 does today.
 
-The linked program is unchanged: the same code, the same exports. Only ELF
-and COFF archives are merged; a Mach-O archive is left as it is (ld64's `-r`
-does not dead-strip, and the Mach-O archives are inside the budget without
-this step). `AIMUX_LD` names the linker; `AIMUX_STRIP`, `AIMUX_AR`,
-`AIMUX_NM` name the LLVM tools (see check_native_artifact.find_llvm_tool).
+The linked program is unchanged: the same code, the same exports. `AIMUX_LD`,
+`AIMUX_STRIP`, `AIMUX_AR`, and `AIMUX_NM` override the linker and binutils
+(falling back to Apple `ld`/`strip`/`ar`/`nm` on Mach-O and
+`check_native_artifact.find_llvm_tool` on ELF/COFF).
 """
 
 import os
@@ -87,6 +94,23 @@ def defined_exports(nm, members):
     return names
 
 
+def has_defined_symbol(nm, members, symbol):
+    """True if any object in `members` defines external `symbol`."""
+    paths = [str(path) for path, _ in members]
+    for i in range(0, len(paths), 100):
+        out = subprocess.run(
+            [nm, "--defined-only", "--extern-only", *paths[i : i + 100]],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if parts and parts[-1] == symbol:
+                return True
+    return False
+
+
 def is_import_member(body):
     """True for a COFF import-library member (descriptor, stub or terminator)."""
     if len(body) < 20 or check.struct.unpack_from("<H", body)[0] not in check.COFF_MACHINES:
@@ -126,14 +150,18 @@ def main(argv):
             shutil.copyfile(path, out)
         return
     fmt = object_format(data)
-    if fmt == "macho":
-        print(f"{path}: Mach-O archive, left unmerged ({len(data)} bytes)")
-        if out != path:
-            shutil.copyfile(path, out)
-        return
     crates = check.workspace_crates(root)
     ld = os.environ.get("AIMUX_LD") or shutil.which("ld") or sys.exit("no ld on PATH (set AIMUX_LD)")
-    nm, strip, ar = (check.find_llvm_tool(t) for t in ("nm", "strip", "ar"))
+    if fmt == "macho":
+        strip = (
+            os.environ.get("AIMUX_STRIP")
+            or shutil.which("strip")
+            or sys.exit("no strip on PATH (set AIMUX_STRIP)")
+        )
+        ar = os.environ.get("AIMUX_AR") or shutil.which("ar") or sys.exit("no ar on PATH (set AIMUX_AR)")
+        nm = os.environ.get("AIMUX_NM") or shutil.which("nm") or check.find_llvm_tool("nm")
+    else:
+        nm, strip, ar = (check.find_llvm_tool(t) for t in ("nm", "strip", "ar"))
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -159,31 +187,64 @@ def main(argv):
             print(f"  {len(imports)} import-library members kept as they are")
 
         merged = tmp / MERGED_MEMBER
-        # Thousands of member paths overflow the Windows command line (WinError 206),
-        # so the inputs go through a GNU ld response file. Forward slashes keep the
-        # paths out of the response-file backslash escaping; mingw ld accepts them.
-        response = tmp / "members.rsp"
-        lines = [f"-u {export}" for export in sorted(exports)]
-        lines += [f'"{m.as_posix()}"' for m, _ in members]
-        response.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        gc = ["--gc-sections"] if fmt == "elf" else []  # see the module docstring for COFF
-        subprocess.run([ld, "-r", *gc, f"@{response}", "-o", str(merged)], check=True)
-        print(f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes ({' '.join([ld, '-r', *gc])})")
-        subprocess.run([strip, "--strip-unneeded", str(merged)], check=True)
-        print(f"  after strip --strip-unneeded: {merged.stat().st_size} bytes ({strip})")
-        kept = defined_exports(nm, [(merged, MERGED_MEMBER)])
-        if kept != declared:
-            sys.exit(
-                f"{path}: the merged object does not define the C API after the strip: "
-                f"missing {sorted(declared - kept)}, extra {sorted(kept - declared)}"
-            )
-
         merged_archive = tmp / "merged.a"
-        archive_response = tmp / "archive.rsp"
-        archive_response.write_text(
-            "\n".join(f'"{p.as_posix()}"' for p in [merged] + [m for m, _ in imports]) + "\n", encoding="utf-8"
-        )
-        subprocess.run([ar, "rcs", "--format=gnu", str(merged_archive), f"@{archive_response}"], check=True)
+        if fmt == "macho":
+            kept_symbols = [f"_{export}" for export in sorted(exports)]
+            # __LD,__compact_unwind references _rust_eh_personality across merged
+            # objects; if ld -r internalizes it, strip -S -x drops it and breaks
+            # the downstream clang/ld64 link.
+            if has_defined_symbol(nm, members, "_rust_eh_personality"):
+                kept_symbols.append("_rust_eh_personality")
+            exports_file = tmp / "exports.txt"
+            exports_file.write_text("\n".join(kept_symbols) + "\n", encoding="utf-8")
+            filelist = tmp / "members.filelist"
+            filelist.write_text("\n".join(str(m) for m, _ in members) + "\n", encoding="utf-8")
+            subprocess.run(
+                [ld, "-r", "-exported_symbols_list", str(exports_file), "-filelist", str(filelist), "-o", str(merged)],
+                check=True,
+            )
+            print(
+                f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes "
+                f"({ld} -r -exported_symbols_list)"
+            )
+            subprocess.run([strip, "-S", "-x", str(merged)], check=True)
+            print(f"  after strip -S -x: {merged.stat().st_size} bytes ({strip})")
+            kept = defined_exports(nm, [(merged, MERGED_MEMBER)])
+            if kept != declared:
+                sys.exit(
+                    f"{path}: the merged object does not define the C API after the strip: "
+                    f"missing {sorted(declared - kept)}, extra {sorted(kept - declared)}"
+                )
+            subprocess.run([ar, "rcs", str(merged_archive), str(merged)], check=True)
+        else:
+            # Thousands of member paths overflow the Windows command line (WinError 206),
+            # so the inputs go through a GNU ld response file. Forward slashes keep the
+            # paths out of the response-file backslash escaping; mingw ld accepts them.
+            response = tmp / "members.rsp"
+            lines = [f"-u {export}" for export in sorted(exports)]
+            lines += [f'"{m.as_posix()}"' for m, _ in members]
+            response.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            gc = ["--gc-sections"] if fmt == "elf" else []  # see the module docstring for COFF
+            subprocess.run([ld, "-r", *gc, f"@{response}", "-o", str(merged)], check=True)
+            print(
+                f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes "
+                f"({' '.join([ld, '-r', *gc])})"
+            )
+            subprocess.run([strip, "--strip-unneeded", str(merged)], check=True)
+            print(f"  after strip --strip-unneeded: {merged.stat().st_size} bytes ({strip})")
+            kept = defined_exports(nm, [(merged, MERGED_MEMBER)])
+            if kept != declared:
+                sys.exit(
+                    f"{path}: the merged object does not define the C API after the strip: "
+                    f"missing {sorted(declared - kept)}, extra {sorted(kept - declared)}"
+                )
+
+            archive_response = tmp / "archive.rsp"
+            archive_response.write_text(
+                "\n".join(f'"{p.as_posix()}"' for p in [merged] + [m for m, _ in imports]) + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run([ar, "rcs", "--format=gnu", str(merged_archive), f"@{archive_response}"], check=True)
         shutil.copyfile(merged_archive, out)
 
     result = out.read_bytes()

@@ -509,8 +509,8 @@ jobs:
           rm -f target/${{ matrix.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.target }}/staticlib-release/libaimux_ffi.dylib
       # RFC-0043 §5.3 S1c (release.yml go-build does the same): one merged
-      # object rooted at the exported C API, local symbols stripped; Mach-O
-      # archives are left as they are.
+      # object rooted at the exported C API, local symbols stripped (ELF,
+      # COFF, and Mach-O).
       - name: Merge the archive into one object, strip local symbols
         if: runner.os != 'Windows'
         shell: bash

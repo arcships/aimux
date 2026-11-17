@@ -42,10 +42,11 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
   esac
   mkdir -p "$TMP/$slice/aimux_ffi.framework"
   python3 scripts/check_native_artifact.py --strip-bitcode "target/$triple/staticlib-release/libaimux_ffi.a"
-  cp "target/$triple/staticlib-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
-  # Strip debug + local symbols; global symbols stay (force_load in
-  # aimux.podspec resolves against them).
-  strip -Sx "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  # Merge into one object rooted at the C API (+ _rust_eh_personality) and
+  # strip debug + local symbols; global C ABI symbols stay for aimux.podspec's
+  # force_load.
+  python3 scripts/merge_archive.py "target/$triple/staticlib-release/libaimux_ffi.a" \
+    --out "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
   # Fail loudly on a size regression instead of letting a fat slice slip
   # through and blow pub.dev's 256MiB package limit again: a healthy slice
   # is ~15-30MB; an LTO/bitcode regression lands near 128MB.
