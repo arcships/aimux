@@ -31,84 +31,99 @@ macro_rules! __unsupported_required_model {
 /// (infallible) concrete model. The two other required methods return
 /// `NoSuchModel`; the other optional ones keep their `None` default.
 ///
+/// Shorthand for [`impl_modality_provider!`] with one entry; see there for
+/// examples.
+#[macro_export]
+macro_rules! impl_single_modality_provider {
+    ($ty:ty, $method:ident, |$p:ident, $id:ident| $build:expr) => {
+        $crate::impl_modality_provider!($ty {
+            $method: |$p, $id| $build
+        });
+    };
+}
+
+/// Emit `impl Provider for $ty` for a vendor that offers one or more
+/// modalities.
+///
+/// Each entry names a `Provider` method (`language_model`, `embedding_model`,
+/// `image_model`, `transcription_model`, `speech_model`, `reranking_model`,
+/// `video_model` or `search_model`) and a closure-like tail that binds the
+/// provider and the model id and evaluates to the (infallible) concrete model.
+/// The required methods (`language_model`, `embedding_model`, `image_model`)
+/// that are not listed return `NoSuchModel`; the optional ones that are not
+/// listed keep their `None` default. Listing a method twice does not compile.
+///
 /// ```ignore
 /// impl_single_modality_provider!(VllmProvider, language_model, |p, id| p.model(id));
 /// impl_single_modality_provider!(SerperProvider, search_model, |p, _id| p.search_model());
+/// impl_modality_provider!(ReplicateProvider {
+///     image_model: |p, id| p.image(id),
+///     video_model: |p, id| p.video(id),
+/// });
 /// ```
 #[macro_export]
-macro_rules! impl_single_modality_provider {
-    ($ty:ty, language_model, |$p:ident, $id:ident| $build:expr) => {
+macro_rules! impl_modality_provider {
+    ($ty:ty { $($method:ident: |$p:ident, $id:ident| $build:expr),+ $(,)? }) => {
+        $crate::__modality_provider!(@sort $ty; []; []; []; []; $($method |$p, $id| $build;)+);
+    };
+}
+
+/// Sort the entries of [`impl_modality_provider!`] into the three required
+/// slots and the optional list, then emit the impl.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __modality_provider {
+    (@sort $ty:ty; []; [$($e:tt)*]; [$($i:tt)*]; [$($o:tt)*];
+        language_model |$p:ident, $id:ident| $build:expr; $($rest:tt)*) => {
+        $crate::__modality_provider!(@sort $ty; [$p $id $build]; [$($e)*]; [$($i)*]; [$($o)*]; $($rest)*);
+    };
+    (@sort $ty:ty; [$($l:tt)*]; []; [$($i:tt)*]; [$($o:tt)*];
+        embedding_model |$p:ident, $id:ident| $build:expr; $($rest:tt)*) => {
+        $crate::__modality_provider!(@sort $ty; [$($l)*]; [$p $id $build]; [$($i)*]; [$($o)*]; $($rest)*);
+    };
+    (@sort $ty:ty; [$($l:tt)*]; [$($e:tt)*]; [];  [$($o:tt)*];
+        image_model |$p:ident, $id:ident| $build:expr; $($rest:tt)*) => {
+        $crate::__modality_provider!(@sort $ty; [$($l)*]; [$($e)*]; [$p $id $build]; [$($o)*]; $($rest)*);
+    };
+    (@sort $ty:ty; [$($l:tt)*]; [$($e:tt)*]; [$($i:tt)*]; [$($o:tt)*];
+        $method:ident |$p:ident, $id:ident| $build:expr; $($rest:tt)*) => {
+        $crate::__modality_provider!(@sort $ty; [$($l)*]; [$($e)*]; [$($i)*]; [$($o)* ($method $p $id $build)]; $($rest)*);
+    };
+    (@sort $ty:ty; [$($l:tt)*]; [$($e:tt)*]; [$($i:tt)*];
+        [$(($method:ident $p:ident $id:ident $build:expr))*];) => {
         impl ::aimux_core::Provider for $ty {
-            fn language_model(
-                &self,
-                $id: &str,
-            ) -> ::std::result::Result<
-                ::std::sync::Arc<dyn ::aimux_core::LanguageModel>,
-                ::aimux_core::AiMuxError,
-            > {
-                let $p = self;
-                ::std::result::Result::Ok(::std::sync::Arc::new($build))
-            }
-            $crate::__unsupported_required_model!(
-                embedding_model,
-                EmbeddingModel,
-                "embeddingModel"
-            );
-            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
+            $crate::__required_model!(language_model, LanguageModel, "languageModel", [$($l)*]);
+            $crate::__required_model!(embedding_model, EmbeddingModel, "embeddingModel", [$($e)*]);
+            $crate::__required_model!(image_model, ImageModel, "imageModel", [$($i)*]);
+            $($crate::__optional_model!($method, |$p, $id| $build);)*
         }
     };
-    ($ty:ty, embedding_model, |$p:ident, $id:ident| $build:expr) => {
-        impl ::aimux_core::Provider for $ty {
-            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
-            fn embedding_model(
-                &self,
-                $id: &str,
-            ) -> ::std::result::Result<
-                ::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>,
-                ::aimux_core::AiMuxError,
-            > {
-                let $p = self;
-                ::std::result::Result::Ok(::std::sync::Arc::new($build))
-            }
-            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
-        }
+}
+
+/// One required `Provider` method: wired to a concrete model when the slot
+/// holds one, `NoSuchModel` otherwise (see [`impl_modality_provider!`]).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __required_model {
+    ($method:ident, $trait:ident, $model_type:literal, []) => {
+        $crate::__unsupported_required_model!($method, $trait, $model_type);
     };
-    ($ty:ty, image_model, |$p:ident, $id:ident| $build:expr) => {
-        impl ::aimux_core::Provider for $ty {
-            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
-            $crate::__unsupported_required_model!(
-                embedding_model,
-                EmbeddingModel,
-                "embeddingModel"
-            );
-            fn image_model(
-                &self,
-                $id: &str,
-            ) -> ::std::result::Result<
-                ::std::sync::Arc<dyn ::aimux_core::ImageModel>,
-                ::aimux_core::AiMuxError,
-            > {
-                let $p = self;
-                ::std::result::Result::Ok(::std::sync::Arc::new($build))
-            }
-        }
-    };
-    ($ty:ty, $method:ident, |$p:ident, $id:ident| $build:expr) => {
-        impl ::aimux_core::Provider for $ty {
-            $crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
-            $crate::__unsupported_required_model!(
-                embedding_model,
-                EmbeddingModel,
-                "embeddingModel"
-            );
-            $crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
-            $crate::__optional_model!($method, |$p, $id| $build);
+    ($method:ident, $trait:ident, $model_type:literal, [$p:ident $id:ident $build:expr]) => {
+        fn $method(
+            &self,
+            $id: &str,
+        ) -> ::std::result::Result<
+            ::std::sync::Arc<dyn ::aimux_core::$trait>,
+            ::aimux_core::AiMuxError,
+        > {
+            let $p = self;
+            ::std::result::Result::Ok(::std::sync::Arc::new($build))
         }
     };
 }
 
 /// One optional `Provider` method wired to a concrete model (see
-/// [`impl_single_modality_provider!`]).
+/// [`impl_modality_provider!`]).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __optional_model {

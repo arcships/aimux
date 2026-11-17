@@ -186,35 +186,10 @@ impl ProdiaProvider {
     }
 }
 
-impl ::aimux_core::Provider for ProdiaProvider {
-    fn language_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "languageModel"))
-    }
-
-    fn embedding_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
-    }
-
-    fn image_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
-        Ok(::std::sync::Arc::new(self.image(model_id)))
-    }
-
-    fn video_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::VideoModel>, AiMuxError>> {
-        Some(Ok(::std::sync::Arc::new(self.video(model_id))))
-    }
-}
+crate::impl_modality_provider!(ProdiaProvider {
+    image_model: |p, id| p.image(id),
+    video_model: |p, id| p.video(id),
+});
 
 pub struct ProdiaImageModel {
     model_id: String,

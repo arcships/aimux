@@ -18,14 +18,9 @@ pub use crate::shared::TransformRequestBody;
 pub use embedding::VoyageEmbeddingModel;
 pub use reranking::VoyageRerankingModel;
 
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
-use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::provider::Provider;
-use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::EndpointConfig;
@@ -172,23 +167,7 @@ impl VoyageProvider {
     }
 }
 
-impl Provider for VoyageProvider {
-    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "languageModel"))
-    }
-
-    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
-        Ok(Arc::new(self.embedding(model_id)))
-    }
-
-    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "imageModel"))
-    }
-
-    fn reranking_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn RerankingModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.reranking(model_id))))
-    }
-}
+crate::impl_modality_provider!(VoyageProvider {
+    embedding_model: |p, id| p.embedding(id),
+    reranking_model: |p, id| p.reranking(id),
+});

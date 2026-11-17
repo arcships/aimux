@@ -408,7 +408,7 @@ shared_items = {
     "provider_default_base_url", "provider_names", "init_logging",
     "get_model_specs", "Catalogue", "rebuild_decision_provider",
     "rebuild_provider", "__unsupported_required_model", "__optional_model",
-    "impl_single_modality_provider",
+    "impl_single_modality_provider", "impl_modality_provider",
 }
 allowed_internal = {
     "azure": {"openai"},

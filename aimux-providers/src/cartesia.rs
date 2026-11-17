@@ -194,42 +194,10 @@ impl CartesiaProvider {
     }
 }
 
-impl ::aimux_core::Provider for CartesiaProvider {
-    fn language_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::LanguageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "languageModel"))
-    }
-
-    fn embedding_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::EmbeddingModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
-    }
-
-    fn image_model(
-        &self,
-        model_id: &str,
-    ) -> Result<::std::sync::Arc<dyn ::aimux_core::ImageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "imageModel"))
-    }
-
-    fn transcription_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::TranscriptionModel>, AiMuxError>> {
-        Some(Ok(::std::sync::Arc::new(self.transcription(model_id))))
-    }
-
-    fn speech_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<::std::sync::Arc<dyn ::aimux_core::SpeechModel>, AiMuxError>> {
-        Some(Ok(::std::sync::Arc::new(self.speech(model_id))))
-    }
-}
+crate::impl_modality_provider!(CartesiaProvider {
+    transcription_model: |p, id| p.transcription(id),
+    speech_model: |p, id| p.speech(id),
+});
 
 // ── Speech model ─────────────────────────────────────────────────────────────
 
