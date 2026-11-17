@@ -1,15 +1,4 @@
-//! Black Forest Labs image provider.
-//!
-//! Aligned with Vercel AI SDK `BlackForestLabsImageModel`
-//! (`reference/ai/packages/black-forest-labs/src/black-forest-labs-image-model.ts`).
-//!
-//! Uses an async submit + poll pattern: POST to submit, then GET poll_url
-//! until status is "Ready", then download the image.
-//!
-//! [`create_black_forest_labs`] takes [`BlackForestLabsProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`BlackForestLabsProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `BFL_API_KEY`.
-//! [`black_forest_labs()`] is the default instance; it reads nothing and cannot fail.
+//! Black Forest Labs image generation model.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -21,13 +10,32 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{AuthScheme, HttpRequest};
+use aimux_provider_utils::HttpRequest;
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, define_vendor_provider, image_response,
-    is_poll_control_key, namespaced_options, poll_interval_ms, poll_until, retry_download,
-    size_to_aspect_ratio, task_failed, unsupported,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, image_response, is_poll_control_key,
+    namespaced_options, poll_interval_ms, poll_until, retry_download, size_to_aspect_ratio,
+    task_failed, unsupported,
 };
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "blackForestLabs";
+
+/// Milliseconds between two polls of a generation
+/// (`providerOptions.blackForestLabs.pollIntervalMillis` overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 500;
+/// How many times a generation is polled before the call gives up (the sixty
+/// seconds of the AI SDK at the default interval).
+const MAX_POLL_ATTEMPTS: u32 = 120;
+
+/// What a finished generation reports.
+struct BflResult {
+    image_url: String,
+    seed: Option<Value>,
+    start_time: Option<Value>,
+    end_time: Option<Value>,
+    duration: Option<Value>,
+}
 
 /// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
 /// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
@@ -70,57 +78,12 @@ fn bfl_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
     })
 }
 
-/// Milliseconds between two polls of a generation
-/// (`providerOptions.blackForestLabs.pollIntervalMillis` overrides it for one call).
-const POLL_INTERVAL_MS: u64 = 500;
-/// How many times a generation is polled before the call gives up (the sixty
-/// seconds of the AI SDK at the default interval).
-const MAX_POLL_ATTEMPTS: u32 = 120;
-
-/// What a finished generation reports.
-struct BflResult {
-    image_url: String,
-    seed: Option<Value>,
-    start_time: Option<Value>,
-    end_time: Option<Value>,
-    duration: Option<Value>,
-}
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "blackForestLabs";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.bfl.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "BFL_API_KEY";
-const DEFAULT_NAME: &str = "blackForestLabs";
-
-define_vendor_provider! {
-    settings: BlackForestLabsProviderSettings,
-    provider: BlackForestLabsProvider,
-    create: create_black_forest_labs,
-    singleton: black_forest_labs,
-    display: "Black Forest Labs",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl BlackForestLabsProvider {
-    /// An image model (e.g. `"flux-pro-1.1"`); `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> BlackForestLabsImageModel {
-        BlackForestLabsImageModel::from_config(model_id.to_string(), self.model_config("image"))
-    }
-}
-
-crate::impl_single_modality_provider!(BlackForestLabsProvider, image_model, |p, id| p.image(id));
-
+/// A Black Forest Labs image generation model.
 pub struct BlackForestLabsImageModel {
     model_id: String,
     config: EndpointConfig,
 }
+
 impl BlackForestLabsImageModel {
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }

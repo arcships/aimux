@@ -1,18 +1,4 @@
-//! RunwayML video generation provider (video modality only).
-//!
-//! RunwayML uses an async task pattern:
-//! 1. POST to `/v1/text_to_video` (or `/v1/image_to_video` when an input image
-//!    is supplied) → returns the task `id`.
-//! 2. GET `/v1/tasks/{id}` polled until `SUCCEEDED` or `FAILED`.
-//! 3. Return the generated video URL(s) from the task `output` array.
-//!
-//! Authentication is a `Bearer` token and every request must carry the
-//! `X-Runway-Version: 2024-11-06` header.
-//!
-//! [`create_runwayml`] takes [`RunwaymlProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`RunwaymlProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `RUNWAYML_API_SECRET`.
-//! [`runwayml()`] is the default instance; it reads nothing and cannot fail.
+//! RunwayML video generation model.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -23,15 +9,10 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFrameType, VideoModel, VideoOperationStart,
     VideoOperationStatus, VideoResult,
 };
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{
-    EndpointConfig, define_vendor_provider, task_failed, video_file_to_url_or_base64,
-    video_response,
-};
+use crate::shared::{EndpointConfig, task_failed, video_file_to_url_or_base64, video_response};
 
 const PROVIDER_NAME: &str = "runwayml";
-const RUNWAY_VERSION: &str = "2024-11-06";
 
 /// RunwayML returns errors as a flat `{"error": "<message>"}` object.
 fn runwayml_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -46,36 +27,6 @@ fn runwayml_failed_response_handler() -> aimux_provider_utils::ResponseHandler<A
         }
     })
 }
-
-// ── Config ──────────────────────────────────────────────────────────────────
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
-pub(crate) const API_KEY_ENV_VAR: &str = "RUNWAYML_API_SECRET";
-const DEFAULT_NAME: &str = "runwayml";
-
-define_vendor_provider! {
-    settings: RunwaymlProviderSettings,
-    provider: RunwaymlProvider,
-    create: create_runwayml,
-    singleton: runwayml,
-    display: "RunwayML",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: vec![("X-Runway-Version".to_string(), RUNWAY_VERSION.to_string())],
-    package: None,
-}
-
-impl RunwaymlProvider {
-    /// A video model (e.g. `"gen4_turbo"`); `provider()` is `"{name}.video"`.
-    #[must_use]
-    pub fn video(&self, model_id: &str) -> RunwaymlVideoModel {
-        RunwaymlVideoModel::from_config(model_id.to_string(), self.model_config("video"))
-    }
-}
-
-crate::impl_single_modality_provider!(RunwaymlProvider, video_model, |p, id| p.video(id));
 
 // ── Response schema (private wire types) ────────────────────────────────────
 

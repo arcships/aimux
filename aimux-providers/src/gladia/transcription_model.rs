@@ -1,17 +1,4 @@
-//! Gladia transcription (STT) provider.
-//!
-//! Aligned with Vercel AI SDK `createGladia` / `GladiaTranscriptionModel`
-//! (`reference/ai/packages/gladia/src/gladia-transcription-model.ts`).
-//!
-//! Gladia uses a three-step async pattern:
-//! 1. POST `/v2/upload` with multipart form (audio file) → returns `audio_url`
-//! 2. POST `/v2/pre-recorded` with JSON body (audio_url + options) → returns `result_url`
-//! 3. GET `result_url` polling until status is `done`
-//!
-//! [`create_gladia`] takes [`GladiaProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`GladiaProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `GLADIA_API_KEY`.
-//! [`gladia()`] is the default instance; it reads nothing and cannot fail.
+//! Gladia transcription (STT) model.
 
 use std::time::Duration;
 
@@ -25,19 +12,15 @@ use aimux_core::transcription_model::{
     TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResult,
     TranscriptionSegment,
 };
-use aimux_provider_utils::{AuthScheme, HttpBody, MultipartForm, media_type_to_extension};
+use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, define_vendor_provider,
-    is_poll_control_key, namespaced_options, poll_interval_ms, poll_until, task_failed,
-    transcription_response,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, is_poll_control_key,
+    namespaced_options, poll_interval_ms, poll_until, task_failed, transcription_response,
 };
 
-fn gladia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    crate::shared::nested_error_response_handler("Gladia request failed")
-}
-
-// ── Config ──────────────────────────────────────────────────────────────────
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "gladia";
 
 /// Milliseconds between two polls of a transcription job
 /// (`providerOptions.gladia.pollIntervalMs` overrides it for one call).
@@ -46,40 +29,9 @@ const POLL_INTERVAL_MS: u64 = 100;
 /// minutes at the default interval).
 const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "gladia";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.gladia.io";
-pub(crate) const API_KEY_ENV_VAR: &str = "GLADIA_API_KEY";
-const DEFAULT_NAME: &str = "gladia";
-
-define_vendor_provider! {
-    settings: GladiaProviderSettings,
-    provider: GladiaProvider,
-    create: create_gladia,
-    singleton: gladia,
-    display: "Gladia",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
+fn gladia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    crate::shared::nested_error_response_handler("Gladia request failed")
 }
-
-impl GladiaProvider {
-    /// A transcription (STT) model; `provider()` is `"{name}.transcription"`.
-    #[must_use]
-    pub fn transcription(&self, model_id: &str) -> GladiaTranscriptionModel {
-        GladiaTranscriptionModel::from_config(
-            model_id.to_string(),
-            self.model_config("transcription"),
-        )
-    }
-}
-
-crate::impl_single_modality_provider!(GladiaProvider, transcription_model, |p, id| p
-    .transcription(id));
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -127,6 +79,7 @@ struct GladiaResultResponse {
 
 // ── Model ───────────────────────────────────────────────────────────────────
 
+/// A Gladia transcription (STT) model.
 pub struct GladiaTranscriptionModel {
     model_id: String,
     config: EndpointConfig,

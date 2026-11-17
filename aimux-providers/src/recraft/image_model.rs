@@ -1,18 +1,4 @@
-//! Recraft image provider.
-//!
-//! OpenAI Images-compatible API with Recraft extension fields
-//! (`style`, `style_id`, `negative_prompt`, `random_seed`).
-//!
-//! - Endpoint: `POST {base_url}/images/generations` (JSON body)
-//! - Auth: Bearer token (`RECRAFT_API_TOKEN`)
-//! - Base URL: `https://external.api.recraft.ai/v1`
-//! - Response: `{ "data": [{ "url" | "b64_json" }] }` (OpenAI Images shape)
-//! - No streaming.
-//!
-//! [`create_recraft`] takes [`RecraftProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`RecraftProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `RECRAFT_API_TOKEN`.
-//! [`recraft()`] is the default instance; it reads nothing and cannot fail.
+//! Recraft image generation model.
 
 use std::time::Duration;
 
@@ -21,11 +7,11 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
-use aimux_provider_utils::{AuthScheme, HttpRequest};
+use aimux_provider_utils::HttpRequest;
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, define_vendor_provider, image_response,
-    namespaced_options, poll_interval_ms, retry_download, unsupported,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, image_response, namespaced_options, poll_interval_ms,
+    retry_download, unsupported,
 };
 
 fn recraft_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -38,34 +24,6 @@ const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 /// The providerOptions key, read whatever the provider is named.
 pub(crate) const NAMESPACE: &str = "recraft";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
-pub(crate) const API_KEY_ENV_VAR: &str = "RECRAFT_API_TOKEN";
-const DEFAULT_NAME: &str = "recraft";
-
-define_vendor_provider! {
-    settings: RecraftProviderSettings,
-    provider: RecraftProvider,
-    create: create_recraft,
-    singleton: recraft,
-    display: "Recraft",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl RecraftProvider {
-    /// An image model (e.g. `"recraftv3"`); `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> RecraftImageModel {
-        RecraftImageModel::from_config(model_id.to_string(), self.model_config("image"))
-    }
-}
-
-crate::impl_single_modality_provider!(RecraftProvider, image_model, |p, id| p.image(id));
 
 /// A Recraft image generation model.
 pub struct RecraftImageModel {

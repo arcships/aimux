@@ -1,18 +1,4 @@
-//! KlingAI video generation provider.
-//!
-//! Aligned with Vercel AI SDK `createKlingAI` / `KlingAIVideoModel`
-//! (`reference/ai/packages/klingai/src/klingai-video-model.ts`).
-//!
-//! KlingAI uses an async task pattern:
-//! 1. POST to `/v1/videos/text2video` (or `image2video`) → returns task `id` + `task_id`
-//! 2. GET `/v1/videos/text2video/{id}/{task_id}` — polled by Core via `do_status`
-//!    until `succeeded`
-//! 3. Return the video URL from the result
-//!
-//! [`create_klingai`] takes [`KlingAIProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`KlingAIProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `KLINGAI_API_KEY`.
-//! [`klingai()`] is the default instance; it reads nothing and cannot fail.
+//! KlingAI video generation model.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -22,12 +8,13 @@ use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus, VideoResult,
 };
-use aimux_provider_utils::AuthScheme;
 
 use crate::shared::{
-    EndpointConfig, define_vendor_provider, namespaced_options, task_failed,
-    video_file_to_url_or_base64, video_response,
+    EndpointConfig, namespaced_options, task_failed, video_file_to_url_or_base64, video_response,
 };
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "klingai";
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {
@@ -41,39 +28,6 @@ fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<Ai
         }
     })
 }
-
-// ── Config ──────────────────────────────────────────────────────────────────
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "klingai";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.klingai.com";
-pub(crate) const API_KEY_ENV_VAR: &str = "KLINGAI_API_KEY";
-const DEFAULT_NAME: &str = "klingai";
-
-define_vendor_provider! {
-    settings: KlingAIProviderSettings,
-    provider: KlingAIProvider,
-    create: create_klingai,
-    singleton: klingai,
-    display: "KlingAI",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl KlingAIProvider {
-    /// A video model (e.g. `"kling-v2.6-t2v"`); `provider()` is `"{name}.video"`.
-    #[must_use]
-    pub fn video(&self, model_id: &str) -> KlingAIVideoModel {
-        KlingAIVideoModel::from_config(model_id.to_string(), self.model_config("video"))
-    }
-}
-
-crate::impl_single_modality_provider!(KlingAIProvider, video_model, |p, id| p.video(id));
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +90,7 @@ struct KlingAITaskVideos {
 
 // ── Model ───────────────────────────────────────────────────────────────────
 
+/// A KlingAI video generation model — implements [`VideoModel`].
 pub struct KlingAIVideoModel {
     model_id: String,
     config: EndpointConfig,

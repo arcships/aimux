@@ -17,7 +17,7 @@ use aimux_core::types::Warning;
 
 use crate::shared::{EndpointConfig, namespaced_options};
 
-use super::voyage_failed_response_handler;
+use super::provider::{NAMESPACE, voyage_failed_response_handler};
 
 /// Voyage provider-specific reranking options.
 #[derive(Debug, Clone, Default)]
@@ -30,7 +30,7 @@ fn parse_voyage_reranking_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> VoyageRerankingOptions {
     let mut opts = VoyageRerankingOptions::default();
-    if let Some(voyage) = namespaced_options(provider_options, super::NAMESPACE) {
+    if let Some(voyage) = namespaced_options(provider_options, NAMESPACE) {
         if let Some(v) = voyage
             .get("returnDocuments")
             .and_then(serde_json::Value::as_bool)

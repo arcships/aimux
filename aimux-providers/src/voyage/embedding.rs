@@ -21,7 +21,7 @@ use aimux_core::shared::SharedProviderOptions;
 
 use crate::shared::{EndpointConfig, namespaced_options};
 
-use super::voyage_failed_response_handler;
+use super::provider::{NAMESPACE, voyage_failed_response_handler};
 
 /// A Voyage embedding model (e.g. `"voyage-3.5"`).
 pub struct VoyageEmbeddingModel {
@@ -152,7 +152,7 @@ struct VoyageEmbeddingProviderOptions {
 fn parse_voyage_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> VoyageEmbeddingProviderOptions {
-    let provider_opts = namespaced_options(options, super::NAMESPACE);
+    let provider_opts = namespaced_options(options, NAMESPACE);
     VoyageEmbeddingProviderOptions {
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))

@@ -1,17 +1,4 @@
-//! AssemblyAI transcription (STT) provider.
-//!
-//! Aligned with Vercel AI SDK `createAssemblyAI` / `AssemblyAITranscriptionModel`
-//! (`reference/ai/packages/assemblyai/src/assemblyai-transcription-model.ts`).
-//!
-//! AssemblyAI uses a three-step async pattern:
-//! 1. POST `/v2/upload` with raw audio bytes → returns `upload_url`
-//! 2. POST `/v2/transcript` with JSON body (audio_url + options) → returns transcript `id`
-//! 3. GET `/v2/transcript/{id}` polling until status is `completed`
-//!
-//! [`create_assemblyai`] takes [`AssemblyAIProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`AssemblyAIProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `ASSEMBLYAI_API_KEY`.
-//! [`assemblyai()`] is the default instance; it reads nothing and cannot fail.
+//! AssemblyAI transcription (STT) model.
 
 use std::time::Duration;
 
@@ -25,13 +12,23 @@ use aimux_core::transcription_model::{
     TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResult,
     TranscriptionSegment,
 };
-use aimux_provider_utils::{AuthScheme, HttpBody};
+use aimux_provider_utils::HttpBody;
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, define_vendor_provider,
-    is_poll_control_key, namespaced_options, poll_interval_ms, poll_until, task_failed,
-    transcription_response, unsupported,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, is_poll_control_key,
+    namespaced_options, poll_interval_ms, poll_until, task_failed, transcription_response,
+    unsupported,
 };
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "assemblyai";
+
+/// Milliseconds between two polls of a transcript
+/// (`providerOptions.assemblyai.pollIntervalMs` overrides it for one call).
+const POLL_INTERVAL_MS: u64 = 100;
+/// How many times a transcript is polled before the call gives up (ten minutes
+/// at the default interval).
+const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
 /// AssemblyAI errors: `{"error": "..."}` where `error` is a plain string
 /// (e.g. `"Authentication error, API token missing/invalid."`). No machine
@@ -59,50 +56,6 @@ fn assemblyai_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorPa
 fn assemblyai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(assemblyai_error_parts)
 }
-
-// ── Config ──────────────────────────────────────────────────────────────────
-
-/// Milliseconds between two polls of a transcript
-/// (`providerOptions.assemblyai.pollIntervalMs` overrides it for one call).
-const POLL_INTERVAL_MS: u64 = 100;
-/// How many times a transcript is polled before the call gives up (ten minutes
-/// at the default interval).
-const MAX_POLL_ATTEMPTS: u32 = 6_000;
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "assemblyai";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.assemblyai.com";
-pub(crate) const API_KEY_ENV_VAR: &str = "ASSEMBLYAI_API_KEY";
-const DEFAULT_NAME: &str = "assemblyai";
-
-define_vendor_provider! {
-    settings: AssemblyAIProviderSettings,
-    provider: AssemblyAIProvider,
-    create: create_assemblyai,
-    singleton: assemblyai,
-    display: "AssemblyAI",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("Authorization"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl AssemblyAIProvider {
-    /// A transcription (STT) model (e.g. `"universal-3-5-pro"`); `provider()` is `"{name}.transcription"`.
-    #[must_use]
-    pub fn transcription(&self, model_id: &str) -> AssemblyAITranscriptionModel {
-        AssemblyAITranscriptionModel::from_config(
-            model_id.to_string(),
-            self.model_config("transcription"),
-        )
-    }
-}
-
-crate::impl_single_modality_provider!(AssemblyAIProvider, transcription_model, |p, id| p
-    .transcription(id));
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -154,6 +107,7 @@ struct AssemblyAITranscriptResponse {
 
 // ── Model ───────────────────────────────────────────────────────────────────
 
+/// An AssemblyAI transcription (STT) model.
 pub struct AssemblyAITranscriptionModel {
     model_id: String,
     config: EndpointConfig,

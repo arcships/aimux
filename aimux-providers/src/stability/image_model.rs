@@ -1,18 +1,4 @@
-//! Stability image provider (image modality only).
-//!
-//! Aligned with the Stability AI Stable Image generate API
-//! (`https://api.stability.ai/v2beta/stable-image/generate/{ultra|core|sd3}`).
-//!
-//! Text-to-image generation via `multipart/form-data`. The model ID selects the
-//! endpoint sub-path: `stable-image-ultra` → `/generate/ultra`,
-//! `stable-image-core` → `/generate/core`, `sd3` → `/generate/sd3`. Any other
-//! model ID is used as-is for the sub-path. Responses are image binary
-//! (`Accept: image/*`) or base64-encoded JSON.
-//!
-//! [`create_stability`] takes [`StabilityProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`StabilityProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `STABILITY_API_KEY`.
-//! [`stability()`] is the default instance; it reads nothing and cannot fail.
+//! Stability image generation model.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -22,12 +8,14 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
-use aimux_provider_utils::{AuthScheme, HttpBody, MultipartForm};
+use aimux_provider_utils::{HttpBody, MultipartForm};
 
 use crate::shared::{
-    EndpointConfig, define_vendor_provider, image_response, namespaced_options,
-    size_to_aspect_ratio, unsupported,
+    EndpointConfig, image_response, namespaced_options, size_to_aspect_ratio, unsupported,
 };
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "stability";
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
 ///
@@ -115,37 +103,6 @@ fn model_id_to_subpath(model_id: &str) -> &str {
         other => other,
     }
 }
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "stability";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.stability.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "STABILITY_API_KEY";
-const DEFAULT_NAME: &str = "stability";
-
-define_vendor_provider! {
-    settings: StabilityProviderSettings,
-    provider: StabilityProvider,
-    create: create_stability,
-    singleton: stability,
-    display: "Stability",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: vec![("Accept".to_string(), "image/*".to_string())],
-    package: None,
-}
-
-impl StabilityProvider {
-    /// An image model (e.g. `"stable-image-core"`); `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> StabilityImageModel {
-        StabilityImageModel::from_config(model_id.to_string(), self.model_config("image"))
-    }
-}
-
-crate::impl_single_modality_provider!(StabilityProvider, image_model, |p, id| p.image(id));
 
 /// A Stability image generation model.
 pub struct StabilityImageModel {

@@ -1,17 +1,4 @@
-//! Rev.ai transcription (STT) provider.
-//!
-//! Aligned with Vercel AI SDK `createRevai` / `RevaiTranscriptionModel`
-//! (`reference/ai/packages/revai/src/revai-transcription-model.ts`).
-//!
-//! Rev.ai uses an async job pattern:
-//! 1. POST `/speechtotext/v1/jobs` with multipart form (media file + config JSON)
-//! 2. GET `/speechtotext/v1/jobs/{id}` to poll until status is `transcribed`
-//! 3. GET `/speechtotext/v1/jobs/{id}/transcript` to fetch the final transcript
-//!
-//! [`create_revai`] takes [`RevaiProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`RevaiProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `REVAI_API_KEY`.
-//! [`revai()`] is the default instance; it reads nothing and cannot fail.
+//! Rev.ai transcription (STT) model.
 
 use std::time::Duration;
 
@@ -25,19 +12,15 @@ use aimux_core::transcription_model::{
     TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResult,
     TranscriptionSegment,
 };
-use aimux_provider_utils::{AuthScheme, MultipartForm, media_type_to_extension};
+use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, define_vendor_provider,
-    namespaced_options, poll_interval_ms, poll_until, retry_download, task_failed,
-    transcription_response,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, audio_input_to_bytes, namespaced_options,
+    poll_interval_ms, poll_until, retry_download, task_failed, transcription_response,
 };
 
-fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    crate::shared::nested_error_response_handler("Rev.ai request failed")
-}
-
-// ── Config ──────────────────────────────────────────────────────────────────
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "revai";
 
 /// Milliseconds between two polls of a job
 /// (`providerOptions.revai.pollIntervalMs` overrides it for one call).
@@ -46,40 +29,9 @@ const POLL_INTERVAL_MS: u64 = 100;
 /// default interval).
 const MAX_POLL_ATTEMPTS: u32 = 6_000;
 
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "revai";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.rev.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "REVAI_API_KEY";
-const DEFAULT_NAME: &str = "revai";
-
-define_vendor_provider! {
-    settings: RevaiProviderSettings,
-    provider: RevaiProvider,
-    create: create_revai,
-    singleton: revai,
-    display: "Rev.ai",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Bearer,
-    extra_headers: Vec::new(),
-    package: None,
+fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    crate::shared::nested_error_response_handler("Rev.ai request failed")
 }
-
-impl RevaiProvider {
-    /// A transcription (STT) model (e.g. `"machine"`); `provider()` is `"{name}.transcription"`.
-    #[must_use]
-    pub fn transcription(&self, model_id: &str) -> RevaiTranscriptionModel {
-        RevaiTranscriptionModel::from_config(
-            model_id.to_string(),
-            self.model_config("transcription"),
-        )
-    }
-}
-
-crate::impl_single_modality_provider!(RevaiProvider, transcription_model, |p, id| p
-    .transcription(id));
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -117,6 +69,7 @@ struct RevaiTranscriptResponse {
 
 // ── Model ───────────────────────────────────────────────────────────────────
 
+/// A Rev.ai transcription (STT) model.
 pub struct RevaiTranscriptionModel {
     model_id: String,
     config: EndpointConfig,

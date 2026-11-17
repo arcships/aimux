@@ -5,6 +5,15 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- Removed the `aimux_providers::voyage::embedding` and
+  `aimux_providers::voyage::reranking` submodule paths; import
+  `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
+  instead (RFC-0046 §4.5).
+
 ## [0.6.1] - 2026-11-05
 
 Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,

@@ -1,24 +1,4 @@
-//! Hume speech (TTS) provider.
-//!
-//! Aligned with Vercel AI SDK `createHume`
-//! (`reference/ai/packages/hume/src/hume-provider.ts`) and `HumeSpeechModel`
-//! (`reference/ai/packages/hume/src/hume-speech-model.ts`).
-//!
-//! Endpoint: `POST https://api.hume.ai/v0/tts/file`
-//!
-//! Authentication: `X-Hume-Api-Key` header.
-//!
-//! The Hume TTS API accepts `utterances` (an array of `{ text, voice, speed,
-//! description }` objects) and `format` (with a `type` field) in the request
-//! body, and returns raw binary audio.
-//!
-//! `language` is not supported and emits a warning. The model ID is always an
-//! empty string (Hume does not use model IDs for TTS).
-//!
-//! [`create_hume`] takes [`HumeProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`HumeProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `HUME_API_KEY`.
-//! [`hume()`] is the default instance; it reads nothing and cannot fail.
+//! Hume speech (TTS) model.
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -28,11 +8,17 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{
-    EndpointConfig, define_vendor_provider, namespaced_options, speech_response, unsupported,
-};
+use crate::shared::{EndpointConfig, namespaced_options, speech_response, unsupported};
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "hume";
+
+/// The default voice ID used when no voice is provided.
+const DEFAULT_VOICE_ID: &str = "d8ab67c6-953d-4bd8-9370-8fa53a0f1453";
+
+/// The output formats accepted by the Hume TTS API.
+const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "pcm", "wav"];
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
 /// (https://dev.hume.ai/docs/resources/errors); the nested `{error:
@@ -63,46 +49,7 @@ fn hume_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
     aimux_provider_utils::create_json_error_response_handler(hume_error_parts)
 }
 
-// ── Config ───────────────────────────────────────────────────────────────────
-
-/// The providerOptions key, read whatever the provider is named.
-pub(crate) const NAMESPACE: &str = "hume";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.hume.ai";
-pub(crate) const API_KEY_ENV_VAR: &str = "HUME_API_KEY";
-const DEFAULT_NAME: &str = "hume";
-
-define_vendor_provider! {
-    settings: HumeProviderSettings,
-    provider: HumeProvider,
-    create: create_hume,
-    singleton: hume,
-    display: "Hume",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("X-Hume-Api-Key"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl HumeProvider {
-    /// The speech (TTS) model. Hume does not use model ids for TTS, so the model id is always an empty string; `provider()` is `"{name}.speech"`.
-    #[must_use]
-    pub fn speech(&self) -> HumeSpeechModel {
-        HumeSpeechModel::from_config(self.model_config("speech"))
-    }
-}
-
-crate::impl_single_modality_provider!(HumeProvider, speech_model, |p, _id| p.speech());
-
 // ── Speech model ─────────────────────────────────────────────────────────────
-
-/// The default voice ID used when no voice is provided.
-const DEFAULT_VOICE_ID: &str = "d8ab67c6-953d-4bd8-9370-8fa53a0f1453";
-
-/// The output formats accepted by the Hume TTS API.
-const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "pcm", "wav"];
 
 /// A Hume speech (TTS) model.
 pub struct HumeSpeechModel {

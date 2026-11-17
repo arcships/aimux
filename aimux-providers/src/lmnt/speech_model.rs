@@ -1,22 +1,4 @@
-//! LMNT speech (TTS) provider.
-//!
-//! Aligned with Vercel AI SDK `createLMNT`
-//! (`reference/ai/packages/lmnt/src/lmnt-provider.ts`) and `LMNTSpeechModel`
-//! (`reference/ai/packages/lmnt/src/lmnt-speech-model.ts`).
-//!
-//! Endpoint: `POST https://api.lmnt.com/v1/ai/speech/bytes`
-//!
-//! Authentication: `x-api-key` header.
-//!
-//! The LMNT TTS API accepts `model`, `text`, `voice`, `response_format`,
-//! `speed`, and `language` in the request body, and returns raw binary audio.
-//! Provider options (`lmnt` key) support `conversational`, `length`, `seed`,
-//! `speed`, `temperature`, `topP`, `sampleRate`, and `format`.
-//!
-//! [`create_lmnt`] takes [`LMNTProviderSettings`], validates the base URL, fixes
-//! the provider name and returns a [`LMNTProvider`]. The credential is not read
-//! there: it is loaded for every request, from the setting or from `LMNT_API_KEY`.
-//! [`lmnt()`] is the default instance; it reads nothing and cannot fail.
+//! LMNT speech (TTS) model.
 
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -26,56 +8,23 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
-use aimux_provider_utils::AuthScheme;
 
-use crate::shared::{
-    EndpointConfig, define_vendor_provider, namespaced_options, speech_response, unsupported,
-};
-
-fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    crate::shared::nested_error_response_handler("LMNT request failed")
-}
-
-// ── Config ───────────────────────────────────────────────────────────────────
+use crate::shared::{EndpointConfig, namespaced_options, speech_response, unsupported};
 
 /// The providerOptions key, read whatever the provider is named.
 pub(crate) const NAMESPACE: &str = "lmnt";
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.lmnt.com";
-pub(crate) const API_KEY_ENV_VAR: &str = "LMNT_API_KEY";
-const DEFAULT_NAME: &str = "lmnt";
-
-define_vendor_provider! {
-    settings: LMNTProviderSettings,
-    provider: LMNTProvider,
-    create: create_lmnt,
-    singleton: lmnt,
-    display: "LMNT",
-    default_base_url: DEFAULT_BASE_URL,
-    api_key_env_var: API_KEY_ENV_VAR,
-    default_name: DEFAULT_NAME,
-    auth: AuthScheme::Header("x-api-key"),
-    extra_headers: Vec::new(),
-    package: None,
-}
-
-impl LMNTProvider {
-    /// A speech (TTS) model (e.g. `"aurora"`); `provider()` is `"{name}.speech"`.
-    #[must_use]
-    pub fn speech(&self, model_id: &str) -> LMNTSpeechModel {
-        LMNTSpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
-    }
-}
-
-crate::impl_single_modality_provider!(LMNTProvider, speech_model, |p, id| p.speech(id));
-
-// ── Speech model ─────────────────────────────────────────────────────────────
 
 /// The default voice ID used when no voice is provided.
 const DEFAULT_VOICE_ID: &str = "ava";
 
 /// The output formats accepted by the LMNT TTS API.
 const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "aac", "mulaw", "raw", "wav"];
+
+fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    crate::shared::nested_error_response_handler("LMNT request failed")
+}
+
+// ── Speech model ─────────────────────────────────────────────────────────────
 
 /// An LMNT speech (TTS) model.
 pub struct LMNTSpeechModel {
