@@ -133,7 +133,7 @@ impl LanguageModel for OpenResponsesModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         validate_file_media(&options.prompt)?;
         let (body, warnings) =
-            build_request_body(&self.model_id, options, &self.provider_options_name);
+            build_request_body(&self.model_id, options, &self.provider_options_name)?;
         let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
@@ -285,7 +285,7 @@ impl LanguageModel for OpenResponsesModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         validate_file_media(&options.prompt)?;
         let (body, warnings) =
-            build_request_body(&self.model_id, options, &self.provider_options_name);
+            build_request_body(&self.model_id, options, &self.provider_options_name)?;
 
         let stream_body = {
             let mut b = body.clone();
@@ -882,14 +882,42 @@ struct ToolCallAccum {
 
 // == Request body builder ==
 
+/// `openResponsesLanguageModelOptions`
+/// (responses/open-responses-language-model-options.ts). Both keys are
+/// `.nullish()`: `null` reads as absent.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenResponsesOptions {
+    /// Provider-native reasoning effort, sent as given; it takes precedence
+    /// over the top-level `reasoning`.
+    #[serde(default)]
+    reasoning_effort: Option<String>,
+    #[serde(default)]
+    reasoning_summary: Option<ReasoningSummary>,
+}
+
+/// `z.enum(['concise', 'detailed', 'auto'])`.
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ReasoningSummary {
+    Concise,
+    Detailed,
+    Auto,
+}
+
 /// Build the Open Responses request body and collect warnings.
 ///
 /// Mirrors the TS `getArgs` method.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid <name> provider options" when
+/// `providerOptions.<name>` does not match `openResponsesLanguageModelOptions`.
 fn build_request_body(
     model_id: &str,
     options: &CallOptions,
     provider_options_name: &str,
-) -> (Value, Vec<Warning>) {
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
     let mut warnings = Vec::new();
 
     // Warnings for unsupported features.
@@ -1000,16 +1028,15 @@ fn build_request_body(
         _ => None,
     };
 
-    let open_responses_options = options
-        .provider_options
-        .as_ref()
-        .and_then(|m| m.get(provider_options_name));
+    let open_responses_options: OpenResponsesOptions =
+        aimux_provider_utils::parse_provider_options(
+            provider_options_name,
+            options.provider_options.as_ref(),
+        )?
+        .unwrap_or_default();
 
     // `providerOptions.<name>.reasoningEffort`, else the top-level reasoning.
-    let provider_reasoning_effort = open_responses_options
-        .and_then(|o| o.get("reasoningEffort"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
+    let provider_reasoning_effort = open_responses_options.reasoning_effort;
     let resolved_reasoning_effort: Option<String> = if provider_reasoning_effort.is_some() {
         provider_reasoning_effort
     } else if let Some(reasoning) = options.reasoning.filter(|r| r.is_custom()) {
@@ -1034,10 +1061,7 @@ fn build_request_body(
     };
 
     // Resolve reasoning summary from provider options.
-    let reasoning_summary: Option<String> = open_responses_options
-        .and_then(|o| o.get("reasoningSummary"))
-        .and_then(|v| v.as_str())
-        .map(std::string::ToString::to_string);
+    let reasoning_summary = open_responses_options.reasoning_summary;
 
     // Build reasoning object.
     let reasoning: Option<Value> =
@@ -1089,7 +1113,7 @@ fn build_request_body(
         body.insert("text".to_string(), json!({ "format": tf }));
     }
 
-    (Value::Object(body), warnings)
+    Ok((Value::Object(body), warnings))
 }
 
 // == Usage extraction ==
