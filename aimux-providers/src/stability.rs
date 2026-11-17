@@ -27,7 +27,9 @@ use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{HttpBody, MultipartForm};
 
-use crate::shared::{EndpointConfig, image_response, namespaced_options, unsupported};
+use crate::shared::{
+    EndpointConfig, image_response, namespaced_options, size_to_aspect_ratio, unsupported,
+};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
@@ -245,21 +247,6 @@ impl StabilityImageModel {
     }
 }
 
-/// Greatest common divisor of two `u32` values.
-fn gcd(a: u32, b: u32) -> u32 {
-    if b == 0 { a } else { gcd(b, a % b) }
-}
-
-/// Derive an aspect-ratio string (`"W:H"`) from a pixel [`Size`], if possible.
-fn convert_size_to_aspect_ratio(size: &aimux_core::shared::Size) -> Option<String> {
-    let (w, h) = (size.width(), size.height());
-    if w == 0 || h == 0 {
-        return None;
-    }
-    let g = gcd(w, h);
-    Some(format!("{}:{}", w / g, h / g))
-}
-
 #[async_trait]
 impl ImageModel for StabilityImageModel {
     fn provider(&self) -> &str {
@@ -287,7 +274,7 @@ impl ImageModel for StabilityImageModel {
         {
             Some(ar)
         } else if let Some(size) = options.size {
-            if let Some(ar) = convert_size_to_aspect_ratio(&size) {
+            if let Some(ar) = size_to_aspect_ratio(&size) {
                 warnings.push(unsupported(
                     "size",
                     "Deriving aspect_ratio from size. Stability uses aspect_ratio, not \

@@ -9,6 +9,7 @@ pub(crate) mod aisdk_pins;
 mod discovery;
 mod error_body;
 mod exchange;
+mod image_size;
 mod poll;
 mod provider_options;
 mod results;
@@ -21,6 +22,7 @@ pub(crate) use exchange::{
     BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, HttpEndpoint, ResolveEndpoint,
     SupportedUrlsSource,
 };
+pub(crate) use image_size::size_to_aspect_ratio;
 pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
     poll_interval_ms, poll_until, retry_download,

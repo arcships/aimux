@@ -27,7 +27,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 
 use crate::shared::{
     EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, image_response, is_poll_control_key,
-    namespaced_options, poll_interval_ms, poll_until, retry_download, task_failed, unsupported,
+    namespaced_options, poll_interval_ms, poll_until, retry_download, size_to_aspect_ratio,
+    task_failed, unsupported,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -221,19 +222,6 @@ impl BlackForestLabsImageModel {
             }
         }
     }
-
-    fn convert_size_to_aspect_ratio(size: &aimux_core::shared::Size) -> Option<String> {
-        let (w, h) = (size.width(), size.height());
-        if w == 0 || h == 0 {
-            return None;
-        }
-        let g = gcd(w, h);
-        Some(format!("{}:{}", w / g, h / g))
-    }
-}
-
-fn gcd(a: u32, b: u32) -> u32 {
-    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 #[async_trait]
@@ -254,7 +242,7 @@ impl ImageModel for BlackForestLabsImageModel {
         let final_aspect_ratio = if let Some(ar) = options.aspect_ratio {
             Some(ar.to_string())
         } else if let Some(size) = options.size {
-            if let Some(ar) = Self::convert_size_to_aspect_ratio(&size) {
+            if let Some(ar) = size_to_aspect_ratio(&size) {
                 warnings.push(unsupported("size", "Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them."));
                 Some(ar)
             } else {

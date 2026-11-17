@@ -157,16 +157,6 @@ impl YouComProvider {
 
 crate::impl_single_modality_provider!(YouComProvider, search_model, |p, _id| p.search_model());
 
-// ── Request builder ──────────────────────────────────────────────────────────
-
-/// Resolve the `count` query parameter from the call options.
-///
-/// Pure function: maps `max_results` to the You.com `count` parameter,
-/// defaulting to [`DEFAULT_COUNT`] when unset.
-fn resolve_count(max_results: Option<u32>) -> u32 {
-    max_results.unwrap_or(DEFAULT_COUNT)
-}
-
 // ── Response types ───────────────────────────────────────────────────────────
 
 /// The response from the You.com `/v1/search` endpoint.
@@ -230,7 +220,7 @@ impl SearchModel for YouComSearchModel {
     }
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
-        let count = resolve_count(options.max_results);
+        let count = options.max_results.unwrap_or(DEFAULT_COUNT);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let mut url = url::Url::parse(&exchange.url("/v1/search")).map_err(|e| {
