@@ -14,17 +14,15 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::image_model::{
-    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
-};
+use aimux_core::error::AiMuxError;
+use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, is_poll_control_key, namespaced_options,
-    poll_interval_ms, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, image_response, is_poll_control_key, namespaced_options,
+    poll_interval_ms, retry_download, task_failed, video_response,
 };
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
@@ -416,11 +414,7 @@ impl ImageModel for ReplicateImageModel {
             images: ImageOutputs::Binary(downloaded),
             warnings,
             provider_metadata: None,
-            response: ImageResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(rh),
-            },
+            response: image_response(aimux_core::Timestamp::now(), &self.model_id, rh),
             usage: None,
         })
     }
@@ -432,7 +426,7 @@ impl ImageModel for ReplicateImageModel {
 
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoModel, VideoOperationStart, VideoOperationStatus,
-    VideoResponse, VideoResult,
+    VideoResult,
 };
 
 /// Replicate video generation model — implements `VideoModel`.
@@ -520,11 +514,11 @@ impl VideoModel for ReplicateVideoModel {
             operation: json!({ "prediction_id": prediction_id }),
             warnings,
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         })
     }
 
@@ -564,17 +558,12 @@ impl VideoModel for ReplicateVideoModel {
             // A terminally failed prediction must be a non-retryable error,
             // not Pending, so the Core poll loop stops immediately.
             "failed" | "canceled" => {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some(status_str.to_string()),
+                return Err(task_failed(
+                    format!("Replicate prediction {status_str}"),
+                    poll_url,
+                    status_str.to_string(),
                     response_body,
-                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                    ..ApiCallError::new(
-                        format!("Replicate prediction {status_str}"),
-                        poll_url,
-                        serde_json::json!({}),
-                    )
-                })));
+                ));
             }
             // starting / processing / unknown — keep polling.
             _ => return Ok(VideoOperationStatus::Pending),
@@ -609,11 +598,11 @@ impl VideoModel for ReplicateVideoModel {
             videos,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         }))
     }
 }

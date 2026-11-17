@@ -28,11 +28,11 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
-    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
+    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{EndpointConfig, namespaced_options, speech_response, unsupported};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Hume errors carry a top-level `message` with a `code` such as `"E0101"`
@@ -241,12 +241,7 @@ impl SpeechModel for HumeSpeechModel {
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),
-            response: SpeechResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: None,
-            },
+            response: speech_response(timestamp, &self.model_id, response_headers),
             provider_metadata: None,
         })
     }
@@ -295,12 +290,10 @@ fn build_request(
     if SUPPORTED_OUTPUT_FORMATS.contains(&output_format) {
         format.insert("type".to_string(), json!(output_format));
     } else {
-        warnings.push(Warning::Unsupported {
-            feature: "outputFormat".to_string(),
-            details: Some(format!(
-                "Unsupported output format: {output_format}. Using mp3 instead."
-            )),
-        });
+        warnings.push(unsupported(
+            "outputFormat",
+            format!("Unsupported output format: {output_format}. Using mp3 instead."),
+        ));
     }
     body.insert("format".to_string(), Value::Object(format));
 
@@ -313,12 +306,12 @@ fn build_request(
     }
 
     if let Some(ref language) = options.language {
-        warnings.push(Warning::Unsupported {
-            feature: "language".to_string(),
-            details: Some(format!(
+        warnings.push(unsupported(
+            "language",
+            format!(
                 "Hume speech models do not support language selection. Language parameter \"{language}\" was ignored."
-            )),
-        });
+            ),
+        ));
     }
 
     Ok((body, warnings))

@@ -20,17 +20,14 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
-use aimux_core::image_model::{
-    ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
-};
+use aimux_core::image_model::{ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, namespaced_options,
-    poll_interval_ms, poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, image_response, is_poll_control_key,
+    namespaced_options, poll_interval_ms, poll_until, retry_download, task_failed, unsupported,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -258,7 +255,7 @@ impl ImageModel for BlackForestLabsImageModel {
             Some(ar.to_string())
         } else if let Some(size) = options.size {
             if let Some(ar) = Self::convert_size_to_aspect_ratio(&size) {
-                warnings.push(Warning::Unsupported { feature: "size".into(), details: Some("Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them.".into()) });
+                warnings.push(unsupported("size", "Deriving aspect_ratio from size. Use the width and height provider options to specify dimensions for models that support them."));
                 Some(ar)
             } else {
                 None
@@ -268,7 +265,7 @@ impl ImageModel for BlackForestLabsImageModel {
         };
 
         if options.size.is_some() && options.aspect_ratio.is_some() {
-            warnings.push(Warning::Unsupported { feature: "size".into(), details: Some("Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them".into()) });
+            warnings.push(unsupported("size", "Black Forest Labs ignores size when aspectRatio is provided. Use the width and height provider options to specify dimensions for models that support them"));
         }
 
         let bfl_opts = namespaced_options(Some(&options.provider_options), NAMESPACE);
@@ -480,18 +477,12 @@ impl ImageModel for BlackForestLabsImageModel {
                     }));
                 }
                 if poll_status == "Error" || poll_status == "Failed" {
-                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some(poll_status.to_string()),
-                        message: "Black Forest Labs generation failed.".into(),
+                    return Err(task_failed(
+                        "Black Forest Labs generation failed.",
+                        poll_url.clone(),
+                        poll_status.to_string(),
                         response_body,
-                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                        ..ApiCallError::new(
-                            "Black Forest Labs generation failed.",
-                            poll_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    })));
+                    ));
                 }
                 Ok(PollStep::Pending)
             },
@@ -549,11 +540,11 @@ impl ImageModel for BlackForestLabsImageModel {
             images: ImageOutputs::Binary(vec![image_bytes]),
             warnings,
             provider_metadata: Some(metadata),
-            response: ImageResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(download_headers),
-            },
+            response: image_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                download_headers,
+            ),
             usage: None,
         })
     }

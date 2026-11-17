@@ -11,6 +11,7 @@ mod error_body;
 mod exchange;
 mod poll;
 mod provider_options;
+mod results;
 
 pub(crate) use discovery::{ModelListEntry, list_data_models};
 pub(crate) use error_body::{
@@ -25,6 +26,10 @@ pub(crate) use poll::{
     poll_interval_ms, poll_until, retry_download,
 };
 pub(crate) use provider_options::namespaced_options;
+pub(crate) use results::{
+    image_response, speech_response, task_failed, transcription_response, unsupported,
+    video_response,
+};
 
 use std::sync::Arc;
 

@@ -22,18 +22,17 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
     EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, namespaced_options,
-    poll_interval_ms, poll_until,
+    poll_interval_ms, poll_until, task_failed, transcription_response, unsupported,
 };
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
@@ -306,13 +305,10 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         // Model selection.
         if self.model_id == "best" {
             body.insert("speech_model".to_string(), json!(self.model_id));
-            warnings.push(Warning::Unsupported {
-                feature: "model 'best'".to_string(),
-                details: Some(
-                    "The 'best' model is a legacy AssemblyAI model. Use 'universal-3-5-pro' instead."
-                        .to_string(),
-                ),
-            });
+            warnings.push(unsupported(
+                "model 'best'",
+                "The 'best' model is a legacy AssemblyAI model. Use 'universal-3-5-pro' instead.",
+            ));
         } else {
             body.insert("speech_models".to_string(), json!([self.model_id]));
         }
@@ -363,25 +359,18 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 .await?;
                 match resp.value.status.clone().as_str() {
                     "completed" => Ok(PollStep::Ready(resp)),
-                    "error" => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some("error".to_string()),
-                        response_body: Some(
-                            resp.raw_value.clone().unwrap_or(Value::Null).to_string(),
+                    "error" => Err(task_failed(
+                        format!(
+                            "Transcription failed: {}",
+                            resp.value
+                                .error
+                                .clone()
+                                .unwrap_or_else(|| "Unknown error".to_string())
                         ),
-                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                        ..ApiCallError::new(
-                            format!(
-                                "Transcription failed: {}",
-                                resp.value
-                                    .error
-                                    .clone()
-                                    .unwrap_or_else(|| "Unknown error".to_string())
-                            ),
-                            poll_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    }))),
+                        poll_url.clone(),
+                        "error",
+                        Some(resp.raw_value.clone().unwrap_or(Value::Null).to_string()),
+                    )),
                     _ => Ok(PollStep::Pending),
                 }
             },
@@ -485,12 +474,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             duration_in_seconds,
             warnings,
             request: Some(TranscriptionRequest { body: None }),
-            response: TranscriptionResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            },
+            response: transcription_response(timestamp, &self.model_id, response_headers, raw_body),
             provider_metadata,
         })
     }

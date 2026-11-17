@@ -22,18 +22,17 @@ use serde_json::{Value, json};
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
 use crate::shared::{
     EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, namespaced_options, poll_interval_ms,
-    poll_until, retry_download,
+    poll_until, retry_download, task_failed, transcription_response,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -271,17 +270,12 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let submit_response: RevaiJobResponse = resp.value;
 
         if submit_response.status.as_deref() == Some("failed") {
-            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(200),
-                provider_code: Some("failed".to_string()),
+            return Err(task_failed(
+                "Failed to submit transcription job to Rev.ai",
+                submit_url,
+                "failed",
                 response_body,
-                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(
-                    "Failed to submit transcription job to Rev.ai",
-                    submit_url,
-                    serde_json::json!({}),
-                )
-            })));
+            ));
         }
 
         let job_id = submit_response.id.ok_or_else(|| {
@@ -313,17 +307,12 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                 let response_body = resp.raw_value.as_ref().map(ToString::to_string);
                 match resp.value.status.as_deref() {
                     Some("transcribed") => Ok(PollStep::Ready(())),
-                    Some("failed") => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some("failed".to_string()),
+                    Some("failed") => Err(task_failed(
+                        "Transcription job failed",
+                        poll_url.clone(),
+                        "failed",
                         response_body,
-                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                        ..ApiCallError::new(
-                            "Transcription job failed",
-                            poll_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    }))),
+                    )),
                     _ => Ok(PollStep::Pending),
                 }
             },
@@ -421,12 +410,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             },
             warnings,
             request: Some(TranscriptionRequest { body: None }),
-            response: TranscriptionResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            },
+            response: transcription_response(timestamp, &self.model_id, response_headers, raw_body),
             provider_metadata: None,
         })
     }

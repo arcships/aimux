@@ -32,7 +32,7 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
-    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
+    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{
@@ -40,7 +40,9 @@ use aimux_provider_utils::{
     default_fetch, load_optional_setting, load_setting, validate_base_url,
 };
 
-use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint, namespaced_options};
+use crate::shared::{
+    Endpoint, EndpointConfig, ResolveEndpoint, namespaced_options, speech_response, unsupported,
+};
 
 /// AWS service name used for SigV4 signing.
 const SERVICE_NAME: &str = "polly";
@@ -404,12 +406,7 @@ impl SpeechModel for AwsPollySpeechModel {
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),
-            response: SpeechResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: None,
-            },
+            response: speech_response(timestamp, &self.model_id, response_headers),
             provider_metadata: None,
         })
     }
@@ -452,12 +449,10 @@ fn build_request(
     if SUPPORTED_OUTPUT_FORMATS.contains(&output_format) {
         body.insert("OutputFormat".to_string(), json!(output_format));
     } else {
-        warnings.push(Warning::Unsupported {
-            feature: "outputFormat".to_string(),
-            details: Some(format!(
-                "Unsupported output format: {output_format}. Using mp3 instead."
-            )),
-        });
+        warnings.push(unsupported(
+            "outputFormat",
+            format!("Unsupported output format: {output_format}. Using mp3 instead."),
+        ));
         body.insert("OutputFormat".to_string(), json!(DEFAULT_OUTPUT_FORMAT));
     }
 
@@ -467,16 +462,16 @@ fn build_request(
 
     // `speed` and `instructions` have no Polly equivalent.
     if options.speed.is_some() {
-        warnings.push(Warning::Unsupported {
-            feature: "speed".to_string(),
-            details: Some("Amazon Polly does not support the speed option.".to_string()),
-        });
+        warnings.push(unsupported(
+            "speed",
+            "Amazon Polly does not support the speed option.",
+        ));
     }
     if options.instructions.is_some() {
-        warnings.push(Warning::Unsupported {
-            feature: "instructions".to_string(),
-            details: Some("Amazon Polly does not support the instructions option.".to_string()),
-        });
+        warnings.push(unsupported(
+            "instructions",
+            "Amazon Polly does not support the instructions option.",
+        ));
     }
 
     // Provider-specific options (`aws_polly` key).
@@ -515,12 +510,10 @@ fn resolve_engine(model_id: &str) -> (&'static str, Option<Warning>) {
         "" => ("standard", None),
         other => (
             "standard",
-            Some(Warning::Unsupported {
-                feature: "engine".to_string(),
-                details: Some(format!(
-                    "Unknown Polly engine: {other}. Using standard instead."
-                )),
-            }),
+            Some(unsupported(
+                "engine",
+                format!("Unknown Polly engine: {other}. Using standard instead."),
+            )),
         ),
     }
 }

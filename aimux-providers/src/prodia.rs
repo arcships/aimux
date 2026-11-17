@@ -16,14 +16,14 @@ use std::sync::OnceLock;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::image_model::{
-    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
-};
+use aimux_core::error::AiMuxError;
+use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{
+    EndpointConfig, image_response, namespaced_options, task_failed, video_response,
+};
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -381,11 +381,7 @@ impl ImageModel for ProdiaImageModel {
             images: ImageOutputs::Binary(vec![image_bytes]),
             warnings,
             provider_metadata: Some(metadata),
-            response: ImageResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(rh),
-            },
+            response: image_response(aimux_core::Timestamp::now(), &self.model_id, rh),
             usage: None,
         })
     }
@@ -396,8 +392,7 @@ impl ImageModel for ProdiaImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
-    VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus, VideoResult,
 };
 
 /// Prodia video generation model — implements `VideoModel`.
@@ -470,11 +465,11 @@ impl VideoModel for ProdiaVideoModel {
             operation: json!({ "job_id": job_id }),
             warnings,
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         })
     }
 
@@ -514,17 +509,12 @@ impl VideoModel for ProdiaVideoModel {
             // A terminally failed job must be a non-retryable error, not
             // Pending, so the Core poll loop stops immediately.
             "failed" => {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some(status_str.to_string()),
+                return Err(task_failed(
+                    "Prodia video generation failed",
+                    poll_url,
+                    status_str.to_string(),
                     response_body,
-                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                    ..ApiCallError::new(
-                        "Prodia video generation failed",
-                        poll_url,
-                        serde_json::json!({}),
-                    )
-                })));
+                ));
             }
             // queued / running / unknown — keep polling.
             _ => return Ok(VideoOperationStatus::Pending),
@@ -547,11 +537,11 @@ impl VideoModel for ProdiaVideoModel {
             videos,
             warnings: Vec::new(),
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         }))
     }
 }

@@ -20,14 +20,14 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFrameType, VideoModel, VideoOperationStart,
-    VideoOperationStatus, VideoResponse, VideoResult,
+    VideoOperationStatus, VideoResult,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, task_failed, video_response};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 const PROVIDER_NAME: &str = "runwayml";
@@ -277,11 +277,11 @@ impl VideoModel for RunwaymlVideoModel {
             operation: json!({ "task_id": task.id }),
             warnings: Vec::new(),
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         })
     }
 
@@ -338,26 +338,21 @@ impl VideoModel for RunwaymlVideoModel {
                     videos,
                     warnings: Vec::new(),
                     provider_metadata: None,
-                    response: VideoResponse {
-                        timestamp: Some(aimux_core::Timestamp::now()),
-                        model_id: Some(self.model_id.clone()),
-                        headers: Some(response_headers),
-                    },
+                    response: video_response(
+                        aimux_core::Timestamp::now(),
+                        &self.model_id,
+                        response_headers,
+                    ),
                 }))
             }
             // A terminally failed task must be a non-retryable error, not
             // Pending, so the Core poll loop stops immediately.
-            "FAILED" | "CANCELLED" => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(200),
-                provider_code: Some(status_str.clone()),
+            "FAILED" | "CANCELLED" => Err(task_failed(
+                format!("{PROVIDER_NAME} task {task_id} failed with status {status_str}"),
+                poll_url,
+                status_str.clone(),
                 response_body,
-                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(
-                    format!("{PROVIDER_NAME} task {task_id} failed with status {status_str}"),
-                    poll_url,
-                    serde_json::json!({}),
-                )
-            }))),
+            )),
             // PENDING / THROTTLED / RUNNING / unknown — keep polling.
             _ => Ok(VideoOperationStatus::Pending),
         }

@@ -21,18 +21,18 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::ErrorCause;
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderMetadata, Warning, provider_namespace};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
 use crate::shared::{
     EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, namespaced_options,
-    poll_interval_ms, poll_until,
+    poll_interval_ms, poll_until, task_failed, transcription_response,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -326,19 +326,12 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 .await?;
                 match resp.value.status.clone().as_str() {
                     "done" => Ok(PollStep::Ready(resp)),
-                    "error" => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some(resp.value.status.clone()),
-                        response_body: Some(
-                            resp.raw_value.clone().unwrap_or(Value::Null).to_string(),
-                        ),
-                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                        ..ApiCallError::new(
-                            "Transcription job failed",
-                            init.result_url.clone(),
-                            serde_json::json!({}),
-                        )
-                    }))),
+                    "error" => Err(task_failed(
+                        "Transcription job failed",
+                        init.result_url.clone(),
+                        resp.value.status.clone(),
+                        Some(resp.raw_value.clone().unwrap_or(Value::Null).to_string()),
+                    )),
                     _ => Ok(PollStep::Pending),
                 }
             },
@@ -380,12 +373,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             duration_in_seconds,
             warnings,
             request: Some(TranscriptionRequest { body: None }),
-            response: TranscriptionResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            },
+            response: transcription_response(timestamp, &self.model_id, response_headers, raw_body),
             provider_metadata,
         })
     }

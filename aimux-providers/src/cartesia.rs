@@ -32,12 +32,14 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
-    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
+    AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResult,
 };
 use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{
+    EndpointConfig, namespaced_options, speech_response, transcription_response, unsupported,
+};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn cartesia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -250,12 +252,7 @@ impl SpeechModel for CartesiaSpeechModel {
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),
-            response: SpeechResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: None,
-            },
+            response: speech_response(timestamp, &self.model_id, response_headers),
             provider_metadata: None,
         })
     }
@@ -358,12 +355,12 @@ fn resolve_output_format(
 
     let mapped = lookup_format(format_name);
     let mut resolved = mapped.clone().unwrap_or_else(|| {
-        warnings.push(Warning::Unsupported {
-            feature: "outputFormat".to_string(),
-            details: Some(format!(
+        warnings.push(unsupported(
+            "outputFormat",
+            format!(
                 "Unknown output format \"{output_format}\". Falling back to mp3. Use providerOptions.cartesia to configure container, encoding, and sampleRate directly."
-            )),
-        });
+            ),
+        ));
         default_output_format()
     });
 
@@ -378,34 +375,34 @@ fn resolve_output_format(
                 if SAMPLE_RATES.contains(&rate) {
                     set_sample_rate(&mut resolved, rate);
                 } else {
-                    warnings.push(Warning::Unsupported {
-                            feature: "outputFormat".to_string(),
-                            details: Some(format!(
-                                "Unsupported Cartesia sample rate in output format \"{}\". Using {} Hz instead.",
-                                output_format,
-                                get_sample_rate(&resolved)
-                            )),
-                        });
-                }
-            } else {
-                warnings.push(Warning::Unsupported {
-                        feature: "outputFormat".to_string(),
-                        details: Some(format!(
+                    warnings.push(unsupported(
+                        "outputFormat",
+                        format!(
                             "Unsupported Cartesia sample rate in output format \"{}\". Using {} Hz instead.",
                             output_format,
                             get_sample_rate(&resolved)
-                        )),
-                    });
-            }
-        } else {
-            warnings.push(Warning::Unsupported {
-                    feature: "outputFormat".to_string(),
-                    details: Some(format!(
+                        ),
+                    ));
+                }
+            } else {
+                warnings.push(unsupported(
+                    "outputFormat",
+                    format!(
                         "Unsupported Cartesia sample rate in output format \"{}\". Using {} Hz instead.",
                         output_format,
                         get_sample_rate(&resolved)
-                    )),
-                });
+                    ),
+                ));
+            }
+        } else {
+            warnings.push(unsupported(
+                "outputFormat",
+                format!(
+                    "Unsupported Cartesia sample rate in output format \"{}\". Using {} Hz instead.",
+                    output_format,
+                    get_sample_rate(&resolved)
+                ),
+            ));
         }
     }
 
@@ -419,13 +416,10 @@ fn resolve_output_format(
 
     if container == "mp3" {
         if provider_encoding.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "providerOptions.cartesia.encoding".to_string(),
-                details: Some(
-                    "Cartesia MP3 output does not accept an encoding. The encoding option was ignored."
-                        .to_string(),
-                ),
-            });
+            warnings.push(unsupported(
+                "providerOptions.cartesia.encoding",
+                "Cartesia MP3 output does not accept an encoding. The encoding option was ignored.",
+            ));
         }
 
         let bit_rate = provider_bit_rate.unwrap_or_else(|| {
@@ -444,13 +438,10 @@ fn resolve_output_format(
 
     // raw or wav
     if provider_bit_rate.is_some() {
-        warnings.push(Warning::Unsupported {
-            feature: "providerOptions.cartesia.bitRate".to_string(),
-            details: Some(
-                "Cartesia raw and WAV output do not accept a bit rate. The bitRate option was ignored."
-                    .to_string(),
-            ),
-        });
+        warnings.push(unsupported(
+            "providerOptions.cartesia.bitRate",
+            "Cartesia raw and WAV output do not accept a bit rate. The bitRate option was ignored.",
+        ));
     }
 
     let encoding = provider_encoding.unwrap_or_else(|| {
@@ -567,24 +558,15 @@ fn build_request(
             gen_config.insert("speed".to_string(), json!(speed));
             body.insert("generation_config".to_string(), Value::Object(gen_config));
         } else {
-            warnings.push(Warning::Unsupported {
-                feature: "speed".to_string(),
-                details: Some(
-                    "Cartesia speed must be between 0.6 and 1.5. The speed option was ignored."
-                        .to_string(),
-                ),
-            });
+            warnings.push(unsupported(
+                "speed",
+                "Cartesia speed must be between 0.6 and 1.5. The speed option was ignored.",
+            ));
         }
     }
 
     if options.instructions.is_some() {
-        warnings.push(Warning::Unsupported {
-            feature: "instructions".to_string(),
-            details: Some(
-                "Cartesia speech models do not support instructions. Instructions parameter was ignored."
-                    .to_string(),
-            ),
-        });
+        warnings.push(unsupported("instructions", "Cartesia speech models do not support instructions. Instructions parameter was ignored.",));
     }
 
     Ok((body, warnings))
@@ -640,7 +622,7 @@ fn parse_cartesia_provider_options(
 
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 use serde::Deserialize;
@@ -746,13 +728,10 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
                 );
             }
             if cartesia.get("streaming").is_some() {
-                warnings.push(Warning::Unsupported {
-                    feature: "providerOptions.cartesia.streaming".to_string(),
-                    details: Some(
-                        "Cartesia batch transcription does not support streaming options."
-                            .to_string(),
-                    ),
-                });
+                warnings.push(unsupported(
+                    "providerOptions.cartesia.streaming",
+                    "Cartesia batch transcription does not support streaming options.",
+                ));
             }
         }
 
@@ -814,12 +793,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
             duration_in_seconds: parsed.duration,
             warnings,
             request: Some(TranscriptionRequest { body: None }),
-            response: TranscriptionResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-                body: Some(raw_body),
-            },
+            response: transcription_response(timestamp, &self.model_id, response_headers, raw_body),
             provider_metadata: None,
         })
     }

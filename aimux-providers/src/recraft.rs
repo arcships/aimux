@@ -21,15 +21,13 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::{
-    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
-};
-use aimux_core::shared::Warning;
+use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    EndpointConfig, POLL_INTERVAL_MS_KEY, namespaced_options, poll_interval_ms, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, image_response, namespaced_options, poll_interval_ms,
+    retry_download, unsupported,
 };
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
@@ -319,12 +317,10 @@ impl ImageModel for RecraftImageModel {
         let mut warnings = Vec::new();
 
         if options.aspect_ratio.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "aspectRatio".to_string(),
-                details: Some(
-                    "Recraft does not support aspect ratio. Use `size` instead.".to_string(),
-                ),
-            });
+            warnings.push(unsupported(
+                "aspectRatio",
+                "Recraft does not support aspect ratio. Use `size` instead.",
+            ));
         }
 
         let timestamp = aimux_core::Timestamp::now();
@@ -360,11 +356,7 @@ impl ImageModel for RecraftImageModel {
             images,
             warnings,
             provider_metadata: None,
-            response: ImageResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: image_response(timestamp, &self.model_id, response_headers),
             usage: None,
         })
     }

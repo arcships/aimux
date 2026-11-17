@@ -22,12 +22,11 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
-    VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus, VideoResult,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{EndpointConfig, namespaced_options, task_failed, video_response};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -378,11 +377,11 @@ impl VideoModel for KlingAIVideoModel {
             operation: json!({ "mode": mode, "id": id, "task_id": task_id }),
             warnings: Vec::new(),
             provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
+            response: video_response(
+                aimux_core::Timestamp::now(),
+                &self.model_id,
+                response_headers,
+            ),
         })
     }
 
@@ -417,19 +416,14 @@ impl VideoModel for KlingAIVideoModel {
         let result: KlingAITaskResult = resp.value;
 
         if result.code != 0 {
-            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(200),
-                provider_code: Some(result.code.to_string()),
-                response_body: response_body.clone(),
-                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(
-                    result
-                        .message
-                        .unwrap_or_else(|| format!("KlingAI error code: {}", result.code)),
-                    poll_url.clone(),
-                    serde_json::json!({}),
-                )
-            })));
+            return Err(task_failed(
+                result
+                    .message
+                    .unwrap_or_else(|| format!("KlingAI error code: {}", result.code)),
+                poll_url.clone(),
+                result.code.to_string(),
+                response_body.clone(),
+            ));
         }
 
         if let Some(data) = result.data
@@ -459,25 +453,20 @@ impl VideoModel for KlingAIVideoModel {
                     videos,
                     warnings: Vec::new(),
                     provider_metadata: None,
-                    response: VideoResponse {
-                        timestamp: Some(aimux_core::Timestamp::now()),
-                        model_id: Some(self.model_id.clone()),
-                        headers: Some(response_headers),
-                    },
+                    response: video_response(
+                        aimux_core::Timestamp::now(),
+                        &self.model_id,
+                        response_headers,
+                    ),
                 }));
             }
             if task_status == "failed" {
-                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                    status_code: Some(200),
-                    provider_code: Some("failed".to_string()),
+                return Err(task_failed(
+                    "KlingAI video generation failed",
+                    poll_url,
+                    "failed",
                     response_body,
-                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                    ..ApiCallError::new(
-                        "KlingAI video generation failed",
-                        poll_url,
-                        serde_json::json!({}),
-                    )
-                })));
+                ));
             }
         }
 

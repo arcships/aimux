@@ -22,14 +22,12 @@ use serde_json::Value;
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::{
-    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
-};
+use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs, ImageResult};
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{HttpBody, MultipartForm};
 
-use crate::shared::{EndpointConfig, namespaced_options};
+use crate::shared::{EndpointConfig, image_response, namespaced_options, unsupported};
 use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
@@ -290,14 +288,11 @@ impl ImageModel for StabilityImageModel {
             Some(ar)
         } else if let Some(size) = options.size {
             if let Some(ar) = convert_size_to_aspect_ratio(&size) {
-                warnings.push(Warning::Unsupported {
-                    feature: "size".into(),
-                    details: Some(
-                        "Deriving aspect_ratio from size. Stability uses aspect_ratio, not \
-                         explicit width/height, for these models."
-                            .into(),
-                    ),
-                });
+                warnings.push(unsupported(
+                    "size",
+                    "Deriving aspect_ratio from size. Stability uses aspect_ratio, not \
+                         explicit width/height, for these models.",
+                ));
                 Some(ar)
             } else {
                 None
@@ -395,11 +390,7 @@ impl ImageModel for StabilityImageModel {
             images: ImageOutputs::Binary(vec![image_bytes]),
             warnings,
             provider_metadata: None,
-            response: ImageResponse {
-                timestamp: Some(aimux_core::Timestamp::now()),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(rh),
-            },
+            response: image_response(aimux_core::Timestamp::now(), &self.model_id, rh),
             usage: None,
         })
     }
