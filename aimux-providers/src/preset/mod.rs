@@ -380,7 +380,7 @@ pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
     TABLE
         .get_or_init(|| {
             DESCRIPTORS
-                .get_or_init(|| parse_registry(include_str!("provider_registry.json")))
+                .get_or_init(|| parse_registry(include_str!("../provider_registry.json")))
                 .iter()
                 .map(|descriptor| PresetEntry { descriptor })
                 .collect()

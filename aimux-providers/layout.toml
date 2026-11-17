@@ -132,6 +132,11 @@ upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
 
+[[mistral.files]]
+rust = "mistral/api_types.rs"
+status = "aimux"
+reason = "the response and chunk schemas of mistral-chat-language-model.ts"
+
 [vertex]
 package = "@ai-sdk/google-vertex"
 # One aimux entry point: the edge entries (edge/, */edge/) and the *-node entries map to
@@ -332,7 +337,7 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/google-vertex-speech-model-options.ts"
-rust = "google/speech.rs"
+rust = "google/speech_model_options.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -498,6 +503,21 @@ rust = "vertex/xai/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
+
+[[vertex.files]]
+rust = "vertex/auth_certificate.rs"
+status = "aimux"
+reason = "certificate subject tokens and native TLS transport for Google workload identity federation (used by auth_google_auth_library.rs)"
+
+[[vertex.files]]
+rust = "vertex/auth_external.rs"
+status = "aimux"
+reason = "subject-token sources for Google workload identity federation (used by auth_google_auth_library.rs)"
+
+[[vertex.files]]
+rust = "vertex/partner_provider.rs"
+status = "aimux"
+reason = "shared helper for the Vertex maas/ and xai/ OpenAI-compatible sub-providers"
 
 [openai_compatible]
 package = "@ai-sdk/openai-compatible"
@@ -686,6 +706,11 @@ status = "mapped"
 [[openai_compatible.files]]
 upstream = "src/version.ts"
 status = "not-applicable"
+
+[[openai_compatible.files]]
+rust = "openai_compatible/request_rewrite.rs"
+status = "aimux"
+reason = "closed enum of host body rewrites for OpenAICompatibleConfig (RFC-0046 §3.5)"
 
 [groq]
 package = "@ai-sdk/groq"
@@ -925,6 +950,11 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[[cohere.files]]
+rust = "cohere/api_types.rs"
+status = "aimux"
+reason = "the response and stream-event schemas of cohere-chat-language-model.ts"
 
 [deepseek]
 package = "@ai-sdk/deepseek"
@@ -1513,6 +1543,16 @@ sub-feature = [
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[[google.files]]
+rust = "google/api_types.rs"
+status = "aimux"
+reason = "the Gemini generateContent / streamGenerateContent response schemas of google-language-model.ts"
+
+[[google.files]]
+rust = "google/options.rs"
+status = "aimux"
+reason = "the providerOptions and providerMetadata namespaces of the Gemini family"
 
 [anthropic_aws]
 package = "@ai-sdk/anthropic-aws"
@@ -2441,6 +2481,11 @@ upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
 
+[[bedrock.files]]
+rust = "bedrock/options.rs"
+status = "aimux"
+reason = "canonical amazonBedrock options namespace and model-family constants"
+
 [huggingface]
 package = "@ai-sdk/huggingface"
 
@@ -2792,6 +2837,11 @@ sub-feature = [
 upstream = "src/xai-video-settings.ts"
 status = "not-applicable"
 reason = "only the XaiVideoModelId string union; Rust takes the model id as &str"
+
+[[xai.files]]
+rust = "xai/options.rs"
+status = "aimux"
+reason = "the providerOptions and providerMetadata namespace of xAI"
 
 [azure]
 package = "@ai-sdk/azure"
@@ -3281,6 +3331,16 @@ upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
 
+[[anthropic.files]]
+rust = "anthropic/config.rs"
+status = "aimux"
+reason = "private per-model configuration shared by Anthropic, Anthropic AWS, and Vertex Claude (RFC-0046 §3.5)"
+
+[[anthropic.files]]
+rust = "anthropic/request_rewrite.rs"
+status = "aimux"
+reason = "closed enums of host URL and body rewrites for AnthropicConfig (RFC-0046 §3.5)"
+
 [deepgram]
 package = "@ai-sdk/deepgram"
 
@@ -3529,3 +3589,8 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[[elevenlabs.files]]
+rust = "elevenlabs/options.rs"
+status = "aimux"
+reason = "the providerOptions namespace of ElevenLabs"

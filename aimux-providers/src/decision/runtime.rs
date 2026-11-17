@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{
+use super::support::{
     self as support, DecisionConfig, DecisionImage, DecisionProbabilitySource, candidate_count,
     invalid, provider_metadata, response_info,
 };
@@ -154,7 +154,7 @@ impl RuntimeDecisionModel {
         images: &[DecisionImage],
     ) -> Result<(String, Value), AiMuxError> {
         let provider = self.provider();
-        let mut body = crate::systemone::request_body(&self.model_id, request);
+        let mut body = crate::jev::internal::request_body(&self.model_id, request);
         if matches!(provider, "vllm" | "sglang") {
             for question in request.questions.values() {
                 let valid = match question {
@@ -404,7 +404,7 @@ impl RuntimeDecisionModel {
             })
             .unwrap_or_default();
         let latency = raw.get("latency_ms").filter(|v| v.is_number()).cloned();
-        let mut result = crate::systemone::convert_response(
+        let mut result = crate::jev::internal::convert_response(
             request,
             serde_json::from_value(data).map_err(|e| AiMuxError::InvalidResponseData {
                 message: format!("{provider} SystemOne: {e}"),
@@ -412,7 +412,7 @@ impl RuntimeDecisionModel {
             })?,
             raw,
             headers,
-            crate::systemone::ResponseProfile {
+            crate::jev::internal::ResponseProfile {
                 provider,
                 rounding: None,
                 probability_source,
@@ -724,7 +724,7 @@ impl DecisionModel for RuntimeDecisionModel {
                 .await
             }
             ("sglang", Some("score")) | ("vllm", Some("generative_scoring")) => {
-                crate::decision_scoring::score(self, request, options, &images).await
+                super::scoring::score(self, request, options, &images).await
             }
             (_, Some("systemone")) => {
                 let (url, body) = self.systemone_request(request, options, &images)?;

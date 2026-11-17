@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{
+use crate::decision::support::{
     DecisionProbabilitySource, invalid, provider_metadata, response_info,
 };
 

@@ -13,8 +13,8 @@ use aimux_core::decision_model::*;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{DecisionImage, candidate_count, invalid, post};
-use crate::runtime_decision::{RuntimeDecisionModel, result_from_distributions};
+use super::runtime::{RuntimeDecisionModel, result_from_distributions};
+use super::support::{DecisionImage, candidate_count, invalid, post};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

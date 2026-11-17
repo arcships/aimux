@@ -413,11 +413,8 @@ pub use you_com::{
     YouComProvider, YouComProviderSettings, YouComSearchModel, create_you_com, you_com,
 };
 
-mod decision_scoring;
-mod decision_support;
-pub use decision_support::DecisionProbabilitySource;
-mod runtime_decision;
-mod systemone;
+mod decision;
+pub use decision::DecisionProbabilitySource;
 
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]

@@ -193,7 +193,7 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
 # names only the shared layers (including `stream`) and the decision layer
-# (`decision_support`, `runtime_decision`); the in-crate tests also name
+# (`decision`); the in-crate tests also name
 # `test_support`.
 require_paths aimux-providers/src/shared aimux-providers/src/openai_compatible
 rule4c_hits="$(
@@ -201,7 +201,7 @@ rule4c_hits="$(
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai_compatible|decision_support|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai_compatible|decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"
@@ -303,7 +303,7 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # unit tests and the `DEFAULT_NAME` provider-name constants aside). Codex reads the OpenAI
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
-vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex.rs aimux-providers/src/open_responses aimux-providers/src/elevenlabs'
+vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex aimux-providers/src/open_responses aimux-providers/src/elevenlabs'
 # shellcheck disable=SC2086
 require_paths $vendor_family
 rule8_hits="$(
@@ -388,6 +388,7 @@ violation 'single-modality providerOptions namespace key spelled outside the pac
 #   anthropic_aws, bedrock    -> crate::anthropic::internal
 #   vertex                    -> crate::{google,anthropic,openai_compatible}::internal
 #   preset                    -> crate::openai_compatible::internal
+#   decision                  -> crate::jev::internal (SystemOne wire codec)
 # No other vendor module (or test) reaches into another vendor module or uses a
 # crate-root vendor re-export (`crate::OpenAI*`, `use crate::{...}`).
 # `stream/chat_tool_calls_tests.rs` is the sole cross-vendor test file until it
@@ -397,6 +398,7 @@ require_paths \
     aimux-providers/src/anthropic/internal/mod.rs \
     aimux-providers/src/google/internal/mod.rs \
     aimux-providers/src/openai_compatible/internal/mod.rs \
+    aimux-providers/src/jev/internal/mod.rs \
     aimux-providers/src/stream/chat_tool_calls_tests.rs
 rule11_hits="$(
     python3 - <<'PY'
@@ -404,8 +406,8 @@ import glob, re
 
 root = "aimux-providers/src"
 shared_items = {
-    "shared", "stream", "test_support", "decision_support", "decision_scoring",
-    "runtime_decision", "catalogue", "default_providers", "replay",
+    "shared", "stream", "test_support", "decision",
+    "catalogue", "default_providers", "replay",
     "AuthMode", "PresetDescriptor", "PresetEntry", "PresetSettings",
     "create_provider", "default_providers", "provider_api_key_env",
     "provider_default_base_url", "provider_names", "init_logging",
@@ -421,6 +423,7 @@ allowed_internal = {
     "bedrock": {"anthropic"},
     "vertex": {"google", "anthropic", "openai_compatible"},
     "preset": {"openai_compatible"},
+    "decision": {"jev"},
 }
 
 for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
@@ -439,8 +442,6 @@ for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
             for m in re.finditer(r"\bcrate::([A-Za-z0-9_]+)(?:::([A-Za-z0-9_]+))?", code):
                 first, second = m.group(1), m.group(2)
                 if first == pkg or first in shared_items:
-                    continue
-                if first == "systemone" and pkg in ("jev", "runtime_decision"):
                     continue
                 if first in allowed_internal.get(pkg, set()) and second == "internal":
                     continue
