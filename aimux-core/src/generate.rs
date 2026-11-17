@@ -1025,7 +1025,12 @@ async fn prepare_prompt(
     operation_timeout: timeout::OperationTimeout,
 ) -> Result<(LanguageModelPrompt, Vec<ModelMessage>), AiMuxError> {
     let (messages, instructions) = standardize_prompt(prompt, instructions)?;
-    let supported_urls = model.supported_urls().await;
+    let supported_urls = timeout::run(
+        async { Ok(model.supported_urls().await) },
+        abort_signal,
+        operation_timeout,
+    )
+    .await?;
     let download =
         download.unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
     let assets = timeout::run(
@@ -1160,16 +1165,22 @@ async fn generate_in_operation(
         let mut tool_calls = Vec::new();
         for content in &result.content {
             if let GenerateContent::ToolCall(call) = content {
-                tool_calls.push(
-                    parse_tool_call(
-                        call.clone(),
-                        tools.as_deref(),
-                        repair_tool_call.as_ref(),
-                        &messages,
-                        operation_instructions.as_deref(),
-                    )
-                    .await,
-                );
+                let parsed = timeout::run(
+                    async {
+                        Ok(parse_tool_call(
+                            call.clone(),
+                            tools.as_deref(),
+                            repair_tool_call.as_ref(),
+                            &messages,
+                            operation_instructions.as_deref(),
+                        )
+                        .await)
+                    },
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                tool_calls.push(parsed);
             }
         }
         if let Some(error) = tool_choice_violation(
@@ -1554,6 +1565,25 @@ pub async fn stream_text(
         .await
 }
 
+/// Convert a triggered caller abort signal into a stream `Abort` part.
+fn aborted_stream_part(abort_signal: Option<&AbortSignal>) -> TextStreamPart {
+    let error = abort_signal.map_or_else(
+        || AiMuxError::Aborted("request aborted".into()),
+        AiMuxError::from_abort_signal,
+    );
+    TextStreamPart::Abort {
+        reason: Some(error.to_string()),
+    }
+}
+
+/// Convert an expired stream/operation deadline into its `AiMuxError::Timeout`.
+fn exceeded_deadline_error(deadline: Option<timeout::TimeoutDeadline>) -> AiMuxError {
+    deadline.map_or_else(
+        || AiMuxError::Timeout("request timed out".into()),
+        timeout::TimeoutDeadline::error,
+    )
+}
+
 // The stream setup runs inside the operation settings' scope, like
 // `generate_in_operation`. The pump task that drives the returned stream
 // calls no model and does not read them.
@@ -1867,10 +1897,7 @@ async fn stream_in_operation(
                 let next = tokio::select! {
                     biased;
                     () = timeout::wait_for_abort(abort_signal.as_ref()) => {
-                        let error = AiMuxError::from_abort_signal(
-                            abort_signal.as_ref().expect("abort future only resolves for a signal"),
-                        );
-                        yield Ok(TextStreamPart::Abort { reason: Some(error.to_string()) });
+                        yield Ok(aborted_stream_part(abort_signal.as_ref()));
                         return;
                     }
                     item = rx.recv() => item.or_else(|| {
@@ -1908,13 +1935,24 @@ async fn stream_in_operation(
                 }
                 match part.split_payload() {
                     StreamPartPayload::ToolCall(raw) => {
-                        let parsed = parse_tool_call(
-                            raw,
-                            tools.as_deref(),
-                            repair_tool_call.as_ref(),
-                            &messages,
-                            operation_instructions.as_deref(),
-                        ).await;
+                        let parsed = tokio::select! {
+                            biased;
+                            () = timeout::wait_for_abort(abort_signal.as_ref()) => {
+                                yield Ok(aborted_stream_part(abort_signal.as_ref()));
+                                return;
+                            }
+                            () = timeout::wait_for_deadline(operation_timeout.deadline()) => {
+                                yield Err(exceeded_deadline_error(operation_timeout.deadline()));
+                                return;
+                            }
+                            parsed = parse_tool_call(
+                                raw,
+                                tools.as_deref(),
+                                repair_tool_call.as_ref(),
+                                &messages,
+                                operation_instructions.as_deref(),
+                            ) => parsed,
+                        };
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         let tool_error = invalid_tool_call_error(&parsed);
                         yield Ok(TextStreamPart::ToolCall(parsed));
