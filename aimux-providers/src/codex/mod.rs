@@ -36,9 +36,37 @@ mod provider;
 mod responses_model;
 
 pub use crate::shared::TransformRequestBody;
-pub use oauth::{CODEX_OAUTH_TOKEN_URL, CodexTokens, codex_refresh, codex_refresh_at};
+pub use oauth::{CODEX_OAUTH_TOKEN_URL, codex_refresh, codex_refresh_at};
 pub use provider::{
     CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_SUBSCRIPTION_BASE_URL, CodexMode,
     CodexProvider, CodexProviderSettings, codex, create_codex,
 };
 pub use responses_model::CodexModel;
+
+/// Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
+///
+/// `Debug` is hand-written so both tokens are redacted from logs and error
+/// output.
+#[derive(Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct CodexTokens {
+    /// Access token to pass as the `ChatGptAccount` token of [`CodexProviderSettings`].
+    pub access_token: String,
+    /// Rotated refresh token — **single use**; the caller must persist the
+    /// new value (the library never persists credentials).
+    pub refresh_token: Option<String>,
+    /// Access-token lifetime in seconds, if the endpoint reports it.
+    pub expires_in_secs: Option<u64>,
+}
+
+impl std::fmt::Debug for CodexTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexTokens")
+            .field("access_token", &"[REDACTED]")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("expires_in_secs", &self.expires_in_secs)
+            .finish()
+    }
+}

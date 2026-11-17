@@ -1,44 +1,15 @@
 //! Codex OAuth token types and stateless refresh helpers (RFC-0018).
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::HttpRequest;
 
+use super::CodexTokens;
 use crate::openai::internal::openai_failed_response_handler;
 
 /// OAuth token endpoint used by [`codex_refresh`] (RFC-0018 §2 V3).
 pub const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
-
-/// Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
-///
-/// `Debug` is hand-written so both tokens are redacted from logs and error
-/// output.
-#[derive(Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct CodexTokens {
-    /// Access token to pass as the `ChatGptAccount` token of
-    /// [`CodexProviderSettings`](super::CodexProviderSettings).
-    pub access_token: String,
-    /// Rotated refresh token — **single use**; the caller must persist the
-    /// new value (the library never persists credentials).
-    pub refresh_token: Option<String>,
-    /// Access-token lifetime in seconds, if the endpoint reports it.
-    pub expires_in_secs: Option<u64>,
-}
-
-impl std::fmt::Debug for CodexTokens {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CodexTokens")
-            .field("access_token", &"[REDACTED]")
-            .field(
-                "refresh_token",
-                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("expires_in_secs", &self.expires_in_secs)
-            .finish()
-    }
-}
 
 /// Stateless OAuth token-refresh helper for the Codex subscription channel
 /// (RFC-0018 §3.2). Performs one `POST auth.openai.com/oauth/token` call and
