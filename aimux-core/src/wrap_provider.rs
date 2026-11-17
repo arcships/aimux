@@ -10,7 +10,7 @@ use crate::image_model::ImageModel;
 use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
 use crate::language_model::LanguageModel;
 use crate::language_model_middleware::{LanguageModelMiddleware, wrap_language_model};
-use crate::provider::{Provider, ProviderDiscovery};
+use crate::provider::{LanguageApi, Provider, ProviderDiscovery};
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
 use crate::skills_model::Skills;
@@ -107,35 +107,19 @@ impl Provider for WrappedProvider {
         self.provider.search_model(id)
     }
 
-    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        wrap_offered_language(self.provider.chat(id), &self.language_model_middleware)
-    }
-
-    fn responses(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        wrap_offered_language(self.provider.responses(id), &self.language_model_middleware)
-    }
-
-    fn completion(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        wrap_offered_language(
-            self.provider.completion(id),
-            &self.language_model_middleware,
-        )
-    }
-
-    fn messages(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        wrap_offered_language(self.provider.messages(id), &self.language_model_middleware)
+    fn language_model_with_api(
+        &self,
+        api: LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.provider.language_model_with_api(api, id).map(|res| {
+            res.map(|model| wrap_language_model(model, &self.language_model_middleware, None, None))
+        })
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         self.provider.discovery()
     }
-}
-
-fn wrap_offered_language(
-    result: Option<Result<Arc<dyn LanguageModel>, AiMuxError>>,
-    middleware: &[Arc<dyn LanguageModelMiddleware>],
-) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-    result.map(|res| res.map(|model| wrap_language_model(model, middleware, None, None)))
 }
 
 #[cfg(test)]

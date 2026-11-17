@@ -86,7 +86,7 @@ pub use media_type::{
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use package_descriptor::{
-    EnvVarRef, LanguageModelMethod, ModalityKind, PackageAuthKind, PackageDescriptor, PackageKind,
+    EnvVarRef, LanguageApi, ModalityKind, PackageAuthKind, PackageDescriptor, PackageKind,
     SettingFieldKind, SettingFieldSpec, StringOrEnv, TemplateParamDescriptor,
 };
 pub use parse_provider_options::{

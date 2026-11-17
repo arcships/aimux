@@ -239,12 +239,17 @@ impl Provider for AnthropicAwsProvider {
         Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
-    fn messages(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.messages(model_id))))
-    }
-
-    fn chat(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.messages(model_id))))
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match api {
+            aimux_core::LanguageApi::Messages | aimux_core::LanguageApi::Chat => {
+                Some(Ok(Arc::new(self.messages(model_id))))
+            }
+            _ => None,
+        }
     }
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {

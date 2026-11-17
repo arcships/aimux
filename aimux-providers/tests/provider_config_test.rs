@@ -117,11 +117,11 @@ fn package_descriptors_cover_all_packages_in_sorted_order_and_match_helpers() {
     assert!(!openai.supports_skills);
     assert_eq!(openai.default_method, Some(ModalityKind::LanguageModel));
     assert_eq!(
-        openai.language_methods,
+        openai.language_apis,
         vec![
-            aimux_provider_utils::LanguageModelMethod::Chat,
-            aimux_provider_utils::LanguageModelMethod::Responses,
-            aimux_provider_utils::LanguageModelMethod::Completion,
+            aimux_provider_utils::LanguageApi::Chat,
+            aimux_provider_utils::LanguageApi::Responses,
+            aimux_provider_utils::LanguageApi::Completion,
         ]
     );
 
@@ -129,10 +129,10 @@ fn package_descriptors_cover_all_packages_in_sorted_order_and_match_helpers() {
     assert!(anthropic.supports_files);
     assert!(anthropic.supports_skills);
     assert_eq!(
-        anthropic.language_methods,
+        anthropic.language_apis,
         vec![
-            aimux_provider_utils::LanguageModelMethod::Messages,
-            aimux_provider_utils::LanguageModelMethod::Chat,
+            aimux_provider_utils::LanguageApi::Messages,
+            aimux_provider_utils::LanguageApi::Chat,
         ]
     );
 
@@ -169,47 +169,47 @@ fn package_descriptors_cover_all_packages_in_sorted_order_and_match_helpers() {
 }
 
 #[test]
-fn explicit_language_methods_are_exposed_across_language_vendors() {
-    use aimux_provider_utils::LanguageModelMethod;
+fn language_apis_are_exposed_across_language_vendors() {
+    use aimux_provider_utils::LanguageApi;
 
-    let cases: &[(&str, LanguageModelMethod)] = &[
-        ("openai", LanguageModelMethod::Chat),
-        ("openai", LanguageModelMethod::Responses),
-        ("openai", LanguageModelMethod::Completion),
-        ("anthropic", LanguageModelMethod::Messages),
-        ("anthropic", LanguageModelMethod::Chat),
-        ("anthropic_aws", LanguageModelMethod::Messages),
-        ("anthropic_aws", LanguageModelMethod::Chat),
-        ("azure", LanguageModelMethod::Chat),
-        ("azure", LanguageModelMethod::Responses),
-        ("codex", LanguageModelMethod::Responses),
-        ("xai", LanguageModelMethod::Responses),
-        ("huggingface", LanguageModelMethod::Responses),
-        ("google", LanguageModelMethod::Chat),
-        ("google_vertex", LanguageModelMethod::Chat),
-        ("amazon_bedrock", LanguageModelMethod::Chat),
-        ("mistral", LanguageModelMethod::Chat),
-        ("groq", LanguageModelMethod::Chat),
-        ("deepseek", LanguageModelMethod::Chat),
-        ("cohere", LanguageModelMethod::Chat),
-        ("ollama", LanguageModelMethod::Chat),
-        ("ollama", LanguageModelMethod::Completion),
+    let cases: &[(&str, LanguageApi)] = &[
+        ("openai", LanguageApi::Chat),
+        ("openai", LanguageApi::Responses),
+        ("openai", LanguageApi::Completion),
+        ("anthropic", LanguageApi::Messages),
+        ("anthropic", LanguageApi::Chat),
+        ("anthropic_aws", LanguageApi::Messages),
+        ("anthropic_aws", LanguageApi::Chat),
+        ("azure", LanguageApi::Chat),
+        ("azure", LanguageApi::Responses),
+        ("codex", LanguageApi::Responses),
+        ("xai", LanguageApi::Responses),
+        ("huggingface", LanguageApi::Responses),
+        ("google", LanguageApi::Chat),
+        ("google_vertex", LanguageApi::Chat),
+        ("amazon_bedrock", LanguageApi::Chat),
+        ("mistral", LanguageApi::Chat),
+        ("groq", LanguageApi::Chat),
+        ("deepseek", LanguageApi::Chat),
+        ("cohere", LanguageApi::Chat),
+        ("ollama", LanguageApi::Chat),
+        ("ollama", LanguageApi::Completion),
     ];
-    for &(package, method) in cases {
+    for &(package, api) in cases {
         let provider = aimux_providers::create_provider(package, Default::default()).unwrap();
-        let model = match method {
-            LanguageModelMethod::Chat => provider.chat("model-id"),
-            LanguageModelMethod::Responses => provider.responses("model-id"),
-            LanguageModelMethod::Completion => provider.completion("model-id"),
-            LanguageModelMethod::Messages => provider.messages("model-id"),
-        }
-        .unwrap_or_else(|| panic!("{package} missing method {method:?}"))
-        .unwrap();
+        let model = provider
+            .language_model_with_api(api, "model-id")
+            .unwrap_or_else(|| panic!("{package} missing language api {api:?}"))
+            .unwrap();
         assert_eq!(model.model_id(), "model-id");
     }
 
     let google = aimux_providers::create_provider("google", Default::default()).unwrap();
-    assert!(google.responses("m").is_none());
+    assert!(
+        google
+            .language_model_with_api(LanguageApi::Responses, "m")
+            .is_none()
+    );
 
     let compat = provider_from_config(&ProviderEntrySpec {
         package: "openai_compatible".into(),
@@ -221,21 +221,41 @@ fn explicit_language_methods_are_exposed_across_language_vendors() {
     })
     .unwrap();
     assert_eq!(
-        compat.chat("m").unwrap().unwrap().provider(),
+        compat
+            .language_model_with_api(LanguageApi::Chat, "m")
+            .unwrap()
+            .unwrap()
+            .provider(),
         "custom-compat.chat"
     );
     assert_eq!(
-        compat.completion("m").unwrap().unwrap().provider(),
+        compat
+            .language_model_with_api(LanguageApi::Completion, "m")
+            .unwrap()
+            .unwrap()
+            .provider(),
         "custom-compat.completion"
     );
-    assert!(compat.responses("m").is_none());
-    assert!(compat.messages("m").is_none());
+    assert!(
+        compat
+            .language_model_with_api(LanguageApi::Responses, "m")
+            .is_none()
+    );
+    assert!(
+        compat
+            .language_model_with_api(LanguageApi::Messages, "m")
+            .is_none()
+    );
 
     let elevenlabs = aimux_providers::create_provider("elevenlabs", Default::default()).unwrap();
-    assert!(elevenlabs.chat("m").is_none());
-    assert!(elevenlabs.responses("m").is_none());
-    assert!(elevenlabs.completion("m").is_none());
-    assert!(elevenlabs.messages("m").is_none());
+    for api in [
+        LanguageApi::Chat,
+        LanguageApi::Responses,
+        LanguageApi::Completion,
+        LanguageApi::Messages,
+    ] {
+        assert!(elevenlabs.language_model_with_api(api, "m").is_none());
+    }
 }
 
 #[test]

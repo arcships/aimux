@@ -210,9 +210,13 @@ impl Provider for Fallback {
         self.decision
             .then(|| Ok(Arc::new(MockDecision("fallback")) as _))
     }
-    fn chat(&self, id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        self.record("chat", id);
-        Some(Ok(Arc::new(MockLanguage("fallback"))))
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.record("language_model_with_api", id);
+        (api == aimux_core::LanguageApi::Chat).then(|| Ok(Arc::new(MockLanguage("fallback")) as _))
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         self.record("files", "");
@@ -664,43 +668,108 @@ impl LanguageModelMiddleware for OverrideProviderName {
 }
 
 #[test]
-fn custom_provider_explicit_language_methods_do_not_fall_back_to_fallback_provider() {
+fn custom_provider_explicit_language_apis_do_not_fall_back_to_fallback_provider() {
+    use aimux_core::LanguageApi;
+
     let fallback = Arc::new(Fallback::default());
+    // Also lock in exhaustive construction of `CustomProviderOptions` without
+    // `..Default::default()` so no breaking pub fields are added.
     let custom = custom_provider(CustomProviderOptions {
-        chat_models: HashMap::from([(
+        language_models: HashMap::new(),
+        embedding_models: HashMap::new(),
+        image_models: HashMap::new(),
+        transcription_models: HashMap::new(),
+        speech_models: HashMap::new(),
+        reranking_models: HashMap::new(),
+        video_models: HashMap::new(),
+        search_models: HashMap::new(),
+        decision_models: HashMap::new(),
+        files: None,
+        skills: None,
+        discovery: None,
+        fallback_provider: Some(fallback.clone()),
+    })
+    .with_language_api_models(
+        LanguageApi::Chat,
+        HashMap::from([(
             "m1".to_string(),
             Arc::new(MockLanguage("explicit-chat")) as Arc<dyn LanguageModel>,
         )]),
-        fallback_provider: Some(fallback.clone()),
-        ..Default::default()
-    });
-    let hit = custom.chat("m1").expect("registered chat method").unwrap();
+    );
+    let hit = custom
+        .language_model_with_api(LanguageApi::Chat, "m1")
+        .expect("registered chat api")
+        .unwrap();
     assert_eq!(hit.model_id(), "explicit-chat");
-    assert!(custom.responses("m1").is_none());
-    assert!(custom.completion("m1").is_none());
-    assert!(custom.messages("m1").is_none());
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Responses, "m1")
+            .is_none()
+    );
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Completion, "m1")
+            .is_none()
+    );
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Messages, "m1")
+            .is_none()
+    );
     let miss = custom
-        .chat("missing")
-        .expect("registered method rejects missing id");
+        .language_model_with_api(LanguageApi::Chat, "missing")
+        .expect("registered api rejects missing id");
     assert_no_such_model(miss, "missing", "chat");
     assert!(fallback.calls().is_empty());
+
+    let empty_noop = custom_provider(CustomProviderOptions::default())
+        .with_language_api_models(LanguageApi::Chat, HashMap::new())
+        .with_language_api_model(
+            LanguageApi::Responses,
+            "r1",
+            Arc::new(MockLanguage("explicit-responses")),
+        );
+    assert!(
+        empty_noop
+            .language_model_with_api(LanguageApi::Chat, "m1")
+            .is_none()
+    );
+    assert_eq!(
+        empty_noop
+            .language_model_with_api(LanguageApi::Responses, "r1")
+            .unwrap()
+            .unwrap()
+            .model_id(),
+        "explicit-responses"
+    );
 }
 
 #[test]
-fn wrap_provider_wraps_explicit_language_methods_and_preserves_none() {
+fn wrap_provider_wraps_language_api_models_and_preserves_none() {
+    use aimux_core::LanguageApi;
+
     let inner = Arc::new(Fallback::default());
     let wrapped = wrap_provider(
         inner,
         &[Arc::new(OverrideProviderName("wrapped.provider"))],
         &[],
     );
-    let model = wrapped.chat("m1").expect("chat supported").unwrap();
+    let model = wrapped
+        .language_model_with_api(LanguageApi::Chat, "m1")
+        .expect("chat supported")
+        .unwrap();
     assert_eq!(model.provider(), "wrapped.provider");
-    assert!(wrapped.responses("m1").is_none());
+    assert!(
+        wrapped
+            .language_model_with_api(LanguageApi::Responses, "m1")
+            .is_none()
+    );
 }
 
 #[test]
-fn registry_supports_dynamic_mutations_derived_clones_and_direct_methods() {
+fn registry_supports_dynamic_mutations_derived_clones_and_language_apis() {
+    use aimux_core::LanguageApi;
+
     let base = create_provider_registry(
         BTreeMap::from([(
             "alpha".to_string(),
@@ -718,9 +787,14 @@ fn registry_supports_dynamic_mutations_derived_clones_and_direct_methods() {
     assert!(!base.is_empty());
     assert_eq!(base.provider_ids(), vec!["alpha".to_string()]);
 
-    let chat_model = base.chat("alpha:gpt").unwrap();
+    let chat_model = base
+        .language_model_with_api(LanguageApi::Chat, "alpha:gpt")
+        .unwrap();
     assert_eq!(chat_model.provider(), "reg.wrapped");
-    assert!(base.responses("alpha:gpt").is_err());
+    assert!(
+        base.language_model_with_api(LanguageApi::Responses, "alpha:gpt")
+            .is_err()
+    );
 
     let derived = base.with_provider("beta", Arc::new(Fallback::default()));
     assert!(!base.contains_provider("beta"));

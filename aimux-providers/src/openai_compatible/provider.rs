@@ -325,12 +325,16 @@ impl Provider for OpenAICompatibleProvider {
         Ok(Arc::new(self.image(model_id)))
     }
 
-    fn chat(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.chat(model_id))))
-    }
-
-    fn completion(&self, model_id: &str) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.completion(model_id))))
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match api {
+            aimux_core::LanguageApi::Chat => Some(Ok(Arc::new(self.chat(model_id)))),
+            aimux_core::LanguageApi::Completion => Some(Ok(Arc::new(self.completion(model_id)))),
+            _ => None,
+        }
     }
 
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
