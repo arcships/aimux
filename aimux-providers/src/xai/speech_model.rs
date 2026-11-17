@@ -8,6 +8,7 @@
 //! character-level timings.
 
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -55,34 +56,35 @@ fn unsupported(feature: &str, details: &str) -> Warning {
     }
 }
 
+/// `xaiSpeechModelOptionsSchema`: every field `.nullish()`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpeechOptions {
+    #[serde(default, deserialize_with = "options::de::sample_rate")]
+    sample_rate: Option<i64>,
+    #[serde(default, deserialize_with = "options::de::bit_rate")]
+    bit_rate: Option<i64>,
+    #[serde(default, deserialize_with = "options::de::streaming_latency")]
+    optimize_streaming_latency: Option<i64>,
+    #[serde(default)]
+    text_normalization: Option<bool>,
+    #[serde(default)]
+    with_timestamps: Option<bool>,
+    /// `z.record(z.string(), z.string())`, in the order given.
+    #[serde(default)]
+    replace: Option<IndexMap<String, String>>,
+}
+
 /// `getArgs`: the request body, the warnings and whether timestamps were asked.
 fn build_request(options: &SpeechCallOptions) -> Result<(Value, Vec<Warning>, bool), AiMuxError> {
     let mut warnings = Vec::new();
-    let empty = Map::new();
-    let xai = options::xai_options(options.provider_options.as_ref()).unwrap_or(&empty);
-    let sample_rate = options::sample_rate(xai)?;
-    let bit_rate = options::opt_int(
-        xai,
-        "bitRate",
-        0,
-        i64::MAX,
-        &[32000, 64000, 96000, 128000, 192000],
-    )?;
-    let latency = options::opt_int(xai, "optimizeStreamingLatency", 0, 2, &[])?;
-    let text_normalization = options::opt_bool(xai, "textNormalization")?;
-    let with_timestamps = options::opt_bool(xai, "withTimestamps")?;
-    let replace = match xai.get("replace").filter(|v| !v.is_null()) {
-        None => None,
-        Some(Value::Object(map)) if map.values().all(Value::is_string) => {
-            Some(Value::Object(map.clone()))
-        }
-        Some(_) => {
-            return Err(AiMuxError::invalid_argument(
-                "Invalid argument for parameter providerOptions: xai.replace must be a record of strings"
-                    .to_owned(),
-            ));
-        }
-    };
+    let xai: SpeechOptions = options::parse(options.provider_options.as_ref())?.unwrap_or_default();
+    let sample_rate = xai.sample_rate;
+    let bit_rate = xai.bit_rate;
+    let latency = xai.optimize_streaming_latency;
+    let text_normalization = xai.text_normalization;
+    let with_timestamps = xai.with_timestamps;
+    let replace = xai.replace.map(|replace| json!(replace));
 
     let output_format = options.output_format.as_deref().unwrap_or("mp3");
     let codec = if ["mp3", "wav", "pcm", "mulaw", "alaw"].contains(&output_format) {

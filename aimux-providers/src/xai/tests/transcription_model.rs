@@ -1699,3 +1699,64 @@ async fn dropping_an_unpolled_stream_closes_the_socket() {
         "no close frame was sent when the unpolled stream was dropped"
     );
 }
+
+/// aimux's own: the `xai` namespace is parsed against
+/// `xaiTranscriptionModelOptionsSchema` with `parseProviderOptions`. A value
+/// outside it fails with the upstream message and nothing is sent; a
+/// `.nullish()` top-level key reads `null` as absent, and `keyterm` takes a
+/// single string as well as a list.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for xai in [
+            json!({ "channels": 1 }),
+            json!({ "channels": 9 }),
+            json!({ "channels": 2.5 }),
+            json!({ "keyterm": 1 }),
+            json!({ "keyterm": ["AI SDK", 1] }),
+            json!({ "streaming": null }),
+            json!({ "streaming": { "interimResults": null } }),
+            json!({ "streaming": { "endpointing": 5001 } }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let mut options = audio_call("audio/wav");
+            options.provider_options = Some(xai_options(xai.clone()));
+            let Err(error) = transcription_model(&fetch, None)
+                .do_generate(&options)
+                .await
+            else {
+                panic!("{xai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {xai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid xai provider options",
+                "{xai}"
+            );
+            assert!(cause.is_some(), "{xai}");
+            assert!(fetch.seen().is_empty(), "{xai}");
+        }
+    }
+
+    #[tokio::test]
+    async fn null_reads_as_absent_and_keyterm_takes_a_string() {
+        let server = MockServer::start().await;
+        mock_stt(&server, json_response(wiremock_default_body(), &[])).await;
+        let options = call(
+            Some(json!({ "channels": null, "keyterm": "Grok", "streaming": {} })),
+            "audio/wav",
+        );
+        generate(&server, &options, None).await;
+        let requests = server.received_requests().await.unwrap();
+        let fields: Vec<(String, String)> = parse_multipart(&requests[0])
+            .into_iter()
+            .filter(|part| part.filename.is_none())
+            .map(|part| (part.name, part.value))
+            .collect();
+        assert_eq!(fields, vec![("keyterm".to_string(), "Grok".to_string())]);
+    }
+}
