@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "protocol": {
+    "independent_pairs": 10,
+    "max_rerun_pairs": 20,
+    "schedule": "AB_BA_seeded",
+    "bootstrap_iterations": 10000,
+    "bootstrap_confidence": 0.99,
+    "default_seed": 20260043,
+    "max_base_p50_mad_cv_pct": 3.0,
+    "max_b0_drift_pct": 5.0,
+    "rss_slope_tail_windows": 15,
+    "max_rss_slope_bytes_per_1k_requests": 524288,
+    "anchor_throughput_floor_ratio": 0.9
+  },
+  "scenarios": [
+    {
+      "id": "request-small",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_requests": 1000,
+      "min_warmup_ms": 5000,
+      "min_samples": 10000,
+      "request_bytes": 1024,
+      "response_bytes": 1024,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 1000000 },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 2000000 }
+      }
+    },
+    {
+      "id": "request-200k",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_requests": 1000,
+      "min_warmup_ms": 5000,
+      "min_samples": 10000,
+      "request_bytes": 200000,
+      "response_bytes": 50000,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 5000000 },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 10000000 }
+      }
+    },
+    {
+      "id": "serialize-only",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_requests": 1000,
+      "min_warmup_ms": 5000,
+      "min_samples": 10000,
+      "request_bytes": 200000,
+      "response_bytes": 50000,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 2000000 }
+      }
+    },
+    {
+      "id": "stream-small-chunks",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 15000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_streams": 100,
+      "min_measure_ms": 10000,
+      "min_samples": 100,
+      "stream_events": 10000,
+      "payload_bytes_per_event": 32,
+      "budgets": {
+        "throughput_events_per_s": { "max_drop_pct": 5.0 },
+        "throughput_bytes_per_s": { "max_drop_pct": 5.0 },
+        "ttft_p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 5000000 }
+      }
+    },
+    {
+      "id": "stream-large-chunks",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 15000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_streams": 100,
+      "min_measure_ms": 10000,
+      "min_samples": 100,
+      "stream_events": 1024,
+      "payload_bytes_per_event": 1024,
+      "budgets": {
+        "throughput_bytes_per_s": { "max_drop_pct": 5.0 },
+        "peak_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 8388608, "max_abs_bytes": 268435456 }
+      }
+    },
+    {
+      "id": "tools-and-errors",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_requests": 1000,
+      "min_warmup_ms": 5000,
+      "min_samples": 10000,
+      "tool_schemas": 5,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": null },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": null }
+      }
+    },
+    {
+      "id": "sustained",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["rust", "c_abi", "node", "python"],
+      "min_warmup_requests": 2000,
+      "min_samples": 20000,
+      "request_bytes": 200000,
+      "concurrency_levels": [1, 10, 50],
+      "memory_windows": 20,
+      "window_requests": 1000,
+      "slope_tail_windows": 15,
+      "budgets": {
+        "retained_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 2097152, "max_abs_bytes": 33554432 },
+        "peak_rss_bytes": {
+          "max_regression_pct": 10.0,
+          "min_abs_delta_bytes": 8388608,
+          "max_abs_bytes": 268435456,
+          "max_abs_bytes_by_concurrency": {
+            "1": 268435456,
+            "10": 536870912,
+            "50": 536870912
+          }
+        },
+        "rss_slope_bytes_per_1k": { "max_abs_bytes_per_1k": 524288 }
+      }
+    },
+    {
+      "id": "cancel-and-drop",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 2000,
+      "run_timeout_ms": 600000,
+      "backends": ["c_abi", "node", "python"],
+      "min_samples": 1000,
+      "budgets": {
+        "retained_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 2097152, "max_abs_bytes": 33554432 }
+      }
+    },
+    {
+      "id": "binding-lifecycle",
+      "phase": "0.6",
+      "status": "active_contract",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["go", "java", "kotlin", "swift", "flutter"],
+      "min_samples": 100,
+      "budgets": {}
+    },
+    {
+      "id": "stdio-cold-start",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 2000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_samples": 100,
+      "budgets": {
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 100000000 }
+      }
+    },
+    {
+      "id": "stdio-roundtrip-1k",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_warmup_requests": 1000,
+      "min_samples": 10000,
+      "request_bytes": 1024,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 1000000 },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 2000000 }
+      }
+    },
+    {
+      "id": "stdio-roundtrip-200k",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_warmup_requests": 1000,
+      "min_samples": 10000,
+      "request_bytes": 200000,
+      "response_bytes": 50000,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 5000000 },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 10000000 }
+      }
+    },
+    {
+      "id": "stdio-incremental-cost",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_warmup_requests": 1000,
+      "min_samples": 10000,
+      "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 2000000 }
+      }
+    },
+    {
+      "id": "stdio-stream",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 15000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_warmup_streams": 100,
+      "min_samples": 100,
+      "stream_events": 10000,
+      "payload_bytes_per_event": 32,
+      "budgets": {
+        "throughput_events_per_s": { "max_drop_pct": 5.0 },
+        "throughput_bytes_per_s": { "max_drop_pct": 5.0 },
+        "ttft_p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 5000000 }
+      }
+    },
+    {
+      "id": "stdio-binary",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 15000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_samples": 100,
+      "frame_bytes": 65536,
+      "frame_count": 16,
+      "budgets": {
+        "throughput_bytes_per_s": { "max_drop_pct": 5.0 }
+      }
+    },
+    {
+      "id": "stdio-backpressure-cancel",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 2000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_samples": 100,
+      "max_queued_payload_bytes": 8388608,
+      "budgets": {
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 100000000 }
+      }
+    },
+    {
+      "id": "stdio-lifecycle",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 2000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_samples": 1000,
+      "shutdown_max_ms": 2000,
+      "budgets": {}
+    },
+    {
+      "id": "stdio-memory",
+      "phase": "0.8",
+      "status": "future_stdio",
+      "operation_timeout_ms": 5000,
+      "run_timeout_ms": 600000,
+      "backends": ["stdio"],
+      "min_warmup_requests": 2000,
+      "min_samples": 20000,
+      "memory_windows": 20,
+      "window_requests": 1000,
+      "slope_tail_windows": 15,
+      "idle_rss_max_bytes": 67108864,
+      "budgets": {
+        "retained_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 2097152, "max_abs_bytes": 33554432 },
+        "peak_rss_bytes": {
+          "max_regression_pct": 10.0,
+          "min_abs_delta_bytes": 8388608,
+          "max_abs_bytes": 268435456,
+          "max_abs_bytes_by_concurrency": {
+            "1": 268435456,
+            "100": 536870912
+          }
+        },
+        "rss_slope_bytes_per_1k": { "max_abs_bytes_per_1k": 524288 }
+      }
+    }
+  ]
+}

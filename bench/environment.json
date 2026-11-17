@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "pool_id": "perf-linux-x64-01",
+  "status": "pending_dedicated_runner",
+  "isolation_requirements": {
+    "min_exclusive_physical_cores": 4,
+    "core_allocation": {
+      "client_and_runtime": 2,
+      "mock": 1,
+      "sampler": 1,
+      "smt_siblings_isolated": true
+    },
+    "min_ram_gib": 16,
+    "tokio_worker_threads": 2,
+    "max_cpu_steal_pct": 1.0,
+    "max_background_cpu_pct": 5.0,
+    "allow_target_cpu_native": false,
+    "network_egress": "disabled",
+    "loopback_only": true
+  },
+  "toolchain": {
+    "rust_toolchain": "1.100.0",
+    "require_pinned_versions": true,
+    "cargo_lock_sha256": null,
+    "node_version": null,
+    "python_version": null
+  },
+  "machine": null
+}
