@@ -272,6 +272,8 @@ pub enum AiMuxError {
 
 `SourceError` 和 `ErrorCause` 都实现 `std::error::Error`，`source()` 返回下一层，所以整条链对 `anyhow`、`{:#}`、`tracing` 都可见。`ErrorCause::source(&e)` 是唯一的入口：`e` 若能 downcast 成 `AiMuxError` 就原样嵌套，否则抄成 `SourceError`。
 
+例外：Vertex 服务账号签名的 4 处（`vertex/auth_google_auth_library.rs`）对 ring 的 `KeyRejected`、`Unspecified` 用 `SourceError::from(error.to_string())` 只抄一层文字。ring 只在开 `std` feature 时才为它们实现 `std::error::Error`，`aimux-providers` 不开；这两个错误本身也没有 `source()`，所以和走 `ErrorCause::source` 没有可观察的差别。
+
 JSON 形状：
 
 ```json
@@ -353,7 +355,7 @@ aimux_error_json                           aimux-ffi/src/abi.rs:380   不变，J
 
 ### 5.3 宿主异常
 
-宿主回调（流消费者）抛出的异常不跨 ABI。绑定把它挂成本语言的 cause（Java `CallbackFailure.initCause`，Go 的 callback 错误），信封 JSON 里没有它。以后支持宿主实现 provider（#274）时，宿主异常链转成 `SourceError` 再传进来，形状与 §4.1 相同。
+宿主回调（流消费者）抛出的异常不跨 ABI。绑定把它挂成本语言的 cause（Java `CallbackFailure.initCause`），信封 JSON 里没有它。Go 的用户代码不在 native 回调里运行（帧送进 channel），没有要挂的宿主回调异常。以后支持宿主实现 provider（#274）时，宿主异常链转成 `SourceError` 再传进来，形状与 §4.1 相同。
 
 ### 5.4 重试提示
 
