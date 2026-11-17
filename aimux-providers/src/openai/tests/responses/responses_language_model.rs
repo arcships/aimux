@@ -2814,7 +2814,7 @@ mod openai_responses_language_model {
                 assert_json_eq(&r.warnings(), &json!([]));
             }
 
-            /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doGenerate › basic text response › should send textVerbosity provider option
+            /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doGenerate › basic text response › should send textVerbosity provider option #2
             #[tokio::test]
             async fn should_send_text_verbosity_provider_option_medium() {
                 let r = run(
@@ -2852,7 +2852,7 @@ mod openai_responses_language_model {
                 assert_json_eq(&r.warnings(), &json!([]));
             }
 
-            /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doGenerate › basic text response › should send textVerbosity provider option
+            /// upstream: @ai-sdk/openai src/responses/openai-responses-language-model.test.ts › OpenAIResponsesLanguageModel › doGenerate › basic text response › should send textVerbosity provider option #3
             #[tokio::test]
             async fn should_send_text_verbosity_provider_option_high() {
                 let r = run(
