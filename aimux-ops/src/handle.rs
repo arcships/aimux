@@ -307,6 +307,27 @@ pub fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
     }
 }
 
+/// Test-only RAII guard forcing [`HandleRegistry`] handle allocation to return
+/// [`ProtocolError::HandleExhausted`] while alive, restoring the previous ID on drop.
+#[doc(hidden)]
+pub struct ExhaustionGuard {
+    previous: u64,
+}
+
+impl Drop for ExhaustionGuard {
+    fn drop(&mut self) {
+        NEXT_ID.store(self.previous, Ordering::SeqCst);
+    }
+}
+
+/// Test hook exhausting the process-wide handle allocator until the returned guard is dropped.
+#[doc(hidden)]
+#[must_use]
+pub fn test_exhaust_handle_allocator() -> ExhaustionGuard {
+    let previous = NEXT_ID.swap(0, Ordering::SeqCst);
+    ExhaustionGuard { previous }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

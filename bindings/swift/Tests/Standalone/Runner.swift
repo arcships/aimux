@@ -6,6 +6,7 @@ import Foundation
         // The same checks used by swift test, runnable when SwiftPM cannot load.
         let checks: [(String, @Sendable () async throws -> Void)] = [
             ("manifestRequiresExactVersionAndDigest", { try ContractTests.manifestRequiresExactVersionAndDigest() }),
+            ("manifestNegotiatesByTypeSchemaHashesWhenDigestChanges", { try ContractTests.manifestNegotiatesByTypeSchemaHashesWhenDigestChanges() }),
             ("manifestAndHandles", { try await ContractTests.manifestAndHandles() }),
             ("versionMismatch", { try await ContractTests.versionMismatch() }),
             ("mainActorHeartbeat", { try await ContractTests.mainActorHeartbeat() }),

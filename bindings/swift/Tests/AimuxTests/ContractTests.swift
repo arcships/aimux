@@ -63,6 +63,42 @@ struct ContractTests {
 #if !AIMUX_STANDALONE
     @Test
 #endif
+    static func manifestNegotiatesByTypeSchemaHashesWhenDigestChanges() throws {
+        try require(!AimuxOps.TYPE_SCHEMA_HASHES.isEmpty)
+        let sortedEntries = AimuxOps.TYPE_SCHEMA_HASHES.sorted { $0.key < $1.key }
+        let types: [JSONValue] = sortedEntries.map { id, hash in
+            .object(["id": .string(id), "revision": .string("1"), "schemaHash": .string(hash)])
+        }
+        let negotiated: [String: JSONValue] = [
+            "abiVersion": .integer(Int64(AimuxOps.ABI_VERSION)),
+            "opsVersion": .string(AimuxOps.OPS_VERSION),
+            "digest": .string("changed-digest-from-new-package"),
+            "packages": .array([.string("openai"), .string("extra-package")]),
+            "types": .array(types),
+        ]
+        try validateManifest(.object(negotiated), version: AimuxOps.ABI_VERSION)
+
+        let targetType = sortedEntries[0].key
+        var brokenTypes = types
+        brokenTypes[0] = .object([
+            "id": .string(targetType),
+            "revision": .string("1"),
+            "schemaHash": .string(String(repeating: "0", count: 64)),
+        ])
+        var invalid = negotiated
+        invalid["types"] = .array(brokenTypes)
+        do {
+            try validateManifest(.object(invalid), version: AimuxOps.ABI_VERSION)
+            throw CheckFailure(description: "Accepted manifest with altered type schemaHash")
+        } catch let error as AimuxError {
+            try require(error.code == 302)
+            try require(error.message.contains(AimuxOps.MANIFEST_DIGEST))
+            try require(error.message.contains(targetType))
+        }
+    }
+#if !AIMUX_STANDALONE
+    @Test
+#endif
     static func manifestAndHandles() async throws {
         let manifest = try await AimuxRuntime.manifest()
         guard case .object(let fields) = manifest else { throw CheckFailure(description: "Missing manifest") }

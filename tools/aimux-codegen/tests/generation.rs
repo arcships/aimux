@@ -473,3 +473,60 @@ fn manifest_digest_ignores_its_own_field_and_operation_order() {
     value["ops"].as_array_mut().unwrap().reverse();
     assert_eq!(generate(&value, &digest(&fixture())).unwrap(), expected);
 }
+
+#[test]
+fn emits_schema_manifest_sources_and_type_schema_hashes_in_all_bindings() {
+    let runtime = aimux_ops::manifest::manifest();
+    let runtime_digest = aimux_ops::manifest::manifest_digest();
+    let outputs = generate(&runtime, &runtime_digest).unwrap();
+
+    let manifest_bytes = &outputs[Path::new("schema/manifest.json")];
+    let emitted_manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
+    assert_eq!(emitted_manifest["digest"], runtime_digest);
+    assert_eq!(emitted_manifest["inputHash"], runtime_digest);
+    assert_eq!(
+        emitted_manifest["generatorVersion"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert_eq!(emitted_manifest["sources"], runtime["sources"]);
+
+    let index: Value =
+        serde_json::from_slice(&outputs[Path::new("tools/aimux-codegen/generated-files.json")])
+            .unwrap();
+    let indexed: std::collections::BTreeSet<&str> = index["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry.as_str().unwrap())
+        .collect();
+    assert!(indexed.contains("schema/manifest.json"));
+    assert!(indexed.contains("aimux-ops/src/sources.rs"));
+
+    let runtime_types = runtime["types"].as_array().unwrap();
+    assert!(!runtime_types.is_empty());
+    let ops_paths = [
+        "bindings/go/generated/ops.go",
+        "bindings/java/generated/AimuxOps.java",
+        "bindings/kotlin/generated/AimuxOps.kt",
+        "bindings/swift/generated/AimuxOps.swift",
+        "bindings/flutter/lib/generated/ops.dart",
+        "bindings/node/src/generated/ops.ts",
+        "bindings/python/python/aimux/ops.py",
+    ];
+    for path in ops_paths {
+        let content = std::str::from_utf8(&outputs[Path::new(path)]).unwrap();
+        assert!(
+            content.contains("TYPE_SCHEMA_HASHES"),
+            "{path} missing TYPE_SCHEMA_HASHES"
+        );
+        for ty in runtime_types {
+            let id = ty["id"].as_str().unwrap();
+            let hash = ty["schemaHash"].as_str().unwrap();
+            assert!(content.contains(id), "{path} missing type id {id}");
+            assert!(
+                content.contains(hash),
+                "{path} missing schemaHash {hash} for {id}"
+            );
+        }
+    }
+}

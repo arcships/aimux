@@ -1,6 +1,7 @@
 {
   "files": [
     "aimux-ffi/include/aimux.h",
+    "aimux-ops/src/sources.rs",
     "bindings/flutter/lib/generated/ops.dart",
     "bindings/flutter/lib/src/generated/dto_vectors.dart",
     "bindings/flutter/lib/src/generated/types.dart",
@@ -319,6 +320,7 @@
     "bindings/swift/generated/AimuxOps.swift",
     "bindings/swift/generated/DtoVectorTypes.swift",
     "bindings/swift/generated/Types.swift",
+    "schema/manifest.json",
     "schema/ops/error-envelope.json",
     "schema/ops/handle-id.json",
     "schema/ops/request.json",
@@ -634,5 +636,5 @@
     "tools/aimux-web/web/src/types/generated/WireOptions.ts",
     "tools/aimux-web/web/src/types/generated/WireTool.ts"
   ],
-  "manifestDigest": "2c06887e117851bc776b2ecf801caa23e82324d4b906b7764d7f6319a1577284"
+  "manifestDigest": "a93d5bbdf6b21e5449c7e9bf6fb713c34594f870aa0140f8fda5f6e679717af2"
 }

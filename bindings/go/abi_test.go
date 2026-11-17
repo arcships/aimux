@@ -100,6 +100,50 @@ func TestManifestRequiresExactGeneratedVersionAndDigest(t *testing.T) {
 	}
 }
 
+func TestManifestNegotiatesByTypeSchemaHashesWhenDigestChanges(t *testing.T) {
+	if len(generated.TYPE_SCHEMA_HASHES) == 0 {
+		t.Fatal("expected generated.TYPE_SCHEMA_HASHES to be populated")
+	}
+	types := make([]map[string]any, 0, len(generated.TYPE_SCHEMA_HASHES))
+	var firstID string
+	for id, hash := range generated.TYPE_SCHEMA_HASHES {
+		if firstID == "" {
+			firstID = id
+		}
+		types = append(types, map[string]any{"id": id, "revision": "1", "schemaHash": hash})
+	}
+	raw, err := json.Marshal(map[string]any{
+		"abiVersion": ABIVersion,
+		"opsVersion": generated.OPS_VERSION,
+		"digest":     "changed-digest-from-new-package",
+		"packages":   []string{"openai", "extra-package"},
+		"types":      types,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateManifest(ABIVersion, raw); err != nil {
+		t.Fatalf("expected matching types[].schemaHash to negotiate across changed digest: %v", err)
+	}
+
+	types[0]["schemaHash"] = strings.Repeat("0", 64)
+	brokenID := types[0]["id"].(string)
+	brokenRaw, err := json.Marshal(map[string]any{
+		"abiVersion": ABIVersion,
+		"opsVersion": generated.OPS_VERSION,
+		"digest":     "changed-digest-from-new-package",
+		"types":      types,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateManifest(ABIVersion, brokenRaw)
+	checkCode(t, err, "protocol", 302)
+	if !strings.Contains(err.Error(), generated.MANIFEST_DIGEST) || !strings.Contains(err.Error(), brokenID) {
+		t.Fatalf("expected error containing MANIFEST_DIGEST and %q, got: %v", brokenID, err)
+	}
+}
+
 func TestRuntimeManifest(t *testing.T) {
 	raw, err := Manifest()
 	if err != nil {

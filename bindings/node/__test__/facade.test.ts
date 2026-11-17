@@ -201,6 +201,37 @@ test('manifest handshake pins every generated value and reports both sides', () 
   }
 })
 
+test('manifest handshake negotiates via per-type schema hashes when packages/digest change', () => {
+  const types = Object.entries(ops.TYPE_SCHEMA_HASHES).map(([id, schemaHash]) => ({ id, revision: '1', schemaHash }))
+  assert.ok(types.length > 0)
+  const negotiated = {
+    abiVersion: ops.ABI_VERSION,
+    opsVersion: ops.OPS_VERSION,
+    digest: 'changed-digest-from-new-package',
+    packages: ['openai', 'synthetic-extra-package'],
+    types,
+  } as unknown as rawApi.Manifest
+  rawApi.verifyManifest(negotiated)
+
+  const targetType = types[0].id
+  const brokenTypes = types.map((entry, idx) => idx === 0 ? { ...entry, schemaHash: '0'.repeat(64) } : entry)
+  assert.throws(() => rawApi.verifyManifest({ ...negotiated, types: brokenTypes }), (error: unknown) => {
+    assert.ok(error instanceof AimuxError)
+    assert.equal(error.code, 302)
+    assert.ok(error.message.includes(ops.MANIFEST_DIGEST))
+    assert.ok(error.message.includes(targetType))
+    return true
+  })
+
+  assert.throws(() => rawApi.verifyManifest({ ...negotiated, types: types.slice(1) }), (error: unknown) => {
+    assert.ok(error instanceof AimuxError)
+    assert.equal(error.code, 302)
+    assert.ok(error.message.includes(ops.MANIFEST_DIGEST))
+    assert.ok(error.message.includes(targetType))
+    return true
+  })
+})
+
 test('typed serialization failures stay in the binding error domain', async () => {
   const client = new Client()
   const cyclic: Record<string, unknown> = {}
