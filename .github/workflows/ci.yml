@@ -520,6 +520,9 @@ jobs:
       # relocations differ from arm64. Rehearse that target on macos-latest:
       # build staticlib-release, strip bitcode, merge/strip, verify symbols,
       # and link + run C and Go smoke binaries (under Rosetta on Apple Silicon).
+      - name: Install Rosetta for x86_64 smoke execution
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        run: /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
       - name: Build, strip, merge and verify x86_64-apple-darwin archive
         if: runner.os == 'macOS'
         shell: bash
