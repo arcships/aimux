@@ -143,52 +143,42 @@ pub(crate) async fn call_to_api_with_deadline<T>(
     .await
 }
 
-pub(crate) async fn call_to_api_with_deadline_source<T>(
-    request: PreparedRequest,
-    request_body_source: RequestBodySource,
-    successful_response_handler: ResponseHandler<T>,
-    failed_response_handler: ResponseHandler<AiMuxError>,
+#[cold]
+#[inline(never)]
+fn exchange_timeout_error(
     response_timeout: Duration,
-) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let url = crate::http::sanitized_request_url(&request.url);
-    if successful_response_handler.is_streaming() {
-        return execute_exchange(
-            request,
-            request_body_source,
-            successful_response_handler,
-            failed_response_handler,
+    url: String,
+    request_body_source: &RequestBodySource,
+) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        is_retryable: true,
+        origin: aimux_core::ApiCallErrorOrigin::Local,
+        ..ApiCallError::new(
+            format!(
+                "Request exceeded the {}s exchange response timeout",
+                response_timeout.as_secs()
+            ),
+            url,
+            request_body_source.materialize(),
         )
-        .await;
-    }
-    let exchange = execute_exchange(
-        request,
-        request_body_source.clone(),
-        successful_response_handler,
-        failed_response_handler,
-    );
-    match tokio::time::timeout(response_timeout, exchange).await {
-        Ok(result) => result,
-        Err(_) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-            is_retryable: true,
-            origin: aimux_core::ApiCallErrorOrigin::Local,
-            ..ApiCallError::new(
-                format!(
-                    "Request exceeded the {}s exchange response timeout",
-                    response_timeout.as_secs()
-                ),
-                url,
-                request_body_source.materialize(),
-            )
-        }))),
-    }
+    }))
 }
 
-async fn execute_exchange<T>(
+struct PreparedSuccessExchange {
+    status: u16,
+    response_headers: std::collections::HashMap<String, String>,
+    url: String,
+    request_body_source: RequestBodySource,
+    input: ResponseHandlerInput,
+}
+
+async fn send_and_prepare_success(
     request: PreparedRequest,
     request_body_source: RequestBodySource,
-    successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
-) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    is_streaming: bool,
+    uses_lazy_request_body: bool,
+) -> Result<PreparedSuccessExchange, AiMuxError> {
     crate::logging::auto_init_from_env();
     let url = crate::http::sanitized_request_url(&request.url);
     let response = crate::http::send_request_once(&request)
@@ -216,44 +206,47 @@ async fn execute_exchange<T>(
             abort_signal,
             max_json_response_bytes,
         };
-        return match failed_response_handler
-            .handle_with_source(input, Some(request_body_source.clone()))
-            .await
-        {
-            Ok(output) => Err(from_response(output.value)),
-            Err(
-                error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_)),
-            ) => Err(from_response(error)),
-            Err(error) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
-                response_headers: Some(response_headers),
-                // A handler that cannot parse a 429/503 body must not erase
-                // the status's retryability — retry classification comes from
-                // the HTTP status, not from the parse outcome.
-                is_retryable: aimux_core::error::is_retryable_status(status),
-                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(
-                    format!("Failed to process error response: {error}"),
-                    url,
-                    request_body_source.materialize(),
-                )
-                .caused_by(error)
-            }))),
-        };
+        return Err(
+            match failed_response_handler
+                .handle_with_source(input, Some(request_body_source.clone()))
+                .await
+            {
+                Ok(output) => from_response(output.value),
+                Err(
+                    error @ (AiMuxError::ApiCall(_)
+                    | AiMuxError::Aborted(_)
+                    | AiMuxError::Timeout(_)),
+                ) => from_response(error),
+                Err(error) => AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(status),
+                    response_headers: Some(response_headers),
+                    // A handler that cannot parse a 429/503 body must not erase
+                    // the status's retryability — retry classification comes from
+                    // the HTTP status, not from the parse outcome.
+                    is_retryable: aimux_core::error::is_retryable_status(status),
+                    origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
+                    ..ApiCallError::new(
+                        format!("Failed to process error response: {error}"),
+                        url,
+                        request_body_source.materialize(),
+                    )
+                    .caused_by(error)
+                })),
+            },
+        );
     }
 
     // For streaming handlers, materialize/redact once up front while `request_body_source`
     // is the sole remaining owner of `Arc<HttpBody>` (so `HttpBody::Json` is redacted
     // in place and large Base64/image strings are freed before stream consumption).
-    let request_body_source = if successful_response_handler.is_streaming() {
+    let request_body_source = if is_streaming {
         request_body_source.into_stream_source()
     } else {
         request_body_source
     };
-    let lazy = successful_response_handler.uses_lazy_request_body();
     let input = ResponseHandlerInput {
         url: url.clone(),
-        request_body_values: if lazy {
+        request_body_values: if uses_lazy_request_body {
             serde_json::Value::Null
         } else {
             request_body_source.materialize()
@@ -263,15 +256,29 @@ async fn execute_exchange<T>(
         max_json_response_bytes,
     };
 
-    match successful_response_handler
-        .handle_with_source(input, Some(request_body_source.clone()))
-        .await
-    {
-        Ok(output) => Ok(output),
-        Err(error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_))) => {
-            Err(from_response(error))
+    Ok(PreparedSuccessExchange {
+        status,
+        response_headers,
+        url,
+        request_body_source,
+        input,
+    })
+}
+
+#[cold]
+#[inline(never)]
+fn wrap_success_handler_error(
+    error: AiMuxError,
+    status: u16,
+    response_headers: std::collections::HashMap<String, String>,
+    url: String,
+    request_body_source: &RequestBodySource,
+) -> AiMuxError {
+    match error {
+        error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_)) => {
+            from_response(error)
         }
-        Err(error) => Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+        error => AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
             response_headers: Some(response_headers),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
@@ -281,8 +288,70 @@ async fn execute_exchange<T>(
                 request_body_source.materialize(),
             )
             .caused_by(error)
-        }))),
+        })),
     }
+}
+
+pub(crate) async fn call_to_api_with_deadline_source<T>(
+    request: PreparedRequest,
+    request_body_source: RequestBodySource,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+    response_timeout: Duration,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    let url = crate::http::sanitized_request_url(&request.url);
+    if successful_response_handler.is_streaming() {
+        return execute_exchange(
+            request,
+            request_body_source,
+            successful_response_handler,
+            failed_response_handler,
+        )
+        .await;
+    }
+    let exchange = execute_exchange(
+        request,
+        request_body_source.clone(),
+        successful_response_handler,
+        failed_response_handler,
+    );
+    match tokio::time::timeout(response_timeout, exchange).await {
+        Ok(result) => result,
+        Err(_) => Err(exchange_timeout_error(
+            response_timeout,
+            url,
+            &request_body_source,
+        )),
+    }
+}
+
+async fn execute_exchange<T>(
+    request: PreparedRequest,
+    request_body_source: RequestBodySource,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    let PreparedSuccessExchange {
+        status,
+        response_headers,
+        url,
+        request_body_source,
+        input,
+    } = send_and_prepare_success(
+        request,
+        request_body_source,
+        failed_response_handler,
+        successful_response_handler.is_streaming(),
+        successful_response_handler.uses_lazy_request_body(),
+    )
+    .await?;
+
+    successful_response_handler
+        .handle_with_source(input, Some(request_body_source.clone()))
+        .await
+        .map_err(|error| {
+            wrap_success_handler_error(error, status, response_headers, url, &request_body_source)
+        })
 }
 
 /// An `ApiCall` error a response handler returned without recording where it
