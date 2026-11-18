@@ -144,7 +144,7 @@ class AbiContractTest {
         );
         NativeException decoded = AimuxResult.decode(envelope);
         assertThat(decoded).isInstanceOf(ProtocolException.class);
-        assertThat(decoded.envelope().getCode()).isEqualTo(302);
+        assertThat(decoded.getCode()).isEqualTo(302);
     }
 
     private java.lang.ref.WeakReference<Resource> abandon(int id, boolean close) {
