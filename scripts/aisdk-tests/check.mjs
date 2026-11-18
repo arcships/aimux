@@ -97,16 +97,22 @@ export function keyCases(cases) {
 
 // `/// upstream: <package> <test file> › <chain>`
 const MARKER = /^\s*\/\/\/\s*upstream:(.*)$/;
+const PARTIAL = /^\s*\/\/\/(?:.*\s)?partial:(.*)$/;
 const MARKER_BODY = /^ (@ai-sdk\/[a-z0-9-]+|ai) (src\/\S+\.test\.tsx?) › (.+)$/;
 
 // Returns the markers of one Rust file and the problems with them.
 export function scanMarkers(rel, src) {
   const markers = [];
+  const partials = [];
   const errors = [];
   const lines = src.split('\n');
   lines.forEach((text, k) => {
     const m = MARKER.exec(text);
-    if (!m) return;
+    if (!m) {
+      const p = PARTIAL.exec(text);
+      if (p) partials.push({ rel, where: `${rel}:${k + 1}`, text: p[1].trim() });
+      return;
+    }
     const where = `${rel}:${k + 1}`;
     const body = MARKER_BODY.exec(m[1].replace(/\s+$/, ''));
     if (!body) {
@@ -119,6 +125,9 @@ export function scanMarkers(rel, src) {
       return;
     }
     // A marker sits above a test: only doc comments and attributes between.
+    let blockStart = k - 1;
+    while (blockStart >= 0 && /^\s*(\/\/\/|#\[)/.test(lines[blockStart])) blockStart--;
+    blockStart++;
     let j = k + 1;
     let hasTestAttr = false;
     let ignored = false;
@@ -131,13 +140,17 @@ export function scanMarkers(rel, src) {
       errors.push(`${where}: marker is not above a test function`);
       return;
     }
+    if (lines.slice(blockStart, j).some((line) => PARTIAL.test(line))) {
+      errors.push(`${where}: marker sits on a partial test (remove upstream: or complete the port)`);
+      return;
+    }
     if (ignored) {
       errors.push(`${where}: marker sits on an #[ignore] test (RFC-0045 §5)`);
       return;
     }
-    markers.push({ where, pkg, file, chain });
+    markers.push({ rel, where, pkg, file, chain });
   });
-  return { markers, errors };
+  return { markers, partials, errors };
 }
 
 function parseSemver(v) {
@@ -156,6 +169,7 @@ const testFilesOf = (upstream) => [...new Set([testFileOf(upstream), testFileOf(
 export function readLayouts(layoutFiles, versions, errors) {
   const tables = [];
   for (const { rel, src } of layoutFiles) {
+    const crate = path.posix.dirname(rel.replace(/\\/g, '/'));
     let doc;
     try {
       doc = parseToml(src);
@@ -208,6 +222,10 @@ export function readLayouts(layoutFiles, versions, errors) {
           errors.push(`${where}: a ${entry.status} entry needs a tests table (RFC-0045 §3.2)`);
         if (!SELECTED.has(entry.status) && entry.tests !== undefined)
           errors.push(`${where}: a ${entry.status} entry has no tests to exclude`);
+        if (entry.status === 'missing' && (!Number.isInteger(entry.issue) || entry.issue <= 0))
+          errors.push(`${where}: a missing entry needs an issue number`);
+        if (entry.status === 'not-applicable' && (typeof entry.reason !== 'string' || entry.reason.trim() === ''))
+          errors.push(`${where}: a not-applicable entry needs a reason`);
         for (const [category, items] of Object.entries(entry.tests ?? {})) {
           if (!CATEGORIES[category]) {
             errors.push(`${where}: unknown exclusion category ${category}`);
@@ -231,7 +249,7 @@ export function readLayouts(layoutFiles, versions, errors) {
         }
         files.push(e);
       }
-      tables.push({ key, package: table.package, files });
+      tables.push({ key, crate, package: table.package, files });
     }
   }
   return tables;
@@ -250,9 +268,29 @@ export function check({ versions, tables, markers, inventory }) {
   }
   // Owner entry of a test file: the source file it is named after (§3.1).
   const owners = new Map(); // `${package} ${test file}` → entry
-  for (const t of tables)
+  const pkgTables = new Map(); // package → tables[]
+  for (const t of tables) {
+    const list = pkgTables.get(t.package) ?? [];
+    list.push(t);
+    pkgTables.set(t.package, list);
     for (const e of t.files)
       if (e.upstream) for (const f of testFilesOf(e.upstream)) owners.set(`${t.package} ${f}`, e);
+  }
+  const cratePrefixOf = (t) => (t.crate && t.crate !== '.' ? `${t.crate}/` : '');
+  const isVendorScoped = (t) => t.files.some((f) => typeof f.rust === 'string' && f.rust.startsWith(`${t.key}/`));
+  const expectedPrefixesFor = (pkg, owner) => {
+    const list = pkgTables.get(pkg) ?? [];
+    return list.map((t) => {
+      const base = cratePrefixOf(t);
+      if (!isVendorScoped(t)) return `${base}src/`;
+      const vendorDir = owner?.rust && owner.rust.includes('/') ? owner.rust.split('/')[0] : t.key;
+      return `${base}src/${vendorDir}/tests/`;
+    });
+  };
+  const ownedPrefixes = tables.map((t) => ({
+    pkg: t.package,
+    prefix: `${cratePrefixOf(t)}src/${isVendorScoped(t) ? `${t.key}/tests/` : ''}`,
+  }));
   const versionOf = (pkg, file) => owners.get(`${pkg} ${file}`)?.version ?? versions[pkg]?.version;
 
   // Handled cases: `${package}@${version} ${file} ${key}` → how.
@@ -262,6 +300,23 @@ export function check({ versions, tables, markers, inventory }) {
     if (!versions[m.pkg]) {
       errors.push(`${m.where}: package ${m.pkg} is not in VERSIONS.json`);
       continue;
+    }
+    const owner = owners.get(`${m.pkg} ${m.file}`);
+    if (m.rel) {
+      const mRel = m.rel.replace(/\\/g, '/');
+      if (pkgTables.has(m.pkg)) {
+        const allowed = expectedPrefixesFor(m.pkg, owner);
+        if (!allowed.some((p) => mRel.startsWith(p))) {
+          errors.push(`${m.where}: marker belongs to ${m.pkg} (expected under ${allowed.join(' or ')}), found in ${m.rel}`);
+          continue;
+        }
+      } else {
+        const claimed = ownedPrefixes.find((o) => mRel.startsWith(o.prefix));
+        if (claimed) {
+          errors.push(`${m.where}: marker for ${m.pkg} sits in ${claimed.pkg} directory ${m.rel}`);
+          continue;
+        }
+      }
     }
     const version = versionOf(m.pkg, m.file);
     const file = cases.get(`${m.pkg}@${version}`)?.get(m.file);
@@ -280,7 +335,6 @@ export function check({ versions, tables, markers, inventory }) {
       continue;
     }
     handled.set(id, { how: 'ported', where: m.where });
-    const owner = owners.get(`${m.pkg} ${m.file}`);
     if (owner && !SELECTED.has(owner.status))
       warnings.push(`${m.where}: marks a case of ${m.file}, whose source entry is ${owner.status}`);
   }
@@ -445,7 +499,7 @@ function loadRepo(versions, errors) {
   const markers = [];
   for (const rel of gitFiles(':(glob)**/*.rs')) {
     const src = fs.readFileSync(path.join(root, rel), 'utf8');
-    if (!src.includes('upstream:')) continue;
+    if (!src.includes('upstream:') && !src.includes('partial:')) continue;
     const r = scanMarkers(rel, src);
     markers.push(...r.markers);
     errors.push(...r.errors);

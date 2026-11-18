@@ -113,6 +113,7 @@ status = "mapped"
 [[groq.files]]
 upstream = "src/b.ts"
 status = "missing"
+issue = 275
 
 [groq.files.tests]
 
@@ -142,13 +143,13 @@ package = "@ai-sdk/nope"
   assert.deepEqual(errors, [
     'layout.toml:5 src/a.ts: a mapped entry needs a tests table (RFC-0045 §3.2)',
     'layout.toml:9 src/b.ts: a missing entry has no tests to exclude',
-    'layout.toml:15 src/c.ts: unknown status "done"',
-    'layout.toml:19 src/d.ts: version 4.0.51 is below the locked 4.0.52',
-    'layout.toml:25 ts-only: exclusion without reason',
-    'layout.toml:26 registered: exclusion without ref',
-    'layout.toml:27 sub-feature: issue must be an issue number',
-    'layout.toml:19 src/d.ts: unknown exclusion category other',
-    'layout.toml:34 [nope]: package "@ai-sdk/nope" is not in VERSIONS.json',
+    'layout.toml:16 src/c.ts: unknown status "done"',
+    'layout.toml:20 src/d.ts: version 4.0.51 is below the locked 4.0.52',
+    'layout.toml:26 ts-only: exclusion without reason',
+    'layout.toml:27 registered: exclusion without ref',
+    'layout.toml:28 sub-feature: issue must be an issue number',
+    'layout.toml:20 src/d.ts: unknown exclusion category other',
+    'layout.toml:35 [nope]: package "@ai-sdk/nope" is not in VERSIONS.json',
   ]);
 });
 
@@ -172,6 +173,7 @@ ts-only = [
 [[groq.files]]
 upstream = "src/b.ts"
 status = "missing"
+issue = 275
 
 [ai]
 package = "ai"
@@ -325,4 +327,123 @@ ts-only = [
     'ai@7.0.128 src/decide/decide.test.ts': { manual: 0, unhandled: ['d'] },
     'ai@7.0.128 src/orphan-new.test.ts': { manual: 1, unhandled: [] },
   });
+});
+
+test('scanMarkers rejects upstream + partial on the same test while allowing standalone partial', () => {
+  const src = [
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › x\n/// partial: missing edge case\n#[test]\nfn both_after() {}\n',
+    '/// partial: missing edge case\n/// upstream: @ai-sdk/groq src/a.test.ts › d › y\n#[test]\nfn both_before() {}\n',
+    '/// partial: @ai-sdk/groq src/a.test.ts › d › z\n#[test]\nfn partial_only() {}\n',
+  ].join('');
+  const { markers, partials, errors } = scanMarkers('x.rs', src);
+  assert.deepEqual(markers, []);
+  assert.equal(partials.length, 3);
+  assert.deepEqual(errors, [
+    'x.rs:1: marker sits on a partial test (remove upstream: or complete the port)',
+    'x.rs:6: marker sits on a partial test (remove upstream: or complete the port)',
+  ]);
+});
+
+test('readLayouts requires issue on missing and reason on not-applicable', () => {
+  const errors = [];
+  readLayouts([{
+    rel: 'aimux-providers/layout.toml',
+    src: `
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/a.ts"
+status = "missing"
+
+[[groq.files]]
+upstream = "src/b.ts"
+status = "missing"
+issue = "275"
+
+[[groq.files]]
+upstream = "src/c.ts"
+status = "not-applicable"
+
+[[groq.files]]
+upstream = "src/d.ts"
+status = "not-applicable"
+reason = "   "
+
+[[groq.files]]
+upstream = "src/e.ts"
+status = "missing"
+issue = 275
+
+[[groq.files]]
+upstream = "src/f.ts"
+status = "not-applicable"
+reason = "crate version used"
+`,
+  }], versions, errors);
+  assert.deepEqual(errors, [
+    'aimux-providers/layout.toml:5 src/a.ts: a missing entry needs an issue number',
+    'aimux-providers/layout.toml:9 src/b.ts: a missing entry needs an issue number',
+    'aimux-providers/layout.toml:14 src/c.ts: a not-applicable entry needs a reason',
+    'aimux-providers/layout.toml:18 src/d.ts: a not-applicable entry needs a reason',
+  ]);
+});
+
+test('check validates marker ownership against layout.toml crate and vendor directory', () => {
+  const layout = `
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/a.ts"
+rust = "groq/a.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/shared.ts"
+rust = "shared/shared.rs"
+status = "mapped"
+
+[groq.files.tests]
+`;
+  const errors = [];
+  const tables = readLayouts([{ rel: 'aimux-providers/layout.toml', src: layout }], versions, errors);
+  assert.deepEqual(errors, []);
+  const inventory = [
+    pkg('@ai-sdk/groq', '4.0.52', {
+      'src/a.test.ts': "it('ok', f); it('wrong_vendor', f); it('legacy_dir', f);",
+      'src/shared.test.ts': "it('shared_ok', f);",
+      'src/orphan.test.ts': "it('orphan_ok', f); it('orphan_bad', f);",
+    }),
+  ];
+  const make = (rel, file, chain, pkgName = '@ai-sdk/groq') =>
+    scanMarkers(rel, marker(`${pkgName} ${file} › ${chain}`)).markers[0];
+  const markers = [
+    make('aimux-providers/src/groq/tests/a.rs', 'src/a.test.ts', 'ok'),
+    make('aimux-providers/src/shared/tests/shared.rs', 'src/shared.test.ts', 'shared_ok'),
+    make('aimux-providers/src/groq/tests/orphan.rs', 'src/orphan.test.ts', 'orphan_ok'),
+    make('aimux-providers/src/openai/tests/a.rs', 'src/a.test.ts', 'wrong_vendor'),
+    make('aimux-providers/tests/groq_test.rs', 'src/a.test.ts', 'legacy_dir'),
+    make('aimux-providers/src/openai/tests/orphan.rs', 'src/orphan.test.ts', 'orphan_bad'),
+    make('aimux-providers/src/groq/tests/u.rs', 'src/u.test.ts', 'unlisted_in_vendor', '@ai-sdk/other'),
+  ];
+  const r = check({ versions, tables, markers, inventory });
+  assert.deepEqual(r.errors, [
+    'aimux-providers/src/openai/tests/a.rs:1: marker belongs to @ai-sdk/groq (expected under aimux-providers/src/groq/tests/), found in aimux-providers/src/openai/tests/a.rs',
+    'aimux-providers/tests/groq_test.rs:1: marker belongs to @ai-sdk/groq (expected under aimux-providers/src/groq/tests/), found in aimux-providers/tests/groq_test.rs',
+    'aimux-providers/src/openai/tests/orphan.rs:1: marker belongs to @ai-sdk/groq (expected under aimux-providers/src/groq/tests/), found in aimux-providers/src/openai/tests/orphan.rs',
+    'aimux-providers/src/groq/tests/u.rs:1: package @ai-sdk/other is not in VERSIONS.json',
+  ]);
+  // Unlisted package that IS in VERSIONS.json sitting inside a listed vendor dir:
+  const rUnlisted = check({
+    versions: { ...versions, '@ai-sdk/provider-utils': { version: '5.0.55' } },
+    tables,
+    markers: [make('aimux-providers/src/groq/tests/u.rs', 'src/u.test.ts', 'x', '@ai-sdk/provider-utils')],
+    inventory,
+  });
+  assert.deepEqual(rUnlisted.errors, [
+    'aimux-providers/src/groq/tests/u.rs:1: marker for @ai-sdk/provider-utils sits in @ai-sdk/groq directory aimux-providers/src/groq/tests/u.rs',
+  ]);
 });

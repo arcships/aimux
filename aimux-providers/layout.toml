@@ -445,6 +445,7 @@ status = "mapped"
 [[vertex.files]]
 upstream = "src/version.ts"
 status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
 
 [[vertex.files]]
 upstream = "src/xai/edge/google-vertex-xai-provider-edge.ts"
@@ -686,6 +687,7 @@ status = "mapped"
 [[openai_compatible.files]]
 upstream = "src/version.ts"
 status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
 
 [groq]
 package = "@ai-sdk/groq"
