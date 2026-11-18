@@ -278,8 +278,9 @@ class ProbeRegistryTest(unittest.TestCase):
 
         entries = [
             _entry("a_fast", base_path="/fast"),
-            _entry("b_slow", base_path="/slow"),
-            _entry("c_queued", base_path="/queued"),
+            _entry("b_slow1", base_path="/slow1"),
+            _entry("c_slow2", base_path="/slow2"),
+            _entry("d_queued", base_path="/queued"),
         ]
         t0 = time.monotonic()
         rep = probe.run_probe(
@@ -299,8 +300,44 @@ class ProbeRegistryTest(unittest.TestCase):
         self.assertIsInstance(rep["duration_ms"], int)
         by_id = {r["id"]: r["outcome"] for r in rep["results"]}
         self.assertEqual(by_id["a_fast"], "reachable")
-        self.assertEqual(by_id["b_slow"], "not-run")
-        self.assertEqual(by_id["c_queued"], "not-run")
+        self.assertEqual(by_id["b_slow1"], "not-run")
+        self.assertEqual(by_id["c_slow2"], "not-run")
+        self.assertEqual(by_id["d_queued"], "not-run")
+
+        # Hung resolver respects per-target timeout
+        dns_t_rep = probe.run_probe(
+            [_entry("dns_slow")],
+            registry_urls={},
+            resolver=lambda h, p: (time.sleep(0.35), ["93.184.216.34"])[1],
+            http_exchange=lambda *_a: (200, {}),
+            timeout=0.05,
+            total_budget=1.0,
+        )
+        self.assertEqual(dns_t_rep["results"][0]["outcome"], "timeout")
+
+        # Full Python subprocess exits promptly on total_budget even when a resolver hangs for 5s
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            allow_p = Path(tmp) / "allow.json"
+            allow_p.write_text(
+                json.dumps({"schema_version": 1, "entries": [_entry("hung_dns")]}),
+                encoding="utf-8",
+            )
+            script = (
+                "import socket, sys, time; "
+                f"sys.path.insert(0, {str(ROOT / 'scripts')!r}); "
+                "import probe_registry as p; "
+                "socket.getaddrinfo = lambda *_a, **_kw: (time.sleep(5.0), [])[1]; "
+                f"sys.exit(p.main(['--allowlist', {str(allow_p)!r}, '--no-registry-check', '--total-budget', '0.08']))"
+            )
+            t_sub = time.monotonic()
+            proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=2.0)
+            sub_elapsed = time.monotonic() - t_sub
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertLess(sub_elapsed, 0.8)
+            sub_rep = json.loads(proc.stdout)
+            self.assertEqual(sub_rep["results"][0]["outcome"], "not-run")
 
     def test_redirect_traversal_encoding_and_exception_isolation(self):
         # Encoded dot segments on same origin must be blocked

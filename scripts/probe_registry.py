@@ -8,14 +8,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait as futures_wait
 from http.client import HTTPMessage, parse_headers
 import io
 import json
 import math
+import queue
 import socket
 import ssl
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -270,9 +271,44 @@ def _host_is_literal_ip(host: str) -> bool:
         return False
 
 
+def _resolve_bounded(
+    resolver: Callable[[str, int], list[str]],
+    host: str,
+    port: int,
+    timeout: float | None,
+) -> tuple[str | None, list[str]]:
+    if timeout is None:
+        try:
+            resolved = resolver(host, port)
+        except OSError:
+            return "dns-error", []
+        return (None, resolved) if resolved else ("dns-error", [])
+
+    box: dict[str, object] = {}
+
+    def _run() -> None:
+        try:
+            box["ips"] = resolver(host, port)
+        except OSError as exc:
+            box["err"] = exc
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        return "timeout", []
+    if "err" in box:
+        return "dns-error", []
+    resolved = box.get("ips")
+    if not resolved:
+        return "dns-error", []
+    return None, list(resolved)  # type: ignore[arg-type]
+
+
 def _validate_and_resolve(
     url_info: dict,
     resolver: Callable[[str, int], list[str]],
+    timeout: float | None = None,
 ) -> tuple[str | None, list[str]]:
     """Return `(block_reason_or_none, validated_ips)`."""
     if url_info["sensitive"]:
@@ -294,13 +330,9 @@ def _validate_and_resolve(
     if rs.is_forbidden_hostname(host):
         return "blocked-non-public-ip", []
 
-    try:
-        resolved = resolver(host, port)
-    except OSError:
-        return "dns-error", []
-
-    if not resolved:
-        return "dns-error", []
+    err_reason, resolved = _resolve_bounded(resolver, host, port, timeout)
+    if err_reason is not None:
+        return err_reason, []
 
     for ip in resolved:
         if not rs.is_public_ip(ip):
@@ -413,7 +445,7 @@ def probe_entry(
     redirect_count = 0
 
     while True:
-        block_reason, ips = _validate_and_resolve(current_info, resolver)
+        block_reason, ips = _validate_and_resolve(current_info, resolver, timeout=timeout)
         if block_reason is not None:
             return {
                 "id": pid,
@@ -593,74 +625,65 @@ def run_probe(
     sorted_entries = sorted(entries, key=lambda e: e["id"])
     results: list[dict] = []
     any_redacted = False
-    budget_exhausted = False
 
-    # Process in bounded waves and enforce total_budget inside each wave.
-    pool = ThreadPoolExecutor(max_workers=concurrency)
-    try:
-        idx = 0
-        n = len(sorted_entries)
-        while idx < n:
-            if time.monotonic() >= deadline:
-                budget_exhausted = True
-                for rem in sorted_entries[idx:]:
-                    res, redacted = _not_run_result(rem)
-                    any_redacted = any_redacted or redacted
-                    results.append(res)
-                break
-            batch = sorted_entries[idx : idx + concurrency]
-            idx += concurrency
-            pending = {
-                pool.submit(
-                    probe_entry,
-                    entry,
-                    registry_urls=registry_urls,
-                    resolver=resolver,
-                    http_exchange=http_exchange,
-                    timeout=timeout,
-                    max_header_bytes=max_header_bytes,
-                    max_body_bytes=max_body_bytes,
-                    max_redirects=max_redirects,
-                ): entry
-                for entry in batch
-            }
-            while pending:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    budget_exhausted = True
-                    break
-                done, _ = futures_wait(
-                    pending.keys(),
-                    timeout=remaining,
-                    return_when=FIRST_COMPLETED,
-                )
-                if not done:
-                    budget_exhausted = True
-                    break
-                for fut in done:
-                    entry = pending.pop(fut)
-                    try:
-                        res = fut.result()
-                    except Exception:
-                        res, _ = _not_run_result(entry)
-                        res["outcome"] = "connect-error"
-                    if _record_redacted(res):
-                        any_redacted = True
-                    results.append(res)
+    # Process with bounded daemon workers so total_budget bounds both run_probe and CLI exit.
+    n = len(sorted_entries)
+    completed: dict[int, dict] = {}
+    if n > 0:
+        lock = threading.Lock()
+        next_idx = 0
+        done_q: queue.Queue[tuple[int, dict]] = queue.Queue()
 
-            if budget_exhausted:
-                for fut, entry in pending.items():
-                    fut.cancel()
-                    res, redacted = _not_run_result(entry)
-                    any_redacted = any_redacted or redacted
-                    results.append(res)
-                for rem in sorted_entries[idx:]:
-                    res, redacted = _not_run_result(rem)
-                    any_redacted = any_redacted or redacted
-                    results.append(res)
+        def _worker() -> None:
+            nonlocal next_idx
+            while True:
+                if time.monotonic() >= deadline:
+                    return
+                with lock:
+                    if next_idx >= n:
+                        return
+                    i = next_idx
+                    next_idx += 1
+                entry = sorted_entries[i]
+                try:
+                    res = probe_entry(
+                        entry,
+                        registry_urls=registry_urls,
+                        resolver=resolver,
+                        http_exchange=http_exchange,
+                        timeout=timeout,
+                        max_header_bytes=max_header_bytes,
+                        max_body_bytes=max_body_bytes,
+                        max_redirects=max_redirects,
+                    )
+                except Exception:
+                    res, _ = _not_run_result(entry)
+                    res["outcome"] = "connect-error"
+                done_q.put((i, res))
+
+        for _ in range(min(concurrency, n)):
+            threading.Thread(target=_worker, daemon=True).start()
+
+        while len(completed) < n:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 break
-    finally:
-        pool.shutdown(wait=not budget_exhausted, cancel_futures=True)
+            try:
+                i, res = done_q.get(timeout=remaining)
+            except queue.Empty:
+                break
+            completed[i] = res
+
+    for i, entry in enumerate(sorted_entries):
+        if i in completed:
+            res = completed[i]
+            if _record_redacted(res):
+                any_redacted = True
+            results.append(res)
+        else:
+            res, redacted = _not_run_result(entry)
+            any_redacted = any_redacted or redacted
+            results.append(res)
 
     results.sort(key=lambda r: r["id"])
     counts: dict[str, int] = {}
