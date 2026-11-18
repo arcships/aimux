@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Transport-independent operation dispatch for aimux bindings"
+exclude = [
+    "tests/**",
+    "src/**/tests/**",
+    "src/**/tests.rs",
+    "src/**/*_tests.rs",
+    "src/dto_vectors.rs",
+]
 
 [dependencies]
 schemars = { workspace = true }

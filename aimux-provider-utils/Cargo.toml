@@ -7,6 +7,7 @@ description = "Shared utilities for aimux provider implementations"
 keywords = ["llm", "http", "ai", "api"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-provider-utils"
+exclude = ["tests/**", "src/**/tests/**", "src/**/tests.rs", "src/**/*_tests.rs"]
 
 [dependencies]
 schemars = { workspace = true }
