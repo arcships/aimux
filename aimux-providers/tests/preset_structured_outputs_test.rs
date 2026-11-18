@@ -10,16 +10,13 @@
 //! package was removed before `ai@7.0.127`); rows without the key every
 //! model (Fireworks: @ai-sdk/fireworks 3.0.65 `fireworks-provider.ts:149`).
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::types::Warning;
 use aimux_provider_utils::Resolvable;
+use aimux_providers::test_support::mock_fetch::{Canned, MockFetch};
 use aimux_providers::{PresetSettings, preset};
-use mock_fetch::{Canned, MockFetch};
 use serde_json::{Value, json};
 
 fn chat_ok() -> Canned {

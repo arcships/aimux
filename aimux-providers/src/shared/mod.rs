@@ -7,18 +7,40 @@
 
 pub(crate) mod aisdk_pins;
 mod discovery;
+mod error_body;
 mod exchange;
+mod factory;
+mod image_size;
+mod media;
 mod poll;
+mod provider_options;
+mod results;
+mod search;
 
 pub(crate) use discovery::{ModelListEntry, list_data_models};
+pub(crate) use error_body::{
+    json_error_code, message_type_error_response_handler, nested_error_response_handler,
+};
 pub(crate) use exchange::{
     BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, HttpEndpoint, ResolveEndpoint,
     SupportedUrlsSource,
 };
+pub(crate) use factory::{
+    VendorFactoryConfig, VendorParts, build_vendor_parts, debug_vendor_settings,
+    define_vendor_provider,
+};
+pub(crate) use image_size::size_to_aspect_ratio;
+pub(crate) use media::{audio_input_to_base64, audio_input_to_bytes, video_file_to_url_or_base64};
 pub(crate) use poll::{
     POLL_INTERVAL_MILLIS_KEY, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key,
     poll_interval_ms, poll_until, retry_download,
 };
+pub(crate) use provider_options::namespaced_options;
+pub(crate) use results::{
+    image_response, speech_response, task_failed, transcription_response, unsupported,
+    video_response,
+};
+pub(crate) use search::{get_query_search, get_query_search_with_exchange, post_json_search};
 
 use std::sync::Arc;
 
