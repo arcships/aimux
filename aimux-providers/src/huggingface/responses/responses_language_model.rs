@@ -34,9 +34,15 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
     aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let url = input.url.clone();
-        let output = aimux_provider_utils::create_json_response_handler::<Value>()
+        // Parsed once: nothing reads a second `raw_value` copy of the body.
+        let output = aimux_provider_utils::create_json_bytes_response_handler::<Value>()
             .handle_with_source(input, Some(body_source.clone()))
             .await?;
+        let output = aimux_provider_utils::ResponseHandlerOutput {
+            value: output.value.0,
+            raw_value: None,
+            response_headers: output.response_headers,
+        };
         if let Some(error) = output.value.get("error").filter(|value| !value.is_null()) {
             let message = error
                 .get("message")

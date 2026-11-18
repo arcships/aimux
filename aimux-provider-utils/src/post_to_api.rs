@@ -147,7 +147,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
 #[inline(never)]
 fn exchange_timeout_error(
     response_timeout: Duration,
-    url: String,
+    timeout_url: &str,
     request_body_source: &RequestBodySource,
 ) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
@@ -158,7 +158,7 @@ fn exchange_timeout_error(
                 "Request exceeded the {}s exchange response timeout",
                 response_timeout.as_secs()
             ),
-            url,
+            crate::http::sanitized_request_url(timeout_url),
             request_body_source.materialize(),
         )
     }))
@@ -166,7 +166,7 @@ fn exchange_timeout_error(
 
 struct PreparedSuccessExchange {
     status: u16,
-    response_headers: std::collections::HashMap<String, String>,
+    fallback_headers: reqwest::header::HeaderMap,
     url: String,
     request_body_source: RequestBodySource,
     input: ResponseHandlerInput,
@@ -180,13 +180,15 @@ async fn send_and_prepare_success(
     uses_lazy_request_body: bool,
 ) -> Result<PreparedSuccessExchange, AiMuxError> {
     crate::logging::auto_init_from_env();
-    let url = crate::http::sanitized_request_url(&request.url);
+    let url = request.sanitized_url();
     let response = crate::http::send_request_once(&request)
         .await
         .map_err(|error| handle_fetch_error(error, &url, &request_body_source.materialize()))?;
     let status = response.status().as_u16();
-    let response_headers =
-        crate::extract_response_headers::extract_response_headers(response.headers());
+    // Only the two fallback branches below read these (a handler error that
+    // carries no response of its own), so they stay a raw `HeaderMap` (its
+    // clone shares the header bytes) until one of them is taken.
+    let fallback_headers = response.headers().clone();
     let abort_signal = request.abort_signal.clone();
     let max_json_response_bytes = request.max_json_response_bytes;
     // Drop `request` immediately after the wire send so `request.body` (`Arc<HttpBody>`)
@@ -219,7 +221,11 @@ async fn send_and_prepare_success(
                 ) => from_response(error),
                 Err(error) => AiMuxError::ApiCall(Box::new(ApiCallError {
                     status_code: Some(status),
-                    response_headers: Some(response_headers),
+                    response_headers: Some(
+                        crate::extract_response_headers::extract_response_headers(
+                            &fallback_headers,
+                        ),
+                    ),
                     // A handler that cannot parse a 429/503 body must not erase
                     // the status's retryability — retry classification comes from
                     // the HTTP status, not from the parse outcome.
@@ -258,7 +264,7 @@ async fn send_and_prepare_success(
 
     Ok(PreparedSuccessExchange {
         status,
-        response_headers,
+        fallback_headers,
         url,
         request_body_source,
         input,
@@ -270,7 +276,7 @@ async fn send_and_prepare_success(
 fn wrap_success_handler_error(
     error: AiMuxError,
     status: u16,
-    response_headers: std::collections::HashMap<String, String>,
+    fallback_headers: &reqwest::header::HeaderMap,
     url: String,
     request_body_source: &RequestBodySource,
 ) -> AiMuxError {
@@ -280,7 +286,9 @@ fn wrap_success_handler_error(
         }
         error => AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
-            response_headers: Some(response_headers),
+            response_headers: Some(crate::extract_response_headers::extract_response_headers(
+                fallback_headers,
+            )),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
                 format!("Failed to process successful response: {error}"),
@@ -299,7 +307,6 @@ pub(crate) async fn call_to_api_with_deadline_source<T>(
     failed_response_handler: ResponseHandler<AiMuxError>,
     response_timeout: Duration,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let url = crate::http::sanitized_request_url(&request.url);
     if successful_response_handler.is_streaming() {
         return execute_exchange(
             request,
@@ -309,6 +316,8 @@ pub(crate) async fn call_to_api_with_deadline_source<T>(
         )
         .await;
     }
+    // Only the timeout error below names the URL; it is sanitized there.
+    let timeout_url = request.url.clone();
     let exchange = execute_exchange(
         request,
         request_body_source.clone(),
@@ -319,7 +328,7 @@ pub(crate) async fn call_to_api_with_deadline_source<T>(
         Ok(result) => result,
         Err(_) => Err(exchange_timeout_error(
             response_timeout,
-            url,
+            &timeout_url,
             &request_body_source,
         )),
     }
@@ -333,7 +342,7 @@ async fn execute_exchange<T>(
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
     let PreparedSuccessExchange {
         status,
-        response_headers,
+        fallback_headers,
         url,
         request_body_source,
         input,
@@ -350,7 +359,7 @@ async fn execute_exchange<T>(
         .handle_with_source(input, Some(request_body_source.clone()))
         .await
         .map_err(|error| {
-            wrap_success_handler_error(error, status, response_headers, url, &request_body_source)
+            wrap_success_handler_error(error, status, &fallback_headers, url, &request_body_source)
         })
 }
 

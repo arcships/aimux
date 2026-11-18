@@ -274,17 +274,13 @@ where
     T: DeserializeOwned + Send + 'static,
 {
     ResponseHandler::new_with_source(|input, body_source| async move {
-        let (status, headers, url, body) = read_json_response_body(input, &body_source).await?;
-        // Deserialize straight into `T` instead of parsing a
-        // `serde_json::Value` first and converting that — the previous
-        // two-step parse cloned the intermediate `Value` tree, holding
-        // bytes + `Value` + `T` at once. `raw_value` (needed by callers such
-        // as `Usage.raw`) is a best-effort second parse: `T`'s successful
-        // deserialization already proves `body` is valid JSON, so this
-        // cannot fail in a way that changes the outcome.
-        let value = serde_json::from_slice::<T>(&body).map_err(|error| {
-            invalid_json_response_error(&error, status, headers.clone(), url, &body, &body_source)
-        })?;
+        let (value, body, headers) = read_json_response::<T>(input, body_source).await?;
+        // `raw_value` (needed by callers such as `Usage.raw`) is a
+        // best-effort second parse: `T`'s successful deserialization already
+        // proves `body` is valid JSON, so this cannot fail in a way that
+        // changes the outcome. A caller whose `T` is already a
+        // `serde_json::Value` uses [`create_json_bytes_response_handler`]
+        // instead and skips it.
         let raw_value = serde_json::from_slice::<serde_json::Value>(&body).ok();
         Ok(ResponseHandlerOutput {
             value,
@@ -292,6 +288,45 @@ where
             response_headers: headers,
         })
     })
+}
+
+/// Parse a successful JSON response once into `T` and return it with the
+/// response body as it arrived, leaving `raw_value` unset.
+///
+/// For callers that deserialize into a `serde_json::Value` themselves, or
+/// that need the body text only to report an in-band error: the body is
+/// parsed once instead of twice, and its bytes are shared, not copied.
+/// Size limit and errors are those of [`create_json_response_handler`].
+#[must_use]
+pub fn create_json_bytes_response_handler<T>() -> ResponseHandler<(T, Bytes)>
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let (value, body, headers) = read_json_response::<T>(input, body_source).await?;
+        Ok(ResponseHandlerOutput {
+            value: (value, body),
+            raw_value: None,
+            response_headers: headers,
+        })
+    })
+}
+
+/// Read a size-limited JSON success body and deserialize it straight into
+/// `T` (not through an intermediate `serde_json::Value`), returning the
+/// value, the body bytes and the response headers.
+async fn read_json_response<T>(
+    input: ResponseHandlerInput,
+    body_source: RequestBodySource,
+) -> Result<(T, Bytes, std::collections::HashMap<String, String>), AiMuxError>
+where
+    T: DeserializeOwned,
+{
+    let (status, headers, url, body) = read_json_response_body(input, &body_source).await?;
+    let value = serde_json::from_slice::<T>(&body).map_err(|error| {
+        invalid_json_response_error(&error, status, headers.clone(), url, &body, &body_source)
+    })?;
+    Ok((value, body, headers))
 }
 
 /// Public error bodies are capped at this size: `ApiCallError` crosses the

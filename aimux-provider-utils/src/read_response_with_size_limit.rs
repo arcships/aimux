@@ -57,14 +57,15 @@ pub async fn read_response_with_size_limit_lazy(
     abort_signal: Option<&aimux_core::AbortSignal>,
 ) -> Result<Bytes, AiMuxError> {
     let status = response.status().as_u16();
-    let response_headers =
-        crate::extract_response_headers::extract_response_headers(response.headers());
+    // The header map is only read by the error branches; the success path
+    // returns the bytes alone.
+    let extract_headers = crate::extract_response_headers::extract_response_headers;
     if let Some(length) = response.content_length()
         && length > max_bytes as u64
     {
         return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             status_code: Some(status),
-            response_headers: Some(response_headers),
+            response_headers: Some(extract_headers(response.headers())),
             is_retryable: aimux_core::error::is_retryable_status(status),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
@@ -75,7 +76,11 @@ pub async fn read_response_with_size_limit_lazy(
         })));
     }
 
-    let mut stream = response.bytes_stream();
+    let FetchResponse {
+        headers,
+        body: mut stream,
+        ..
+    } = response;
     let mut bytes = Vec::new();
     let mut make_body = Some(request_body_values);
     loop {
@@ -95,7 +100,7 @@ pub async fn read_response_with_size_limit_lazy(
             Err(error) => {
                 return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                     status_code: None,
-                    response_headers: Some(response_headers.clone()),
+                    response_headers: Some(extract_headers(&headers)),
                     is_retryable: true,
                     cause: Some(ErrorCause::source(&error)),
                     origin: aimux_core::ApiCallErrorOrigin::Transport,
@@ -110,7 +115,7 @@ pub async fn read_response_with_size_limit_lazy(
         if bytes.len().saturating_add(chunk.len()) > max_bytes {
             return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                 status_code: Some(status),
-                response_headers: Some(response_headers),
+                response_headers: Some(extract_headers(&headers)),
                 is_retryable: aimux_core::error::is_retryable_status(status),
                 origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(

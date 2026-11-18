@@ -24,7 +24,7 @@ use crate::openai::responses::responses_api::ResponsesUsage;
 pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
         return Usage {
-            raw: raw.and_then(|value| value.as_object().cloned()),
+            raw: raw.and_then(into_object),
             ..Default::default()
         };
     };
@@ -62,12 +62,19 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value
             text: Some(text_tokens),
             reasoning: Some(reasoning_tokens),
         },
-        raw: raw.and_then(|value| value.as_object().cloned()),
+        raw: raw.and_then(into_object),
+    }
+}
+
+fn into_object(value: Value) -> Option<serde_json::Map<String, Value>> {
+    match value {
+        Value::Object(map) => Some(map),
+        _ => None,
     }
 }
 
 /// Helper: build a `ResponsesUsage` from a raw JSON `usage` object.
 #[must_use]
 pub fn parse_usage(raw: &Value) -> Option<ResponsesUsage> {
-    serde_json::from_value(raw.clone()).ok()
+    <ResponsesUsage as serde::Deserialize>::deserialize(raw).ok()
 }
