@@ -230,3 +230,99 @@ version = "7.0.128"
   assert.deepEqual(r.untracked, ['@ai-sdk/groq src/lonely.test.ts']);
   assert.deepEqual(r.unlisted, {});
 });
+
+test('scanMarkers rejects #[ignore] and non-test helper functions', () => {
+  const src = [
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › x\n#[ignore]\n#[test]\nfn ignored() {}\n',
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › y\n#[ignore = "wip"]\n#[tokio::test]\nasync fn ignored_msg() {}\n',
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › z\nfn helper() {}\n',
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › ok\n#[tokio::test(flavor = "multi_thread")]\nasync fn ok() {}\n',
+  ].join('');
+  const { markers, errors } = scanMarkers('x.rs', src);
+  assert.deepEqual(markers.map((m) => [m.where, m.chain]), [['x.rs:11', 'd › ok']]);
+  assert.deepEqual(errors, [
+    'x.rs:1: marker sits on an #[ignore] test (RFC-0045 §5)',
+    'x.rs:5: marker sits on an #[ignore] test (RFC-0045 §5)',
+    'x.rs:9: marker is not above a test function',
+  ]);
+});
+
+test('readLayouts and check handle malformed files/upstream, tsx entries, and version-overridden orphan exclusions', () => {
+  const badErrors = [];
+  const badTables = readLayouts([{
+    rel: 'layout.toml',
+    src: `
+[groq]
+package = "@ai-sdk/groq"
+[groq.files]
+upstream = "src/a.ts"
+status = "mapped"
+
+[ai]
+package = "ai"
+[[ai.files]]
+status = "mapped"
+[ai.files.tests]
+ts-only = [{ case = "x", reason = "r" }]
+`,
+  }], versions, badErrors);
+  assert.deepEqual(badErrors, [
+    'layout.toml:2 [groq]: files must be an array of tables',
+    'layout.toml:10 undefined: no upstream path',
+  ]);
+  const badCheck = check({ versions, tables: badTables, markers: [], inventory: [] });
+  assert.deepEqual(badCheck.errors, []);
+
+  const layout = `
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/comp.tsx"
+status = "mapped"
+
+[groq.files.tests]
+ts-only = [{ case = "c", reason = "r" }]
+
+[ai]
+package = "ai"
+
+[[ai.files]]
+upstream = "src/decide/decide.ts"
+status = "mapped"
+version = "7.0.128"
+
+[ai.files.tests]
+ts-only = [
+  { case = "locked orphan case", reason = "r" },
+  { case = "override orphan case", reason = "r" },
+]
+`;
+  const layoutErrors = [];
+  const tables = readLayouts([{ rel: 'layout.toml', src: layout }], versions, layoutErrors);
+  assert.deepEqual(layoutErrors, []);
+  const inventory = [
+    pkg('@ai-sdk/groq', '4.0.52', {
+      'src/comp.test.tsx': "it('c', f);",
+    }),
+    pkg('ai', '7.0.127', {
+      'src/orphan-locked.test.ts': "it('locked orphan case', f);",
+    }),
+    pkg('ai', '7.0.128', {
+      'src/decide/decide.test.ts': "it('d', f);",
+      'src/orphan-locked.test.ts': "it('locked orphan case', f);",
+      'src/orphan-new.test.ts': "it('override orphan case', f);",
+    }),
+  ];
+  const r = check({ versions, tables, markers: [], inventory });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.untracked, []);
+  const rows = Object.fromEntries(r.progress.flatMap((p) =>
+    p.rows.map((row) => [`${p.package}@${row.version} ${row.file}`, { manual: row.manual, unhandled: row.unhandled }])));
+  assert.deepEqual(rows, {
+    '@ai-sdk/groq@4.0.52 src/comp.test.tsx': { manual: 1, unhandled: [] },
+    'ai@7.0.127 src/orphan-locked.test.ts': { manual: 1, unhandled: [] },
+    'ai@7.0.128 src/decide/decide.test.ts': { manual: 0, unhandled: ['d'] },
+    'ai@7.0.128 src/orphan-new.test.ts': { manual: 1, unhandled: [] },
+  });
+});

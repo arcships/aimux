@@ -41,7 +41,14 @@ const git = (repo, ...args) =>
 // In a blobless clone `git cat-file` fetches each missing blob in its own
 // request, a few hundred round trips per run; fetch them all in one instead.
 function prefetch(repo, oids) {
-  const remote = git(repo, 'config', '--get-regexp', String.raw`^remote\..*\.promisor$`)
+  if (!oids.length) return;
+  let configOut = '';
+  try {
+    configOut = git(repo, 'config', '--get-regexp', String.raw`^remote\..*\.promisor$`);
+  } catch (err) {
+    if (err.status !== 1) throw err;
+  }
+  const remote = configOut
     .split('\n')
     .find((l) => l.endsWith(' true'))
     ?.replace(/^remote\.(.*)\.promisor true$/, '$1');
@@ -62,6 +69,7 @@ function prefetch(repo, oids) {
 }
 
 function readBlobs(repo, specs) {
+  if (!specs.length) return [];
   const out = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], {
     input: specs.join('\n') + '\n',
     maxBuffer: 1 << 30,
@@ -80,7 +88,7 @@ function readBlobs(repo, specs) {
 }
 
 const CALLEES = new Set(['describe', 'it', 'test']);
-const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequential', 'fails']);
+const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequential', 'fails', 'skipIf', 'runIf']);
 // A `/` after one of these starts a regular expression, otherwise it divides.
 const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
 
@@ -203,7 +211,6 @@ export function listCases(src) {
       prev = word;
       if (afterDot || !CALLEES.has(word)) return;
       const at = line;
-      let each = false;
       for (;;) {
         skipSpace();
         if (src[i] !== '.') break;
@@ -211,16 +218,19 @@ export function listCases(src) {
         skipSpace();
         const mod = /^[A-Za-z]+/.exec(src.slice(i, i + 16))?.[0];
         if (!MODIFIERS.has(mod)) return;
-        if (mod === 'each') each = true;
         i += mod.length;
+        if (mod === 'each') {
+          skipSpace();
+          if (src[i] === '`') skipWholeTemplate();
+          else if (src[i] === '(') skipBalanced();
+          else return;
+        } else if (mod === 'skipIf' || mod === 'runIf') {
+          skipSpace();
+          if (src[i] !== '(') return;
+          skipBalanced();
+        }
       }
       skipSpace();
-      if (each) {
-        if (src[i] === '`') skipWholeTemplate();
-        else if (src[i] === '(') skipBalanced();
-        else return;
-        skipSpace();
-      }
       if (src[i] !== '(') return;
       depth++;
       i++;

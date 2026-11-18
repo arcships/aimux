@@ -120,9 +120,19 @@ export function scanMarkers(rel, src) {
     }
     // A marker sits above a test: only doc comments and attributes between.
     let j = k + 1;
-    while (j < lines.length && /^\s*(\/\/\/|#\[)/.test(lines[j])) j++;
-    if (!/^\s*(pub(\(\w+\))?\s+)?(async\s+)?fn\s/.test(lines[j] ?? '')) {
+    let hasTestAttr = false;
+    let ignored = false;
+    while (j < lines.length && /^\s*(\/\/\/|#\[)/.test(lines[j])) {
+      if (/^\s*#\[(?:tokio::)?test(?:\s*\([^)]*\))?\s*\]/.test(lines[j])) hasTestAttr = true;
+      if (/^\s*#\[ignore(?:\s*=.*)?\s*\]/.test(lines[j])) ignored = true;
+      j++;
+    }
+    if (!/^\s*(pub(\(\w+\))?\s+)?(async\s+)?fn\s/.test(lines[j] ?? '') || !hasTestAttr) {
       errors.push(`${where}: marker is not above a test function`);
+      return;
+    }
+    if (ignored) {
+      errors.push(`${where}: marker sits on an #[ignore] test (RFC-0045 §5)`);
       return;
     }
     markers.push({ where, pkg, file, chain });
@@ -140,7 +150,7 @@ function compareSemver(a, b) {
 }
 
 const testFileOf = (upstream) => upstream.replace(/\.(tsx?)$/, '.test.$1');
-const testFilesOf = (upstream) => [testFileOf(upstream), testFileOf(upstream).replace(/\.ts$/, '.tsx')];
+const testFilesOf = (upstream) => [...new Set([testFileOf(upstream), testFileOf(upstream).replace(/\.ts$/, '.tsx')])];
 
 // Reads every `<crate>/layout.toml` and checks its entries (§3.1, §3.2).
 export function readLayouts(layoutFiles, versions, errors) {
@@ -166,7 +176,15 @@ export function readLayouts(layoutFiles, versions, errors) {
       const locked = versions[table.package].version;
       const files = [];
       const seen = new Set();
+      if (table.files !== undefined && !Array.isArray(table.files)) {
+        errors.push(`${at}: files must be an array of tables`);
+        continue;
+      }
       for (const entry of table.files ?? []) {
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+          errors.push(`${at}: files entry is not a table`);
+          continue;
+        }
         const where = `${rel}:${entry[LINE]} ${entry.upstream ?? entry.rust}`;
         const e = { ...entry, where, package: table.package, exclusions: [] };
         if (!STATUSES.has(entry.status)) {
@@ -268,28 +286,35 @@ export function check({ versions, tables, markers, inventory }) {
   }
 
   for (const t of tables) {
-    const files = cases.get(`${t.package}@${versions[t.package].version}`);
+    const locked = versions[t.package].version;
+    const files = cases.get(`${t.package}@${locked}`);
     // Test files with no source file of their own name: their exclusions sit
     // under the entry of the source file they test.
-    const orphans = [...(files?.keys() ?? [])].filter((f) => !owners.has(`${t.package} ${f}`));
+    const lockedOrphans = [...(files?.keys() ?? [])].filter((f) => !owners.has(`${t.package} ${f}`));
     for (const e of t.files) {
-      if (!e.exclusions.length) continue;
+      if (!e.exclusions.length || typeof e.upstream !== 'string') continue;
       const pkgCases = cases.get(`${t.package}@${e.version}`);
       const own = testFilesOf(e.upstream).filter((f) => pkgCases?.has(f));
+      const overrideOrphans = e.version === locked
+        ? []
+        : [...(pkgCases?.keys() ?? [])].filter((f) => !owners.has(`${t.package} ${f}`) && !files?.has(f));
       for (const x of e.exclusions) {
-        const hits = [...own, ...orphans].filter((f) => pkgCases?.get(f)?.has(x.case));
+        const ownHits = own.filter((f) => pkgCases?.get(f)?.has(x.case)).map((f) => ({ file: f, version: e.version }));
+        const orphanHits = ownHits.length ? [] : [
+          ...lockedOrphans.filter((f) => files?.get(f)?.has(x.case)).map((f) => ({ file: f, version: locked })),
+          ...overrideOrphans.filter((f) => pkgCases?.get(f)?.has(x.case)).map((f) => ({ file: f, version: e.version })),
+        ];
         // A case in the entry's own test file wins over the same chain elsewhere.
-        const inOwn = hits.filter((f) => own.includes(f));
-        const chosen = inOwn.length ? inOwn : hits;
+        const chosen = ownHits.length ? ownHits : orphanHits;
         if (!chosen.length) {
           errors.push(`${x.where}: no case "${x.case}" in ${own[0] ?? testFileOf(e.upstream)} or the test files with no source of their own name`);
           continue;
         }
         if (chosen.length > 1) {
-          errors.push(`${x.where}: "${x.case}" is a case of ${chosen.join(', ')}; ambiguous`);
+          errors.push(`${x.where}: "${x.case}" is a case of ${chosen.map((c) => c.file).join(', ')}; ambiguous`);
           continue;
         }
-        const id = `${t.package}@${e.version} ${chosen[0]} ${x.case}`;
+        const id = `${t.package}@${chosen[0].version} ${chosen[0].file} ${x.case}`;
         const prior = handled.get(id);
         if (prior) {
           errors.push(prior.how === 'ported'
@@ -316,11 +341,11 @@ export function check({ versions, tables, markers, inventory }) {
       if (!files) continue;
       for (const [file, keyed] of files) {
         const owner = owners.get(`${t.package} ${file}`);
-        if ((owner?.version ?? locked) !== version) continue;
         const prefix = `${t.package}@${version} ${file} `;
         const touched = [...keyed.keys()].some((k) => handled.has(prefix + k));
+        if (owner ? (owner.version ?? locked) !== version : (version !== locked && !touched)) continue;
         if (owner ? !SELECTED.has(owner.status) : !touched) {
-          if (!owner) untracked.push(`${t.package} ${file}`);
+          if (!owner && version === locked) untracked.push(`${t.package} ${file}`);
           continue;
         }
         const row = { file, version, total: keyed.size, ported: 0, auto: [], manual: 0, unhandled: [] };
