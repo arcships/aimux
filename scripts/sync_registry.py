@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import io
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+import zlib
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +31,7 @@ SCHEMA_VERSION = 1
 ADAPTER_VERSION = "1"
 DEFAULT_MODELS_DEV_URL = "https://models.dev/api.json"
 DEFAULT_TIMEOUT_SECS = 60
+DEFAULT_MAX_FETCH_BYTES = 32 * 1024 * 1024
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "aimux-providers" / "src" / "provider_registry.json"
@@ -167,6 +171,15 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
                 raise RegistryInputError(f"registry row '{name}': invalid derive object in `{pname}`")
             if "env" in param or "default" in param:
                 raise RegistryInputError(f"registry row '{name}': derived param `{pname}` has env/default")
+            d_from = derive.get("from")
+            d_map = derive.get("map")
+            d_other = derive.get("otherwise")
+            if not isinstance(d_from, str) or not d_from:
+                raise RegistryInputError(f"registry row '{name}': derive.from in `{pname}` must be non-empty string")
+            if not isinstance(d_map, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in d_map.items()):
+                raise RegistryInputError(f"registry row '{name}': derive.map in `{pname}` must be string map")
+            if not isinstance(d_other, str):
+                raise RegistryInputError(f"registry row '{name}': derive.otherwise in `{pname}` must be string")
 
     profile = row.get("profile", {})
     if not isinstance(profile, dict) or (set(profile.keys()) - _PROFILE_ALLOWED_KEYS):
@@ -306,7 +319,27 @@ def load_reconcile(reconcile_path: Path | None, valid_ids: set[str]) -> dict:
     return {"schema_version": 1, "overrides": overrides, "entries": entries}
 
 
-def fetch_models_dev(url: str, timeout: int = DEFAULT_TIMEOUT_SECS) -> dict:
+def _read_bounded_stream(stream: object, max_bytes: int, label: str) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = stream.read(min(65536, max_bytes - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise RegistryInputError(f"{label} exceeded {max_bytes} byte limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def fetch_models_dev(
+    url: str,
+    timeout: int = DEFAULT_TIMEOUT_SECS,
+    max_bytes: int = DEFAULT_MAX_FETCH_BYTES,
+) -> dict:
+    if max_bytes <= 0:
+        raise RegistryInputError("max_bytes must be positive")
     request = urllib.request.Request(
         url,
         headers={
@@ -315,13 +348,15 @@ def fetch_models_dev(url: str, timeout: int = DEFAULT_TIMEOUT_SECS) -> dict:
             "Accept-Encoding": "gzip",
         },
     )
+    safe_url = rs.sanitize_url(url)["sanitized"] or "[REDACTED_URL]"
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read()
+            payload = _read_bounded_stream(response, max_bytes, f"models.dev response from {safe_url}")
             if response.headers.get("Content-Encoding", "").lower() == "gzip":
-                payload = gzip.decompress(payload)
-    except (urllib.error.URLError, OSError, gzip.BadGzipFile) as exc:
-        raise RegistryInputError(f"models.dev fetch failed: {exc}") from exc
+                with gzip.GzipFile(fileobj=io.BytesIO(payload)) as gz:
+                    payload = _read_bounded_stream(gz, max_bytes, f"models.dev gzip payload from {safe_url}")
+    except (urllib.error.URLError, OSError, gzip.BadGzipFile, EOFError, zlib.error) as exc:
+        raise RegistryInputError(f"models.dev fetch failed ({safe_url}): {type(exc).__name__}") from exc
     try:
         data = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -361,7 +396,8 @@ def slim_models_dev_snapshot(data: object, source_url: str = DEFAULT_MODELS_DEV_
             if item["api"] is not None and not isinstance(item["api"], str):
                 raise RegistryInputError(f"models.dev provider {key!r}: `api` must be string")
             if item["api"] is not None:
-                entry["api"] = item["api"]
+                api_info = rs.sanitize_url(item["api"])
+                entry["api"] = api_info["sanitized"] if api_info["sensitive"] else item["api"]
         if "env" in item:
             env = item["env"]
             if env is not None and (not isinstance(env, list) or not all(isinstance(v, str) for v in env)):
@@ -393,8 +429,8 @@ def parse_models_dev(data: object) -> tuple[list[dict], list[dict]]:
         pid = item.get("id")
         if pid is None:
             pid = key
-        elif not isinstance(pid, str) or not pid:
-            errors.append({"upstream": "models-dev", "id": key, "error": "invalid provider id"})
+        elif not isinstance(pid, str) or not pid or pid != key:
+            errors.append({"upstream": "models-dev", "id": key, "error": f"invalid provider id {pid!r}"})
             continue
         api = item.get("api")
         if "api" in item and api is not None and not isinstance(api, str):
@@ -479,7 +515,7 @@ def parse_litellm_checkout(checkout: Path) -> tuple[list[dict], list[dict]]:
 
 def _in_memory_url_equal(raw_a: str, info_a: dict, raw_b: str, info_b: dict) -> bool:
     """Compare two URLs in memory without leaking raw secret fields out of this helper."""
-    if info_a["kind"] != "static" and info_b["kind"] != "static":
+    if info_a["templated"] or info_b["templated"] or info_a["kind"] == "missing" or info_b["kind"] == "missing":
         return False
     if info_a["sensitive"] != info_b["sensitive"]:
         return False
@@ -541,6 +577,9 @@ def compare_registries(
     upstream_records: list[dict],
     source_meta: list[dict],
     mode: str,
+    repo_commit: str | None = None,
+    collected_at: str | None = None,
+    duration_ms: int | None = None,
 ) -> tuple[dict, list[dict]]:
     """Compare local registry entries against upstream observations and reconcile rules."""
     all_builtin_ids = set(local_by_id.keys()) | native_packages
@@ -679,7 +718,7 @@ def compare_registries(
                     "candidate": up_rec["candidate"],
                     "reconcile_status": "acknowledged" if acknowledged else ("manual-note" if manual else "pending"),
                 }
-                if acknowledged or manual is not None:
+                if acknowledged:
                     box = manual_deviations.setdefault(
                         target,
                         {
@@ -694,7 +733,8 @@ def compare_registries(
                 else:
                     base_url_diffs.append(diff_row)
                     if (
-                        not up_rec["candidate"]
+                        ov is None
+                        and not up_rec["candidate"]
                         and u_url["kind"] == "static"
                         and up_rec["raw_api"]
                         and up_rec["raw_api"].isascii()
@@ -730,9 +770,7 @@ def compare_registries(
             continue
 
         local_keys = local_entry["key_env_names"]
-        env_equal = (not local_keys and not up_key_envs) or (
-            len(local_keys) == 1 and local_keys[0] in up_key_envs
-        )
+        env_equal = set(local_keys) == set(up_key_envs)
         if not env_equal:
             local_env_val = local_entry["raw_env_var"]
             okey = (target, up_name, "env_var")
@@ -752,7 +790,7 @@ def compare_registries(
                 "candidate": up_rec["candidate"],
                 "reconcile_status": "acknowledged" if acknowledged else ("manual-note" if manual else "pending"),
             }
-            if acknowledged or manual is not None:
+            if acknowledged:
                 box = manual_deviations.setdefault(
                     target,
                     {
@@ -767,7 +805,9 @@ def compare_registries(
             else:
                 key_env_diffs.append(diff_row)
                 if (
-                    not up_rec["candidate"]
+                    ov is None
+                    and not (local_entry["auth"] == "none" and local_env_val is None)
+                    and not up_rec["candidate"]
                     and len(up_key_envs) == 1
                     and _ENV_NAME_RE.match(up_key_envs[0])
                 ):
@@ -848,6 +888,7 @@ def compare_registries(
     report = {
         "schema_version": SCHEMA_VERSION,
         "mode": mode,
+        "repo_commit": repo_commit,
         "adapter_version": ADAPTER_VERSION,
         "comparison_policy": {
             "normalize_scheme_host_case": True,
@@ -887,6 +928,10 @@ def compare_registries(
         "applied_updates": [],
         "tool_errors": [],
     }
+    if collected_at is not None:
+        report["collected_at"] = collected_at
+    if duration_ms is not None:
+        report["duration_ms"] = duration_ms
     return report, proposed_updates
 
 
@@ -926,10 +971,20 @@ def apply_updates(registry_path: Path, raw_rows: list[dict], proposed_updates: l
 def render_markdown(report: dict) -> str:
     """Render Markdown strictly from the sanitized report object (RFC-0033 §5)."""
     c = report["counts"]
+    commit = report.get("repo_commit") or "unknown"
+    meta_parts = [
+        f"**Mode**: `{report['mode']}`",
+        f"**Commit**: `{rs.escape_markdown(str(commit)[:12])}`",
+        f"**Hash ({report['input_hash_kind']})**: `{report['input_hash'][:12]}`",
+    ]
+    if report.get("collected_at"):
+        meta_parts.append(f"**Collected**: `{rs.escape_markdown(str(report['collected_at']))}`")
+    if report.get("duration_ms") is not None:
+        meta_parts.append(f"**Duration**: `{report['duration_ms']}ms`")
     lines = [
         "### Registry Sync Report (RFC-0033)",
         "",
-        f"- **Mode**: `{report['mode']}` · **Hash ({report['input_hash_kind']})**: `{report['input_hash'][:12]}`",
+        "- " + " · ".join(meta_parts),
         (
             f"- **Pending review**: `{c['pending_review']}` "
             f"(base_url: `{c['base_url_diffs']}`, env_var: `{c['key_env_diffs']}`, stale: `{c['stale_overrides']}`)"
@@ -969,6 +1024,33 @@ def render_markdown(report: dict) -> str:
                 f"| {rs.escape_markdown(s['field'])} | {rs.escape_markdown(s['reason'])} |"
             )
         lines.append("")
+    if report.get("manual_deviations"):
+        lines.extend(["#### Manual Deviations & Notes", "", "| Preset | Status | Diffs | Note |", "|---|---|---|---|"])
+        for m in report["manual_deviations"]:
+            diff_desc = ", ".join(f"{d['upstream']}:{d['field']}" for d in m.get("diffs", [])) or "(none)"
+            st = m.get("status") or "-"
+            lines.append(
+                f"| {rs.escape_markdown(m['id'])} | {rs.escape_markdown(str(st))} "
+                f"| {rs.escape_markdown(diff_desc)} | {rs.escape_markdown(str(m.get('note') or ''))} |"
+            )
+        lines.append("")
+    if report.get("incomparable"):
+        lines.extend(["#### Incomparable Entries", "", "| Upstream | Preset | Field | Reason |", "|---|---|---|---|"])
+        for inc in report["incomparable"]:
+            lines.append(
+                f"| {rs.escape_markdown(inc['upstream'])}:{rs.escape_markdown(inc['upstream_id'])} "
+                f"| {rs.escape_markdown(inc['id'])} | {rs.escape_markdown(inc['field'])} "
+                f"| {rs.escape_markdown(str(inc.get('reason') or inc.get('comparison') or ''))} |"
+            )
+        lines.append("")
+    if report.get("tool_errors"):
+        lines.extend(["#### Tool Errors", "", "| Source | Error |", "|---|---|"])
+        for err in report["tool_errors"]:
+            lines.append(
+                f"| {rs.escape_markdown(str(err.get('upstream') or err.get('source') or '-'))} "
+                f"| {rs.escape_markdown(str(err.get('error') or err))} |"
+            )
+        lines.append("")
     if report["missing_upstream_providers"]:
         lines.extend(["#### Missing Upstream Providers (Not Added Automatically)", "", "| Upstream | Upstream ID | Endpoint | Key Env |", "|---|---|---|---|"])
         for m in report["missing_upstream_providers"][:50]:
@@ -1002,10 +1084,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--packages-rs", type=Path, default=DEFAULT_PACKAGES_RS)
     p.add_argument("--fetch-url", default=DEFAULT_MODELS_DEV_URL)
     p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECS)
+    p.add_argument("--max-fetch-bytes", type=int, default=DEFAULT_MAX_FETCH_BYTES)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    started = time.monotonic()
     parser = _build_parser()
     try:
         args = parser.parse_args(argv)
@@ -1036,6 +1120,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.timeout <= 0:
         print("--timeout must be positive", file=sys.stderr)
         return 2
+    if args.max_fetch_bytes <= 0:
+        print("--max-fetch-bytes must be positive", file=sys.stderr)
+        return 2
 
     try:
         raw_rows, local_by_id = load_local_registry(args.registry)
@@ -1048,7 +1135,11 @@ def main(argv: list[str] | None = None) -> int:
         source_meta: list[dict] = []
         if args.source == "models-dev" or args.write_snapshot:
             if args.fetch:
-                raw_md = fetch_models_dev(args.fetch_url, timeout=args.timeout)
+                raw_md = fetch_models_dev(
+                    args.fetch_url,
+                    timeout=args.timeout,
+                    max_bytes=args.max_fetch_bytes,
+                )
                 src_desc = rs.sanitize_url(args.fetch_url)["sanitized"]
             else:
                 raw_md = load_json_file(args.snapshot, str(args.snapshot))
@@ -1066,12 +1157,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.source == "litellm":
             recs, _ = parse_litellm_checkout(args.checkout)
             upstream_records.extend(recs)
-            source_meta.append({"source": "litellm", "location": str(args.checkout.name), "provider_count": len(recs)})
+            source_meta.append(
+                {
+                    "source": "litellm",
+                    "location": str(args.checkout.name),
+                    "commit": rs.get_git_commit(args.checkout),
+                    "provider_count": len(recs),
+                }
+            )
 
         if not (args.report or args.apply or args.check):
             return 0
 
         mode = "apply" if args.apply else ("check" if args.check else "report")
+        live = bool(args.fetch)
         report, proposed = compare_registries(
             local_by_id=local_by_id,
             native_packages=native_packages,
@@ -1080,11 +1179,16 @@ def main(argv: list[str] | None = None) -> int:
             upstream_records=upstream_records,
             source_meta=source_meta,
             mode=mode,
+            repo_commit=rs.get_git_commit(ROOT),
+            collected_at=rs.utc_now_iso() if live else None,
+            duration_ms=int((time.monotonic() - started) * 1000) if live else None,
         )
         if args.apply:
             applied = apply_updates(args.registry, raw_rows, proposed)
             report["applied_updates"] = applied
             report["counts"]["applied_updates"] = len(applied)
+        if live:
+            report["duration_ms"] = int((time.monotonic() - started) * 1000)
 
         rendered = json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
         if args.output:

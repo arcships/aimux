@@ -7,8 +7,12 @@ import contextlib
 import io
 import json
 import os
+import socket
+import ssl
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -212,13 +216,141 @@ class ProbeRegistryTest(unittest.TestCase):
         self.assertIn("&#64;team", md)
 
     def test_cli_rejects_invalid_budgets(self):
+        arg_out, arg_err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "allow.json"
             p.write_text('{"schema_version":1,"entries":[]}\n', encoding="utf-8")
-            out, err = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with contextlib.redirect_stdout(arg_out), contextlib.redirect_stderr(arg_err):
                 code = probe.main(["--allowlist", str(p), "--timeout", "0"])
             self.assertEqual(code, 2)
+
+    def test_dns_tls_connect_timeout_and_duplicate_allowlist_fixtures(self):
+        # dns-error on empty resolution and OSError
+        for res_fn in (lambda h, p: [], lambda h, p: (_ for _ in ()).throw(OSError("dns down"))):
+            rep = probe.run_probe([_entry("d1")], registry_urls={}, resolver=res_fn, http_exchange=lambda *_a: (200, {}))
+            self.assertEqual(rep["results"][0]["outcome"], "dns-error")
+
+        # tls-error and connect-error (including socket.timeout -> timeout on Python <3.10)
+        for exc, expected in (
+            (probe.ProbeTlsError("cert"), "tls-error"),
+            (probe.ProbeConnectError("reset"), "connect-error"),
+            (OSError("refused"), "connect-error"),
+            (socket.timeout("sock timeout"), "timeout"),
+        ):
+            rep = probe.run_probe(
+                [_entry("e1")],
+                registry_urls={},
+                resolver=lambda h, p: ["93.184.216.34"],
+                http_exchange=lambda *_a, _e=exc: (_ for _ in ()).throw(_e),
+            )
+            self.assertEqual(rep["results"][0]["outcome"], expected)
+
+        # _default_http_exchange maps ssl.SSLError to ProbeTlsError
+        fake_sock = mock.MagicMock()
+        fake_ctx = mock.MagicMock()
+        fake_ctx.wrap_socket.side_effect = ssl.SSLError("bad cert")
+        with mock.patch("socket.create_connection", return_value=fake_sock), mock.patch(
+            "ssl.create_default_context", return_value=fake_ctx
+        ):
+            with self.assertRaises(probe.ProbeTlsError):
+                probe._default_http_exchange("93.184.216.34", 443, "https", "api.example.com", "/v1/models", {}, 1.0, 1024, 1024)
+
+        # Duplicate allowlist IDs fail input validation (exit 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            dup_p = Path(tmp) / "dup_allow.json"
+            dup_p.write_text(
+                json.dumps({"schema_version": 1, "entries": [_entry("dup"), _entry("dup")]}),
+                encoding="utf-8",
+            )
+            with self.assertRaises(probe.ProbeInputError):
+                probe.load_allowlist(dup_p)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                self.assertEqual(probe.main(["--allowlist", str(dup_p), "--no-registry-check"]), 1)
+
+    def test_total_budget_enforced_inside_wave_and_report_metadata(self):
+        gate = threading.Event()
+
+        def slow_exchange(_ip, _p, _s, _h, path, *_rest):
+            if "slow" in path:
+                gate.wait(0.45)
+            return 200, {}
+
+        entries = [
+            _entry("a_fast", base_path="/fast"),
+            _entry("b_slow", base_path="/slow"),
+            _entry("c_queued", base_path="/queued"),
+        ]
+        t0 = time.monotonic()
+        rep = probe.run_probe(
+            entries,
+            registry_urls={},
+            resolver=lambda h, p: ["93.184.216.34"],
+            http_exchange=slow_exchange,
+            concurrency=2,
+            total_budget=0.08,
+        )
+        elapsed = time.monotonic() - t0
+        gate.set()
+
+        self.assertLess(elapsed, 0.35)
+        self.assertTrue(rep["repo_commit"])
+        self.assertRegex(rep["collected_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertIsInstance(rep["duration_ms"], int)
+        by_id = {r["id"]: r["outcome"] for r in rep["results"]}
+        self.assertEqual(by_id["a_fast"], "reachable")
+        self.assertEqual(by_id["b_slow"], "not-run")
+        self.assertEqual(by_id["c_queued"], "not-run")
+
+    def test_redirect_traversal_encoding_and_exception_isolation(self):
+        # Encoded dot segments on same origin must be blocked
+        for loc in ("/v1/models/%2e%2e/%2e%2e/admin", "/v1/models/..%2f..%2fadmin"):
+            rep = probe.run_probe(
+                [_entry("trav")],
+                registry_urls={},
+                resolver=lambda h, p: ["93.184.216.34"],
+                http_exchange=lambda *_a, _l=loc: (302, {"location": _l}),
+            )
+            self.assertEqual(rep["results"][0]["outcome"], "blocked-cross-origin-redirect")
+
+        # Malformed Location / non-ASCII path / latin-1 digit status never abort sibling targets
+        def multi_http(_ip, _p, _s, _h, path, *_rest):
+            if path.startswith("/badloc"):
+                return 302, {"location": "https://[bad"}
+            if path.startswith("/nonascii"):
+                if "caf" in path:
+                    raise probe.ProbeConnectError("non-ASCII HTTP request target")
+                return 302, {"location": "/nonascii/models/café"}
+            return 200, {}
+
+        rep = probe.run_probe(
+            [
+                _entry("a_ok", base_path="/ok"),
+                _entry("b_badloc", base_path="/badloc"),
+                _entry("c_nonascii", base_path="/nonascii"),
+            ],
+            registry_urls={},
+            resolver=lambda h, p: ["93.184.216.34"],
+            http_exchange=multi_http,
+        )
+        by_id = {r["id"]: r for r in rep["results"]}
+        self.assertEqual(by_id["a_ok"]["outcome"], "reachable")
+        self.assertEqual(by_id["b_badloc"]["outcome"], "blocked-invalid-url")
+        self.assertEqual(by_id["b_badloc"]["final_target"], rs.REDACTED_URL)
+        self.assertEqual(rep["input_hash_kind"], "sanitized")
+        self.assertEqual(by_id["c_nonascii"]["outcome"], "connect-error")
+
+        # Non-ASCII latin-1 digit in HTTP status line raises ProbeConnectError (not ValueError)
+        with self.assertRaises(probe.ProbeConnectError):
+            probe._read_status_and_headers(io.BufferedReader(io.BytesIO(b"HTTP/1.1 \xb200 OK\r\n\r\n")), 1024)
+
+        # _default_http_exchange rejects non-ASCII path with ProbeConnectError (not UnicodeEncodeError)
+        fake_sock = mock.MagicMock()
+        with mock.patch("socket.create_connection", return_value=fake_sock):
+            with self.assertRaises(probe.ProbeConnectError):
+                probe._default_http_exchange(
+                    "93.184.216.34", 80, "http", "api.example.com", "/v1/models/café", {}, 1.0, 1024, 1024
+                )
 
 
 if __name__ == "__main__":

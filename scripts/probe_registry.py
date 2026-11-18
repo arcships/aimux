@@ -8,7 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait as futures_wait
 from http.client import HTTPMessage, parse_headers
 import io
 import json
@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import registry_sanitize as rs  # noqa: E402
@@ -85,7 +85,7 @@ def _read_status_and_headers(reader: io.BufferedReader, max_header_bytes: int) -
 
     status_line = raw_lines[0].decode("latin-1").strip()
     parts = status_line.split(None, 2)
-    if len(parts) < 2 or not parts[0].startswith("HTTP/") or not parts[1].isdigit():
+    if len(parts) < 2 or not parts[0].startswith("HTTP/") or not parts[1].isascii() or not parts[1].isdigit():
         raise ProbeConnectError("malformed HTTP status line")
     status = int(parts[1])
     if status < 100 or status > 599:
@@ -144,7 +144,7 @@ def _default_http_exchange(
         try:
             raw_sock = socket.create_connection((ip, port), timeout=timeout)
             raw_sock.settimeout(timeout)
-        except TimeoutError as exc:
+        except (TimeoutError, socket.timeout) as exc:
             raise exc
         except OSError as exc:
             raise ProbeConnectError(f"connect failed: {type(exc).__name__}") from exc
@@ -153,7 +153,7 @@ def _default_http_exchange(
             ctx = ssl.create_default_context()
             try:
                 sock = ctx.wrap_socket(raw_sock, server_hostname=host)
-            except TimeoutError as exc:
+            except (TimeoutError, socket.timeout) as exc:
                 raise exc
             except ssl.SSLError as exc:
                 raise ProbeTlsError(f"tls error: {type(exc).__name__}") from exc
@@ -167,20 +167,26 @@ def _default_http_exchange(
             req_lines.append(f"{name}: {value}")
         req_lines.append("")
         req_lines.append("")
-        payload = "\r\n".join(req_lines).encode("ascii")
-        sock.sendall(payload)
-
-        reader = sock.makefile("rb")
         try:
-            status, resp_headers = _read_status_and_headers(reader, max_header_bytes)
-            # Only Location is inspected for redirect handling; Set-Cookie & arbitrary headers ignored.
-            location = resp_headers.get("Location")
-            if status not in (204, 304) and not (100 <= status < 200):
-                _drain_bounded_body(reader, resp_headers, max_body_bytes)
-            out_headers = {"location": location} if location is not None else {}
-            return status, out_headers
-        finally:
-            reader.close()
+            payload = "\r\n".join(req_lines).encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ProbeConnectError("non-ASCII HTTP request target") from exc
+
+        try:
+            sock.sendall(payload)
+            reader = sock.makefile("rb")
+            try:
+                status, resp_headers = _read_status_and_headers(reader, max_header_bytes)
+                # Only Location is inspected for redirect handling; Set-Cookie & arbitrary headers ignored.
+                location = resp_headers.get("Location")
+                if status not in (204, 304) and not (100 <= status < 200):
+                    _drain_bounded_body(reader, resp_headers, max_body_bytes)
+                out_headers = {"location": location} if location is not None else {}
+                return status, out_headers
+            finally:
+                reader.close()
+        except ssl.SSLError as exc:
+            raise ProbeTlsError(f"tls io error: {type(exc).__name__}") from exc
     finally:
         if sock is not None:
             try:
@@ -313,6 +319,12 @@ def _is_target_approved(
     if url_info["origin"] != initial_origin:
         return False
     path = url_info["path"] or "/"
+    lowered_path = path.lower()
+    if "%2f" in lowered_path or "%5c" in lowered_path or "\\" in path:
+        return False
+    decoded_segments = unquote(path).split("/")
+    if any(seg in (".", "..") for seg in decoded_segments):
+        return False
     norm_base = initial_base_path.rstrip("/")
     expected_prefix = (norm_base + "/models") if norm_base else "/models"
     return path == expected_prefix or path.startswith(expected_prefix + "/")
@@ -440,7 +452,7 @@ def probe_entry(
                 max_header_bytes,
                 max_body_bytes,
             )
-        except TimeoutError:
+        except (TimeoutError, socket.timeout):
             outcome = "timeout"
             http_status = None
             break
@@ -456,6 +468,10 @@ def probe_entry(
             outcome = "connect-error"
             http_status = None
             break
+        except Exception:
+            outcome = "connect-error"
+            http_status = None
+            break
 
         if status in (301, 302, 303, 307, 308):
             location = resp_headers.get("location")
@@ -463,7 +479,18 @@ def probe_entry(
                 outcome = "redirect-unverified"
                 http_status = status
                 break
-            next_raw = urljoin(current_url, location)
+            try:
+                next_raw = urljoin(current_url, location)
+            except ValueError:
+                return {
+                    "id": pid,
+                    "target": current_info["sanitized"],
+                    "final_target": rs.REDACTED_URL,
+                    "outcome": "blocked-invalid-url",
+                    "http_status": status,
+                    "redirects": redirect_count,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                }
             next_info = rs.sanitize_url(next_raw)
             if next_info["sensitive"]:
                 return {
@@ -527,6 +554,27 @@ def probe_entry(
     }
 
 
+def _not_run_result(entry: dict) -> tuple[dict, bool]:
+    rem_info = rs.sanitize_url(entry["origin"] + entry["base_path"].rstrip("/") + "/models")
+    res = {
+        "id": entry["id"],
+        "target": rem_info["sanitized"],
+        "outcome": "not-run",
+        "http_status": None,
+        "redirects": 0,
+        "latency_ms": 0,
+    }
+    return res, bool(rem_info["sensitive"])
+
+
+def _record_redacted(res: dict) -> bool:
+    for field in ("target", "final_target"):
+        val = res.get(field)
+        if val == rs.REDACTED_URL or rs.REDACTED in str(val or ""):
+            return True
+    return False
+
+
 def run_probe(
     entries: list[dict],
     *,
@@ -541,34 +589,28 @@ def run_probe(
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
 ) -> dict:
     started = time.monotonic()
+    deadline = started + total_budget
     sorted_entries = sorted(entries, key=lambda e: e["id"])
     results: list[dict] = []
     any_redacted = False
+    budget_exhausted = False
 
-    # Process in bounded waves so total_budget cleanly marks remaining entries `not-run`.
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+    # Process in bounded waves and enforce total_budget inside each wave.
+    pool = ThreadPoolExecutor(max_workers=concurrency)
+    try:
         idx = 0
         n = len(sorted_entries)
         while idx < n:
-            if time.monotonic() - started >= total_budget:
+            if time.monotonic() >= deadline:
+                budget_exhausted = True
                 for rem in sorted_entries[idx:]:
-                    rem_info = rs.sanitize_url(rem["origin"] + rem["base_path"].rstrip("/") + "/models")
-                    if rem_info["sensitive"]:
-                        any_redacted = True
-                    results.append(
-                        {
-                            "id": rem["id"],
-                            "target": rem_info["sanitized"],
-                            "outcome": "not-run",
-                            "http_status": None,
-                            "redirects": 0,
-                            "latency_ms": 0,
-                        }
-                    )
+                    res, redacted = _not_run_result(rem)
+                    any_redacted = any_redacted or redacted
+                    results.append(res)
                 break
             batch = sorted_entries[idx : idx + concurrency]
             idx += concurrency
-            futures = [
+            pending = {
                 pool.submit(
                     probe_entry,
                     entry,
@@ -579,16 +621,46 @@ def run_probe(
                     max_header_bytes=max_header_bytes,
                     max_body_bytes=max_body_bytes,
                     max_redirects=max_redirects,
-                )
+                ): entry
                 for entry in batch
-            ]
-            for fut in futures:
-                res = fut.result()
-                if res.get("target") == rs.REDACTED_URL or rs.REDACTED in str(res.get("target", "")):
-                    any_redacted = True
-                if rs.REDACTED in str(res.get("final_target", "")):
-                    any_redacted = True
-                results.append(res)
+            }
+            while pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    budget_exhausted = True
+                    break
+                done, _ = futures_wait(
+                    pending.keys(),
+                    timeout=remaining,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    budget_exhausted = True
+                    break
+                for fut in done:
+                    entry = pending.pop(fut)
+                    try:
+                        res = fut.result()
+                    except Exception:
+                        res, _ = _not_run_result(entry)
+                        res["outcome"] = "connect-error"
+                    if _record_redacted(res):
+                        any_redacted = True
+                    results.append(res)
+
+            if budget_exhausted:
+                for fut, entry in pending.items():
+                    fut.cancel()
+                    res, redacted = _not_run_result(entry)
+                    any_redacted = any_redacted or redacted
+                    results.append(res)
+                for rem in sorted_entries[idx:]:
+                    res, redacted = _not_run_result(rem)
+                    any_redacted = any_redacted or redacted
+                    results.append(res)
+                break
+    finally:
+        pool.shutdown(wait=not budget_exhausted, cancel_futures=True)
 
     results.sort(key=lambda r: r["id"])
     counts: dict[str, int] = {}
@@ -609,6 +681,8 @@ def run_probe(
     return {
         "schema_version": SCHEMA_VERSION,
         "mode": "probe",
+        "repo_commit": rs.get_git_commit(ROOT),
+        "collected_at": rs.utc_now_iso(),
         "policy": {
             "credential_free": True,
             "ignore_env_proxies": True,
@@ -631,10 +705,20 @@ def run_probe(
 
 
 def render_markdown(report: dict) -> str:
+    commit = report.get("repo_commit") or "unknown"
+    meta_parts = [
+        f"**Total**: `{report['total']}`",
+        f"**Commit**: `{rs.escape_markdown(str(commit)[:12])}`",
+        f"**Hash ({report['input_hash_kind']})**: `{report['input_hash'][:12]}`",
+    ]
+    if report.get("collected_at"):
+        meta_parts.append(f"**Collected**: `{rs.escape_markdown(str(report['collected_at']))}`")
+    if report.get("duration_ms") is not None:
+        meta_parts.append(f"**Duration**: `{report['duration_ms']}ms`")
     lines = [
         "### Registry Credential-Free Probe Report (RFC-0033)",
         "",
-        f"- **Total**: `{report['total']}` · **Hash ({report['input_hash_kind']})**: `{report['input_hash'][:12]}`",
+        "- " + " · ".join(meta_parts),
         "",
         "| Outcome | Count |",
         "|---|---:|",

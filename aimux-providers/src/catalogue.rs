@@ -36,17 +36,36 @@ pub const DEFAULT_ANYA2A_URL: &str = "https://raw.githubusercontent.com/ThinkInA
 /// `minimax_cn` uses the OpenAI-format one). No two ids share a target, and a
 /// target that the catalogue also lists under its own id keeps that entry
 /// ([`parse_anya2a_all`]), so one id's models never overwrite another's.
+fn parse_provider_aliases(raw_json: &str) -> Result<BTreeMap<String, &'static str>, String> {
+    let raw: BTreeMap<String, String> = serde_json::from_str(raw_json)
+        .map_err(|err| format!("failed to parse provider_aliases.json: {err}"))?;
+    if raw.is_empty() {
+        return Err("provider_aliases.json must not be empty".to_string());
+    }
+    let mut aliases = BTreeMap::new();
+    let mut targets = std::collections::HashSet::new();
+    for (from, to) in raw {
+        if from.is_empty() {
+            return Err("provider_aliases.json contains an empty alias key".to_string());
+        }
+        if crate::default_providers::provider_name(&from).is_some() {
+            return Err(format!("{from} is itself a provider name"));
+        }
+        let canonical = crate::default_providers::provider_name(&to)
+            .ok_or_else(|| format!("{from} -> {to}: not a provider name"))?;
+        if !targets.insert(canonical) {
+            return Err(format!("{to} is the target of two aliases"));
+        }
+        aliases.insert(from, canonical);
+    }
+    Ok(aliases)
+}
+
 fn provider_aliases() -> &'static BTreeMap<String, &'static str> {
     static ALIASES: OnceLock<BTreeMap<String, &'static str>> = OnceLock::new();
     ALIASES.get_or_init(|| {
-        serde_json::from_str::<BTreeMap<String, String>>(include_str!("provider_aliases.json"))
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(|(from, to)| {
-                crate::default_providers::provider_name(&to).map(|canonical| (from, canonical))
-            })
-            .collect()
+        parse_provider_aliases(include_str!("provider_aliases.json"))
+            .unwrap_or_else(|err| panic!("invalid embedded provider_aliases.json: {err}"))
     })
 }
 
@@ -525,27 +544,21 @@ mod tests {
 
     #[test]
     fn every_alias_names_a_distinct_provider() {
-        let raw: BTreeMap<String, String> =
-            serde_json::from_str(include_str!("provider_aliases.json"))
-                .expect("provider_aliases.json must parse");
-        assert!(!raw.is_empty());
-        let mut targets = std::collections::HashSet::new();
-        for (from, to) in &raw {
-            assert!(!from.is_empty(), "empty alias key");
-            assert!(
-                crate::default_providers::provider_name(to).is_some(),
-                "{from} -> {to}: not a provider name"
-            );
-            assert!(
-                crate::default_providers::provider_name(from).is_none(),
-                "{from} is itself a provider name"
-            );
-            assert!(
-                targets.insert(to.clone()),
-                "{to} is the target of two aliases"
-            );
-        }
-        assert_eq!(provider_aliases().len(), raw.len());
+        let parsed = parse_provider_aliases(include_str!("provider_aliases.json"))
+            .expect("provider_aliases.json must validate");
+        assert_eq!(provider_aliases().len(), parsed.len());
+    }
+
+    #[test]
+    fn parse_provider_aliases_rejects_malformed_and_conflicting_inputs() {
+        assert!(parse_provider_aliases("{not json").is_err());
+        assert!(parse_provider_aliases("{}").is_err());
+        assert!(parse_provider_aliases(r#"{"": "deepseek"}"#).is_err());
+        assert!(parse_provider_aliases(r#"{"deepseek": "openai"}"#).is_err());
+        assert!(parse_provider_aliases(r#"{"x": "no_such_provider"}"#).is_err());
+        assert!(
+            parse_provider_aliases(r#"{"alias-a": "deepseek", "alias-b": "deepseek"}"#).is_err()
+        );
     }
 
     #[test]

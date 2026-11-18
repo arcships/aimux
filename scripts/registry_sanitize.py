@@ -377,3 +377,30 @@ def sha256_canonical_json(obj: object) -> str:
 
     raw = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def get_git_commit(repo_path: object) -> str | None:
+    """Return the HEAD commit SHA for `repo_path` if it is a git checkout, else None."""
+    import subprocess
+
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    sha = res.stdout.strip()
+    if res.returncode == 0 and sha and all(c in "0123456789abcdefABCDEF" for c in sha):
+        return sha
+    return None
+
+
+def utc_now_iso() -> str:
+    """Return current UTC timestamp in RFC 3339 format."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

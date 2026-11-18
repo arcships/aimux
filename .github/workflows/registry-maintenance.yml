@@ -122,7 +122,29 @@ jobs:
               mp = out_dir / f"{name}.md"
               if jp.is_file():
                   data = json.loads(jp.read_text(encoding="utf-8"))
-                  fp_data[fp_key] = {"counts": data.get("counts"), "input_hash": data.get("input_hash")}
+                  if fp_key == "probe":
+                      rows_fp = [
+                          [r.get("id"), r.get("target"), r.get("final_target"), r.get("outcome"), r.get("http_status")]
+                          for r in data.get("results", [])
+                      ]
+                  else:
+                      rows_fp = {
+                          k: data.get(k)
+                          for k in (
+                              "base_url_diffs",
+                              "key_env_diffs",
+                              "stale_overrides",
+                              "manual_deviations",
+                              "incomparable",
+                              "missing_upstream_providers",
+                              "tool_errors",
+                          )
+                      }
+                  fp_data[fp_key] = {
+                      "counts": data.get("counts"),
+                      "input_hash": data.get("input_hash"),
+                      "rows": rows_fp,
+                  }
               if mp.is_file():
                   parts.append(mp.read_text(encoding="utf-8").strip())
 
@@ -173,8 +195,8 @@ jobs:
           ISSUE_NUMBER: ${{ vars.REGISTRY_TRACKING_ISSUE }}
           FINGERPRINT: ${{ needs.collect.outputs.fingerprint }}
         run: |
-          latest_fp=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
-            --jq '[.[] | select(.body | contains("aimux-registry-fingerprint:"))] | last | .body // ""' \
+          latest_fp=$(gh api --paginate --slurp "repos/${REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
+            --jq '[.[][] | select(.body | contains("aimux-registry-fingerprint:"))] | last | .body // ""' \
             | sed -n 's/.*aimux-registry-fingerprint: \([a-f0-9]\{64\}\).*/\1/p' | head -n 1)
           if [ -n "$latest_fp" ] && [ "$latest_fp" = "$FINGERPRINT" ]; then
             echo "Report fingerprint unchanged ($FINGERPRINT); skipping duplicate comment."

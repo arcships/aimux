@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
 import io
 import json
 import os
@@ -335,6 +336,233 @@ class SyncRegistryTest(unittest.TestCase):
         self.assertEqual(code, 1)
         arg_code, _, _ = _run_sync(["--check", "--source", "models-dev", "--fetch"])
         self.assertEqual(arg_code, 2)
+
+    def test_duplicate_ids_and_alias_conflicts_fail_closed(self):
+        # Duplicate local registry name
+        reg_p, ali_p, rec_p, snap_p = self._fixture(
+            rows=[
+                {"name": "dup_p", "display": "D1", "base_url": "https://a.example/v1", "env_var": "A_KEY"},
+                {"name": "dup_p", "display": "D2", "base_url": "https://b.example/v1", "env_var": "B_KEY"},
+            ],
+            up_providers={},
+        )
+        code, _, err = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("duplicate registry name", err)
+
+        # Duplicate target in aliases (alias conflict)
+        reg_p, ali_p, rec_p, snap_p = self._fixture(
+            rows=[{"name": "v", "display": "V", "base_url": "https://a.example/v1", "env_var": "V_KEY"}],
+            up_providers={},
+            aliases={"alias-1": "v", "alias-2": "v"},
+        )
+        code, _, err = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("duplicate alias target", err)
+
+        # Alias source colliding with built-in provider id
+        _write_json(ali_p, {"v": "openai"})
+        code, _, err = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("collides with built-in provider id", err)
+
+        # Mismatched/duplicate id in models.dev snapshot
+        _write_json(ali_p, {})
+        _write_json(
+            snap_p,
+            {
+                "schema_version": 1,
+                "providers": {
+                    "k1": {"id": "dup_up", "api": "https://a.example/v1", "env": ["V_KEY"]},
+                },
+            },
+        )
+        code, _, _ = _run_sync(
+            [
+                "--report", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(code, 1)
+
+    def test_manual_note_does_not_hide_unacknowledged_drift_and_stale_override_blocks_apply(self):
+        reg_p, ali_p, rec_p, snap_p = self._fixture(
+            rows=[
+                {"name": "noted", "display": "N", "base_url": "https://local.example/v1", "env_var": "N_KEY"},
+                {"name": "kilo_like", "display": "K", "base_url": "https://local-k.example/v1", "env_var": "K_KEY"},
+            ],
+            up_providers={
+                "noted": {"id": "noted", "api": "https://drifted.example/v1", "env": ["N_KEY"]},
+                "kilo_like": {"id": "kilo_like", "api": "https://drifted-k.example/v1", "env": ["K_KEY"]},
+            },
+            reconcile={
+                "schema_version": 1,
+                "overrides": [
+                    {
+                        "id": "kilo_like",
+                        "upstream": "models-dev",
+                        "field": "base_url",
+                        "local_value": "https://local-k.example/v1",
+                        "upstream_value": "https://old-up-k.example/v1",
+                        "reason": "Pin kilo_like URL",
+                    }
+                ],
+                "entries": {"noted": {"note": "Noted local vendor"}},
+            },
+        )
+        out = self.dir / "rep.json"
+        md_out = self.dir / "rep.md"
+        code, _, _ = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+                "--output", str(out), "--markdown-output", str(md_out),
+            ]
+        )
+        self.assertEqual(code, 1)
+        rep = json.loads(out.read_text())
+        self.assertEqual([d["id"] for d in rep["base_url_diffs"]], ["kilo_like", "noted"])
+        self.assertIn("noted", md_out.read_text())
+        self.assertTrue(rep["repo_commit"])
+
+        # --apply must not overwrite kilo_like when its override is stale
+        apply_out = self.dir / "apply.json"
+        apply_code, _, err = _run_sync(
+            [
+                "--apply", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs), "--output", str(apply_out),
+            ]
+        )
+        self.assertEqual(apply_code, 0, err)
+        updated = {r["name"]: r for r in json.loads(reg_p.read_text())}
+        self.assertEqual(updated["kilo_like"]["base_url"], "https://local-k.example/v1")
+
+    def test_sensitive_url_equality_snapshot_redaction_env_set_and_keyless_apply(self):
+        secret = "sk_live_secret_987"
+        reg_p, ali_p, rec_p, snap_p = self._fixture(
+            rows=[
+                {"name": "same_sec", "display": "S", "base_url": f"https://u:{secret}@example.invalid/v1?k=1", "env_var": "S_KEY"},
+                {"name": "keyless", "display": "K", "base_url": "http://127.0.0.1:8080/v1", "auth": "none"},
+                {"name": "subset_env", "display": "E", "base_url": "https://api.example.com/v1", "env_var": "V_KEY"},
+            ],
+            up_providers={
+                "same_sec": {"id": "same_sec", "api": f"https://u:{secret}@example.invalid/v1?k=1", "env": ["S_KEY"]},
+                "keyless": {"id": "keyless", "api": "http://127.0.0.1:8080/v1", "env": ["KEYLESS_OPT_KEY"]},
+                "subset_env": {"id": "subset_env", "api": "https://api.example.com/v1", "env": ["V_KEY", "V_ADMIN_KEY"]},
+            },
+        )
+        out = self.dir / "rep.json"
+        code, _, _ = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs), "--output", str(out),
+            ]
+        )
+        self.assertEqual(code, 1)
+        rep = json.loads(out.read_text())
+        self.assertEqual(rep["base_url_diffs"], [])
+        self.assertEqual(sorted(d["id"] for d in rep["key_env_diffs"]), ["keyless", "subset_env"])
+
+        # --apply must not add env_var onto an auth:"none" row that had none
+        _run_sync(
+            [
+                "--apply", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs), "--output", str(out),
+            ]
+        )
+        updated = {r["name"]: r for r in json.loads(reg_p.read_text())}
+        self.assertNotIn("env_var", updated["keyless"])
+
+        # slim_models_dev_snapshot must never copy raw sensitive api URLs
+        slim = sync.slim_models_dev_snapshot(
+            {"vendor": {"id": "vendor", "api": f"https://user:{secret}@vendor.invalid/v1?token={secret}"}}
+        )
+        self.assertNotIn(secret, json.dumps(slim))
+
+    def test_fetch_metadata_body_limit_and_truncated_gzip(self):
+        reg_p, ali_p, rec_p, _ = self._fixture(
+            rows=[{"name": "v", "display": "V", "base_url": "https://api.example.com/v1", "env_var": "V_KEY"}],
+            up_providers={},
+        )
+        payload = json.dumps({"v": {"id": "v", "api": "https://api.example.com/v1", "env": ["V_KEY"]}}).encode("utf-8")
+
+        class _FakeResp:
+            def __init__(self, body: bytes, encoding: str = ""):
+                self._bio = io.BytesIO(body)
+                self.headers = {"Content-Encoding": encoding} if encoding else {}
+
+            def read(self, n: int = -1) -> bytes:
+                return self._bio.read(n)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        # Live --fetch populates repo_commit, collected_at, and duration_ms
+        out = self.dir / "live.json"
+        with mock.patch("urllib.request.urlopen", return_value=_FakeResp(payload)):
+            code, _, err = _run_sync(
+                [
+                    "--report", "--source", "models-dev", "--fetch",
+                    "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                    "--packages-rs", str(self.packages_rs), "--output", str(out),
+                ]
+            )
+        self.assertEqual(code, 0, err)
+        live = json.loads(out.read_text())
+        self.assertTrue(live["repo_commit"])
+        self.assertRegex(live["collected_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertIsInstance(live["duration_ms"], int)
+
+        # Oversized body fails cleanly with exit 1
+        with mock.patch("urllib.request.urlopen", return_value=_FakeResp(payload)):
+            code, _, err = _run_sync(
+                [
+                    "--report", "--source", "models-dev", "--fetch", "--max-fetch-bytes", "10",
+                    "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                    "--packages-rs", str(self.packages_rs),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("byte limit", err)
+
+        # Truncated gzip stream raises RegistryInputError (exit 1, no unhandled EOFError)
+        gz_trunc = gzip.compress(payload)[:-6]
+        with mock.patch("urllib.request.urlopen", return_value=_FakeResp(gz_trunc, encoding="gzip")):
+            code, _, err = _run_sync(
+                [
+                    "--report", "--source", "models-dev", "--fetch",
+                    "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                    "--packages-rs", str(self.packages_rs),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("fetch failed", err)
 
 
 if __name__ == "__main__":
