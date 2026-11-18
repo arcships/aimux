@@ -1579,7 +1579,7 @@ fn aborted_stream_part(abort_signal: Option<&AbortSignal>) -> TextStreamPart {
 /// Convert an expired stream/operation deadline into its `AiMuxError::Timeout`.
 fn exceeded_deadline_error(deadline: Option<timeout::TimeoutDeadline>) -> AiMuxError {
     deadline.map_or_else(
-        || AiMuxError::Timeout("request timed out".into()),
+        || AiMuxError::Timeout("operation deadline exceeded".into()),
         timeout::TimeoutDeadline::error,
     )
 }
@@ -1941,10 +1941,11 @@ async fn stream_in_operation(
                                 yield Ok(aborted_stream_part(abort_signal.as_ref()));
                                 return;
                             }
-                            () = timeout::wait_for_deadline(operation_timeout.deadline()) => {
-                                yield Err(exceeded_deadline_error(operation_timeout.deadline()));
-                                return;
-                            }
+                            // Poll parse_tool_call before the deadline so an
+                            // already-ready synchronous parse is not dropped
+                            // if the consumer polls slowly after pump exit,
+                            // while a pending async repair still loses to an
+                            // expired deadline.
                             parsed = parse_tool_call(
                                 raw,
                                 tools.as_deref(),
@@ -1952,6 +1953,10 @@ async fn stream_in_operation(
                                 &messages,
                                 operation_instructions.as_deref(),
                             ) => parsed,
+                            () = timeout::wait_for_deadline(operation_timeout.deadline()) => {
+                                yield Err(exceeded_deadline_error(operation_timeout.deadline()));
+                                return;
+                            }
                         };
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         let tool_error = invalid_tool_call_error(&parsed);

@@ -2456,3 +2456,106 @@ async fn consumer_drop_mid_tool_input_delta_stops_pump_cleanly() {
     tokio::task::yield_now().await;
     assert_eq!(handle.polls.load(Ordering::SeqCst), polls_at_drop);
 }
+
+#[tokio::test(start_paused = true)]
+async fn consumer_polling_after_deadline_delivers_sync_tool_call_but_times_out_hung_repair() {
+    use std::sync::atomic::Ordering;
+
+    for timeout_config in [
+        crate::options::TimeoutConfiguration {
+            total_ms: Some(10),
+            ..Default::default()
+        },
+        crate::options::TimeoutConfiguration {
+            step_ms: Some(10),
+            ..Default::default()
+        },
+    ] {
+        // Provider delivers a valid ToolCall + Finish before the deadline expires,
+        // so the pump exits cleanly. Even if the consumer polls past deadline.at,
+        // synchronous parse_tool_call must succeed without a spurious Timeout.
+        let sync_parts = tool_input_stream_with_trailing(vec![
+            StreamPart::StreamStart { warnings: vec![] },
+            StreamPart::ToolInputStart {
+                id: "call-1".into(),
+                tool_name: "weather".into(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: None,
+            },
+            StreamPart::ToolInputDelta {
+                id: "call-1".into(),
+                delta: r#"{"city":"Paris"}"#.into(),
+                provider_metadata: None,
+            },
+        ]);
+        let gate_after = sync_parts.len();
+        let (sync_model, mut sync_handle) =
+            TrackingModel::gated(sync_parts, gate_after, AbortSignal::new());
+        let sync_result = stream_text(
+            &sync_model,
+            "hi",
+            GenerateTextOptions {
+                tools: Some(vec![weather_tool()]),
+                timeout: Some(timeout_config),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            sync_handle.dropped_rx.wait_for(|&dropped| dropped),
+        )
+        .await
+        .expect("pump must consume buffered Finish and exit before deadline")
+        .unwrap();
+        tokio::time::advance(std::time::Duration::from_millis(50)).await;
+
+        let consumed = sync_result
+            .consume()
+            .await
+            .expect("buffered sync tool call polled after deadline must succeed");
+        assert_eq!(consumed.tool_calls().len(), 1);
+        assert_eq!(consumed.tool_calls()[0].tool_name, "weather");
+        assert_eq!(consumed.tool_calls()[0].input, json!({ "city": "Paris" }));
+
+        // With an invalid ToolCall and a pending async repair_tool_call polled
+        // past deadline.at, the expired deadline must still cancel the repair.
+        let repair_parts: Vec<StreamPart> = invalid_weather_tool_call_stream()
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let repair_gate_after = repair_parts.len();
+        let (repair_model, mut repair_handle) =
+            TrackingModel::gated(repair_parts, repair_gate_after, AbortSignal::new());
+        let (repair, _entered, dropped) = hung_repair();
+        let repair_result = stream_text(
+            &repair_model,
+            "hi",
+            GenerateTextOptions {
+                tools: Some(vec![weather_tool()]),
+                repair_tool_call: Some(repair),
+                timeout: Some(timeout_config),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            repair_handle.dropped_rx.wait_for(|&dropped| dropped),
+        )
+        .await
+        .expect("pump must consume buffered Finish and exit before deadline")
+        .unwrap();
+        tokio::time::advance(std::time::Duration::from_millis(50)).await;
+
+        let err = repair_result.consume().await.unwrap_err();
+        assert!(matches!(err, AiMuxError::Timeout(_)), "{err:?}");
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+}
