@@ -18,6 +18,7 @@
       "id": "request-small",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 5000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -35,6 +36,7 @@
       "id": "request-200k",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 5000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -68,6 +70,7 @@
       "id": "stream-small-chunks",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 15000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -86,6 +89,7 @@
       "id": "stream-large-chunks",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 15000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -103,6 +107,7 @@
       "id": "tools-and-errors",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 5000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -119,6 +124,7 @@
       "id": "sustained",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 5000,
       "run_timeout_ms": 600000,
       "backends": ["rust", "c_abi", "node", "python"],
@@ -130,6 +136,9 @@
       "window_requests": 1000,
       "slope_tail_windows": 15,
       "budgets": {
+        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 5000000 },
+        "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 10000000 },
+        "throughput_bytes_per_s": { "max_drop_pct": 5.0 },
         "retained_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 2097152, "max_abs_bytes": 33554432 },
         "peak_rss_bytes": {
           "max_regression_pct": 10.0,
@@ -148,6 +157,7 @@
       "id": "cancel-and-drop",
       "phase": "0.6",
       "status": "active_contract",
+      "requires_b0_calibration": true,
       "operation_timeout_ms": 2000,
       "run_timeout_ms": 600000,
       "backends": ["c_abi", "node", "python"],
@@ -216,10 +226,21 @@
       "operation_timeout_ms": 5000,
       "run_timeout_ms": 600000,
       "backends": ["stdio"],
+      "reference_backend": "in_process",
+      "comparison_mode": "paired_delta",
       "min_warmup_requests": 1000,
       "min_samples": 10000,
+      "cases": [
+        { "id": "1kb", "request_bytes": 1024, "response_bytes": 1024 },
+        { "id": "200kb", "request_bytes": 200000, "response_bytes": 50000 }
+      ],
       "budgets": {
-        "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 2000000 }
+        "paired_delta_p50_ns": {
+          "max_abs_delta_ns_by_case": {
+            "1kb": 500000,
+            "200kb": 2000000
+          }
+        }
       }
     },
     {
@@ -230,9 +251,12 @@
       "run_timeout_ms": 600000,
       "backends": ["stdio"],
       "min_warmup_streams": 100,
+      "min_measure_ms": 10000,
       "min_samples": 100,
-      "stream_events": 10000,
-      "payload_bytes_per_event": 32,
+      "cases": [
+        { "id": "10000x32", "stream_events": 10000, "payload_bytes_per_event": 32 },
+        { "id": "1024x1024", "stream_events": 1024, "payload_bytes_per_event": 1024 }
+      ],
       "budgets": {
         "throughput_events_per_s": { "max_drop_pct": 5.0 },
         "throughput_bytes_per_s": { "max_drop_pct": 5.0 },
@@ -289,6 +313,7 @@
       "memory_windows": 20,
       "window_requests": 1000,
       "slope_tail_windows": 15,
+      "concurrency_levels": [1, 100],
       "idle_rss_max_bytes": 67108864,
       "budgets": {
         "retained_rss_bytes": { "max_regression_pct": 10.0, "min_abs_delta_bytes": 2097152, "max_abs_bytes": 33554432 },
