@@ -315,12 +315,29 @@ impl fmt::Debug for NativeEndpoint {
 }
 
 /// Retry options when opting in to pre-head safe retries via [`NativeRetryPolicy::Safe`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SafeRetryOptions {
     pub max_retries: u32,
     pub initial_backoff: Duration,
     pub retryable_statuses: Vec<StatusCode>,
     pub idempotency_key: Option<(HeaderName, HeaderValue)>,
+}
+
+impl fmt::Debug for SafeRetryOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SafeRetryOptions")
+            .field("max_retries", &self.max_retries)
+            .field("initial_backoff", &self.initial_backoff)
+            .field("retryable_statuses", &self.retryable_statuses)
+            .field(
+                "idempotency_key",
+                &self
+                    .idempotency_key
+                    .as_ref()
+                    .map(|(name, _)| (name.as_str(), "[REDACTED]")),
+            )
+            .finish()
+    }
 }
 
 impl Default for SafeRetryOptions {
@@ -948,7 +965,7 @@ pub async fn native_request(
     .await?;
 
     let wire_headers =
-        assemble_wire_headers(endpoint, resolved_headers, &request.headers, &request.retry)?;
+        assemble_wire_headers(endpoint, resolved_headers, &request.headers, &request.retry);
 
     let fetch = endpoint.fetch.clone().unwrap_or_else(default_fetch);
     let sanitized_target = sanitize_url(&target_url);
@@ -971,6 +988,7 @@ pub async fn native_request(
             &sanitized_target,
             &wire_headers,
             &redacted_req_headers,
+            &endpoint.protected_headers,
             &request.body,
             endpoint.max_buffer_bytes,
             context.max_recorded_bytes,
@@ -1015,6 +1033,7 @@ async fn execute_attempt(
     sanitized_target: &str,
     wire_headers: &HeaderMap,
     redacted_req_headers: &[(String, String)],
+    protected_headers: &BTreeSet<String>,
     body: &Bytes,
     max_buffer_bytes: usize,
     max_recorded_bytes: usize,
@@ -1086,10 +1105,11 @@ async fn execute_attempt(
 
     if observer_active && let Some(obs) = &observer {
         let sanitized_effective = sanitize_url(&response.url);
+        let redacted_head = redact_response_headers(&response.headers, protected_headers);
         if let Err(reason) = obs.on_response_head(
             exchange_id,
             response.status,
-            &response.headers,
+            &redacted_head,
             &sanitized_effective,
         ) {
             observer_active = false;
@@ -1345,15 +1365,25 @@ fn resolve_relative_url(
         });
     }
 
-    if let Some(expected_query) = raw_query
-        && target.query() != Some(expected_query)
-    {
-        return Err(NativeError::InvalidPath {
-            message: "query string contains characters that would be altered on parse".to_string(),
-        });
+    if let Some(q) = raw_query {
+        validate_query_escapes(q)?;
     }
 
     Ok(target)
+}
+
+fn validate_query_escapes(query: &str) -> Result<(), NativeError> {
+    let bytes = query.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] == b'%' {
+            let _ = parse_percent_hex(bytes, idx)?;
+            idx += 3;
+        } else {
+            idx += 1;
+        }
+    }
+    Ok(())
 }
 
 fn validate_segment(segment: &str) -> Result<(), NativeError> {
@@ -1380,23 +1410,32 @@ fn validate_segment(segment: &str) -> Result<(), NativeError> {
     Ok(())
 }
 
+fn parse_percent_hex(bytes: &[u8], idx: usize) -> Result<u8, NativeError> {
+    let Some(hex_bytes) = bytes.get(idx + 1..idx + 3) else {
+        return Err(NativeError::InvalidPath {
+            message: "truncated percent-encoding in relative path".to_string(),
+        });
+    };
+    if !hex_bytes.iter().all(u8::is_ascii_hexdigit) {
+        return Err(NativeError::InvalidPath {
+            message: "invalid percent-encoding in relative path".to_string(),
+        });
+    }
+    let hex_slice = std::str::from_utf8(hex_bytes).map_err(|_| NativeError::InvalidPath {
+        message: "invalid percent-encoding in relative path".to_string(),
+    })?;
+    u8::from_str_radix(hex_slice, 16).map_err(|_| NativeError::InvalidPath {
+        message: "invalid percent-encoding in relative path".to_string(),
+    })
+}
+
 fn percent_decode_strict(segment: &str) -> Result<Vec<u8>, NativeError> {
     let bytes = segment.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut idx = 0;
     while idx < bytes.len() {
         if bytes[idx] == b'%' {
-            if idx + 2 >= bytes.len() {
-                return Err(NativeError::InvalidPath {
-                    message: "truncated percent-encoding in relative path".to_string(),
-                });
-            }
-            let hex_slice = &segment[idx + 1..idx + 3];
-            let decoded =
-                u8::from_str_radix(hex_slice, 16).map_err(|_| NativeError::InvalidPath {
-                    message: "invalid percent-encoding in relative path".to_string(),
-                })?;
-            out.push(decoded);
+            out.push(parse_percent_hex(bytes, idx)?);
             idx += 3;
         } else {
             out.push(bytes[idx]);
@@ -1499,22 +1538,8 @@ fn assemble_wire_headers(
     resolved_endpoint_headers: HeaderMap,
     caller_headers: &HeaderMap,
     retry: &NativeRetryPolicy,
-) -> Result<HeaderMap, NativeError> {
+) -> HeaderMap {
     let mut wire = HeaderMap::new();
-
-    // Check caller doesn't collide with any dynamically resolved protected headers either.
-    for name in caller_headers.keys() {
-        if endpoint
-            .protected_headers
-            .contains(&name.as_str().to_ascii_lowercase())
-        {
-            return Err(NativeError::InvalidHeader {
-                name: name.as_str().to_string(),
-                message: "header is owned by endpoint authentication and cannot be overridden"
-                    .to_string(),
-            });
-        }
-    }
 
     for (name, value) in &resolved_endpoint_headers {
         if endpoint
@@ -1545,7 +1570,33 @@ fn assemble_wire_headers(
         wire.append(name.clone(), value.clone());
     }
 
-    Ok(wire)
+    wire
+}
+
+fn is_redacted_header(name: &HeaderName, protected: &BTreeSet<String>) -> bool {
+    let lower = name.as_str().to_ascii_lowercase();
+    protected.contains(&lower) || aimux_core::recording::is_sensitive_key(name.as_str())
+}
+
+fn redact_response_headers<'a>(
+    headers: &'a HeaderMap,
+    protected: &BTreeSet<String>,
+) -> std::borrow::Cow<'a, HeaderMap> {
+    if !headers
+        .keys()
+        .any(|name| is_redacted_header(name, protected))
+    {
+        return std::borrow::Cow::Borrowed(headers);
+    }
+    let mut redacted = HeaderMap::with_capacity(headers.len());
+    for (name, value) in headers {
+        if is_redacted_header(name, protected) {
+            redacted.append(name.clone(), HeaderValue::from_static("[REDACTED]"));
+        } else {
+            redacted.append(name.clone(), value.clone());
+        }
+    }
+    std::borrow::Cow::Owned(redacted)
 }
 
 fn redact_header_pairs(headers: &HeaderMap, protected: &BTreeSet<String>) -> Vec<(String, String)> {
@@ -1553,9 +1604,7 @@ fn redact_header_pairs(headers: &HeaderMap, protected: &BTreeSet<String>) -> Vec
         .iter()
         .map(|(name, value)| {
             let lower = name.as_str().to_ascii_lowercase();
-            let redacted = if protected.contains(&lower)
-                || aimux_core::recording::is_sensitive_key(name.as_str())
-            {
+            let redacted = if is_redacted_header(name, protected) {
                 "[REDACTED]".to_string()
             } else {
                 value.to_str().unwrap_or("<binary>").to_string()
@@ -1566,11 +1615,18 @@ fn redact_header_pairs(headers: &HeaderMap, protected: &BTreeSet<String>) -> Vec
 }
 
 fn redact_query_values(raw_query: &str) -> String {
+    if raw_query.is_empty() {
+        return String::new();
+    }
     raw_query
         .split('&')
         .map(|pair| match pair.split_once('=') {
+            Some((key, _)) if key.to_ascii_lowercase().contains("%3d") => {
+                "REDACTED=REDACTED".to_string()
+            }
             Some((key, _)) => format!("{key}=REDACTED"),
-            None => pair.to_string(),
+            None if pair.is_empty() => String::new(),
+            None => "REDACTED".to_string(),
         })
         .collect::<Vec<_>>()
         .join("&")

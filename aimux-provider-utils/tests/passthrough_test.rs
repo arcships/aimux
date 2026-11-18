@@ -1367,3 +1367,195 @@ async fn sentinel_secrets_never_leak_across_debug_errors_or_observer() {
     // Compile/smoke-check ReqwestFetch builder doesn't panic on unused proxy config.
     let _ = ReqwestFetch::default();
 }
+
+#[tokio::test]
+async fn regression_utf8_percent_escapes_and_query_preservation() {
+    let ep = NativeEndpoint::unauthenticated("https://api.example.com/v1").unwrap();
+
+    // Multi-byte UTF-8 after `%` and `+`-prefixed hex must return InvalidPath without panicking.
+    for bad in [
+        "models/%€",
+        "models/%1é",
+        "models/%aé",
+        "models/%+1",
+        "models?a=%€",
+        "models?a=%ZZ",
+        "models?a=%+1",
+        "models?a=%",
+    ] {
+        let err = ep.resolve_url(bad).unwrap_err();
+        assert!(
+            matches!(err, NativeError::InvalidPath { .. }),
+            "expected InvalidPath for `{bad}`, got {err:?}"
+        );
+    }
+
+    let plus_err = ep.resolve_url("models/%+1").unwrap_err();
+    assert!(
+        plus_err.to_string().contains("invalid percent-encoding"),
+        "expected invalid percent-encoding message for `%+1`, got: {plus_err}"
+    );
+
+    // Valid queries containing `'` or non-ASCII UTF-8 are accepted once origin/prefix pass.
+    let apostrophe = ep
+        .resolve_url("models?$filter=name%20eq%20'gpt-4o'")
+        .unwrap();
+    assert_eq!(
+        apostrophe.origin(),
+        ep.resolve_url("models").unwrap().origin()
+    );
+    assert_eq!(apostrophe.path(), "/v1/models");
+    assert!(apostrophe.query().is_some());
+
+    let utf8_query = ep.resolve_url("search?q=日本語").unwrap();
+    assert_eq!(
+        utf8_query.origin(),
+        ep.resolve_url("search").unwrap().origin()
+    );
+    assert_eq!(utf8_query.path(), "/v1/search");
+    assert!(utf8_query.query().is_some());
+
+    // Already-encoded `%2F` and duplicate query keys remain verbatim.
+    let golden = ep.resolve_url("models?x=1&x=2&enc=%2F").unwrap();
+    assert_eq!(
+        golden.as_str(),
+        "https://api.example.com/v1/models?x=1&x=2&enc=%2F"
+    );
+}
+
+#[tokio::test]
+async fn regression_observer_response_head_redaction_valueless_query_and_retry_debug() {
+    const SECRET: &str = "sk-live-secret-9f8e7d";
+
+    let (mock, calls) = MockFetch::new(|req| async move {
+        let mut h = HeaderMap::new();
+        h.append("x-multi", HeaderValue::from_static("one"));
+        h.append("x-multi", HeaderValue::from_static("two"));
+        h.insert("set-cookie", HeaderValue::from_static("sid=cookie-secret"));
+        h.insert("x-custom-secret", HeaderValue::from_static(SECRET));
+        h.insert("x-endpoint-owned", HeaderValue::from_static("owned-secret"));
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            h,
+            req.url,
+            Bytes::from_static(b"ok"),
+        ))
+    });
+
+    let ep = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .try_with_protected_headers(["x-endpoint-owned"])
+        .unwrap()
+        .with_fetch(mock);
+
+    let req = NativeRequest::new(Method::GET, format!("files?{SECRET}&token%3D{SECRET}&ok=1"))
+        .with_retry(NativeRetryPolicy::Safe(
+            SafeRetryOptions::default().with_idempotency_key(
+                HeaderName::from_static("idempotency-key"),
+                HeaderValue::from_static("idem-secret-value"),
+            ),
+        ));
+
+    let req_dbg = format!("{req:?}");
+    assert!(
+        !req_dbg.contains(SECRET),
+        "request Debug leaked query: {req_dbg}"
+    );
+    assert!(
+        !req_dbg.contains("idem-secret-value"),
+        "request Debug leaked idempotency key: {req_dbg}"
+    );
+    assert!(req_dbg.contains("[REDACTED]"));
+
+    let obs = RecordingObserver::new();
+    let resp = native_request(&ep, req, NativeContext::new().with_observer(obs.clone()))
+        .await
+        .unwrap();
+
+    // Caller still receives raw response headers and duplicate non-sensitive headers.
+    assert_eq!(
+        resp.headers.get("set-cookie").unwrap().to_str().unwrap(),
+        "sid=cookie-secret"
+    );
+    assert_eq!(
+        resp.headers
+            .get("x-custom-secret")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        SECRET
+    );
+    assert_eq!(
+        resp.headers
+            .get("x-endpoint-owned")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "owned-secret"
+    );
+    let multi: Vec<_> = resp
+        .headers
+        .get_all("x-multi")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert_eq!(multi, ["one", "two"]);
+
+    // Wire URL kept the original query intact.
+    {
+        let recorded_calls = calls.lock().unwrap();
+        assert_eq!(
+            recorded_calls[0].url.query(),
+            Some(format!("{SECRET}&token%3D{SECRET}&ok=1").as_str())
+        );
+    }
+
+    let resp_dbg = format!("{resp:?}");
+    assert!(
+        !resp_dbg.contains(SECRET),
+        "response Debug leaked query: {resp_dbg}"
+    );
+    let _ = drain_body(resp.body).await.unwrap();
+
+    let started = obs.started_events();
+    assert_eq!(started.len(), 1);
+    assert!(
+        !started[0].sanitized_url.contains(SECRET),
+        "observer started sanitized_url leaked query: {}",
+        started[0].sanitized_url
+    );
+
+    let heads = obs.heads.lock().unwrap();
+    assert_eq!(heads.len(), 1);
+    let (_, _, ref head_headers, ref head_url) = heads[0];
+    assert!(
+        !head_url.contains(SECRET),
+        "observer head url leaked query: {head_url}"
+    );
+    assert_eq!(
+        head_headers.get("set-cookie").unwrap().to_str().unwrap(),
+        "[REDACTED]"
+    );
+    assert_eq!(
+        head_headers
+            .get("x-custom-secret")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "[REDACTED]"
+    );
+    assert_eq!(
+        head_headers
+            .get("x-endpoint-owned")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "[REDACTED]"
+    );
+    let obs_multi: Vec<_> = head_headers
+        .get_all("x-multi")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert_eq!(obs_multi, ["one", "two"]);
+}
