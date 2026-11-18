@@ -25,9 +25,9 @@ allowed handle kinds, cancellation and DTO schemas. See the
 | model | `model.info`, `model.resolve`, `model.wrap` |
 | operation | `operation.cancel`, `operation.inputDone`, `operation.next`, `operation.push`, `operation.status` |
 | output | `output.toOpenAI` |
-| provider | `provider.create`, `provider.custom`, `provider.default`, `provider.files`, `provider.invoke`, `provider.model`, `provider.wrap` |
+| provider | `provider.create`, `provider.custom`, `provider.default`, `provider.descriptors`, `provider.files`, `provider.invoke`, `provider.model`, `provider.wrap` |
 | recorder | `recorder.attach`, `recorder.create`, `recorder.export`, `recorder.flush`, `recorder.stats`, `recorder.stop` |
-| registry | `registry.create`, `registry.provider` |
+| registry | `registry.create`, `registry.fromConfig`, `registry.list`, `registry.provider`, `registry.update` |
 | replay | `replay.capabilities`, `replay.create`, `replay.dryRun`, `replay.inspect`, `replay.live` |
 | reranking | `reranking.rerank` |
 | runtime | `runtime.configure`, `runtime.describe` |
@@ -45,4 +45,8 @@ allowed handle kinds, cancellation and DTO schemas. See the
 `credential.create` and `replay.capabilities` advertise Future scope and return
 UnsupportedFunctionality; the other registered operations use existing Rust
 capabilities. Unsupported middleware kinds and native factory settings fail
-explicitly. This inventory does not claim live provider or platform validation.
+explicitly. `provider.create` and `registry.fromConfig` are trusted-caller
+operations: `envAllowlist` gates `{ "env": "VAR" }` (`StringOrEnv`) config
+interpolation only and does not restrict implicit per-provider default
+environment variable fallbacks when credential or `baseUrl` settings are
+omitted. This inventory does not claim live provider or platform validation.

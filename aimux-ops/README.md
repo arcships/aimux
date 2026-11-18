@@ -80,9 +80,11 @@ finalizers enqueue cleanup.
 
 ## Manifest and registered differences
 
-`manifest::manifest()` exports all 72 operations, including two Decision
-operations beyond RFC-0039's original 70, 23 handle kinds, error codes and a
-`types` catalogue. Ops controls and result wrappers carry schemas; canonical
+`manifest::manifest()` exports all 76 operations, including two Decision
+operations and four provider/registry management operations
+(`provider.descriptors`, `registry.fromConfig`, `registry.list`,
+`registry.update`) beyond RFC-0039's original 70, 23 handle kinds, error codes
+and a `types` catalogue. Ops controls and result wrappers carry schemas; canonical
 business fields retain explicit type references. Codegen publishes the C header,
 language constants and schemas. Its `--check` detects missing, stale and changed
 outputs. The manifest's `digest` field equals `manifest_digest()`; hashing sorts
@@ -114,6 +116,19 @@ Registered gaps:
 - **G-e:** release ordering/header packaging does not establish installation of
   every published asset on every platform.
 
-Model source summaries are object-level owner-scoped metadata; complete
-per-handle/package provenance and authoritative defaults for every provider
-are not exposed.
+Model source summaries are object-level owner-scoped metadata;
+`provider.descriptors` exposes static `PackageDescriptor` metadata
+(auth, setting fields, template params, capabilities, and default method)
+for all 329 packages, while `Provider` handles retain canonical
+`Arc<dyn Provider>` instances rather than full construction settings.
+
+`provider.create` and `registry.fromConfig` are **trusted-caller** operations:
+`envAllowlist` governs explicit `{ "env": "VAR" }` (`StringOrEnv`) config
+interpolation only and does **not** restrict implicit per-provider default
+environment variable fallbacks when credential or `baseUrl` settings are
+omitted (do not allow untrusted callers to pass arbitrary `baseUrl` values with
+omitted credentials). `provider.create` also validates `settings` strictly
+against each package's `PackageDescriptor.settings`, so `organization` (accepted
+only by `openai`) and `project` (accepted only by `openai` and `google_vertex`)
+are rejected on preset and other packages rather than injecting
+`OpenAI-Organization` / `OpenAI-Project` headers.

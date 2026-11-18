@@ -7,10 +7,13 @@ use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model_middleware::ImageModelMiddleware;
 use aimux_core::language_model_middleware::LanguageModelMiddleware;
-use aimux_core::provider::Provider;
+use aimux_core::provider::{LanguageApi, Provider};
 use aimux_core::wrap_provider::wrap_provider;
-use aimux_provider_utils::Resolvable;
-use aimux_providers::preset::PresetSettings;
+use aimux_provider_utils::{FetchFunction, ModalityKind, StringOrEnv};
+use aimux_providers::{
+    CodexModeSpec, EnvLookupPolicy, ProviderConfigSettings, ProviderEntrySpec,
+    provider_from_config_with_transport,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -34,6 +37,10 @@ const WRAP_HANDLES: &[(&str, &[HandleKind])] = &[
 ];
 const CUSTOM_HANDLES: &[(&str, &[HandleKind])] = &[
     ("languageModels.*", &[HandleKind::Language]),
+    ("chatModels.*", &[HandleKind::Language]),
+    ("responsesModels.*", &[HandleKind::Language]),
+    ("completionModels.*", &[HandleKind::Language]),
+    ("messagesModels.*", &[HandleKind::Language]),
     ("embeddingModels.*", &[HandleKind::Embedding]),
     ("imageModels.*", &[HandleKind::Image]),
     ("speechModels.*", &[HandleKind::Speech]),
@@ -151,11 +158,31 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         &["aimux_core::custom_provider::custom_provider"],
         CUSTOM_HANDLES,
     ),
+    descriptor(
+        "provider.descriptors",
+        &[],
+        TypeRef::of::<ProviderDescriptorsParams>(),
+        TypeRef::of::<ProviderDescriptorsResult>(),
+        false,
+        false,
+        &[
+            "aimux_providers::package_descriptors",
+            "aimux_providers::package_descriptor",
+        ],
+        &[],
+    ),
 ];
 
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
-    let handlers: [fn(Ctx, Target, Value) -> CallFuture; 6] =
-        [create, default_provider, model, invoke, wrap, custom];
+    let handlers: [fn(Ctx, Target, Value) -> CallFuture; 7] = [
+        create,
+        default_provider,
+        model,
+        invoke,
+        wrap,
+        custom,
+        provider_descriptors,
+    ];
     r.extend(
         OPS.iter()
             .zip(handlers)
@@ -163,13 +190,31 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     );
 }
 
+/// Trusted-caller operation: constructs a provider handle from package settings
+/// and optional `{ "env": ... }` references. Untrusted callers must not be
+/// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderCreateParams {
     package: String,
     #[serde(default)]
     settings: ProviderSettings,
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation in `settings`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
+    #[serde(default)]
+    env_allowlist: Option<Vec<String>>,
 }
+
+#[derive(Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProviderDescriptorsParams {
+    #[serde(default)]
+    package: Option<String>,
+}
+
+type ProviderDescriptorsResult = Vec<aimux_provider_utils::PackageDescriptor>;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -180,12 +225,35 @@ struct ProviderDefaultParams {
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderSettings {
-    api_key: Option<String>,
+    api_key: Option<StringOrEnv>,
+    auth_token: Option<StringOrEnv>,
+    access_token: Option<StringOrEnv>,
+    access_key_id: Option<StringOrEnv>,
+    secret_access_key: Option<StringOrEnv>,
+    session_token: Option<StringOrEnv>,
+    login: Option<StringOrEnv>,
+    password: Option<StringOrEnv>,
+    codex_mode: Option<CodexModeSpec>,
     base_url: Option<String>,
+    name: Option<String>,
     #[serde(default)]
     headers: HashMap<String, Option<String>>,
     organization: Option<String>,
     project: Option<String>,
+    location: Option<String>,
+    region: Option<String>,
+    resource_name: Option<String>,
+    speech_base_url: Option<String>,
+    api_version: Option<String>,
+    workspace_id: Option<String>,
+    originator: Option<String>,
+    cx: Option<String>,
+    use_deployment_based_urls: Option<bool>,
+    include_usage: Option<bool>,
+    supports_structured_outputs: Option<bool>,
+    supports_multi_part_tool_content: Option<bool>,
+    #[serde(default)]
+    query_params: HashMap<String, String>,
     #[serde(default)]
     params: HashMap<String, String>,
     fetch: Option<HandleId>,
@@ -193,6 +261,55 @@ struct ProviderSettings {
     credential_resolver: Option<HandleId>,
     endpoint: Option<String>,
     probability_source: Option<String>,
+}
+
+struct SplitProviderSettings {
+    config: ProviderConfigSettings,
+    fetch: Option<HandleId>,
+    web_socket: Option<HandleId>,
+    credential_resolver: Option<HandleId>,
+}
+
+impl ProviderSettings {
+    fn split(self) -> SplitProviderSettings {
+        SplitProviderSettings {
+            config: ProviderConfigSettings {
+                api_key: self.api_key,
+                auth_token: self.auth_token,
+                access_token: self.access_token,
+                access_key_id: self.access_key_id,
+                secret_access_key: self.secret_access_key,
+                session_token: self.session_token,
+                login: self.login,
+                password: self.password,
+                codex_mode: self.codex_mode,
+                base_url: self.base_url,
+                name: self.name,
+                organization: self.organization,
+                project: self.project,
+                location: self.location,
+                region: self.region,
+                resource_name: self.resource_name,
+                speech_base_url: self.speech_base_url,
+                api_version: self.api_version,
+                workspace_id: self.workspace_id,
+                originator: self.originator,
+                cx: self.cx,
+                endpoint: self.endpoint,
+                probability_source: self.probability_source,
+                use_deployment_based_urls: self.use_deployment_based_urls,
+                include_usage: self.include_usage,
+                supports_structured_outputs: self.supports_structured_outputs,
+                supports_multi_part_tool_content: self.supports_multi_part_tool_content,
+                headers: self.headers,
+                query_params: self.query_params,
+                params: self.params,
+            },
+            fetch: self.fetch,
+            web_socket: self.web_socket,
+            credential_resolver: self.credential_resolver,
+        }
+    }
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -226,6 +343,14 @@ struct ProviderWrapParams {
 struct ProviderCustomParams {
     #[serde(default)]
     language_models: HashMap<String, HandleId>,
+    #[serde(default)]
+    chat_models: HashMap<String, HandleId>,
+    #[serde(default)]
+    responses_models: HashMap<String, HandleId>,
+    #[serde(default)]
+    completion_models: HashMap<String, HandleId>,
+    #[serde(default)]
+    messages_models: HashMap<String, HandleId>,
     #[serde(default)]
     embedding_models: HashMap<String, HandleId>,
     #[serde(default)]
@@ -261,6 +386,10 @@ struct HandleResult {
 #[derive(Clone, Copy)]
 enum ModelMethod {
     Language,
+    Chat,
+    Responses,
+    Completion,
+    Messages,
     Embedding,
     Image,
     Speech,
@@ -272,9 +401,27 @@ enum ModelMethod {
 }
 
 impl ModelMethod {
+    fn from_modality_kind(kind: ModalityKind) -> Self {
+        match kind {
+            ModalityKind::LanguageModel => Self::Language,
+            ModalityKind::EmbeddingModel => Self::Embedding,
+            ModalityKind::ImageModel => Self::Image,
+            ModalityKind::SpeechModel => Self::Speech,
+            ModalityKind::TranscriptionModel => Self::Transcription,
+            ModalityKind::RerankingModel => Self::Reranking,
+            ModalityKind::VideoModel => Self::Video,
+            ModalityKind::SearchModel => Self::Search,
+            ModalityKind::Decision => Self::Decision,
+        }
+    }
+
     fn parse(method: &str) -> Result<Self, OpsError> {
         match method {
             "languageModel" => Ok(Self::Language),
+            "chat" => Ok(Self::Chat),
+            "responses" => Ok(Self::Responses),
+            "completion" => Ok(Self::Completion),
+            "messages" => Ok(Self::Messages),
             "embeddingModel" => Ok(Self::Embedding),
             "imageModel" => Ok(Self::Image),
             "speechModel" => Ok(Self::Speech),
@@ -290,11 +437,13 @@ impl ModelMethod {
 
 /// The Decision-only package provider.create builds itself rather than through the factory.
 const JEV: &str = "jev";
+const OPENAI_COMPATIBLE: &str = "openai_compatible";
 
 /// Every package name provider.create accepts, sorted.
 pub(crate) fn packages() -> Vec<&'static str> {
     let mut names = aimux_providers::provider_names();
     names.push(JEV);
+    names.push(OPENAI_COMPATIBLE);
     names.sort_unstable();
     names
 }
@@ -320,19 +469,35 @@ fn default_method(provider: &Arc<dyn Provider>) -> Result<Option<ModelMethod>, O
         .and_then(|d| d.default_method))
 }
 
+fn push_provider_descriptor(
+    provider: &Arc<dyn Provider>,
+    default_method: Option<ModelMethod>,
+) -> Result<(), OpsError> {
+    let mut descriptors = descriptors().lock().map_err(|_| invalid_state())?;
+    descriptors.retain(|d| d.provider.strong_count() != 0);
+    descriptors.push(ProviderDescriptor {
+        provider: Arc::downgrade(provider),
+        default_method,
+    });
+    Ok(())
+}
+
+pub(crate) fn register_package_default_method(
+    provider: &Arc<dyn Provider>,
+    package: &str,
+) -> Result<(), OpsError> {
+    let method = aimux_providers::package_descriptor(package)
+        .and_then(|descriptor| descriptor.default_method)
+        .map(ModelMethod::from_modality_kind);
+    push_provider_descriptor(provider, method)
+}
+
 fn insert_provider(
     owner: Owner,
     provider: Arc<dyn Provider>,
     default_method: Option<ModelMethod>,
 ) -> Result<Value, OpsError> {
-    {
-        let mut descriptors = descriptors().lock().map_err(|_| invalid_state())?;
-        descriptors.retain(|d| d.provider.strong_count() != 0);
-        descriptors.push(ProviderDescriptor {
-            provider: Arc::downgrade(&provider),
-            default_method,
-        });
-    }
+    push_provider_descriptor(&provider, default_method)?;
     insert(owner, Entry::Provider(provider))
 }
 
@@ -377,17 +542,84 @@ fn get(owner: Owner, handle: HandleId, kind: HandleKind) -> Result<Entry, OpsErr
     HandleRegistry::global().get(owner, handle, &[kind])
 }
 
+fn resolve_fetch_and_unsupported_slots(
+    owner: Owner,
+    fetch: Option<HandleId>,
+    web_socket: Option<HandleId>,
+    credential_resolver: Option<HandleId>,
+) -> Result<Option<FetchFunction>, OpsError> {
+    // Resolve every runtime slot before constructing anything. A valid but
+    // unavailable slot is a capability error, never silently ignored.
+    let fetch = match fetch {
+        Some(handle) => match get(owner, handle, HandleKind::Fetch)? {
+            Entry::Fetch(fetch) => Some(fetch),
+            entry => return Err(invalid_handle(&[HandleKind::Fetch], entry.kind())),
+        },
+        None => None,
+    };
+    if let Some(handle) = web_socket {
+        get(owner, handle, HandleKind::WebSocket)?;
+        return Err(unsupported("webSocket settings"));
+    }
+    if let Some(handle) = credential_resolver {
+        get(owner, handle, HandleKind::CredentialResolver)?;
+        return Err(unsupported("credentialResolver settings"));
+    }
+    Ok(fetch)
+}
+
 fn create(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
     Box::pin(async move {
         let params: ProviderCreateParams = decode(params)?;
-        create_package(ctx.owner, &params.package, params.settings)
+        create_package(
+            ctx.owner,
+            &params.package,
+            params.settings,
+            params.env_allowlist,
+        )
     })
 }
 
 fn default_provider(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
     Box::pin(async move {
         let params: ProviderDefaultParams = decode(params)?;
-        create_package(ctx.owner, &params.package, ProviderSettings::default())
+        if params.package == OPENAI_COMPATIBLE {
+            return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+                "provider 'openai_compatible' has no default instance; use provider.create with `name` and `baseUrl`",
+            )));
+        }
+        create_package(
+            ctx.owner,
+            &params.package,
+            ProviderSettings::default(),
+            None,
+        )
+    })
+}
+
+fn provider_descriptors(_ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        let params: ProviderDescriptorsParams = decode(params)?;
+        let list: ProviderDescriptorsResult = match params.package {
+            Some(package) => {
+                let descriptor =
+                    aimux_providers::package_descriptor(&package).ok_or_else(|| {
+                        OpsError::AiMux(AiMuxError::NoSuchProvider {
+                            provider_id: package.clone(),
+                            model_id: package,
+                            model_type: String::new(),
+                            available_providers: packages()
+                                .into_iter()
+                                .map(str::to_owned)
+                                .collect(),
+                        })
+                    })?;
+                vec![descriptor]
+            }
+            None => aimux_providers::package_descriptors(),
+        };
+        serde_json::to_value(list)
+            .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
     })
 }
 
@@ -395,147 +627,125 @@ fn create_package(
     owner: Owner,
     package: &str,
     settings: ProviderSettings,
+    env_allowlist: Option<Vec<String>>,
 ) -> Result<Value, OpsError> {
-    // Resolve every runtime slot before constructing anything. A valid but
-    // unavailable slot is a capability error, never silently ignored.
-    let fetch = match settings.fetch {
-        Some(handle) => match get(owner, handle, HandleKind::Fetch)? {
-            Entry::Fetch(fetch) => Some(fetch),
-            entry => return Err(invalid_handle(&[HandleKind::Fetch], entry.kind())),
-        },
-        None => None,
+    let split = settings.split();
+    let fetch = resolve_fetch_and_unsupported_slots(
+        owner,
+        split.fetch,
+        split.web_socket,
+        split.credential_resolver,
+    )?;
+    let policy = match env_allowlist {
+        Some(vars) => EnvLookupPolicy::AllowList(vars.into_iter().collect()),
+        None => EnvLookupPolicy::AllowAll,
     };
-    if let Some(handle) = settings.web_socket {
-        get(owner, handle, HandleKind::WebSocket)?;
-        return Err(unsupported("webSocket settings"));
-    }
-    if let Some(handle) = settings.credential_resolver {
-        get(owner, handle, HandleKind::CredentialResolver)?;
-        return Err(unsupported("credentialResolver settings"));
-    }
-    if package == JEV {
-        if fetch.is_some()
-            || settings.base_url.is_some()
-            || settings.organization.is_some()
-            || settings.project.is_some()
-            || !settings.params.is_empty()
-        {
-            return Err(OpsError::AiMux(AiMuxError::invalid_argument(
-                "Jev accepts apiKey, endpoint, headers and probabilitySource settings",
-            )));
-        }
-        let mut config = match settings.api_key {
-            Some(key) => aimux_providers::JevConfig::new(key),
-            None => aimux_providers::JevConfig::from_env().map_err(OpsError::AiMux)?,
-        };
-        if let Some(endpoint) = settings.endpoint.filter(|endpoint| !endpoint.is_empty()) {
-            config = config.with_endpoint(endpoint);
-        }
-        if let Some(source) = settings.probability_source {
-            config.probability_source = source.parse().map_err(OpsError::AiMux)?;
-        }
-        config.headers = settings
-            .headers
-            .into_iter()
-            .filter_map(|(key, value)| value.map(|value| (key, value)))
-            .collect();
-        return insert_provider(
-            owner,
-            Arc::new(aimux_providers::JevProvider::new(config)),
-            Some(ModelMethod::Decision),
-        );
-    }
-    if settings.endpoint.is_some() || settings.probability_source.is_some() {
-        return Err(OpsError::AiMux(AiMuxError::invalid_argument(
-            "endpoint and probabilitySource settings require the Jev provider",
-        )));
-    }
-    let mut headers = settings.headers;
-    if let Some(org) = settings.organization {
-        headers
-            .entry("OpenAI-Organization".into())
-            .or_insert(Some(org));
-    }
-    if let Some(project) = settings.project {
-        headers
-            .entry("OpenAI-Project".into())
-            .or_insert(Some(project));
-    }
-    let provider = aimux_providers::create_provider(
-        package,
-        PresetSettings {
-            api_key: settings.api_key.map(Resolvable::Value),
-            base_url: settings.base_url,
-            headers: (!headers.is_empty()).then_some(headers),
-            fetch,
-            params: settings.params,
-            ..PresetSettings::default()
+    let provider = provider_from_config_with_transport(
+        &ProviderEntrySpec {
+            package: package.to_owned(),
+            settings: split.config,
         },
+        &policy,
+        fetch,
     )
     .map_err(OpsError::AiMux)?;
-    // Preset descriptors construct language models. Vendor factories expose
-    // no default-method metadata in this baseline; require an explicit method.
-    let method = aimux_providers::preset::lookup(package).map(|_| ModelMethod::Language);
+    let method = aimux_providers::package_descriptor(package)
+        .and_then(|descriptor| descriptor.default_method)
+        .map(ModelMethod::from_modality_kind);
     insert_provider(owner, provider, method)
+}
+
+fn offered_language_entry(
+    model: Option<Result<Arc<dyn aimux_core::language_model::LanguageModel>, AiMuxError>>,
+    method: &str,
+) -> Result<Entry, OpsError> {
+    Ok(Entry::Language(
+        model
+            .ok_or_else(|| unsupported(method))?
+            .map_err(OpsError::AiMux)?,
+    ))
+}
+
+fn build_standard_model(
+    provider: &Arc<dyn Provider>,
+    method: ModelMethod,
+    id: &str,
+) -> Result<Entry, OpsError> {
+    Ok(match method {
+        ModelMethod::Language => {
+            Entry::Language(provider.language_model(id).map_err(OpsError::AiMux)?)
+        }
+        ModelMethod::Chat => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Chat, id),
+            "chat",
+        )?,
+        ModelMethod::Responses => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Responses, id),
+            "responses",
+        )?,
+        ModelMethod::Completion => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Completion, id),
+            "completion",
+        )?,
+        ModelMethod::Messages => offered_language_entry(
+            provider.language_model_with_api(LanguageApi::Messages, id),
+            "messages",
+        )?,
+        ModelMethod::Embedding => {
+            Entry::Embedding(provider.embedding_model(id).map_err(OpsError::AiMux)?)
+        }
+        ModelMethod::Image => Entry::Image(provider.image_model(id).map_err(OpsError::AiMux)?),
+        ModelMethod::Speech => Entry::Speech(
+            provider
+                .speech_model(id)
+                .ok_or_else(|| unsupported("speechModel"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+        ModelMethod::Transcription => Entry::Transcription(
+            provider
+                .transcription_model(id)
+                .ok_or_else(|| unsupported("transcriptionModel"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+        ModelMethod::Reranking => Entry::Reranking(
+            provider
+                .reranking_model(id)
+                .ok_or_else(|| unsupported("rerankingModel"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+        ModelMethod::Video => Entry::Video(
+            provider
+                .video_model(id)
+                .ok_or_else(|| unsupported("videoModel"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+        ModelMethod::Decision => Entry::Decision(
+            provider
+                .decision_model(id)
+                .ok_or_else(|| unsupported("decision"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+        ModelMethod::Search => Entry::Search(
+            provider
+                .search_model(id)
+                .ok_or_else(|| unsupported("searchModel"))?
+                .map_err(OpsError::AiMux)?,
+        ),
+    })
 }
 
 fn model(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
     Box::pin(async move {
         let params: ProviderModelParams = decode(params)?;
         let provider = provider(entry)?;
-        let method = match params.method {
-            Some(method) => ModelMethod::parse(&method)?,
-            None => {
-                default_method(&provider)?.ok_or_else(|| unsupported("default model method"))?
-            }
-        };
         let id = &params.model_id;
-        let model = match method {
-            ModelMethod::Language => {
-                Entry::Language(provider.language_model(id).map_err(OpsError::AiMux)?)
-            }
-            ModelMethod::Embedding => {
-                Entry::Embedding(provider.embedding_model(id).map_err(OpsError::AiMux)?)
-            }
-            ModelMethod::Image => Entry::Image(provider.image_model(id).map_err(OpsError::AiMux)?),
-            ModelMethod::Speech => Entry::Speech(
-                provider
-                    .speech_model(id)
-                    .ok_or_else(|| unsupported("speechModel"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-            ModelMethod::Transcription => Entry::Transcription(
-                provider
-                    .transcription_model(id)
-                    .ok_or_else(|| unsupported("transcriptionModel"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-            ModelMethod::Reranking => Entry::Reranking(
-                provider
-                    .reranking_model(id)
-                    .ok_or_else(|| unsupported("rerankingModel"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-            ModelMethod::Video => Entry::Video(
-                provider
-                    .video_model(id)
-                    .ok_or_else(|| unsupported("videoModel"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-            ModelMethod::Decision => Entry::Decision(
-                provider
-                    .decision_model(id)
-                    .ok_or_else(|| unsupported("decision"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-            ModelMethod::Search => Entry::Search(
-                provider
-                    .search_model(id)
-                    .ok_or_else(|| unsupported("searchModel"))?
-                    .map_err(OpsError::AiMux)?,
-            ),
-        };
-        insert(ctx.owner, model)
+        if let Some(ref method_name) = params.method {
+            let method = ModelMethod::parse(method_name)?;
+            return insert(ctx.owner, build_standard_model(&provider, method, id)?);
+        }
+        let method =
+            default_method(&provider)?.ok_or_else(|| unsupported("default model method"))?;
+        insert(ctx.owner, build_standard_model(&provider, method, id)?)
     })
 }
 
@@ -627,6 +837,25 @@ fn custom(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
             };
         }
         models!(language_models, Language);
+        let resolve_language_api_map = |raw: HashMap<String, HandleId>| -> Result<
+            HashMap<String, Arc<dyn aimux_core::language_model::LanguageModel>>,
+            OpsError,
+        > {
+            let mut out = HashMap::with_capacity(raw.len());
+            for (id, handle) in raw {
+                match get(ctx.owner, handle, HandleKind::Language)? {
+                    Entry::Language(model) => {
+                        out.insert(id, model);
+                    }
+                    entry => return Err(invalid_handle(&[HandleKind::Language], entry.kind())),
+                }
+            }
+            Ok(out)
+        };
+        let chat_models = resolve_language_api_map(params.chat_models)?;
+        let responses_models = resolve_language_api_map(params.responses_models)?;
+        let completion_models = resolve_language_api_map(params.completion_models)?;
+        let messages_models = resolve_language_api_map(params.messages_models)?;
         models!(embedding_models, Embedding);
         models!(image_models, Image);
         models!(speech_models, Speech);
@@ -662,7 +891,13 @@ fn custom(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
                 image_model_middleware: params.image_model_middleware,
             },
         )?;
-        let provider: Arc<dyn Provider> = Arc::new(custom_provider(options));
+        let provider: Arc<dyn Provider> = Arc::new(
+            custom_provider(options)
+                .with_language_api_models(LanguageApi::Chat, chat_models)
+                .with_language_api_models(LanguageApi::Responses, responses_models)
+                .with_language_api_models(LanguageApi::Completion, completion_models)
+                .with_language_api_models(LanguageApi::Messages, messages_models),
+        );
         let provider = if language.is_empty() && image.is_empty() {
             provider
         } else {
@@ -721,7 +956,8 @@ mod tests {
     }
 
     fn package(name: &str) -> Arc<dyn Provider> {
-        aimux_providers::create_provider(name, PresetSettings::default()).unwrap()
+        aimux_providers::create_provider(name, aimux_providers::preset::PresetSettings::default())
+            .unwrap()
     }
 
     #[derive(Clone, Copy)]
@@ -1467,10 +1703,10 @@ mod tests {
     }
 
     #[test]
-    fn descriptors_register_only_the_six_owned_contract_ops() {
+    fn descriptors_register_only_the_seven_owned_contract_ops() {
         let mut handlers = Vec::new();
         register(&mut handlers);
-        assert_eq!(handlers.len(), 6);
+        assert_eq!(handlers.len(), 7);
         assert_eq!(
             handlers.iter().map(|(d, _)| d.name).collect::<Vec<_>>(),
             vec![
@@ -1479,7 +1715,8 @@ mod tests {
                 "provider.model",
                 "provider.invoke",
                 "provider.wrap",
-                "provider.custom"
+                "provider.custom",
+                "provider.descriptors",
             ]
         );
         for (descriptor, _) in handlers {
@@ -1487,5 +1724,278 @@ mod tests {
             assert!(descriptor.event_type.is_none());
             assert_eq!(descriptor.since_ops_version, "1.0");
         }
+    }
+
+    #[tokio::test]
+    async fn descriptors_lists_packages_and_rejects_unknown_package() {
+        let owner = owner();
+        let all = call(owner, HandleId(0), "provider.descriptors", json!({}))
+            .await
+            .unwrap();
+        let items = all.as_array().unwrap();
+        assert_eq!(items.len(), 329);
+
+        let openai = call(
+            owner,
+            HandleId(0),
+            "provider.descriptors",
+            json!({"package":"openai"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(openai.as_array().unwrap().len(), 1);
+        assert_eq!(openai[0]["id"], "openai");
+        assert_eq!(openai[0]["defaultMethod"], "languageModel");
+        assert_eq!(
+            openai[0]["languageApis"],
+            json!(["chat", "responses", "completion"])
+        );
+
+        assert!(matches!(
+            call(
+                owner,
+                HandleId(0),
+                "provider.descriptors",
+                json!({"package":"missing-pkg"})
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::NoSuchProvider { .. }))
+        ));
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn create_supports_env_refs_allowlist_default_method_and_direct_methods() {
+        let owner = owner();
+        let err = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "openai_compatible",
+                "envAllowlist": ["ALLOWED_ONLY"],
+                "settings": {
+                    "name": "gw",
+                    "baseUrl": "https://gw.example/v1",
+                    "apiKey": { "env": "BLOCKED_ENV" }
+                }
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            OpsError::AiMux(AiMuxError::InvalidArgument { .. })
+        ));
+
+        assert!(matches!(
+            call(
+                owner,
+                HandleId(0),
+                "provider.default",
+                json!({"package": "openai_compatible"})
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
+        ));
+
+        let compat = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "openai_compatible",
+                "settings": {
+                    "name": "my-gw",
+                    "baseUrl": "https://gw.example/v1"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let chat = call(
+            owner,
+            id(&compat),
+            "provider.model",
+            json!({"method": "chat", "modelId": "llama3"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chat["kind"], "Language");
+
+        let openai = call(
+            owner,
+            HandleId(0),
+            "provider.default",
+            json!({"package": "openai"}),
+        )
+        .await
+        .unwrap();
+        let default_model = call(
+            owner,
+            id(&openai),
+            "provider.model",
+            json!({"modelId": "gpt-4o"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(default_model["kind"], "Language");
+        let completion_model = call(
+            owner,
+            id(&openai),
+            "provider.model",
+            json!({"method": "completion", "modelId": "gpt-3.5-turbo-instruct"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(completion_model["kind"], "Language");
+
+        let tavily = call(
+            owner,
+            HandleId(0),
+            "provider.default",
+            json!({"package": "tavily"}),
+        )
+        .await
+        .unwrap();
+        let search_model = call(
+            owner,
+            id(&tavily),
+            "provider.model",
+            json!({"modelId": "tavily-search"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_model["kind"], "Search");
+
+        let cartesia = call(
+            owner,
+            HandleId(0),
+            "provider.default",
+            json!({"package": "cartesia"}),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            call(
+                owner,
+                id(&cartesia),
+                "provider.model",
+                json!({"modelId": "sonic-2"})
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_)))
+        ));
+
+        let codex = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "codex",
+                "settings": {
+                    "codexMode": { "type": "chatGptAccount", "token": "tok", "accountId": "acct" }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            call(
+                owner,
+                id(&codex),
+                "provider.model",
+                json!({"method": "responses", "modelId": "gpt-5.2-codex"})
+            )
+            .await
+            .is_ok()
+        );
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn custom_registers_explicit_language_apis_without_fallback() {
+        let owner = owner();
+        let fallback = call(
+            owner,
+            HandleId(0),
+            "provider.default",
+            json!({"package": "openai"}),
+        )
+        .await
+        .unwrap();
+        let registered = handle(
+            owner,
+            Entry::Language(package("openai").language_model("gpt-4o").unwrap()),
+        );
+        let custom = call(
+            owner,
+            HandleId(0),
+            "provider.custom",
+            json!({
+                "chatModels": { "custom-chat": registered.0.to_string() },
+                "fallbackProvider": fallback["handle"],
+            }),
+        )
+        .await
+        .unwrap();
+
+        let chat = call(
+            owner,
+            id(&custom),
+            "provider.model",
+            json!({"method": "chat", "modelId": "custom-chat"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chat["kind"], "Language");
+
+        assert!(matches!(
+            call(
+                owner,
+                id(&custom),
+                "provider.model",
+                json!({"method": "chat", "modelId": "gpt-4o"}),
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::NoSuchModel { .. }))
+        ));
+
+        assert!(matches!(
+            call(
+                owner,
+                id(&custom),
+                "provider.model",
+                json!({"method": "responses", "modelId": "custom-chat"}),
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_)))
+        ));
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn create_rejects_lone_anthropic_aws_session_token() {
+        let owner = owner();
+        let err = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "anthropic_aws",
+                "settings": {
+                    "sessionToken": "explicit-tok",
+                    "region": "us-east-1",
+                    "workspaceId": "ws"
+                }
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            OpsError::AiMux(AiMuxError::InvalidArgument { .. })
+        ));
+        HandleRegistry::global().release_owner(owner);
     }
 }

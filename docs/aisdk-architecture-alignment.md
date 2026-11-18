@@ -555,65 +555,48 @@ preset 输入新增 `auth`、能力设置和显式模板参数声明。模板统
 
 ### 3.4 registry、扩展能力和 model resolution
 
-在 provider-utils 定义中性的注册条目；它不引用 `aimux::ProviderRegistry`：
+`aimux-provider-utils` 定义中性的配置凭据与静态包描述类型（不依赖 `ProviderRegistry`）：
 
-```rust
-pub struct ProviderRegistration {
-    pub provider: Arc<dyn Provider>,
-    pub extensions: Arc<dyn ProviderExtensions>,
-}
-```
+- `StringOrEnv`（`Literal(String)` 或 `Env(EnvVarRef)`，`EnvVarRef` 带脱敏 `Debug` 并在序列化形状上使用 `ordered-untagged`）；
+- `PackageDescriptor`（包含 `PackageKind`、`PackageAuthKind`、`ModalityKind`、`LanguageApi`（`#[non_exhaustive]`）、`SettingFieldSpec` 与 `TemplateParamDescriptor`，通过 `default_method`、`capabilities`、`language_apis` 与配置字段描述各包元数据）。
 
-`ProviderExtensions` 是 aimux 的宿主集成能力，包含：
+与上游 AI SDK 一致的 `chat` / `responses` / `completion` / `messages` 子协议分发收敛在 `aimux_core::provider::Provider::language_model_with_api(&self, api: LanguageApi, id: &str)`（默认返回 `None`；不在核心 crate 外再包一层 `ProviderRegistration` 包装类型），由包含多语言端点的原生厂商与 `WrappedProvider` 透传/包装实现；`CustomProvider` 保留 `CustomProviderOptions` 原有字段不引入破坏性字段，并通过 `CustomProvider::with_language_api_models` / `CustomProvider::with_language_api_model` 显式登记（不回退到 fallback）。
 
-- 命名方法取 model；
-- provider tools 构造；
-- `getAvailableModels` 等扩展操作；
-- 方法和参数的 descriptor。
-
-标准 Provider 不需要实现这些扩展。纯 `Arc<dyn Provider>` 可转换成仅有标准能力的注册条目。
+`aimux-providers` 提供纯配置组装与静态元数据查询（不依赖 `aimux`）：
 
 ```rust
 // aimux-providers：不依赖 aimux
-pub fn default_providers()
-    -> IndexMap<String, ProviderRegistration>;
+pub fn package_descriptors() -> Vec<PackageDescriptor>;
+pub fn package_descriptor(id: &str) -> Option<PackageDescriptor>;
 
 pub fn providers_from_config(
-    config: ProviderConfigDocument,
-) -> Result<IndexMap<String, ProviderRegistration>, AiMuxError>;
+    document: &ProviderConfigDocument,
+) -> Result<BTreeMap<String, Arc<dyn Provider>>, AiMuxError>;
 
-// aimux
-pub fn create_provider_registry(
-    providers: IndexMap<String, ProviderRegistration>,
-    options: ProviderRegistryOptions,
-) -> ProviderRegistry;
-
-impl ProviderRegistry {
-    pub fn provider(
-        &self,
-        key: &str,
-    ) -> Result<ProviderRegistration, AiMuxError>;
-
-    pub fn files(&self, key: &str)
-        -> Result<Arc<dyn Files>, AiMuxError>;
-
-    pub fn skills(&self, key: &str)
-        -> Result<Arc<dyn Skills>, AiMuxError>;
-}
+pub fn providers_from_config_with_policy(
+    document: &ProviderConfigDocument,
+    policy: &EnvLookupPolicy,
+) -> Result<BTreeMap<String, Arc<dyn Provider>>, AiMuxError>;
 ```
 
-registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩余内容原样传递。命名方法不编码进字符串 ID，也不靠注册 `openai.chat` 等自动别名反解。
+`aimux_core::provider_registry::ProviderRegistry` 内部以 `std::sync::RwLock<BTreeMap<String, Arc<dyn Provider>>>` 保存注册条目，同时支持：
 
-模型引用与上游一致：操作接收字符串模型 ID 或模型实例，不另设 `LanguageModelRef`、`ResolvedModel` 或结构化 registry 引用类型（2026-10-13 修订）。因此：
+- 只读查询与解析：`provider`、`provider_ids`、`contains_provider`、`len`、`is_empty`、`separator`、`language_model_with_api`，以及标准模态模型解析；
+- 原地更新：`register`、`unregister`、`extend_providers`、`replace_providers`；
+- 派生新注册表：`with_provider`、`without_provider`、`with_providers`、`with_replaced_providers`。
+
+registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩余内容原样传递。方法不编码进字符串 ID，也不靠注册 `openai.chat` 等自动别名反解。
+
+模型引用与上游一致：操作接收字符串模型 ID 或模型实例，不另设 `LanguageModelRef`、`ResolvedModel` 或结构化 registry 引用类型（2026-10-13 修订）；在 FFI/ops 控制层，仅 `provider.model` 与 `model.resolve` 的显式 `ModelRef`（`method` 支持标准模态及 `"chat"` / `"responses"` / `"completion"` / `"messages"`）与 `registry.fromConfig` / `registry.list` / `registry.update` 消费上述能力。因此：
 
 - 会话调用用显式 registry 把字符串 ID 解析为模型实例，无需修改进程默认 provider；
-- 命名方法（如 `chat`、`responses`）经注册条目的扩展取得模型实例；
+- 厂商子协议入口经 `Provider::language_model_with_api(LanguageApi::..., id)` 或 `ProviderRegistry::language_model_with_api(LanguageApi::..., id)` 取得模型实例；
 - resolution 只返回模型，不附带来源 sidecar；
 - 任意直接传入的模型不会被猜出引用或 package。
 
-完整注册条目的 wrap 同时包装命名方法返回的模型，并保留 discovery、files 与 tools。仅包装 `Arc<dyn Provider>` 时只承诺标准能力。
+`WrappedProvider` 同时透传/包装 `language_model_with_api` 返回的模型，并保留 `discovery`、`files` 与 `skills`。
 
-`custom_provider` 支持标准模态映射、files/skills 和 fallback。discovery 扩展按上游 files/skills 的方式转发（`ai@7.0.127 src/registry/custom-provider.ts:268-283`）：先用配置的 `discovery`，否则用 fallback provider 的 `discovery()`。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
+`custom_provider` 支持标准模态映射、files/skills 和 fallback。discovery 扩展按上游 files/skills 的方式转发（`ai@7.0.127 src/registry/custom-provider.ts:268-283`）：先用配置的 `discovery`，否则用 fallback provider 的 `discovery()`。通过 `with_language_api_models` / `with_language_api_model` 登记的子协议模型必须显式提供；不能默默穿透到不相关的 fallback 模型。
 
 **下载：**
 
@@ -1501,13 +1484,13 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - 拆 crate：`aimux-provider-utils` 不再依赖 `aimux-core`（§2.1、D17）。
 - OperationRuntime、DiagnosticScope、task-local scope 与 seq 分配器（§3.5、D3、D30）。
 - Telemetry 与 tracing 分开，`ModelCallOutput`，op / attempt 事件（§3.5、D27）。
-- ProviderRegistration 与厂商扩展，注册表里的具名方法可达（§3.4、D13、D29）；随绑定迁移那一层做。
+- 注册表具名语言模型方法、动态/派生 `ProviderRegistry` 与静态 `PackageDescriptor`（已交付，§3.4、D13、D29）：`Provider::language_model_with_api`（`LanguageApi::{Chat, Responses, Completion, Messages}`）、`RwLock` 支持的 `ProviderRegistry` 原地/派生更新以及 `aimux-ops` 的 `provider.descriptors` / `provider.model` / `model.resolve` / `registry.list` / `registry.update` 已落地；非语言类厂商扩展操作（如通用 tools 构造或 `provider.invoke` 除 `listModels` 外的任意方法）仍未暴露。
 - 用 trace middleware 与宿主 scope 取代 `TraceLayer`（§3.6、§7.3、D6、D7）。
 - 审计族仍按 provider 字符串子串判断，改为显式元数据与 descriptor（§3.6、D8）。
 - CompositeChild、`child_call`、`servedBy` 与逐 child 重试预算（§4.5、D14）。
 - 流中途重试：上游 `streamText` 的 `streamRetries` 与 `onError` 请求重试（§5、RFC-0031 §8.3）。现状与上游不设时相同，流返回后不重试。
 - 首块超时从 operation 开始计时，不从响应流开始（§5）。provider 在 `do_stream` 内等到首个 SSE 事件才返回，推迟计时会让返回 200 之后一直不发数据的流没有时间上限，所以保留这一差异，不再修改；要跟随上游，需先让每个 provider 在响应头到达时就返回。
-- `providers_from_config` 与结构化 env 引用（§3.3）；随绑定迁移那一层做。
+- `providers_from_config` 与结构化 env 引用（已交付，§3.3）：`aimux-provider-utils::StringOrEnv`、`aimux-providers::providers_from_config(_with_policy)` 及 `aimux-ops` 的 `provider.create`（`envAllowlist` + 全部 329 个包）与 `registry.fromConfig` 已落地。
 - 生产代码禁用 panic / unwrap / expect 的 lint（§9.2）。
 - feature 组合矩阵 CI（§9.2）。
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
@@ -1542,7 +1525,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - RFC-0039 G-c：`credential.create` 和 `replay.capabilities` 仍属 Future 并返回 UnsupportedFunctionality，回放只保留既有 Language/Decision 模型路径，因为尚未实现凭据构造及 Fetch/WebSocket/Download 回放引擎（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-d（已由 #268 关闭）：`aimux-codegen` 从 Rust 类型生成业务 schema 与各绑定的 DTO（RFC-0042 D8），ts-rs 与 `scripts/gen_ts_types.py` 已删除（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-e：发布配置已将 ops 排在 FFI 前并打包头文件，但本文尚未提供所有平台产物的安装和运行验证，因为构建与打包定义不能证明发布验收完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
-- RFC-0039 G-f：完整包来源、所有包的权威默认方法、通用厂商命名方法分发及文本请求的 registry/字符串模型提升仍缺失，已解析模型只有按所有者隔离的引用元数据且 `provider.invoke` 只接受 `listModels`，因为注册项保留的是规范 Arc，现有工厂和控制 DTO 未提供全部元数据或提升逻辑（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
+- RFC-0039 G-f（部分关闭）：静态包描述（`provider.descriptors`）、全部 329 个包的权威默认方法以及直接语言子方法分发（`Provider::language_model_with_api`、`provider.model`、`model.resolve`）均已交付；句柄粒度的完整构造来源、非语言类厂商扩展方法（`provider.invoke` 仍只接受 `listModels`）以及文本请求直接传字符串/registry 模型提升仍未提供，因为注册项仍保留规范 Arc 且文本请求仍要求已解析的模型句柄（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-g：队列和线格式限制尚不能约束所有 provider 分配及 core 现有的无界文本转发队列，因为本层只控制已准入的数据，不改写 core 的流式内部实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-h：尚无逐业务类型的版本或哈希校验，因为消费类型元数据尚未完整实现；各绑定加载时已精确校验 ABI 版本、ops 版本和 manifest 摘要（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-i：本文尚未建立八种语言的完整业务向量、同源发布、已安装 wheel 及全部平台 sanitizer/链接/安装验证证据，Dart Windows 流式调用也明确不支持，因为局部和替身测试不能证明完整矩阵通过（[实现说明](rfc-0039-implementation.md#registered-gaps)）。

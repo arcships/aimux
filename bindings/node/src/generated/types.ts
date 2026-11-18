@@ -926,6 +926,20 @@ export interface ChatCompletionUsage {
   total_tokens: number
 }
 
+/**
+ * Access mode for the `codex` package in declarative configuration.
+ */
+export type CodexModeSpec =
+  | {
+    type: "apiKey"
+    apiKey?: StringOrEnv | null
+  }
+  | {
+    type: "chatGptAccount"
+    accountId?: string | null
+    token: StringOrEnv
+  }
+
 export interface CodexRefreshRequest {
   clientId: string
   refreshToken: string
@@ -1504,6 +1518,13 @@ export interface EmbeddingUsage {
 }
 
 export interface EmptyParams {
+}
+
+/**
+ * Reference to an environment variable carrying a credential or secret.
+ */
+export interface EnvVarRef {
+  env: string
 }
 
 /**
@@ -2292,6 +2313,12 @@ export interface InputTokenDetails {
 }
 
 /**
+ * Language-model API variant exposed on a [`Provider`] alongside the default
+ * [`Provider::language_model`] constructor.
+ */
+export type LanguageApi = "chat" | "responses" | "completion" | "messages"
+
+/**
  * A file in a provider's output: `LanguageModelV4File` /
  * `LanguageModelV4ReasoningFile` (`provider`
  * `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
@@ -2555,6 +2582,11 @@ export interface MoaParams {
 export type Modality = "Text" | "Image" | "Audio" | "Video" | "Pdf" | "Other" | "Embedding" | "Score"
 
 /**
+ * Model modality supported by a provider package or registry resolution call.
+ */
+export type ModalityKind = "languageModel" | "embeddingModel" | "imageModel" | "speechModel" | "transcriptionModel" | "rerankingModel" | "videoModel" | "searchModel" | "decision"
+
+/**
  * Model-level capability flags (more precise than provider-level `supports_*`).
  */
 export interface ModelCapabilities {
@@ -2641,7 +2673,7 @@ export type ModelMessage =
     providerOptions?: Record<string, Record<string, unknown>> | null
   }
 
-export type ModelMethod = "languageModel" | "embeddingModel" | "imageModel" | "speechModel" | "transcriptionModel" | "rerankingModel" | "videoModel" | "searchModel" | "decision"
+export type ModelMethod = "languageModel" | "chat" | "responses" | "completion" | "messages" | "embeddingModel" | "imageModel" | "speechModel" | "transcriptionModel" | "rerankingModel" | "videoModel" | "searchModel" | "decision"
 
 /**
  * Input/output modality sets.
@@ -2938,6 +2970,37 @@ export interface OutputTokenDetails {
 }
 
 /**
+ * Authentication mechanism implemented by a provider package.
+ */
+export type PackageAuthKind = "bearer" | "header" | "queryParam" | "basic" | "awsSigV4" | "awsBearerOrSigV4" | "anthropicAws" | "googleVertex" | "azureApiKeyOrToken" | "codexChannel" | "optionalBearer" | "none"
+
+/**
+ * Secret-free static metadata describing a provider package.
+ */
+export interface PackageDescriptor {
+  apiKeyEnv?: string | null
+  authKind: PackageAuthKind
+  baseUrlEnv?: string | null
+  defaultBaseUrl?: string | null
+  defaultMethod?: ModalityKind | null
+  id: string
+  kind: PackageKind
+  languageApis: Array<LanguageApi>
+  modalities: Array<ModalityKind>
+  settings: Array<SettingFieldSpec>
+  supportsDefaultInstance: boolean
+  supportsDiscovery: boolean
+  supportsFiles: boolean
+  supportsSkills: boolean
+  templateParams: Array<TemplateParamDescriptor>
+}
+
+/**
+ * Architectural category of a provider package.
+ */
+export type PackageKind = "native" | "protocol" | "preset" | "specialized"
+
+/**
  * A prefix break between two consecutive records of a session.
  */
 export interface PrefixBreak {
@@ -2953,12 +3016,69 @@ export interface PromptTokensDetails {
   cached_tokens: number
 }
 
+/**
+ * Declarative provider registry configuration document.
+ */
+export interface ProviderConfigDocument {
+  providers: Record<string, ProviderEntrySpec>
+}
+
+/**
+ * Secret-safe declarative settings shared across provider packages.
+ */
+export interface ProviderConfigSettings {
+  accessKeyId?: StringOrEnv | null
+  accessToken?: StringOrEnv | null
+  apiKey?: StringOrEnv | null
+  apiVersion?: string | null
+  authToken?: StringOrEnv | null
+  baseUrl?: string | null
+  codexMode?: CodexModeSpec | null
+  cx?: string | null
+  endpoint?: string | null
+  headers?: Record<string, string | null>
+  includeUsage?: boolean | null
+  location?: string | null
+  login?: StringOrEnv | null
+  name?: string | null
+  organization?: string | null
+  originator?: string | null
+  params?: Record<string, string>
+  password?: StringOrEnv | null
+  probabilitySource?: string | null
+  project?: string | null
+  queryParams?: Record<string, string>
+  region?: string | null
+  resourceName?: string | null
+  secretAccessKey?: StringOrEnv | null
+  sessionToken?: StringOrEnv | null
+  speechBaseUrl?: string | null
+  supportsMultiPartToolContent?: boolean | null
+  supportsStructuredOutputs?: boolean | null
+  useDeploymentBasedUrls?: boolean | null
+  workspaceId?: string | null
+}
+
+/**
+ * Trusted-caller operation: constructs a provider handle from package settings
+ * and optional `{ "env": ... }` references. Untrusted callers must not be
+ * permitted to supply arbitrary `baseUrl` values with omitted credentials.
+ */
 export interface ProviderCreateParams {
+  /**
+   * Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+   * interpolation in `settings`. Does not restrict implicit per-provider
+   * default environment variable fallbacks when credential or `baseUrl`
+   * settings are omitted.
+   */
+  envAllowlist?: Array<string> | null
   package: string
   settings?: ProviderSettings
 }
 
 export interface ProviderCustomParams {
+  chatModels?: Record<string, HandleIdInput>
+  completionModels?: Record<string, HandleIdInput>
   decisionModels?: Record<string, HandleIdInput>
   defaultMethod?: string | null
   embeddingModels?: Record<string, HandleIdInput>
@@ -2968,7 +3088,9 @@ export interface ProviderCustomParams {
   imageModels?: Record<string, HandleIdInput>
   languageModelMiddleware?: Array<HandleIdInput>
   languageModels?: Record<string, HandleIdInput>
+  messagesModels?: Record<string, HandleIdInput>
   rerankingModels?: Record<string, HandleIdInput>
+  responsesModels?: Record<string, HandleIdInput>
   searchModels?: Record<string, HandleIdInput>
   speechModels?: Record<string, HandleIdInput>
   transcriptionModels?: Record<string, HandleIdInput>
@@ -2977,6 +3099,18 @@ export interface ProviderCustomParams {
 
 export interface ProviderDefaultParams {
   package: string
+}
+
+export interface ProviderDescriptorsParams {
+  package?: string | null
+}
+
+/**
+ * Configuration for a single provider entry (`package` + typed `settings`).
+ */
+export interface ProviderEntrySpec {
+  package: string
+  settings?: ProviderConfigSettings
 }
 
 export interface ProviderInvokeParams {
@@ -3013,17 +3147,39 @@ export interface ProviderRecord {
 }
 
 export interface ProviderSettings {
-  apiKey?: string | null
+  accessKeyId?: StringOrEnv | null
+  accessToken?: StringOrEnv | null
+  apiKey?: StringOrEnv | null
+  apiVersion?: string | null
+  authToken?: StringOrEnv | null
   baseUrl?: string | null
+  codexMode?: CodexModeSpec | null
   credentialResolver?: HandleIdInput | null
+  cx?: string | null
   endpoint?: string | null
   fetch?: HandleIdInput | null
   headers?: Record<string, string | null>
+  includeUsage?: boolean | null
+  location?: string | null
+  login?: StringOrEnv | null
+  name?: string | null
   organization?: string | null
+  originator?: string | null
   params?: Record<string, string>
+  password?: StringOrEnv | null
   probabilitySource?: string | null
   project?: string | null
+  queryParams?: Record<string, string>
+  region?: string | null
+  resourceName?: string | null
+  secretAccessKey?: StringOrEnv | null
+  sessionToken?: StringOrEnv | null
+  speechBaseUrl?: string | null
+  supportsMultiPartToolContent?: boolean | null
+  supportsStructuredOutputs?: boolean | null
+  useDeploymentBasedUrls?: boolean | null
   webSocket?: HandleIdInput | null
+  workspaceId?: string | null
 }
 
 /**
@@ -3281,6 +3437,7 @@ export type RecordingOperation = "language-model" | "decision"
 export interface RegistryCreateParams {
   entries: Array<RegistryEntry>
   namespace?: string
+  separator?: string | null
 }
 
 export interface RegistryEntry {
@@ -3288,8 +3445,49 @@ export interface RegistryEntry {
   provider: string
 }
 
+/**
+ * Trusted-caller operation: constructs a provider registry from a declarative
+ * configuration document and optional `{ "env": ... }` references. Untrusted
+ * callers must not be permitted to supply arbitrary `baseUrl` values with
+ * omitted credentials.
+ */
+export interface RegistryFromConfigParams {
+  config: ProviderConfigDocument
+  /**
+   * Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+   * interpolation inside `config`. Does not restrict implicit per-provider
+   * default environment variable fallbacks when credential or `baseUrl`
+   * settings are omitted.
+   */
+  envAllowlist?: Array<string> | null
+  namespace?: string
+  separator?: string | null
+}
+
+export interface RegistryListParams {
+}
+
+export interface RegistryListResult {
+  keys: Array<string>
+  namespace: string
+  separator: string
+}
+
 export interface RegistryProviderParams {
   key: string
+}
+
+export interface RegistryUpdateParams {
+  derive?: boolean
+  remove?: Array<string>
+  replace?: boolean
+  set?: Array<RegistryEntry>
+}
+
+export interface RegistryUpdateResult {
+  handle?: HandleId | null
+  keys: Array<string>
+  kind?: HandleKind | null
 }
 
 /**
@@ -3818,6 +4016,22 @@ export interface SessionView {
 }
 
 /**
+ * Wire shape of a setting field accepted by a provider package.
+ */
+export type SettingFieldKind = "string" | "credential" | "boolean" | "headerMap" | "stringMap" | "codexMode"
+
+/**
+ * Static description of one setting accepted when constructing a provider package.
+ */
+export interface SettingFieldSpec {
+  credential: boolean
+  envVar?: string | null
+  kind: SettingFieldKind
+  name: string
+  required: boolean
+}
+
+/**
  * Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
  *
  * Newtype that enforces the `WxH` format used by V4 image `size` and video
@@ -4295,6 +4509,11 @@ export interface StreamOptions {
 }
 
 /**
+ * Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
+ */
+export type StringOrEnv = string | EnvVarRef
+
+/**
  * A raw provider call with its required wire tag.
  */
 export interface TaggedRawToolCall {
@@ -4334,6 +4553,14 @@ export interface TaggedToolResult {
    * Required value: "tool-result".
    */
   type: "tool-result"
+}
+
+/**
+ * Static description of one URL template parameter required by a preset provider.
+ */
+export interface TemplateParamDescriptor {
+  envVar: string
+  name: string
 }
 
 export interface TerminalSummary {

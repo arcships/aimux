@@ -31,6 +31,7 @@ export interface DtoTypes {
   "ChatCompletionMessage": T.ChatCompletionMessage
   "ChatCompletionToolCall": T.ChatCompletionToolCall
   "ChatCompletionUsage": T.ChatCompletionUsage
+  "CodexModeSpec": T.CodexModeSpec
   "CodexRefreshRequest": T.CodexRefreshRequest
   "CodexTokens": T.CodexTokens
   "CompletionTokensDetails": T.CompletionTokensDetails
@@ -53,6 +54,7 @@ export interface DtoTypes {
   "EmbeddingResult": T.EmbeddingResult
   "EmbeddingUsage": T.EmbeddingUsage
   "EmptyParams": T.EmptyParams
+  "EnvVarRef": T.EnvVarRef
   "ErrorCause": T.ErrorCause
   "ErrorCauseInput": T.ErrorCauseInput
   "ErrorDomain": T.ErrorDomain
@@ -91,6 +93,7 @@ export interface DtoTypes {
   "InputAudioFormat": T.InputAudioFormat
   "InputRecord": T.InputRecord
   "InputTokenDetails": T.InputTokenDetails
+  "LanguageApi": T.LanguageApi
   "LanguageModelFile": T.LanguageModelFile
   "LanguageModelMessage": T.LanguageModelMessage
   "LanguageModelReasoningPart": T.LanguageModelReasoningPart
@@ -107,6 +110,7 @@ export interface DtoTypes {
   "MoaFailMode": T.MoaFailMode
   "MoaParams": T.MoaParams
   "Modality": T.Modality
+  "ModalityKind": T.ModalityKind
   "ModelCapabilities": T.ModelCapabilities
   "ModelCost": T.ModelCost
   "ModelInfo": T.ModelInfo
@@ -137,11 +141,18 @@ export interface DtoTypes {
   "Output": T.Output
   "OutputChunkTimingStats": T.OutputChunkTimingStats
   "OutputTokenDetails": T.OutputTokenDetails
+  "PackageAuthKind": T.PackageAuthKind
+  "PackageDescriptor": T.PackageDescriptor
+  "PackageKind": T.PackageKind
   "PrefixBreak": T.PrefixBreak
   "PromptTokensDetails": T.PromptTokensDetails
+  "ProviderConfigDocument": T.ProviderConfigDocument
+  "ProviderConfigSettings": T.ProviderConfigSettings
   "ProviderCreateParams": T.ProviderCreateParams
   "ProviderCustomParams": T.ProviderCustomParams
   "ProviderDefaultParams": T.ProviderDefaultParams
+  "ProviderDescriptorsParams": T.ProviderDescriptorsParams
+  "ProviderEntrySpec": T.ProviderEntrySpec
   "ProviderInvokeParams": T.ProviderInvokeParams
   "ProviderModelParams": T.ProviderModelParams
   "ProviderRecord": T.ProviderRecord
@@ -165,7 +176,12 @@ export interface DtoTypes {
   "RecordingOperation": T.RecordingOperation
   "RegistryCreateParams": T.RegistryCreateParams
   "RegistryEntry": T.RegistryEntry
+  "RegistryFromConfigParams": T.RegistryFromConfigParams
+  "RegistryListParams": T.RegistryListParams
+  "RegistryListResult": T.RegistryListResult
   "RegistryProviderParams": T.RegistryProviderParams
+  "RegistryUpdateParams": T.RegistryUpdateParams
+  "RegistryUpdateResult": T.RegistryUpdateResult
   "RepairedToolCall": T.RepairedToolCall
   "ReplayCreateParams": T.ReplayCreateParams
   "ReplayInspection": T.ReplayInspection
@@ -203,6 +219,8 @@ export interface DtoTypes {
   "SessionStoreCreateParams": T.SessionStoreCreateParams
   "SessionStoreHandle": T.SessionStoreHandle
   "SessionView": T.SessionView
+  "SettingFieldKind": T.SettingFieldKind
+  "SettingFieldSpec": T.SettingFieldSpec
   "Size": T.Size
   "Source": T.Source
   "SourceError": T.SourceError
@@ -222,8 +240,10 @@ export interface DtoTypes {
   "StreamEvent": T.StreamEvent
   "StreamFrame": T.StreamFrame
   "StreamOptions": T.StreamOptions
+  "StringOrEnv": T.StringOrEnv
   "TaggedRawToolCall": T.TaggedRawToolCall
   "TaggedToolResult": T.TaggedToolResult
+  "TemplateParamDescriptor": T.TemplateParamDescriptor
   "TerminalSummary": T.TerminalSummary
   "TextPart": T.TextPart
   "TextRequest": T.TextRequest
@@ -308,6 +328,7 @@ export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: read
   "AssistantContentPart": { tag: "type", values: ["text", "custom", "file", "reasoning", "reasoning-file", "tool-call", "tool-result", "tool-approval-request"] },
   "AssistantPart": { tag: "type", values: ["text", "file", "reasoning", "reasoning-file", "custom", "tool-call", "tool-result"] },
   "BackendConfig": { tag: "type", values: ["ring", "jsonl"] },
+  "CodexModeSpec": { tag: "type", values: ["apiKey", "chatGptAccount"] },
   "ContentPart": { tag: "type", values: ["text", "custom", "reasoning", "reasoning-file", "source", "source", "file", "tool-call", "tool-result", "tool-error", "tool-approval-request", "tool-approval-response"] },
   "ContentPartInput": { tag: "type", values: ["text", "custom", "reasoning", "reasoning-file", "source", "source", "file", "tool-call", "tool-result", "tool-error", "tool-approval-request", "tool-approval-response"] },
   "DecisionAnswer": { tag: "type", values: ["choice", "score", "boolean"] },
@@ -378,6 +399,7 @@ export const dtoTypeNames = [
   "ChatCompletionMessage",
   "ChatCompletionToolCall",
   "ChatCompletionUsage",
+  "CodexModeSpec",
   "CodexRefreshRequest",
   "CodexTokens",
   "CompletionTokensDetails",
@@ -400,6 +422,7 @@ export const dtoTypeNames = [
   "EmbeddingResult",
   "EmbeddingUsage",
   "EmptyParams",
+  "EnvVarRef",
   "ErrorCause",
   "ErrorCauseInput",
   "ErrorDomain",
@@ -438,6 +461,7 @@ export const dtoTypeNames = [
   "InputAudioFormat",
   "InputRecord",
   "InputTokenDetails",
+  "LanguageApi",
   "LanguageModelFile",
   "LanguageModelMessage",
   "LanguageModelReasoningPart",
@@ -454,6 +478,7 @@ export const dtoTypeNames = [
   "MoaFailMode",
   "MoaParams",
   "Modality",
+  "ModalityKind",
   "ModelCapabilities",
   "ModelCost",
   "ModelInfo",
@@ -484,11 +509,18 @@ export const dtoTypeNames = [
   "Output",
   "OutputChunkTimingStats",
   "OutputTokenDetails",
+  "PackageAuthKind",
+  "PackageDescriptor",
+  "PackageKind",
   "PrefixBreak",
   "PromptTokensDetails",
+  "ProviderConfigDocument",
+  "ProviderConfigSettings",
   "ProviderCreateParams",
   "ProviderCustomParams",
   "ProviderDefaultParams",
+  "ProviderDescriptorsParams",
+  "ProviderEntrySpec",
   "ProviderInvokeParams",
   "ProviderModelParams",
   "ProviderRecord",
@@ -512,7 +544,12 @@ export const dtoTypeNames = [
   "RecordingOperation",
   "RegistryCreateParams",
   "RegistryEntry",
+  "RegistryFromConfigParams",
+  "RegistryListParams",
+  "RegistryListResult",
   "RegistryProviderParams",
+  "RegistryUpdateParams",
+  "RegistryUpdateResult",
   "RepairedToolCall",
   "ReplayCreateParams",
   "ReplayInspection",
@@ -550,6 +587,8 @@ export const dtoTypeNames = [
   "SessionStoreCreateParams",
   "SessionStoreHandle",
   "SessionView",
+  "SettingFieldKind",
+  "SettingFieldSpec",
   "Size",
   "Source",
   "SourceError",
@@ -569,8 +608,10 @@ export const dtoTypeNames = [
   "StreamEvent",
   "StreamFrame",
   "StreamOptions",
+  "StringOrEnv",
   "TaggedRawToolCall",
   "TaggedToolResult",
+  "TemplateParamDescriptor",
   "TerminalSummary",
   "TextPart",
   "TextRequest",

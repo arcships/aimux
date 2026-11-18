@@ -1,12 +1,14 @@
 //! Explicit provider registries and model references. Resolution never uses a gateway.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::provider::{LanguageApi, Provider};
 use aimux_core::provider_registry::{
     ProviderRegistry, ProviderRegistryOptions, create_provider_registry,
 };
+use aimux_providers::{EnvLookupPolicy, ProviderConfigDocument, providers_from_config_with_policy};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -46,6 +48,7 @@ const fn descriptor(
         terminal_type: None,
         runtime_handle_fields: match name.as_bytes() {
             b"registry.create" => &[("entries.*.provider", &[HandleKind::Provider])],
+            b"registry.update" => &[("set.*.provider", &[HandleKind::Provider])],
             b"model.wrap" => &[("middleware.*", &[HandleKind::Middleware])],
             _ => &[],
         },
@@ -53,7 +56,10 @@ const fn descriptor(
         cancellation: Cancellation::None,
         result_ownership: "owned",
         request_byte_policy: RequestBytePolicy::Json,
-        side_effects: matches!(name.as_bytes(), b"registry.create"),
+        side_effects: matches!(
+            name.as_bytes(),
+            b"registry.create" | b"registry.fromConfig" | b"registry.update"
+        ),
         retry_owner: "none",
         source_symbols: symbols,
     }
@@ -68,11 +74,38 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         &["aimux_core::provider_registry::create_provider_registry"],
     ),
     descriptor(
+        "registry.fromConfig",
+        &[],
+        TypeRef::of::<RegistryFromConfigParams>(),
+        TypeRef::of::<HandleResult>(),
+        &[
+            "aimux_providers::providers_from_config_with_policy",
+            "aimux_core::provider_registry::create_provider_registry",
+        ],
+    ),
+    descriptor(
+        "registry.list",
+        &[HandleKind::Registry],
+        TypeRef::of::<RegistryListParams>(),
+        TypeRef::of::<RegistryListResult>(),
+        &["aimux_core::provider_registry::ProviderRegistry::provider_ids"],
+    ),
+    descriptor(
         "registry.provider",
         &[HandleKind::Registry],
         TypeRef::of::<RegistryProviderParams>(),
         TypeRef::of::<HandleResult>(),
         &["aimux_core::provider_registry::ProviderRegistry::provider"],
+    ),
+    descriptor(
+        "registry.update",
+        &[HandleKind::Registry],
+        TypeRef::of::<RegistryUpdateParams>(),
+        TypeRef::of::<RegistryUpdateResult>(),
+        &[
+            "aimux_core::provider_registry::ProviderRegistry::update_providers",
+            "aimux_core::provider_registry::ProviderRegistry::with_updated_providers",
+        ],
     ),
     descriptor(
         "model.resolve",
@@ -103,7 +136,10 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (op, handler) in OPS.iter().zip([
         create as fn(Ctx, Target, Value) -> CallFuture,
+        from_config,
+        list,
         provider,
+        update,
         resolve,
         info,
         wrap,
@@ -117,7 +153,64 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 struct RegistryCreateParams {
     #[serde(default)]
     namespace: String,
+    #[serde(default)]
+    separator: Option<String>,
     entries: Vec<RegistryEntry>,
+}
+
+/// Trusted-caller operation: constructs a provider registry from a declarative
+/// configuration document and optional `{ "env": ... }` references. Untrusted
+/// callers must not be permitted to supply arbitrary `baseUrl` values with
+/// omitted credentials.
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistryFromConfigParams {
+    #[serde(default)]
+    namespace: String,
+    #[serde(default)]
+    separator: Option<String>,
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation inside `config`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
+    #[serde(default)]
+    env_allowlist: Option<Vec<String>>,
+    config: ProviderConfigDocument,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RegistryListParams {}
+
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct RegistryListResult {
+    namespace: String,
+    separator: String,
+    keys: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegistryUpdateParams {
+    #[serde(default)]
+    set: Vec<RegistryEntry>,
+    #[serde(default)]
+    remove: Vec<String>,
+    #[serde(default)]
+    replace: bool,
+    #[serde(default)]
+    derive: bool,
+}
+
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct RegistryUpdateResult {
+    keys: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    handle: Option<HandleId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<HandleKind>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -146,6 +239,10 @@ struct ModelRef {
 #[serde(rename_all = "camelCase")]
 enum ModelMethod {
     LanguageModel,
+    Chat,
+    Responses,
+    Completion,
+    Messages,
     EmbeddingModel,
     ImageModel,
     SpeechModel,
@@ -313,37 +410,57 @@ fn metadata(owner: Owner, entry: &Entry, update: Option<Metadata>) -> Option<Met
     None
 }
 
+fn parse_separator(separator: Option<String>) -> Result<String, OpsError> {
+    match separator {
+        Some(sep) if sep.is_empty() => Err(invalid("registry separator must not be empty")),
+        Some(sep) => Ok(sep),
+        None => Ok(ProviderRegistryOptions::default().separator),
+    }
+}
+
+fn resolve_entry_list(
+    ctx: &Ctx,
+    entries: Vec<RegistryEntry>,
+) -> Result<BTreeMap<String, Arc<dyn Provider>>, OpsError> {
+    let mut providers = BTreeMap::new();
+    for registration in entries {
+        if registration.key.is_empty() {
+            return Err(invalid("registry entry key must not be empty"));
+        }
+        if providers.contains_key(&registration.key) {
+            return Err(invalid(format!(
+                "duplicate registry key: {}",
+                registration.key
+            )));
+        }
+        let provider = resolve_secondary(
+            HandleRegistry::global(),
+            ctx,
+            &json!(handle(&registration.provider)?),
+            &[HandleKind::Provider],
+        )?;
+        let Entry::Provider(provider) = provider else {
+            return Err(wrong(&provider, &[HandleKind::Provider]));
+        };
+        providers.insert(registration.key, provider);
+    }
+    Ok(providers)
+}
+
 fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     Box::pin(async move {
         if let Target::Handle(entry) = target {
             return Err(wrong(&entry, &[]));
         }
         let params: RegistryCreateParams = decode(params)?;
-        let mut providers = BTreeMap::new();
-        for registration in params.entries {
-            if registration.key.is_empty() {
-                return Err(invalid("registry entry key must not be empty"));
-            }
-            if providers.contains_key(&registration.key) {
-                return Err(invalid(format!(
-                    "duplicate registry key: {}",
-                    registration.key
-                )));
-            }
-            let provider = resolve_secondary(
-                HandleRegistry::global(),
-                &ctx,
-                &json!(handle(&registration.provider)?),
-                &[HandleKind::Provider],
-            )?;
-            let Entry::Provider(provider) = provider else {
-                return Err(wrong(&provider, &[HandleKind::Provider]));
-            };
-            providers.insert(registration.key, provider);
-        }
+        let separator = parse_separator(params.separator)?;
+        let providers = resolve_entry_list(&ctx, params.entries)?;
         let entry = Entry::Registry(Arc::new(create_provider_registry(
             providers,
-            ProviderRegistryOptions::default(),
+            ProviderRegistryOptions {
+                separator,
+                ..ProviderRegistryOptions::default()
+            },
         )));
         metadata(
             ctx.owner,
@@ -351,6 +468,111 @@ fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             Some(Metadata::Namespace(params.namespace)),
         );
         insert(ctx.owner, entry)
+    })
+}
+
+fn from_config(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        if let Target::Handle(entry) = target {
+            return Err(wrong(&entry, &[]));
+        }
+        let params: RegistryFromConfigParams = decode(params)?;
+        let separator = parse_separator(params.separator)?;
+        let policy = match params.env_allowlist {
+            Some(vars) => EnvLookupPolicy::AllowList(vars.into_iter().collect()),
+            None => EnvLookupPolicy::AllowAll,
+        };
+        let providers =
+            providers_from_config_with_policy(&params.config, &policy).map_err(OpsError::AiMux)?;
+        for (key, spec) in &params.config.providers {
+            if let Some(provider) = providers.get(key) {
+                crate::ops::provider::register_package_default_method(provider, &spec.package)?;
+            }
+        }
+        let entry = Entry::Registry(Arc::new(create_provider_registry(
+            providers,
+            ProviderRegistryOptions {
+                separator,
+                ..ProviderRegistryOptions::default()
+            },
+        )));
+        metadata(
+            ctx.owner,
+            &entry,
+            Some(Metadata::Namespace(params.namespace)),
+        );
+        insert(ctx.owner, entry)
+    })
+}
+
+fn list(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        let entry = target_entry(target, &[HandleKind::Registry])?;
+        let _: RegistryListParams = decode(params)?;
+        let Entry::Registry(registry) = &entry else {
+            return Err(wrong(&entry, &[HandleKind::Registry]));
+        };
+        let namespace = match metadata(ctx.owner, &entry, None) {
+            Some(Metadata::Namespace(namespace)) => namespace,
+            _ => String::new(),
+        };
+        Ok(json!(RegistryListResult {
+            namespace,
+            separator: registry.separator().to_string(),
+            keys: registry.provider_ids(),
+        }))
+    })
+}
+
+fn update(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+    Box::pin(async move {
+        let entry = target_entry(target, &[HandleKind::Registry])?;
+        let params: RegistryUpdateParams = decode(params)?;
+        let Entry::Registry(registry) = &entry else {
+            return Err(wrong(&entry, &[HandleKind::Registry]));
+        };
+        if params.replace && !params.remove.is_empty() {
+            return Err(invalid("remove cannot be combined with replace"));
+        }
+        let mut remove_set = BTreeSet::new();
+        for key in &params.remove {
+            if key.is_empty() {
+                return Err(invalid("registry removal key must not be empty"));
+            }
+            remove_set.insert(key.as_str());
+        }
+        let resolved_set = resolve_entry_list(&ctx, params.set)?;
+        for key in resolved_set.keys() {
+            if remove_set.contains(key.as_str()) {
+                return Err(invalid(format!(
+                    "key '{key}' cannot appear in both set and remove"
+                )));
+            }
+        }
+        if !params.derive {
+            let keys = registry.update_providers(&params.remove, resolved_set, params.replace);
+            return Ok(json!(RegistryUpdateResult {
+                keys,
+                handle: None,
+                kind: None,
+            }));
+        }
+
+        let derived = registry.with_updated_providers(&params.remove, resolved_set, params.replace);
+        let keys = derived.provider_ids();
+        let namespace = match metadata(ctx.owner, &entry, None) {
+            Some(Metadata::Namespace(namespace)) => namespace,
+            _ => String::new(),
+        };
+        let new_entry = Entry::Registry(Arc::new(derived));
+        metadata(ctx.owner, &new_entry, Some(Metadata::Namespace(namespace)));
+        let kind = new_entry.kind();
+        let id = HandleRegistry::global().insert(ctx.owner, new_entry)?;
+        Ok(json!(RegistryUpdateResult {
+            keys,
+            handle: Some(id),
+            kind: Some(kind),
+        }))
     })
 }
 
@@ -390,6 +612,18 @@ fn resolve(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
+fn unsupported(method: &str) -> AiMuxError {
+    AiMuxError::UnsupportedFunctionality(format!("provider does not support {method}"))
+}
+
+fn offered_entry<T>(
+    model: Option<Result<T, AiMuxError>>,
+    method: &str,
+    wrap: impl FnOnce(T) -> Entry,
+) -> Result<Entry, AiMuxError> {
+    model.ok_or_else(|| unsupported(method))?.map(wrap)
+}
+
 fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<Entry, OpsError> {
     // Look up the exact key instead of constructing a combined id: both keys
     // and model ids may themselves contain the registry separator.
@@ -397,32 +631,50 @@ fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<En
     let id = reference.model_id.as_str();
     let result = match reference.method {
         ModelMethod::LanguageModel => provider.language_model(id).map(Entry::Language),
+        ModelMethod::Chat => offered_entry(
+            provider.language_model_with_api(LanguageApi::Chat, id),
+            "chat",
+            Entry::Language,
+        ),
+        ModelMethod::Responses => offered_entry(
+            provider.language_model_with_api(LanguageApi::Responses, id),
+            "responses",
+            Entry::Language,
+        ),
+        ModelMethod::Completion => offered_entry(
+            provider.language_model_with_api(LanguageApi::Completion, id),
+            "completion",
+            Entry::Language,
+        ),
+        ModelMethod::Messages => offered_entry(
+            provider.language_model_with_api(LanguageApi::Messages, id),
+            "messages",
+            Entry::Language,
+        ),
         ModelMethod::EmbeddingModel => provider.embedding_model(id).map(Entry::Embedding),
         ModelMethod::ImageModel => provider.image_model(id).map(Entry::Image),
-        ModelMethod::SpeechModel => provider
-            .speech_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "speechModel")))
-            .map(Entry::Speech),
-        ModelMethod::TranscriptionModel => provider
-            .transcription_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "transcriptionModel")))
-            .map(Entry::Transcription),
-        ModelMethod::RerankingModel => provider
-            .reranking_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "rerankingModel")))
-            .map(Entry::Reranking),
-        ModelMethod::VideoModel => provider
-            .video_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "videoModel")))
-            .map(Entry::Video),
-        ModelMethod::SearchModel => provider
-            .search_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "searchModel")))
-            .map(Entry::Search),
-        ModelMethod::Decision => provider
-            .decision_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "decisionModel")))
-            .map(Entry::Decision),
+        ModelMethod::SpeechModel => {
+            offered_entry(provider.speech_model(id), "speechModel", Entry::Speech)
+        }
+        ModelMethod::TranscriptionModel => offered_entry(
+            provider.transcription_model(id),
+            "transcriptionModel",
+            Entry::Transcription,
+        ),
+        ModelMethod::RerankingModel => offered_entry(
+            provider.reranking_model(id),
+            "rerankingModel",
+            Entry::Reranking,
+        ),
+        ModelMethod::VideoModel => {
+            offered_entry(provider.video_model(id), "videoModel", Entry::Video)
+        }
+        ModelMethod::SearchModel => {
+            offered_entry(provider.search_model(id), "searchModel", Entry::Search)
+        }
+        ModelMethod::Decision => {
+            offered_entry(provider.decision_model(id), "decision", Entry::Decision)
+        }
     };
     result.map_err(OpsError::AiMux)
 }
@@ -888,5 +1140,418 @@ mod tests {
             wrap(ctx(owner), Target::Handle(input), json!({"middleware": []})).await,
             Err(OpsError::Binding(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn from_config_list_update_separator_and_chat_method_resolution_work() {
+        let owner = owner();
+        let created = from_config(
+            ctx(owner),
+            Target::Global,
+            json!({
+                "namespace": "cfg",
+                "separator": "/",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg = result_entry(owner, &created, HandleKind::Registry);
+        let listed = list(ctx(owner), Target::Handle(reg.clone()), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(listed["namespace"], "cfg");
+        assert_eq!(listed["separator"], "/");
+        assert_eq!(listed["keys"], json!(["gw"]));
+
+        // Direct sub-method resolution (`method: "chat"`) on config-built provider.
+        let model_ref = json!({
+            "modelRef": {
+                "namespace": "cfg",
+                "key": "gw",
+                "method": "chat",
+                "modelId": "llama3"
+            }
+        });
+        let resolved = resolve(ctx(owner), Target::Handle(reg.clone()), model_ref.clone())
+            .await
+            .unwrap();
+        let model = result_entry(owner, &resolved, HandleKind::Language);
+        let model_meta = info(ctx(owner), Target::Handle(model), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(model_meta["provider"], "gw.chat");
+        assert_eq!(
+            model_meta["source"]["references"],
+            json!([model_ref["modelRef"]])
+        );
+
+        // In-place update (`set` + `remove`).
+        let (extra_id, _) = fixture(owner);
+        let in_place = update(
+            ctx(owner),
+            Target::Handle(reg.clone()),
+            json!({
+                "set": [{"key": "extra", "provider": extra_id.0.to_string()}],
+                "remove": ["gw"]
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(in_place["keys"], json!(["extra"]));
+        assert!(in_place.get("handle").is_none());
+        assert_eq!(
+            list(ctx(owner), Target::Handle(reg.clone()), json!({}))
+                .await
+                .unwrap()["keys"],
+            json!(["extra"])
+        );
+
+        // Derived update (`derive: true`) leaves original intact and preserves namespace.
+        let (other_id, _) = fixture(owner);
+        let derived = update(
+            ctx(owner),
+            Target::Handle(reg.clone()),
+            json!({
+                "set": [{"key": "replacement", "provider": other_id.0.to_string()}],
+                "replace": true,
+                "derive": true
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(derived["kind"], "Registry");
+        assert_eq!(derived["keys"], json!(["replacement"]));
+        let derived_reg = result_entry(owner, &derived, HandleKind::Registry);
+        let derived_list = list(ctx(owner), Target::Handle(derived_reg.clone()), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(derived_list["namespace"], "cfg");
+        assert_eq!(derived_list["separator"], "/");
+        assert_eq!(derived_list["keys"], json!(["replacement"]));
+        assert_eq!(
+            list(ctx(owner), Target::Handle(reg), json!({}))
+                .await
+                .unwrap()["keys"],
+            json!(["extra"])
+        );
+
+        // Rejects empty separator and env var blocked by allowlist.
+        assert!(matches!(
+            create(
+                ctx(owner),
+                Target::Global,
+                json!({"separator": "", "entries": []})
+            )
+            .await,
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
+        ));
+        assert!(matches!(
+            from_config(
+                ctx(owner),
+                Target::Global,
+                json!({
+                    "envAllowlist": ["ALLOWED"],
+                    "config": {
+                        "providers": {
+                            "bad": {
+                                "package": "openai",
+                                "settings": { "apiKey": { "env": "DISALLOWED" } }
+                            }
+                        }
+                    }
+                })
+            )
+            .await,
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
+        ));
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn from_config_registers_default_method_sidecar_for_extracted_providers() {
+        let owner = owner();
+        let created = crate::dispatch::call(
+            ctx(owner),
+            HandleId(0),
+            "registry.fromConfig",
+            json!({
+                "namespace": "cfg",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        },
+                        "search": {
+                            "package": "tavily",
+                            "settings": {
+                                "apiKey": "tavily-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+
+        let gw_provider = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "gw"}),
+        )
+        .await
+        .unwrap();
+        let gw_id: HandleId = serde_json::from_value(gw_provider["handle"].clone()).unwrap();
+        let gw_model = crate::dispatch::call(
+            ctx(owner),
+            gw_id,
+            "provider.model",
+            json!({"modelId": "llama3"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(gw_model["kind"], "Language");
+
+        let wrapped = crate::dispatch::call(ctx(owner), gw_id, "provider.wrap", json!({}))
+            .await
+            .unwrap();
+        let wrapped_id: HandleId = serde_json::from_value(wrapped["handle"].clone()).unwrap();
+        let wrapped_model = crate::dispatch::call(
+            ctx(owner),
+            wrapped_id,
+            "provider.model",
+            json!({"modelId": "llama3"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wrapped_model["kind"], "Language");
+
+        let tavily_provider = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "search"}),
+        )
+        .await
+        .unwrap();
+        let tavily_id: HandleId =
+            serde_json::from_value(tavily_provider["handle"].clone()).unwrap();
+        let search_model = crate::dispatch::call(
+            ctx(owner),
+            tavily_id,
+            "provider.model",
+            json!({"modelId": "tavily-search"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_model["kind"], "Search");
+
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn resolve_and_provider_model_share_unsupported_functionality_code() {
+        let owner = owner();
+        let created = crate::dispatch::call(
+            ctx(owner),
+            HandleId(0),
+            "registry.fromConfig",
+            json!({
+                "namespace": "cfg",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+        let prov = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "gw"}),
+        )
+        .await
+        .unwrap();
+        let prov_id: HandleId = serde_json::from_value(prov["handle"].clone()).unwrap();
+
+        for method in ["responses", "messages", "speechModel", "decision"] {
+            let resolve_err = crate::dispatch::call(
+                ctx(owner),
+                reg_id,
+                "model.resolve",
+                reference("cfg", "gw", method, "m1"),
+            )
+            .await
+            .unwrap_err();
+            let provider_err = crate::dispatch::call(
+                ctx(owner),
+                prov_id,
+                "provider.model",
+                json!({"method": method, "modelId": "m1"}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(resolve_err.code(), 8, "method {method}");
+            assert_eq!(resolve_err.code(), provider_err.code(), "method {method}");
+            assert_eq!(
+                resolve_err.envelope().error["name"],
+                provider_err.envelope().error["name"],
+                "method {method}"
+            );
+        }
+
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn update_rejects_partial_failures_and_swaps_atomically() {
+        let owner = owner();
+        let (p1, _) = fixture(owner);
+        let (p2, _) = fixture(owner);
+        let (p3, _) = fixture(owner);
+        let not_a_provider = HandleRegistry::global()
+            .insert(owner, Entry::Embedding(Arc::new(Embedding)))
+            .unwrap();
+
+        let created = create(
+            ctx(owner),
+            Target::Global,
+            json!({
+                "namespace": "ns",
+                "entries": [
+                    {"key": "a", "provider": p1.0.to_string()},
+                    {"key": "b", "provider": p1.0.to_string()}
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+        let reg_entry = result_entry(owner, &created, HandleKind::Registry);
+        let Entry::Registry(reg_arc) = reg_entry.clone() else {
+            panic!()
+        };
+
+        // Any failure in `set` or `remove` leaves prior state 100% untouched.
+        for bad_params in [
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "", "provider": p3.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "c", "provider": p3.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "d", "provider": not_a_provider.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a", "c"]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a", ""]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a"],
+                "replace": true
+            }),
+        ] {
+            assert!(
+                crate::dispatch::call(ctx(owner), reg_id, "registry.update", bad_params)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(reg_arc.provider_ids(), vec!["a", "b"]);
+            let Entry::Provider(p1_arc) = HandleRegistry::global()
+                .get(owner, p1, &[HandleKind::Provider])
+                .unwrap()
+            else {
+                unreachable!()
+            };
+            assert!(Arc::ptr_eq(&reg_arc.provider("a").unwrap(), &p1_arc));
+        }
+
+        // Concurrent readers never observe a torn intermediate state during remove + set.
+        let writer_reg = reg_arc.clone();
+        let p2_arc = match HandleRegistry::global()
+            .get(owner, p2, &[HandleKind::Provider])
+            .unwrap()
+        {
+            Entry::Provider(p) => p,
+            _ => unreachable!(),
+        };
+        let reader_reg = reg_arc.clone();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_reader = stop.clone();
+        let reader = std::thread::spawn(move || {
+            while !stop_reader.load(std::sync::atomic::Ordering::Relaxed) {
+                let ids = reader_reg.provider_ids();
+                assert!(
+                    ids == vec!["a", "b"] || ids == vec!["c", "d"],
+                    "observed torn intermediate registry state: {ids:?}"
+                );
+            }
+        });
+        for i in 0..200 {
+            if i % 2 == 0 {
+                let set = BTreeMap::from([
+                    ("c".to_string(), p2_arc.clone()),
+                    ("d".to_string(), p2_arc.clone()),
+                ]);
+                let keys = writer_reg.update_providers(&["a".into(), "b".into()], set, false);
+                assert_eq!(keys, vec!["c", "d"]);
+            } else {
+                let set = BTreeMap::from([
+                    ("a".to_string(), p2_arc.clone()),
+                    ("b".to_string(), p2_arc.clone()),
+                ]);
+                let keys = writer_reg.update_providers(&["c".into(), "d".into()], set, false);
+                assert_eq!(keys, vec!["a", "b"]);
+            }
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        reader.join().unwrap();
+
+        HandleRegistry::global().release_owner(owner);
     }
 }

@@ -347,7 +347,7 @@ fn build_anthropic_aws(
                 region: settings.region.clone().unwrap_or_default(),
             })),
         ),
-        (None, None, None) => None,
+        (None, None, None) if session_token.is_none() => None,
         _ => {
             return Err(AiMuxError::invalid_argument(
                 "provider 'anthropic_aws' SigV4 configuration requires both `accessKeyId` and `secretAccessKey`",

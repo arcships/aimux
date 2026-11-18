@@ -3,7 +3,19 @@
   "$id": "https://aimux.dev/schema/types/ProviderCreateParams.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "Trusted-caller operation: constructs a provider handle from package settings\nand optional `{ \"env\": ... }` references. Untrusted callers must not be\npermitted to supply arbitrary `baseUrl` values with omitted credentials.",
   "properties": {
+    "envAllowlist": {
+      "default": null,
+      "description": "Optional allowlist gating explicit `{ \"env\": \"VAR\" }` (`StringOrEnv`)\ninterpolation in `settings`. Does not restrict implicit per-provider\ndefault environment variable fallbacks when credential or `baseUrl`\nsettings are omitted.",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "package": {
       "type": "string"
     },
