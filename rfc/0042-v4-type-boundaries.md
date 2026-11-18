@@ -249,6 +249,12 @@ D8 与新 C ABI、绑定迁移一起排在 V4 最后、发版之前交付。在�
 
 不得把 #204 提交说明里的测试数字当作本文或新架构的测试结果。验收报告逐项给命令、版本、结果与 artifact；缺绑定运行环境则仍为阻塞，不算“类型生成成功所以行为一致”。
 
+### 8.2 允许差异表
+
+| 项 | 上游基线行为 | Aimux 行为与理由 | 位置 |
+|---|---|---|---|
+| `repair_tool_call` 操作超时承载 | `ai@7.0.127`（`generate-text/generate-text.ts:628-632, 1088`、`generate-text/stream-text.ts:860-866, 2425`、`generate-text/stream-language-model-call.ts:695-703`）通过 `mergeAbortSignals(abortSignal, totalTimeoutMs, stepAbortController?.signal, ...)` 将 `totalMs` / `stepMs` 合并进传入 `parseToolCall` 的 `abortSignal`，超时走 `AbortSignal` 路径并在流上产出 `abort` part | Aimux 通过 `OperationTimeout` 对 `parse_tool_call` / `repair_tool_call` 强制执行 `total_ms` / `step_ms`，超时直接返回 `Err(AiMuxError::Timeout)`（非流式失败或流式 `Err(AiMuxError::Timeout)` 项），不混入 `AbortSignal` 或伪造流内 `abort` part，保持超时与调用方取消的错误语义分离 | `aimux-core/src/generate.rs`、`docs/aisdk-architecture-alignment.md` §5 |
+
 ## 9. 合并门槛与非目标
 
 文档可独立作为 Draft 评审；实现遵循已定案的 T1–T5（T2/T3 见 §1.1），并与 ops/provider RFC 交叉校验 type ownership。#200 已记录的单步运行时、无兼容层及生成链决定不在这里重新请求批准；当前实现仍是旧基线，V4 按层直接合入 master、每层 CI 全绿，完整闭包验收在全部合完、发版前满足。
