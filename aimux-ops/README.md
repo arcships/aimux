@@ -81,12 +81,16 @@ finalizers enqueue cleanup.
 ## Manifest and registered differences
 
 `manifest::manifest()` exports all 72 operations, including two Decision
-operations beyond RFC-0039's original 70, 23 handle kinds, error codes and a
-`types` catalogue. Ops controls and result wrappers carry schemas; canonical
-business fields retain explicit type references. Codegen publishes the C header,
-language constants and schemas. Its `--check` detects missing, stale and changed
-outputs. The manifest's `digest` field equals `manifest_digest()`; hashing sorts
-object keys and operation names and excludes the `digest` field itself.
+operations beyond RFC-0039's original 70, 23 handle kinds, error codes,
+`generatorVersion`, `sources` (pinned upstream SDK versions/integrity), and a
+`types` catalogue carrying per-type `revision` and transitive `schemaHash`.
+Codegen publishes the C header, `schema/manifest.json` (which records `inputHash`
+alongside `digest`), per-language `TYPE_SCHEMA_HASHES` constants, and JSON
+schemas. Its `--check` detects missing, stale and changed outputs. The
+manifest's `digest` field equals `manifest_digest()`; self-verifying either the
+runtime manifest or `schema/manifest.json` removes both `digest` and `inputHash`
+from the top-level object, sorts `ops` by `name`, recursively sorts all object
+keys, and hashes the compact JSON with SHA-256.
 
 Registered differences from RFC-0039 include the Decision kind and operations,
 BinaryPush-only JSON rejection for operation.push, and the native finalizer

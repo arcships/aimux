@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CommonCrypto)
+import CommonCrypto
+#endif
 @testable import Aimux
 #if canImport(CAimuxTestABI)
 import CAimuxTestABI
@@ -95,6 +98,46 @@ struct ContractTests {
             try require(error.message.contains(AimuxOps.MANIFEST_DIGEST))
             try require(error.message.contains(targetType))
         }
+    }
+#if !AIMUX_STANDALONE
+    @Test
+#endif
+    static func schemaManifestSelfVerifiesAfterStrippingDigestAndInputHash() throws {
+#if canImport(CommonCrypto)
+        let manifestURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("schema/manifest.json")
+        let data = try Data(contentsOf: manifestURL)
+        guard case .object(var root) = try JSONDecoder().decode(JSONValue.self, from: data) else {
+            throw CheckFailure(description: "Expected JSON object in schema/manifest.json")
+        }
+        try require(root["digest"] == .string(AimuxOps.MANIFEST_DIGEST))
+        try require(root["inputHash"] == .string(AimuxOps.MANIFEST_DIGEST))
+        root.removeValue(forKey: "digest")
+        root.removeValue(forKey: "inputHash")
+        if case .array(let opsArray) = root["ops"] {
+            let sortedOps = opsArray.sorted { lhs, rhs in
+                guard case .object(let a) = lhs, case .object(let b) = rhs,
+                      case .string(let nameA) = a["name"], case .string(let nameB) = b["name"]
+                else { return false }
+                return nameA < nameB
+            }
+            root["ops"] = .array(sortedOps)
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let canonical = try encoder.encode(JSONValue.object(root))
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        canonical.withUnsafeBytes { ptr in
+            _ = CC_SHA256(ptr.baseAddress, CC_LONG(canonical.count), &hash)
+        }
+        let hex = hash.map { String(format: "%02x", $0) }.joined()
+        try require(hex == AimuxOps.MANIFEST_DIGEST, "Self-verified digest \(hex) != \(AimuxOps.MANIFEST_DIGEST)")
+#endif
     }
 #if !AIMUX_STANDALONE
     @Test

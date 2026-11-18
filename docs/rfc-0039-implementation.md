@@ -299,7 +299,10 @@ Recorder I/O uses spawn_blocking, and registry locks do not cross await/join.
 ⑤ language loaders/bridges + handwritten facades consume shared dispatch/ABI
 ```
 
-The digest excludes its own digest field; array order is preserved. Each type
+The digest removes top-level `digest` (and `inputHash` in emitted
+`schema/manifest.json`), sorts `ops` by `name`, and recursively sorts all
+object keys before hashing compact UTF-8 JSON with SHA-256 (non-`ops` arrays
+preserve their order). Each type
 entry has an ID and Rust path; ops-owned controls/wrappers carry schemas and
 embedded business fields have x-aimux-type references. Schema IDs use JSON Schema
 2020-12 with local resolvable refs. Strict controls reject unknown keys while
@@ -316,9 +319,13 @@ and tested against the primitive signatures, not emitted by aimux-codegen.
 
 The generated file set is checked against the current manifest by the commands below;
 this documentation audit does not claim a successful generator run.
-Every adapter requires the exact generated ABI version, ops version and manifest
-digest at load. No adapter can claim per-consumed-business-type hash validation
-until that metadata exists. Schema presence does not validate live handles,
+At load, Node, Python, and Java (+ Kotlin) check the exact `ABI_VERSION` while Go,
+Swift, and Flutter check ABI major compatibility (`>> 16`), and every adapter checks exact
+`opsVersion`. For
+manifest compatibility, adapters prefer an exact generated `MANIFEST_DIGEST`
+match and fall back to verifying every entry in the generated `TYPE_SCHEMA_HASHES`
+table against `manifest.types[].schemaHash` (per-type `revision` and transitive
+`schemaHash` metadata live in `schema/manifest.json`). Schema presence does not validate live handles,
 owner isolation, capabilities or state transitions.
 
 ## Verification gates
@@ -385,6 +392,6 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
 - **G-f — Provider metadata:** Complete package provenance, authoritative default methods for every package, general named vendor-method dispatch and registry/string-model lifting in text requests are absent because entries retain canonical Arcs and current factories/control DTOs do not supply all that metadata or lifting; owner-scoped reference metadata exists for registry-resolved models, and `provider.invoke` accepts only `listModels`.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.
-- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable because consumed-type metadata is incomplete; every adapter already pins the exact ABI version, ops version and manifest digest.
+- **G-h — Generated-product consistency:** Partially closed for schema metadata and load negotiation: `schema/manifest.json` emits per-type `revision` and transitive `schemaHash` for every manifest type, generated bindings emit `TYPE_SCHEMA_HASHES` and fall back to checking every generated `TYPE_SCHEMA_HASHES` entry against `manifest.types[].schemaHash` on whole-manifest digest mismatch (consumed-type subset negotiation via `hello` remains deferred with D10), and `aimux-codegen` generates DTO schemas and parity vectors across bindings. Remaining G-h scope covers a raw C per-type hash helper (R116), optional `hello`/`requiredTypeCapabilities` subset negotiation (D10), and per-platform installed-asset and distribution verification.
 - **G-i — Cross-language and platform conformance:** Exhaustive eight-language business-vector execution, same-source release evidence, installed-wheel checks and all platform sanitizer/link/install results are not established here because narrower local and fixture suites do not prove the full matrix; Dart Windows streaming is explicitly unsupported.
 - **G-k — Offline mock-model migration:** The old MockReplayModel constructor has no exposed replacement for offline text generation because replay.create returns ReplaySession, text operations admit only Language, and replay.live requires a separate caller-supplied target.

@@ -31,9 +31,10 @@ fmt.Println(result.Text)
 `Call` invokes a global operation; `Handle.Call` invokes one on an owned
 handle. `Create` owns the returned entry, whether the operation returns a
 decimal handle string or an object containing `handle`. Names are available
-in `generated/ops.go` and `Manifest()`. The first operation checks ABI major
-and the exact generated operation version. Manifest metadata remains available
-to callers; per-type schema revision/hash metadata is not currently generated.
+in `generated/ops.go` and `Manifest()`. The first operation checks ABI major,
+the exact generated operation version, and manifest compatibility (`MANIFEST_DIGEST`
+fast-path with full `TypeSchemaHashes` `schemaHash` fallback). Per-type `revision`
+and transitive `schemaHash` metadata are generated in `schema/manifest.json` and `TypeSchemaHashes`.
 
 Calls accept typed values or `json.RawMessage` and return canonical raw JSON.
 `CallInto[T]` decodes a typed result. `Params` preserves absent keys versus

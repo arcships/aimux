@@ -203,10 +203,11 @@ fn validate(manifest: &Manifest) -> Result<()> {
 /// collisions, or serialization failure.
 pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     let mut unsigned = value.clone();
-    unsigned
+    let unsigned_object = unsigned
         .as_object_mut()
-        .ok_or("manifest must be an object")?
-        .remove("digest");
+        .ok_or("manifest must be an object")?;
+    unsigned_object.remove("digest");
+    unsigned_object.remove("inputHash");
     if let Some(ops) = unsigned.get_mut("ops").and_then(Value::as_array_mut) {
         ops.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     }

@@ -341,7 +341,7 @@ RFC-0042 的 schema/type revision 与固定 SDK 基线记录在 manifest，由 o
 
 本次切换保留现有 schema-2 写入以及 schema-1/schema-2 读取，作为系列内过渡，不视为长期兼容承诺。#268 之后单独的后续 PR 必须在发版前完成 schema-3 迁移并删除 schema-2（及更早 schema）读取路径；不能在本次切换提前删除，也不能在该 PR 之后继续保留。
 
-manifest JSON 的 `digest` 为 canonical manifest 的 SHA-256，计算时排除 `digest` 字段自身；生成常量继续命名为 `MANIFEST_DIGEST`。
+manifest JSON 的 `digest` 为 canonical manifest 的 SHA-256，计算与自校验时需从顶层对象同时排除 `digest` 与生成器写入 `schema/manifest.json` 的 `inputHash`（并将 `ops` 按 `name` 排序、递归按 key 排序后取 compact JSON 的 SHA-256）；生成常量继续命名为 `MANIFEST_DIGEST`。
 
 ### 7.2 握手
 

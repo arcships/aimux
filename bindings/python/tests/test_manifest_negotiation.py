@@ -1,5 +1,7 @@
 """Pure-Python unit tests for manifest digest and per-type schemaHash negotiation."""
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -81,6 +83,21 @@ class ManifestNegotiationTests(unittest.TestCase):
                     expected_digest="explicit-consumer-pin",
                 ),
             )
+
+    def test_schema_manifest_self_verifies_after_stripping_digest_and_input_hash(self):
+        manifest_path = Path(__file__).resolve().parents[3] / "schema" / "manifest.json"
+        emitted = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(emitted["digest"], _ops.MANIFEST_DIGEST)
+        self.assertEqual(emitted["inputHash"], _ops.MANIFEST_DIGEST)
+        unsigned = {k: v for k, v in emitted.items() if k not in ("digest", "inputHash")}
+        unsigned["ops"] = sorted(unsigned["ops"], key=lambda op: op["name"])
+        canonical = json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        self.assertEqual(hashlib.sha256(canonical).hexdigest(), _ops.MANIFEST_DIGEST)
 
 
 if __name__ == "__main__":

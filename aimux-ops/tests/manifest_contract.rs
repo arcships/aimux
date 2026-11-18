@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 use aimux_ops::dispatch::descriptor;
-use aimux_ops::manifest::{manifest, manifest_digest};
+use aimux_ops::manifest::{canonical_digest, manifest, manifest_digest};
 use aimux_ops::op::{ABI_VERSION, OPS_VERSION};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -291,6 +291,22 @@ fn digest_is_stable_and_hashes_the_complete_canonical_manifest() {
         assert_eq!(manifest(), first);
         assert_eq!(manifest_digest(), digest);
     }
+}
+
+#[test]
+fn canonical_digest_self_verifies_emitted_schema_manifest_with_input_hash() {
+    let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../schema/manifest.json");
+    let emitted: Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let expected = manifest_digest();
+    assert_eq!(emitted["digest"], expected);
+    assert_eq!(emitted["inputHash"], expected);
+    assert_eq!(canonical_digest(emitted.clone()), expected);
+
+    // Shuffling ops order must yield the same self-verified canonical digest.
+    let mut reversed_ops = emitted;
+    reversed_ops["ops"].as_array_mut().unwrap().reverse();
+    assert_eq!(canonical_digest(reversed_ops), expected);
 }
 
 #[test]

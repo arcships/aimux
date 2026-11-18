@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import * as ops from '../src/generated/ops.ts'
 
 // Install the test transport before loading either public entrypoint.
@@ -256,4 +260,28 @@ test('raw and typed expose matching error/cancelled terminal frames as DTOs', as
 test('host callbacks are rejected instead of silently disappearing from settings', async () => {
   const client = new Client()
   await assert.rejects(client.provider({ package: 'openai', settings: { fetch: async () => {} } }), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
+})
+
+function canonicalManifestJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalManifestJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const keys = Object.keys(record).sort()
+    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalManifestJson(record[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+test('schema/manifest.json self-verifies after stripping digest and inputHash', () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+  const emitted = JSON.parse(readFileSync(resolve(repoRoot, 'schema/manifest.json'), 'utf8')) as Record<string, unknown>
+  assert.equal(emitted.digest, ops.MANIFEST_DIGEST)
+  assert.equal(emitted.inputHash, ops.MANIFEST_DIGEST)
+  const { digest: _digest, inputHash: _inputHash, ...unsigned } = emitted
+  const canonical = {
+    ...unsigned,
+    ops: [...(unsigned.ops as Array<{ name: string }>)].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+  }
+  const actual = createHash('sha256').update(canonicalManifestJson(canonical)).digest('hex')
+  assert.equal(actual, ops.MANIFEST_DIGEST)
 })

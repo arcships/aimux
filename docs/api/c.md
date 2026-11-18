@@ -129,7 +129,8 @@ if (err) {
   are gone. Read the envelope with `aimux_error_json`.
 - Provider/model creation is `aimux_call(..., AIMUX_OP_PROVIDER_CREATE, ...)`
   followed by `AIMUX_OP_PROVIDER_MODEL`.
-- The generated header and manifest digest must match the library.
+- The generated header ABI/ops versions and manifest digest (or compatible full
+  `TYPE_SCHEMA_HASHES` `schemaHash` set inspected from `runtime.describe`) must match the library.
 
 ## See also
 

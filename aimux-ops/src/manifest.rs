@@ -205,9 +205,32 @@ pub fn manifest() -> Value {
 }
 
 /// SHA-256 of recursively key-sorted compact JSON, independent of map insertion order.
+///
+/// Self-verification of either runtime `manifest()` or emitted `schema/manifest.json`
+/// strips both `"digest"` and `"inputHash"` from the top-level object, sorts `"ops"`
+/// by `"name"`, recursively sorts all object keys, and computes SHA-256 over the
+/// compact JSON bytes.
 #[must_use]
 pub fn manifest_digest() -> String {
     cached_manifest().1.clone()
+}
+
+/// Compute the canonical manifest digest from a parsed manifest JSON value.
+///
+/// Strips top-level `"digest"` and `"inputHash"` (added by `aimux-codegen` to
+/// `schema/manifest.json`), sorts `"ops"` by `"name"`, recursively sorts all
+/// JSON object keys, and returns lowercase hex SHA-256 of the compact JSON.
+#[must_use]
+pub fn canonical_digest(mut value: Value) -> String {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("digest");
+        object.remove("inputHash");
+    }
+    if let Some(ops) = value.get_mut("ops").and_then(Value::as_array_mut) {
+        ops.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    }
+    canonicalize(&mut value);
+    format!("{:x}", Sha256::digest(value.to_string().as_bytes()))
 }
 
 fn canonicalize(value: &mut Value) {
@@ -228,12 +251,8 @@ fn canonicalize(value: &mut Value) {
 }
 
 #[cfg(test)]
-fn digest(mut value: Value) -> String {
-    if let Some(object) = value.as_object_mut() {
-        object.remove("digest");
-    }
-    canonicalize(&mut value);
-    format!("{:x}", Sha256::digest(value.to_string().as_bytes()))
+fn digest(value: Value) -> String {
+    canonical_digest(value)
 }
 
 // Slot 4 remains retired; protocol codes occupy a separate range.

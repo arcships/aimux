@@ -290,9 +290,12 @@ a workaround because replay.capabilities currently fails (G-c).
 
 Writers use schema 2 and readers accept schemas 1 and 2; migration to schema 3
 and removal of old-schema reading are scheduled for a separate follow-up PR after
-#268, before the release, under RFC-0041 (G-b). Process-wide capture remains G-a. Generated-output tests
-exist, but this audit does not claim a successful run; per-business-type hash
-checks remain G-h. Installed assets, platform
+#268, before the release, under RFC-0041 (G-b). Process-wide capture remains G-a. Generated-output tests,
+per-type `revision`/`schemaHash` emission (`TYPE_SCHEMA_HASHES` + fallback
+negotiation), and DTO schema/vector suites exist; remaining G-h scope covers
+a raw C per-type helper (R116), `hello`/`requiredTypeCapabilities` subset
+negotiation (deferred under D10), and installed-asset/platform-packaging
+verification. Installed assets, platform
 execution, successful token refresh, exhaustive eight-language wire vectors and
 old-only-test equivalence are not proved by this inventory (G-d/G-e/G-i).
 See the [registered gaps](rfc-0039-implementation.md#registered-gaps) and

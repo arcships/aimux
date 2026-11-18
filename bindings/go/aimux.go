@@ -66,8 +66,9 @@ func (h *Handle) ID() (HandleID, error) {
 	return 0, ErrClosed
 }
 
-// CheckABI checks the ABI major and exact generated operation version and digest once,
-// before any operation is executed.
+// CheckABI checks the ABI major, exact generated operation version, and manifest
+// compatibility (MANIFEST_DIGEST fast-path or full TypeSchemaHashes fallback)
+// once, before any operation is executed.
 func CheckABI() error {
 	abiCheck.Do(func() {
 		actual := nativeABIVersion()

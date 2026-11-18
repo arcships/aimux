@@ -485,6 +485,13 @@ fn emits_schema_manifest_sources_and_type_schema_hashes_in_all_bindings() {
     assert_eq!(emitted_manifest["digest"], runtime_digest);
     assert_eq!(emitted_manifest["inputHash"], runtime_digest);
     assert_eq!(
+        aimux_ops::manifest::canonical_digest(emitted_manifest.clone()),
+        runtime_digest,
+        "emitted schema/manifest.json must self-verify after stripping digest and inputHash"
+    );
+    generate(&emitted_manifest, &runtime_digest)
+        .expect("aimux-codegen must accept emitted schema/manifest.json on re-generation");
+    assert_eq!(
         emitted_manifest["generatorVersion"],
         env!("CARGO_PKG_VERSION")
     );
