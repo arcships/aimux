@@ -198,6 +198,7 @@
       "min_warmup_requests": 1000,
       "min_samples": 10000,
       "request_bytes": 1024,
+      "response_bytes": 1024,
       "budgets": {
         "p50_ns": { "max_regression_pct": 5.0, "min_abs_delta_ns": 5000, "max_abs_ns": 1000000 },
         "p95_ns": { "max_regression_pct": 10.0, "min_abs_delta_ns": 10000, "max_abs_ns": 2000000 }
@@ -284,6 +285,7 @@
       "operation_timeout_ms": 2000,
       "run_timeout_ms": 600000,
       "backends": ["stdio"],
+      "concurrency_levels": [100],
       "min_samples": 100,
       "max_queued_payload_bytes": 8388608,
       "budgets": {

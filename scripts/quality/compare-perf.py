@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from fractions import Fraction
 import json
 import math
 import pathlib
@@ -21,6 +22,13 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 DEFAULT_SCENARIOS = ROOT / "bench" / "scenarios.json"
 DEFAULT_ENVIRONMENT = ROOT / "bench" / "environment.json"
+DEFAULT_FIXTURES_MANIFEST = ROOT / "bench" / "fixtures" / "manifest.json"
+
+_UNSET: Any = object()
+_MAX_INT64 = (1 << 63) - 1
+_MIN_POS_FLOAT = 1e-9
+_MAX_METRIC_FLOAT = 1e18
+_GIB = 1024 * 1024 * 1024
 
 ALLOWED_PHASES = frozenset({"0.6", "0.8"})
 ALLOWED_SCENARIO_STATUSES = frozenset({"active_contract", "future_stdio"})
@@ -208,10 +216,20 @@ REQUIRED_TOP_LEVEL_RUN_KEYS = frozenset(
         "runs",
     }
 )
+WARMUP_AND_WINDOW_RUN_KEYS = (
+    ("warmup_requests", "min_warmup_requests"),
+    ("warmup_ms", "min_warmup_ms"),
+    ("warmup_streams", "min_warmup_streams"),
+    ("measure_ms", "min_measure_ms"),
+)
 ALLOWED_RUN_ENTRY_KEYS = frozenset(
     {
         "pair_index",
         "samples",
+        "warmup_requests",
+        "warmup_ms",
+        "warmup_streams",
+        "measure_ms",
         "timed_out_operations",
         "run_timed_out",
         "correctness_failures",
@@ -260,7 +278,6 @@ _FLOATING_VERSION_TOKENS = frozenset(
         "unknown",
     }
 )
-_GIB = 1024 * 1024 * 1024
 
 
 class ConfigError(ValueError):
@@ -272,35 +289,58 @@ def _is_strict_int(value: Any) -> bool:
 
 
 def _is_real_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        f = float(value)
+    except OverflowError:
+        return False
+    return math.isfinite(f)
 
 
 def _require_pos_int(value: Any, ctx: str) -> int:
-    if not _is_strict_int(value) or value <= 0:
-        raise ConfigError(f"{ctx} must be positive integer, got {value!r}")
+    if not _is_strict_int(value) or value <= 0 or value > _MAX_INT64:
+        raise ConfigError(f"{ctx} must be positive 64-bit integer, got {value!r}")
     return int(value)
 
 
 def _require_non_neg_int(value: Any, ctx: str) -> int:
-    if not _is_strict_int(value) or value < 0:
-        raise ConfigError(f"{ctx} must be non-negative integer, got {value!r}")
+    if not _is_strict_int(value) or value < 0 or value > _MAX_INT64:
+        raise ConfigError(f"{ctx} must be non-negative 64-bit integer, got {value!r}")
+    return int(value)
+
+
+def _require_signed_int64(value: Any, ctx: str) -> int:
+    if not _is_strict_int(value) or value < -_MAX_INT64 or value > _MAX_INT64:
+        raise ConfigError(f"{ctx} must be signed 64-bit integer, got {value!r}")
     return int(value)
 
 
 def _require_pos_number(value: Any, ctx: str) -> float:
-    if not _is_real_number(value) or float(value) <= 0.0:
+    if not _is_real_number(value):
         raise ConfigError(f"{ctx} must be positive finite number, got {value!r}")
-    return float(value)
+    f = float(value)
+    if f <= 0.0:
+        raise ConfigError(f"{ctx} must be positive finite number, got {value!r}")
+    return f
+
+
+def _require_bounded_pos_number(value: Any, ctx: str) -> float:
+    f = _require_pos_number(value, ctx)
+    if f < _MIN_POS_FLOAT or f > _MAX_METRIC_FLOAT:
+        raise ConfigError(
+            f"{ctx} must be within [{_MIN_POS_FLOAT}, {_MAX_METRIC_FLOAT}], got {value!r}"
+        )
+    return f
 
 
 def _require_non_neg_number(value: Any, ctx: str) -> float:
-    if not _is_real_number(value) or float(value) < 0.0:
+    if not _is_real_number(value):
         raise ConfigError(f"{ctx} must be non-negative finite number, got {value!r}")
-    return float(value)
+    f = float(value)
+    if f < 0.0 or f > _MAX_METRIC_FLOAT:
+        raise ConfigError(f"{ctx} must be non-negative finite number, got {value!r}")
+    return f
 
 
 def _require_non_empty_str(value: Any, ctx: str) -> str:
@@ -330,9 +370,9 @@ def _validate_pinned_version(value: Any, ctx: str, *, require_semver: bool = Fal
     lower_tokens = set(re.split(r"[^a-zA-Z0-9]+", s.lower()))
     if lower_tokens & _FLOATING_VERSION_TOKENS:
         raise ConfigError(f"{ctx} must be an exact pinned version, not {value!r}")
-    if any(ch in s for ch in ("^", "~", "*", "<", ">", "=", "|", ",", ";", "&", "(", ")", "[", "]", "{", "}")) or re.search(
-        r"(?:^|\.)x(?:\.|$)", s, re.IGNORECASE
-    ):
+    if any(
+        ch in s for ch in ("^", "~", "*", "<", ">", "=", "|", ",", ";", "&", "(", ")", "[", "]", "{", "}")
+    ) or re.search(r"(?:^|\.)x(?:\.|$)", s, re.IGNORECASE):
         raise ConfigError(f"{ctx} must be an exact pinned version without range operators, got {value!r}")
     if require_semver and not _SEMVER_PINNED_RE.match(s):
         raise ConfigError(f"{ctx} must be exact X.Y.Z version string, got {value!r}")
@@ -368,10 +408,10 @@ def _reject_constant(constant: str) -> Any:
 
 
 def load_json_strict(path: pathlib.Path) -> Any:
-    """Parse JSON rejecting duplicate object keys, NaN, and Infinity."""
+    """Parse JSON rejecting duplicate object keys, invalid UTF-8, NaN, and Infinity."""
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"cannot read {path.name}: {exc}") from exc
     try:
         return json.loads(
@@ -381,7 +421,7 @@ def load_json_strict(path: pathlib.Path) -> Any:
         )
     except ConfigError:
         raise
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise ConfigError(f"invalid JSON in {path.name}: {exc}") from exc
 
 
@@ -400,7 +440,7 @@ def validate_environment_config(data: Any) -> None:
     _require_non_empty_str(data["pool_id"], "environment.pool_id")
 
     status = data["status"]
-    if status not in ("pending_dedicated_runner", "active"):
+    if not isinstance(status, str) or status not in ("pending_dedicated_runner", "active"):
         raise ConfigError(f"invalid environment.status: {status!r}")
 
     iso = data["isolation_requirements"]
@@ -526,7 +566,9 @@ def validate_environment_config(data: Any) -> None:
         _require_non_empty_str(machine[str_field], f"machine.{str_field}")
     _validate_os_image_digest(machine["os_image_digest"], "machine.os_image_digest")
     stepping = machine["cpu_stepping"]
-    if not (_is_strict_int(stepping) and stepping >= 0) and not (isinstance(stepping, str) and stepping.strip()):
+    if not (_is_strict_int(stepping) and 0 <= stepping <= _MAX_INT64) and not (
+        isinstance(stepping, str) and stepping.strip()
+    ):
         raise ConfigError(f"machine.cpu_stepping must be non-empty string or non-negative integer, got {stepping!r}")
 
     phys_cores = _require_pos_int(machine["physical_cores"], "machine.physical_cores")
@@ -625,10 +667,13 @@ def _validate_budget_spec(
 
     if metric_name in ("throughput_events_per_s", "throughput_bytes_per_s"):
         req = frozenset({"max_drop_pct"})
-        _check_keys(spec, required=req, allowed=req, ctx=ctx)
+        allowed = req | frozenset({"min_abs_per_s"})
+        _check_keys(spec, required=req, allowed=allowed, ctx=ctx)
         drop_pct = _require_pos_number(spec["max_drop_pct"], f"{ctx}.max_drop_pct")
         if drop_pct > 100.0:
             raise ConfigError(f"{ctx}.max_drop_pct must be <= 100")
+        if "min_abs_per_s" in spec:
+            _require_pos_int(spec["min_abs_per_s"], f"{ctx}.min_abs_per_s")
         return
 
     if metric_name == "retained_rss_bytes":
@@ -651,9 +696,14 @@ def _validate_budget_spec(
             if not isinstance(by_conc, dict) or not by_conc:
                 raise ConfigError(f"{ctx}.max_abs_bytes_by_concurrency must be a non-empty object")
             for k, v in by_conc.items():
-                if not isinstance(k, str) or not k.isdigit() or int(k) <= 0 or str(int(k)) != k:
+                if not isinstance(k, str) or not k.isascii() or not k.isdigit() or len(k) > 19:
                     raise ConfigError(
-                        f"{ctx}.max_abs_bytes_by_concurrency key {k!r} must be positive integer string"
+                        f"{ctx}.max_abs_bytes_by_concurrency key {k!r} must be 64-bit ASCII positive integer string"
+                    )
+                k_int = int(k)
+                if k_int <= 0 or k_int > _MAX_INT64 or str(k_int) != k:
+                    raise ConfigError(
+                        f"{ctx}.max_abs_bytes_by_concurrency key {k!r} must be canonical positive integer string"
                     )
                 _require_pos_int(v, f"{ctx}.max_abs_bytes_by_concurrency[{k!r}]")
             if concurrency_levels is not None:
@@ -720,6 +770,8 @@ def validate_scenarios_config(data: Any) -> dict[str, dict[str, Any]]:
         "max_rss_slope_bytes_per_1k_requests",
     ):
         _require_pos_int(protocol[int_key], f"protocol.{int_key}")
+    if protocol["rss_slope_tail_windows"] < 2:
+        raise ConfigError("protocol.rss_slope_tail_windows must be >= 2")
     if protocol["max_rerun_pairs"] < protocol["independent_pairs"]:
         raise ConfigError("protocol.max_rerun_pairs must be >= independent_pairs")
     if protocol["schedule"] != "AB_BA_seeded":
@@ -756,10 +808,12 @@ def validate_scenarios_config(data: Any) -> dict[str, dict[str, Any]]:
             allowed=ALLOWED_SCENARIO_KEYS,
             ctx=f"scenario {sid}",
         )
-        if entry["phase"] not in ALLOWED_PHASES:
-            raise ConfigError(f"scenario {sid}: invalid phase {entry['phase']!r}")
-        if entry["status"] not in ALLOWED_SCENARIO_STATUSES:
-            raise ConfigError(f"scenario {sid}: invalid status {entry['status']!r}")
+        phase = entry["phase"]
+        if not isinstance(phase, str) or phase not in ALLOWED_PHASES:
+            raise ConfigError(f"scenario {sid}: invalid phase {phase!r}")
+        sc_status = entry["status"]
+        if not isinstance(sc_status, str) or sc_status not in ALLOWED_SCENARIO_STATUSES:
+            raise ConfigError(f"scenario {sid}: invalid status {sc_status!r}")
 
         for int_field in POSITIVE_INT_SCENARIO_FIELDS:
             if int_field in entry:
@@ -828,9 +882,13 @@ def validate_scenarios_config(data: Any) -> dict[str, dict[str, Any]]:
             if "reference_backend" not in entry:
                 raise ConfigError(f"scenario {sid}: comparison_mode='paired_delta' requires reference_backend")
         if "reference_backend" in entry:
-            _require_non_empty_str(entry["reference_backend"], f"scenario {sid}.reference_backend")
+            ref_backend = _require_non_empty_str(entry["reference_backend"], f"scenario {sid}.reference_backend")
             if entry.get("comparison_mode") != "paired_delta":
                 raise ConfigError(f"scenario {sid}: reference_backend requires comparison_mode='paired_delta'")
+            if ref_backend in backends:
+                raise ConfigError(
+                    f"scenario {sid}: reference_backend {ref_backend!r} must be distinct from backends {backends}"
+                )
 
         budgets = entry["budgets"]
         if not isinstance(budgets, dict):
@@ -840,8 +898,10 @@ def validate_scenarios_config(data: Any) -> dict[str, dict[str, Any]]:
             raise ConfigError(f"scenario {sid}: unknown budget metrics {sorted(unknown_metrics)}")
 
         if "rss_slope_bytes_per_1k" in budgets:
-            if "slope_tail_windows" not in entry:
-                raise ConfigError(f"scenario {sid}: rss_slope_bytes_per_1k requires slope_tail_windows")
+            if "slope_tail_windows" not in entry or entry["slope_tail_windows"] < 2:
+                raise ConfigError(f"scenario {sid}: rss_slope_bytes_per_1k requires slope_tail_windows >= 2")
+            if "window_requests" not in entry:
+                raise ConfigError(f"scenario {sid}: rss_slope_bytes_per_1k requires window_requests")
             if "memory_windows" in entry and entry["memory_windows"] < entry["slope_tail_windows"]:
                 raise ConfigError(f"scenario {sid}: memory_windows < slope_tail_windows")
 
@@ -855,6 +915,48 @@ def validate_scenarios_config(data: Any) -> dict[str, dict[str, Any]]:
             )
         by_id[sid] = entry
     return by_id
+
+
+def validate_scenarios_against_fixtures(
+    scenarios_by_id: dict[str, dict[str, Any]],
+    manifest_data: Any,
+) -> None:
+    """Verify every scenario/case payload byte size exists in `bench/fixtures/manifest.json`."""
+    if not isinstance(manifest_data, dict) or not isinstance(manifest_data.get("fixtures"), list):
+        raise ConfigError("fixtures manifest must be an object with a 'fixtures' list")
+    req_sizes: set[int] = set()
+    resp_sizes: set[int] = set()
+    for idx, item in enumerate(manifest_data["fixtures"]):
+        if not isinstance(item, dict):
+            raise ConfigError(f"fixtures[{idx}] must be an object")
+        size = _require_pos_int(item.get("exact_bytes"), f"fixtures[{idx}].exact_bytes")
+        kind = item.get("kind")
+        if kind == "request":
+            req_sizes.add(size)
+        elif kind == "response":
+            resp_sizes.add(size)
+        else:
+            raise ConfigError(f"fixtures[{idx}].kind invalid: {kind!r}")
+
+    for sid, sc in scenarios_by_id.items():
+        if "request_bytes" in sc and sc["request_bytes"] not in req_sizes:
+            raise ConfigError(
+                f"scenario {sid}: request_bytes={sc['request_bytes']} not registered in fixtures manifest {sorted(req_sizes)}"
+            )
+        if "response_bytes" in sc and sc["response_bytes"] not in resp_sizes:
+            raise ConfigError(
+                f"scenario {sid}: response_bytes={sc['response_bytes']} not registered in fixtures manifest {sorted(resp_sizes)}"
+            )
+        for case in sc.get("cases", ()):
+            cid = case["id"]
+            if "request_bytes" in case and case["request_bytes"] not in req_sizes:
+                raise ConfigError(
+                    f"scenario {sid} case {cid}: request_bytes={case['request_bytes']} not in fixtures manifest"
+                )
+            if "response_bytes" in case and case["response_bytes"] not in resp_sizes:
+                raise ConfigError(
+                    f"scenario {sid} case {cid}: response_bytes={case['response_bytes']} not in fixtures manifest"
+                )
 
 
 def _validate_run_bundle(
@@ -896,15 +998,25 @@ def _validate_run_bundle(
     if "source_sha" in data:
         _require_non_empty_str(data["source_sha"], f"{label}.source_sha")
 
-    concurrency = data.get("concurrency", 1)
-    concurrency = _require_pos_int(concurrency, f"{label}.concurrency")
     if "concurrency_levels" in scenario:
-        if concurrency not in scenario["concurrency_levels"]:
+        reg_levels = scenario["concurrency_levels"]
+        if "concurrency" not in data:
+            if 1 in reg_levels:
+                concurrency = 1
+            else:
+                raise ConfigError(
+                    f"{label}: scenario {scenario_id!r} requires explicit concurrency in {reg_levels}"
+                )
+        else:
+            concurrency = _require_pos_int(data["concurrency"], f"{label}.concurrency")
+        if concurrency not in reg_levels:
             raise ConfigError(
-                f"{label}: concurrency={concurrency} not in registered levels {scenario['concurrency_levels']}"
+                f"{label}: concurrency={concurrency} not in registered levels {reg_levels}"
             )
-    elif concurrency != 1:
-        raise ConfigError(f"{label}: concurrency={concurrency} invalid for single-concurrency scenario")
+    else:
+        concurrency = _require_pos_int(data.get("concurrency", 1), f"{label}.concurrency")
+        if concurrency != 1:
+            raise ConfigError(f"{label}: concurrency={concurrency} invalid for single-concurrency scenario")
 
     if "cases" in scenario:
         valid_case_ids = {c["id"] for c in scenario["cases"]}
@@ -922,26 +1034,30 @@ def _validate_run_bundle(
 
     required_budgets = scenario["budgets"]
     slope_tail = scenario.get("slope_tail_windows")
+    has_paired_delta = "paired_delta_p50_ns" in required_budgets
 
     expected_metric_keys: set[str] = set()
     for m_name in required_budgets:
         if m_name == "rss_slope_bytes_per_1k":
             continue
-        if m_name == "paired_delta_p50_ns":
-            expected_metric_keys.update({"stdio_p50_ns", "in_process_p50_ns"})
-        else:
-            expected_metric_keys.add(m_name)
+        expected_metric_keys.add(m_name)
     if "idle_rss_max_bytes" in scenario:
         expected_metric_keys.add("idle_rss_bytes")
     if "shutdown_max_ms" in scenario:
         expected_metric_keys.add("shutdown_ms")
     if "max_queued_payload_bytes" in scenario:
         expected_metric_keys.add("max_queued_payload_bytes")
-    allowed_metric_keys = expected_metric_keys | {"p99_ns"}
+
+    allowed_metric_keys = set(expected_metric_keys) | {"p50_ns", "p99_ns"}
+    if has_paired_delta:
+        allowed_metric_keys.update({"stdio_p50_ns", "in_process_p50_ns"})
 
     seen_pairs: set[int] = set()
     memory_windows = scenario.get("memory_windows")
     requires_b0 = bool(scenario.get("requires_b0_calibration", False))
+    op_timeout_ns = scenario["operation_timeout_ms"] * 1_000_000
+    run_timeout_ms = scenario["run_timeout_ms"]
+
     for idx, run in enumerate(runs):
         if not isinstance(run, dict):
             raise ConfigError(f"{label}: run[{idx}] must be an object")
@@ -963,8 +1079,13 @@ def _validate_run_bundle(
             "leaked_handles",
         ):
             _require_non_neg_int(run[int_field], f"{label}: run[{idx}].{int_field}")
+        for opt_int_field, _ in WARMUP_AND_WINDOW_RUN_KEYS:
+            if opt_int_field in run:
+                _require_non_neg_int(run[opt_int_field], f"{label}: run[{idx}].{opt_int_field}")
         if not isinstance(run["run_timed_out"], bool):
             raise ConfigError(f"{label}: run[{idx}].run_timed_out must be boolean")
+
+        timed_out = run["run_timed_out"] or run["timed_out_operations"] > 0
 
         metrics = run["metrics"]
         if not isinstance(metrics, dict):
@@ -975,13 +1096,13 @@ def _validate_run_bundle(
                 f"{label}: run[{idx}].metrics has unknown keys {sorted(unknown_run_metrics)}"
             )
 
-        if "rss_slope_bytes_per_1k" in required_budgets or "rss_windows_bytes" in run:
+        if "rss_windows_bytes" in run or ("rss_slope_bytes_per_1k" in required_budgets and not timed_out):
             windows = run.get("rss_windows_bytes")
             if not isinstance(windows, list):
                 raise ConfigError(
                     f"{label}: run[{idx}] missing rss_windows_bytes for slope check"
                 )
-            if "rss_slope_bytes_per_1k" in required_budgets:
+            if "rss_slope_bytes_per_1k" in required_budgets and not timed_out:
                 if _is_strict_int(memory_windows):
                     if len(windows) != memory_windows:
                         raise ConfigError(
@@ -996,42 +1117,123 @@ def _validate_run_bundle(
             for w_idx, w in enumerate(windows):
                 _require_pos_int(w, f"{label}: run[{idx}].rss_windows_bytes[{w_idx}]")
 
-        for metric_name in expected_metric_keys:
-            if metric_name not in metrics:
-                raise ConfigError(f"{label}: run[{idx}].metrics missing {metric_name!r}")
-            mval = metrics[metric_name]
+        if not timed_out:
+            missing_m = expected_metric_keys - set(metrics)
+            if missing_m:
+                first_missing = sorted(missing_m)[0]
+                raise ConfigError(f"{label}: run[{idx}].metrics missing {first_missing!r}")
+
+        for metric_name, mval in metrics.items():
             if metric_name in ("throughput_events_per_s", "throughput_bytes_per_s"):
-                _require_pos_number(mval, f"{label}: run[{idx}].metrics.{metric_name}")
-            elif metric_name == "max_queued_payload_bytes":
+                _require_bounded_pos_number(mval, f"{label}: run[{idx}].metrics.{metric_name}")
+            elif metric_name in ("retained_rss_bytes", "max_queued_payload_bytes"):
                 _require_non_neg_int(mval, f"{label}: run[{idx}].metrics.{metric_name}")
+            elif metric_name == "paired_delta_p50_ns":
+                _require_signed_int64(mval, f"{label}: run[{idx}].metrics.{metric_name}")
             else:
                 _require_pos_int(mval, f"{label}: run[{idx}].metrics.{metric_name}")
 
-        if "p99_ns" in metrics:
-            _require_pos_int(metrics["p99_ns"], f"{label}: run[{idx}].metrics.p99_ns")
+        if "p50_ns" in metrics and "p95_ns" in metrics and metrics["p95_ns"] < metrics["p50_ns"]:
+            raise ConfigError(f"{label}: run[{idx}].metrics has p95_ns < p50_ns")
+        if "p95_ns" in metrics and "p99_ns" in metrics and metrics["p99_ns"] < metrics["p95_ns"]:
+            raise ConfigError(f"{label}: run[{idx}].metrics has p99_ns < p95_ns")
+        if "p50_ns" in metrics and "p99_ns" in metrics and metrics["p99_ns"] < metrics["p50_ns"]:
+            raise ConfigError(f"{label}: run[{idx}].metrics has p99_ns < p50_ns")
 
-        if requires_b0 and "b0_drift_pct" not in run:
+        if not timed_out:
+            if "min_measure_ms" in scenario and "measure_ms" not in run:
+                raise ConfigError(
+                    f"{label}: run[{idx}] missing required 'measure_ms' for scenario {scenario_id!r}"
+                )
+            for dur_k in ("warmup_ms", "measure_ms"):
+                if dur_k in run and run[dur_k] > run_timeout_ms:
+                    raise ConfigError(
+                        f"{label}: run[{idx}].{dur_k}={run[dur_k]}ms exceeds "
+                        f"run_timeout_ms={run_timeout_ms}ms without timeout flag"
+                    )
+            if "warmup_ms" in run and "measure_ms" in run and (run["warmup_ms"] + run["measure_ms"]) > run_timeout_ms:
+                raise ConfigError(
+                    f"{label}: run[{idx}] warmup_ms + measure_ms exceeds "
+                    f"run_timeout_ms={run_timeout_ms}ms without timeout flag"
+                )
+            for lat_k in (
+                "p50_ns",
+                "p95_ns",
+                "p99_ns",
+                "ttft_p95_ns",
+                "stdio_p50_ns",
+                "in_process_p50_ns",
+            ):
+                if lat_k in metrics and metrics[lat_k] > op_timeout_ns:
+                    raise ConfigError(
+                        f"{label}: run[{idx}].metrics.{lat_k}={metrics[lat_k]} exceeds "
+                        f"operation_timeout_ms={scenario['operation_timeout_ms']}ms without timeout flag"
+                    )
+            if "paired_delta_p50_ns" in metrics and abs(metrics["paired_delta_p50_ns"]) > op_timeout_ns:
+                raise ConfigError(
+                    f"{label}: run[{idx}].metrics.paired_delta_p50_ns={metrics['paired_delta_p50_ns']} exceeds "
+                    f"operation_timeout_ms={scenario['operation_timeout_ms']}ms without timeout flag"
+                )
+            if "shutdown_ms" in metrics and metrics["shutdown_ms"] > scenario["operation_timeout_ms"]:
+                raise ConfigError(
+                    f"{label}: run[{idx}].metrics.shutdown_ms={metrics['shutdown_ms']}ms exceeds "
+                    f"operation_timeout_ms={scenario['operation_timeout_ms']}ms without timeout flag"
+                )
+
+        if requires_b0 and not timed_out and "b0_drift_pct" not in run:
             raise ConfigError(f"{label}: run[{idx}] missing required b0_drift_pct")
-        if "b0_drift_pct" in run and not _is_real_number(run["b0_drift_pct"]):
-            raise ConfigError(f"{label}: run[{idx}].b0_drift_pct must be finite number")
+        if "b0_drift_pct" in run:
+            if not _is_real_number(run["b0_drift_pct"]) or abs(float(run["b0_drift_pct"])) > 1e6:
+                raise ConfigError(f"{label}: run[{idx}].b0_drift_pct must be finite percentage")
         for non_neg_pct in ("cpu_steal_pct", "background_cpu_pct"):
-            _require_non_neg_number(run[non_neg_pct], f"{label}: run[{idx}].{non_neg_pct}")
+            pct = _require_non_neg_number(run[non_neg_pct], f"{label}: run[{idx}].{non_neg_pct}")
+            if pct > 100.0:
+                raise ConfigError(f"{label}: run[{idx}].{non_neg_pct} must be <= 100.0")
 
     normalized = dict(data)
     normalized["concurrency"] = concurrency
     return normalized, scenario
 
 
-def compute_theil_sen_slope(values: list[int]) -> float:
-    """Compute the Theil-Sen median pairwise slope over an equally spaced series."""
+def _compute_theil_sen_exact(
+    values: list[int],
+    *,
+    window_requests: int = 1000,
+) -> tuple[Fraction, list[float]]:
     n = len(values)
     if n < 2:
         raise ConfigError("Theil-Sen slope requires at least 2 points")
-    slopes: list[float] = []
+    if window_requests <= 0:
+        raise ConfigError("window_requests must be positive")
+    scale = Fraction(1000, window_requests)
+    exact_slopes: list[Fraction] = []
     for i in range(n):
         for j in range(i + 1, n):
-            slopes.append((values[j] - values[i]) / float(j - i))
-    return float(statistics.median(slopes))
+            exact_slopes.append(Fraction(values[j] - values[i], j - i) * scale)
+    exact_slopes.sort()
+    m = len(exact_slopes)
+    if m % 2 == 1:
+        med_frac = exact_slopes[m // 2]
+    else:
+        med_frac = (exact_slopes[m // 2 - 1] + exact_slopes[m // 2]) / 2
+    float_slopes = [float(s) for s in exact_slopes]
+    return med_frac, [_quantile(float_slopes, 0.005), _quantile(float_slopes, 0.995)]
+
+
+def compute_theil_sen_slope(values: list[int], *, window_requests: int = 1000) -> float:
+    """Compute the Theil-Sen median pairwise slope scaled to bytes per 1,000 requests."""
+    med_frac, _ = _compute_theil_sen_exact(values, window_requests=window_requests)
+    return float(med_frac)
+
+
+def compute_theil_sen_slope_with_interval(
+    values: list[int],
+    *,
+    window_requests: int = 1000,
+) -> tuple[float, list[float]]:
+    """Return `(median_slope_per_1k, [p05_slope_per_1k, p95_slope_per_1k])`."""
+    med_frac, interval = _compute_theil_sen_exact(values, window_requests=window_requests)
+    return float(med_frac), interval
 
 
 def _quantile(sorted_vals: list[float], q: float) -> float:
@@ -1042,6 +1244,8 @@ def _quantile(sorted_vals: list[float], q: float) -> float:
     pos = q * (len(sorted_vals) - 1)
     lo = int(math.floor(pos))
     hi = int(math.ceil(pos))
+    if lo == hi:
+        return sorted_vals[lo]
     frac = pos - lo
     return sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac
 
@@ -1055,46 +1259,60 @@ def _robust_mad_cv_pct(values: list[float]) -> float:
     return (1.4826 * mad / med) * 100.0
 
 
+def _json_pct(ratio: float) -> float | None:
+    if not math.isfinite(ratio):
+        return None
+    pct = ratio * 100.0
+    return pct if math.isfinite(pct) else None
+
+
 def _paired_bootstrap(
     ref_vals: list[float],
     head_vals: list[float],
     *,
     higher_is_worse: bool,
+    limit_ratio: float,
+    floor_abs: float,
     iterations: int,
     confidence: float,
     rng: random.Random,
-) -> tuple[float, float, float, float, float, float]:
-    """Return `(point_ratio, ci_low_ratio, ci_high_ratio, point_abs, ci_low_abs, ci_high_abs)`."""
+) -> tuple[float, float, float, float, float, float, float, float, float]:
+    """Return ratio, abs_delta, and budget-excess point + CI bounds."""
+
     def _safe_ratio(delta: float, ref: float) -> float:
         if ref > 0.0:
             return delta / ref
         return float("inf") if delta > 0.0 else 0.0
 
+    def _budget_excess(delta: float, ref: float) -> float:
+        allowance = max(limit_ratio * ref, floor_abs) if higher_is_worse else (limit_ratio * ref)
+        if allowance > 0.0:
+            return (delta - allowance) / allowance
+        return float("inf") if delta > 0.0 else 0.0
+
     n = len(ref_vals)
-    ref_mean = sum(ref_vals) / n
-    head_mean = sum(head_vals) / n
-    if higher_is_worse:
-        point_abs = head_mean - ref_mean
-    else:
-        point_abs = ref_mean - head_mean
+    ref_mean = math.fsum(ref_vals) / n
+    head_mean = math.fsum(head_vals) / n
+    point_abs = (head_mean - ref_mean) if higher_is_worse else (ref_mean - head_mean)
     point_ratio = _safe_ratio(point_abs, ref_mean)
+    point_excess = _budget_excess(point_abs, ref_mean)
 
     ratios: list[float] = []
     abs_deltas: list[float] = []
+    excesses: list[float] = []
     indices = range(n)
     for _ in range(iterations):
         sample_idx = rng.choices(indices, k=n)
-        s_ref = sum(ref_vals[i] for i in sample_idx) / n
-        s_head = sum(head_vals[i] for i in sample_idx) / n
-        if higher_is_worse:
-            d_abs = s_head - s_ref
-        else:
-            d_abs = s_ref - s_head
+        s_ref = math.fsum(ref_vals[i] for i in sample_idx) / n
+        s_head = math.fsum(head_vals[i] for i in sample_idx) / n
+        d_abs = (s_head - s_ref) if higher_is_worse else (s_ref - s_head)
         ratios.append(_safe_ratio(d_abs, s_ref))
         abs_deltas.append(d_abs)
+        excesses.append(_budget_excess(d_abs, s_ref))
 
     ratios.sort()
     abs_deltas.sort()
+    excesses.sort()
     alpha = (1.0 - confidence) / 2.0
     return (
         point_ratio,
@@ -1103,6 +1321,9 @@ def _paired_bootstrap(
         point_abs,
         _quantile(abs_deltas, alpha),
         _quantile(abs_deltas, 1.0 - alpha),
+        point_excess,
+        _quantile(excesses, alpha),
+        _quantile(excesses, 1.0 - alpha),
     )
 
 
@@ -1114,13 +1335,17 @@ def _peak_rss_guardrail_bytes(spec: dict[str, Any], concurrency: int) -> int | N
     return int(val) if val is not None else None
 
 
+def _extract_paired_delta_ns(run: dict[str, Any]) -> int:
+    return int(run["metrics"]["paired_delta_p50_ns"])
+
+
 def evaluate_comparison(
     base_raw: Any,
     head_raw: Any,
     scenarios_data: Any,
     *,
-    anchor_raw: Any | None = None,
-    environment_data: Any | None = None,
+    anchor_raw: Any = _UNSET,
+    environment_data: Any = _UNSET,
     seed: int | None = None,
 ) -> dict[str, Any]:
     """Run all RFC-0043 §7 checks and return a structured result dictionary."""
@@ -1131,18 +1356,22 @@ def evaluate_comparison(
             failure_codes.append(code)
 
     try:
-        if environment_data is not None:
+        if seed is not None and not _is_strict_int(seed):
+            raise ConfigError(f"seed must be integer, got {seed!r}")
+        env_checked: dict[str, Any] | None = None
+        if environment_data is not _UNSET:
             validate_environment_config(environment_data)
             if environment_data["status"] != "active":
                 raise ConfigError(
                     "environment must have status='active' with attested machine and toolchain for formal comparison"
                 )
+            env_checked = environment_data
         scenarios_by_id = validate_scenarios_config(scenarios_data)
         protocol = scenarios_data["protocol"]
         base, scenario = _validate_run_bundle(base_raw, "base", scenarios_by_id)
         head, _ = _validate_run_bundle(head_raw, "head", scenarios_by_id)
         anchor = None
-        if anchor_raw is not None:
+        if anchor_raw is not _UNSET:
             anchor, _ = _validate_run_bundle(anchor_raw, "anchor", scenarios_by_id)
     except ConfigError as exc:
         return {
@@ -1156,16 +1385,20 @@ def evaluate_comparison(
     errors: list[str] = []
 
     def check_matching_config(a: dict[str, Any], b: dict[str, Any], b_name: str) -> None:
-        fields = ["scenario", "backend", "concurrency", "operation_timeout_ms", "run_timeout_ms"]
+        fields = [
+            "scenario",
+            "backend",
+            "concurrency",
+            "operation_timeout_ms",
+            "run_timeout_ms",
+            "recipe_hash",
+        ]
         if "case" in a or "case" in b:
             fields.append("case")
         for field in fields:
             if a.get(field) != b.get(field):
                 add_failure("BENCH_CONFIG_INVALID")
                 errors.append(f"{b_name}.{field}={b.get(field)!r} does not match base.{field}={a.get(field)!r}")
-        if b_name == "head" and a["recipe_hash"] != b["recipe_hash"]:
-            add_failure("BENCH_CONFIG_INVALID")
-            errors.append(f"head.recipe_hash={b['recipe_hash']!r} differs from base.recipe_hash={a['recipe_hash']!r}")
 
     check_matching_config(base, head, "head")
     if anchor is not None:
@@ -1216,39 +1449,57 @@ def evaluate_comparison(
     min_samples = scenario["min_samples"]
     for b_name, bundle in all_bundles:
         for idx, run in enumerate(bundle["runs"]):
-            if run["run_timed_out"] or run["timed_out_operations"] > 0:
+            timed_out = run["run_timed_out"] or run["timed_out_operations"] > 0
+            if timed_out:
                 add_failure("BENCH_TIMEOUT")
                 errors.append(f"{b_name}.runs[{idx}] timed out")
             if run["correctness_failures"] > 0 or run["leaked_handles"] > 0:
-                add_failure("BENCH_CORRECTNESS_FAILURE")
+                add_failure("CORRECTNESS_FAILURE")
                 errors.append(
                     f"{b_name}.runs[{idx}] correctness={run['correctness_failures']} "
                     f"leaked_handles={run['leaked_handles']}"
                 )
-            if run["samples"] < min_samples:
-                add_failure("BENCH_CORRECTNESS_FAILURE")
+            if not timed_out and run["samples"] < min_samples:
+                add_failure("CORRECTNESS_FAILURE")
                 errors.append(
                     f"{b_name}.runs[{idx}].samples={run['samples']} < required min_samples={min_samples}"
                 )
+            if not timed_out:
+                for run_key, sc_min_key in WARMUP_AND_WINDOW_RUN_KEYS:
+                    if run_key in run and sc_min_key in scenario and run[run_key] < scenario[sc_min_key]:
+                        add_failure("CORRECTNESS_FAILURE")
+                        errors.append(
+                            f"{b_name}.runs[{idx}].{run_key}={run[run_key]} < required {sc_min_key}={scenario[sc_min_key]}"
+                        )
 
     # 2. Environment stability: B0 drift, CPU steal / background, and base P50 MAD CV <= 3%.
+    max_steal = (
+        float(env_checked["isolation_requirements"]["max_cpu_steal_pct"])
+        if env_checked is not None
+        else 1.0
+    )
+    max_bg = (
+        float(env_checked["isolation_requirements"]["max_background_cpu_pct"])
+        if env_checked is not None
+        else 5.0
+    )
     for b_name, bundle in all_bundles:
         for idx, run in enumerate(bundle["runs"]):
             if "b0_drift_pct" in run and abs(run["b0_drift_pct"]) > protocol["max_b0_drift_pct"]:
                 add_failure("BENCH_ENV_UNSTABLE")
                 errors.append(f"{b_name}.runs[{idx}] B0 drift {run['b0_drift_pct']}% exceeds limit")
-            if "cpu_steal_pct" in run and run["cpu_steal_pct"] > 1.0:
+            if run["cpu_steal_pct"] > max_steal:
                 add_failure("BENCH_ENV_UNSTABLE")
-                errors.append(f"{b_name}.runs[{idx}] cpu_steal_pct={run['cpu_steal_pct']}% > 1.0%")
-            if "background_cpu_pct" in run and run["background_cpu_pct"] > 5.0:
+                errors.append(f"{b_name}.runs[{idx}] cpu_steal_pct={run['cpu_steal_pct']}% > {max_steal}%")
+            if run["background_cpu_pct"] > max_bg:
                 add_failure("BENCH_ENV_UNSTABLE")
                 errors.append(
-                    f"{b_name}.runs[{idx}] background_cpu_pct={run['background_cpu_pct']}% > 5.0%"
+                    f"{b_name}.runs[{idx}] background_cpu_pct={run['background_cpu_pct']}% > {max_bg}%"
                 )
 
     budgets = scenario["budgets"]
     base_mad_cv_pct: float | None = None
-    if "p50_ns" in budgets:
+    if "p50_ns" in budgets and all("p50_ns" in r["metrics"] for r in base["runs"]):
         base_series = [float(r["metrics"]["p50_ns"]) for r in base["runs"]]
         base_mad_cv_pct = _robust_mad_cv_pct(base_series)
         if base_mad_cv_pct > protocol["max_base_p50_mad_cv_pct"]:
@@ -1258,7 +1509,7 @@ def evaluate_comparison(
                 f"{base_mad_cv_pct:.2f}% > {protocol['max_base_p50_mad_cv_pct']}%"
             )
 
-    if any(code in failure_codes for code in ("BENCH_TIMEOUT", "BENCH_CORRECTNESS_FAILURE")):
+    if any(code in failure_codes for code in ("BENCH_TIMEOUT", "CORRECTNESS_FAILURE")):
         res = {
             "schema_version": 1,
             "status": "FAIL",
@@ -1281,55 +1532,56 @@ def evaluate_comparison(
 
     for metric_name, spec in budgets.items():
         if metric_name == "rss_slope_bytes_per_1k":
-            tail_n = protocol["rss_slope_tail_windows"]
-            slope_limit = float(spec["max_abs_bytes_per_1k"])
-            head_slopes = [
-                compute_theil_sen_slope(r["rss_windows_bytes"][-tail_n:]) for r in head["runs"]
+            tail_n = scenario["slope_tail_windows"]
+            win_reqs = scenario["window_requests"]
+            slope_limit_int = int(spec["max_abs_bytes_per_1k"])
+            head_slope_pairs = [
+                _compute_theil_sen_exact(
+                    r["rss_windows_bytes"][-tail_n:], window_requests=win_reqs
+                )
+                for r in head["runs"]
             ]
-            worst_slope = max(head_slopes)
-            passed = worst_slope <= slope_limit
+            worst_slope_frac, worst_interval = max(head_slope_pairs, key=lambda item: item[0])
+            worst_slope = float(worst_slope_frac)
+            passed = worst_slope_frac <= Fraction(slope_limit_int)
             if not passed:
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
                 errors.append(
-                    f"head rss_slope_bytes_per_1k worst={worst_slope:.1f} > limit={slope_limit:.1f}"
+                    f"head rss_slope_bytes_per_1k worst={worst_slope:.1f} > limit={slope_limit_int}"
                 )
             metric_reports[metric_name] = {
                 "status": "PASS" if passed else "FAIL",
                 "worst_slope_bytes_per_1k": worst_slope,
-                "limit_bytes_per_1k": slope_limit,
+                "worst_slope_interval_bytes_per_1k": worst_interval,
+                "limit_bytes_per_1k": float(slope_limit_int),
             }
             continue
 
         if metric_name == "paired_delta_p50_ns":
             case_id = head["case"]
-            limit_ns = float(spec["max_abs_delta_ns_by_case"][case_id])
-            head_deltas = [
-                float(r["metrics"]["stdio_p50_ns"] - r["metrics"]["in_process_p50_ns"])
-                for r in head["runs"]
-            ]
-            base_deltas = [
-                float(r["metrics"]["stdio_p50_ns"] - r["metrics"]["in_process_p50_ns"])
-                for r in base["runs"]
-            ]
+            limit_ns = int(spec["max_abs_delta_ns_by_case"][case_id])
+            head_deltas = [_extract_paired_delta_ns(r) for r in head["runs"]]
+            base_deltas = [_extract_paired_delta_ns(r) for r in base["runs"]]
             worst_delta = max(head_deltas)
             passed = worst_delta <= limit_ns
             if not passed:
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
                 errors.append(
-                    f"head paired_delta_p50_ns ({case_id}) max={worst_delta:.0f} > guardrail={limit_ns:.0f}"
+                    f"head paired_delta_p50_ns ({case_id}) max={worst_delta} > guardrail={limit_ns}"
                 )
             metric_reports[metric_name] = {
                 "status": "PASS" if passed else "FAIL",
                 "case": case_id,
-                "worst_delta_ns": worst_delta,
+                "worst_delta_ns": float(worst_delta),
                 "median_delta_ns": float(statistics.median(head_deltas)),
-                "mean_delta_ns": sum(head_deltas) / len(head_deltas),
-                "base_mean_delta_ns": sum(base_deltas) / len(base_deltas),
-                "limit_delta_ns": limit_ns,
+                "mean_delta_ns": math.fsum(head_deltas) / len(head_deltas),
+                "base_mean_delta_ns": math.fsum(base_deltas) / len(base_deltas),
+                "limit_delta_ns": float(limit_ns),
             }
             continue
 
-        head_vals = [float(r["metrics"][metric_name]) for r in head["runs"]]
+        raw_head_vals = [r["metrics"][metric_name] for r in head["runs"]]
+        head_vals = [float(v) for v in raw_head_vals]
         base_vals = [float(r["metrics"][metric_name]) for r in base["runs"]]
         higher_is_worse = metric_name not in ("throughput_events_per_s", "throughput_bytes_per_s")
 
@@ -1337,31 +1589,39 @@ def evaluate_comparison(
         guardrail_exceeded = False
         if metric_name in ("p50_ns", "p95_ns", "ttft_p95_ns"):
             cap = spec.get("max_abs_ns")
-            if cap is not None and max(head_vals) > float(cap):
+            if cap is not None and max(raw_head_vals) > cap:
                 guardrail_exceeded = True
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
-                errors.append(f"head {metric_name} max={max(head_vals):.0f} > guardrail={cap}")
+                errors.append(f"head {metric_name} max={max(raw_head_vals)} > guardrail={cap}")
         elif metric_name == "retained_rss_bytes":
             cap = spec.get("max_abs_bytes")
-            if cap is not None and max(head_vals) > float(cap):
+            if cap is not None and max(raw_head_vals) > cap:
                 guardrail_exceeded = True
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
-                errors.append(f"head {metric_name} max={max(head_vals):.0f} > guardrail={cap}")
+                errors.append(f"head {metric_name} max={max(raw_head_vals)} > guardrail={cap}")
         elif metric_name == "peak_rss_bytes":
             cap = _peak_rss_guardrail_bytes(spec, head["concurrency"])
-            if cap is not None and max(head_vals) > float(cap):
+            if cap is not None and max(raw_head_vals) > cap:
                 guardrail_exceeded = True
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
-                errors.append(f"head {metric_name} max={max(head_vals):.0f} > guardrail={cap}")
-        elif not higher_is_worse and anchor is not None:
-            anchor_vals = [float(r["metrics"][metric_name]) for r in anchor["runs"]]
-            floor_tp = (sum(anchor_vals) / len(anchor_vals)) * protocol["anchor_throughput_floor_ratio"]
-            if min(head_vals) < floor_tp:
+                errors.append(f"head {metric_name} max={max(raw_head_vals)} > guardrail={cap}")
+        elif not higher_is_worse:
+            reg_floor = spec.get("min_abs_per_s")
+            if reg_floor is not None and min(raw_head_vals) < reg_floor:
                 guardrail_exceeded = True
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
                 errors.append(
-                    f"head {metric_name} min={min(head_vals):.1f} < 90% of anchor={floor_tp:.1f}"
+                    f"head {metric_name} min={min(raw_head_vals)} < registered floor={reg_floor}"
                 )
+            if anchor is not None:
+                anchor_vals = [float(r["metrics"][metric_name]) for r in anchor["runs"]]
+                floor_tp = (math.fsum(anchor_vals) / len(anchor_vals)) * protocol["anchor_throughput_floor_ratio"]
+                if min(head_vals) < floor_tp:
+                    guardrail_exceeded = True
+                    add_failure("PERF_GUARDRAIL_EXCEEDED")
+                    errors.append(
+                        f"head {metric_name} min={min(head_vals):.1f} < 90% of anchor={floor_tp:.1f}"
+                    )
 
         if higher_is_worse:
             limit_ratio = float(spec["max_regression_pct"]) / 100.0
@@ -1379,32 +1639,34 @@ def evaluate_comparison(
         comp_details: dict[str, Any] = {}
         metric_verdicts: list[str] = []
         for ref_name, ref_vals in refs:
-            pt_r, lo_r, hi_r, pt_a, lo_a, hi_a = _paired_bootstrap(
+            pt_r, lo_r, hi_r, pt_a, lo_a, hi_a, pt_ex, lo_ex, hi_ex = _paired_bootstrap(
                 ref_vals,
                 head_vals,
                 higher_is_worse=higher_is_worse,
+                limit_ratio=limit_ratio,
+                floor_abs=floor_abs,
                 iterations=iterations,
                 confidence=confidence,
                 rng=rng,
             )
-            if higher_is_worse:
-                within_floor = floor_abs > 0.0 and hi_a <= floor_abs
-                passes_rel = hi_r <= limit_ratio or within_floor
-                regressed = (
-                    pt_r > limit_ratio
-                    and lo_r > limit_ratio
-                    and (floor_abs == 0.0 or (pt_a > floor_abs and lo_a > floor_abs))
-                )
-            else:
-                passes_rel = hi_r <= limit_ratio
-                regressed = pt_r > limit_ratio and lo_r > limit_ratio
+            tol = 1e-12
+            passes_rel = hi_ex <= tol
+            regressed = pt_ex > tol and lo_ex > tol
+
+            pt_pct = _json_pct(pt_r)
+            lo_pct = _json_pct(lo_r)
+            hi_pct = _json_pct(hi_r)
+            pct_desc = (
+                f"change={pt_pct:.2f}% CI99=[{lo_pct:.2f}%, {hi_pct:.2f}%]"
+                if pt_pct is not None and lo_pct is not None and hi_pct is not None
+                else f"abs_delta={pt_a:.1f} CI99=[{lo_a:.1f}, {hi_a:.1f}]"
+            )
 
             if regressed:
                 verdict = "PERF_REGRESSION"
                 add_failure("PERF_REGRESSION")
                 errors.append(
-                    f"head vs {ref_name} {metric_name}: change={pt_r * 100:.2f}% "
-                    f"CI99=[{lo_r * 100:.2f}%, {hi_r * 100:.2f}%] exceeds limit {limit_ratio * 100:.1f}%"
+                    f"head vs {ref_name} {metric_name}: {pct_desc} exceeds limit {limit_ratio * 100:.1f}%"
                 )
             elif passes_rel:
                 verdict = "PASS"
@@ -1412,14 +1674,14 @@ def evaluate_comparison(
                 verdict = "PERF_INCONCLUSIVE"
                 add_failure("PERF_INCONCLUSIVE")
                 errors.append(
-                    f"head vs {ref_name} {metric_name}: CI99=[{lo_r * 100:.2f}%, {hi_r * 100:.2f}%] "
+                    f"head vs {ref_name} {metric_name}: {pct_desc} "
                     f"straddles budget {limit_ratio * 100:.1f}% (inconclusive does not pass)"
                 )
             metric_verdicts.append(verdict)
             comp_details[f"vs_{ref_name}"] = {
                 "verdict": verdict,
-                "point_change_pct": pt_r * 100.0,
-                "ci99_change_pct": [lo_r * 100.0, hi_r * 100.0],
+                "point_change_pct": pt_pct,
+                "ci99_change_pct": [lo_pct, hi_pct],
                 "point_abs_delta": pt_a,
                 "ci99_abs_delta": [lo_a, hi_a],
             }
@@ -1441,19 +1703,19 @@ def evaluate_comparison(
         ("max_queued_payload_bytes", "max_queued_payload_bytes"),
     ):
         if sc_cap_key in scenario:
-            cap_val = float(scenario[sc_cap_key])
-            head_cap_vals = [float(r["metrics"][metric_key]) for r in head["runs"]]
+            cap_val = int(scenario[sc_cap_key])
+            head_cap_vals = [int(r["metrics"][metric_key]) for r in head["runs"]]
             worst_val = max(head_cap_vals)
             passed = worst_val <= cap_val
             if not passed:
                 add_failure("PERF_GUARDRAIL_EXCEEDED")
                 errors.append(
-                    f"head {metric_key} max={worst_val:.0f} > scenario {sc_cap_key}={cap_val:.0f}"
+                    f"head {metric_key} max={worst_val} > scenario {sc_cap_key}={cap_val}"
                 )
             metric_reports[metric_key] = {
                 "status": "PASS" if passed else "FAIL",
-                "worst_value": worst_val,
-                "limit": cap_val,
+                "worst_value": float(worst_val),
+                "limit": float(cap_val),
             }
 
     overall = "PASS" if not failure_codes else "FAIL"
@@ -1477,6 +1739,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate and compare RFC-0043 §7 benchmarks.")
     parser.add_argument("--scenarios", type=pathlib.Path, default=DEFAULT_SCENARIOS)
     parser.add_argument("--environment", type=pathlib.Path)
+    parser.add_argument("--fixtures-manifest", type=pathlib.Path, default=DEFAULT_FIXTURES_MANIFEST)
     parser.add_argument("--validate-scenarios", type=pathlib.Path)
     parser.add_argument("--base", type=pathlib.Path)
     parser.add_argument("--head", type=pathlib.Path)
@@ -1489,9 +1752,11 @@ def main(argv: list[str] | None = None) -> int:
         try:
             scenarios = load_json_strict(args.validate_scenarios)
             by_id = validate_scenarios_config(scenarios)
-            env_path = args.environment or DEFAULT_ENVIRONMENT
-            if env_path.is_file():
-                validate_environment_config(load_json_strict(env_path))
+            env_path = args.environment if args.environment is not None else DEFAULT_ENVIRONMENT
+            validate_environment_config(load_json_strict(env_path))
+            validate_scenarios_against_fixtures(
+                by_id, load_json_strict(args.fixtures_manifest)
+            )
         except ConfigError as exc:
             print(f"BENCH_CONFIG_INVALID: {exc}", file=sys.stderr)
             return 1
@@ -1505,8 +1770,8 @@ def main(argv: list[str] | None = None) -> int:
         scenarios_data = load_json_strict(args.scenarios)
         base_raw = load_json_strict(args.base)
         head_raw = load_json_strict(args.head)
-        anchor_raw = load_json_strict(args.anchor) if args.anchor is not None else None
-        env_raw = load_json_strict(args.environment) if args.environment is not None else None
+        anchor_raw = load_json_strict(args.anchor) if args.anchor is not None else _UNSET
+        env_raw = load_json_strict(args.environment) if args.environment is not None else _UNSET
     except ConfigError as exc:
         report = {
             "schema_version": 1,
@@ -1515,10 +1780,11 @@ def main(argv: list[str] | None = None) -> int:
             "errors": [str(exc)],
             "metrics": {},
         }
+        rendered = json.dumps(report, indent=2, allow_nan=False) + "\n"
         if args.out is not None:
             args.out.parent.mkdir(parents=True, exist_ok=True)
-            args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(report, indent=2))
+            args.out.write_text(rendered, encoding="utf-8")
+        print(rendered, end="")
         return 1
 
     report = evaluate_comparison(
@@ -1529,7 +1795,7 @@ def main(argv: list[str] | None = None) -> int:
         environment_data=env_raw,
         seed=args.seed,
     )
-    rendered = json.dumps(report, indent=2) + "\n"
+    rendered = json.dumps(report, indent=2, allow_nan=False) + "\n"
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(rendered, encoding="utf-8")

@@ -112,26 +112,78 @@ def compute_manifest() -> dict[str, Any]:
     return {"schema_version": 1, "fixtures": entries}
 
 
+def _strict_pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    obj: dict[str, Any] = {}
+    for k, v in pairs:
+        if k in obj:
+            raise ValueError(f"duplicate JSON key: {k!r}")
+        obj[k] = v
+    return obj
+
+
+def _reject_json_constant(constant: str) -> Any:
+    raise ValueError(f"invalid JSON constant: {constant!r}")
+
+
+def _exact_entry_equal(a: Any, b: dict[str, Any]) -> bool:
+    if not isinstance(a, dict) or set(a) != set(b):
+        return False
+    return all(type(a[k]) is type(b[k]) and a[k] == b[k] for k in b)
+
+
 def check_manifest(manifest_path: pathlib.Path) -> list[str]:
-    errors: list[str] = []
     if not manifest_path.is_file():
         return [f"missing manifest file: {manifest_path}"]
     try:
-        recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception as exc:
+        raw_text = manifest_path.read_text(encoding="utf-8")
+        recorded = json.loads(
+            raw_text,
+            object_pairs_hook=_strict_pairs_hook,
+            parse_constant=_reject_json_constant,
+        )
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError, json.JSONDecodeError) as exc:
         return [f"invalid manifest JSON: {exc}"]
 
+    if not isinstance(recorded, dict):
+        return ["fixture manifest root must be a JSON object"]
+    if set(recorded) != {"schema_version", "fixtures"}:
+        return [f"fixture manifest top-level keys invalid: {sorted(recorded)}"]
+    sv = recorded["schema_version"]
+    if type(sv) is not int or sv != 1:
+        return [f"fixture manifest schema_version must be integer 1, got {sv!r}"]
+    raw_fixtures = recorded["fixtures"]
+    if not isinstance(raw_fixtures, list):
+        return ["fixture manifest 'fixtures' must be a JSON array"]
+
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    rec_by_id: dict[str, dict[str, Any]] = {}
+    for idx, f in enumerate(raw_fixtures):
+        if not isinstance(f, dict):
+            errors.append(f"fixtures[{idx}] must be an object")
+            continue
+        fid = f.get("id")
+        if not isinstance(fid, str) or not fid:
+            errors.append(f"fixtures[{idx}].id must be a non-empty string")
+            continue
+        if fid in seen_ids:
+            errors.append(f"duplicate fixture id: {fid!r}")
+            continue
+        seen_ids.add(fid)
+        rec_by_id[fid] = f
+
     expected = compute_manifest()
-    if recorded != expected:
-        rec_by_id = {f.get("id"): f for f in recorded.get("fixtures", []) if isinstance(f, dict)}
-        for item in expected["fixtures"]:
-            fid = item["id"]
-            if rec_by_id.get(fid) != item:
-                errors.append(
-                    f"fixture {fid} manifest mismatch: expected={item}, got={rec_by_id.get(fid)}"
-                )
-        if not errors:
-            errors.append("fixture manifest top-level structure differs")
+    exp_ids = {item["id"] for item in expected["fixtures"]}
+    extra_ids = seen_ids - exp_ids
+    if extra_ids:
+        errors.append(f"unexpected fixture ids in manifest: {sorted(extra_ids)}")
+    for item in expected["fixtures"]:
+        fid = item["id"]
+        got = rec_by_id.get(fid)
+        if not _exact_entry_equal(got, item):
+            errors.append(f"fixture {fid} manifest mismatch: expected={item}, got={got!r}")
+    if not errors and len(raw_fixtures) != len(expected["fixtures"]):
+        errors.append("fixture manifest entry count mismatch")
     return errors
 
 
@@ -146,10 +198,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.write_manifest:
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
         args.manifest.write_text(
-            json.dumps(compute_manifest(), indent=2) + "\n", encoding="utf-8"
+            json.dumps(compute_manifest(), indent=2, allow_nan=False) + "\n", encoding="utf-8"
         )
         print(f"wrote {args.manifest}")
         return 0
+
+    errors = check_manifest(args.manifest)
+    if errors:
+        for err in errors:
+            print(err, file=sys.stderr)
+        return 1
 
     if args.out_dir is not None:
         args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -160,12 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             (args.out_dir / entry["filename"]).write_bytes(payload)
         print(f"generated {len(FIXTURE_SPECS)} fixtures into {args.out_dir}")
 
-    if args.check or (not args.write_manifest and args.out_dir is None):
-        errors = check_manifest(args.manifest)
-        if errors:
-            for err in errors:
-                print(err, file=sys.stderr)
-            return 1
+    if args.check or args.out_dir is None:
         print(f"bench fixtures ok ({len(FIXTURE_SPECS)} payloads verified)")
     return 0
 
