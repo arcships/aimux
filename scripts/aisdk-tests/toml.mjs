@@ -49,10 +49,13 @@ export function parseToml(src) {
       if (src[i] !== '\\') { out += src[i]; continue; }
       const e = src[++i];
       const simple = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' };
-      if (e in simple) out += simple[e];
+      if (Object.hasOwn(simple, e)) out += simple[e];
       else if (e === 'u' || e === 'U') {
         const n = e === 'u' ? 4 : 8;
-        out += String.fromCodePoint(parseInt(src.slice(i + 1, i + 1 + n), 16));
+        const hex = src.slice(i + 1, i + 1 + n);
+        const cp = hex.length === n && /^[0-9A-Fa-f]+$/.test(hex) ? parseInt(hex, 16) : -1;
+        if (cp < 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) fail(`invalid unicode escape \\${e}${hex}`);
+        out += String.fromCodePoint(cp);
         i += n;
       } else fail(`unknown escape \\${e}`);
     }

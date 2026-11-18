@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { autoCategory, check, keyCases, readLayouts, scanMarkers } from './check.mjs';
+import { autoCategory, check, diffCases, keyCases, readLayouts, scanMarkers } from './check.mjs';
 import { listCases } from './inventory.mjs';
 import { parseToml } from './toml.mjs';
 
@@ -53,6 +53,7 @@ status = "missing"
   });
   assert.throws(() => parseToml('a = 1.5\n'), /line 1: unsupported value/);
   assert.throws(() => parseToml('a = 1\na = 2\n'), /line 2: duplicate key a/);
+  assert.throws(() => parseToml('a = "\\u16ZZ"\n'), /line 1: invalid unicode escape/);
 });
 
 test('listCases gives each case its source span', () => {
@@ -135,6 +136,7 @@ other = [{ case = "x", reason = "r" }]
 [[groq.files]]
 rust = "groq/extra.rs"
 status = "aimux"
+reason = "extra"
 
 [nope]
 package = "@ai-sdk/nope"
@@ -149,7 +151,7 @@ package = "@ai-sdk/nope"
     'layout.toml:27 registered: exclusion without ref',
     'layout.toml:28 sub-feature: issue must be an issue number',
     'layout.toml:20 src/d.ts: unknown exclusion category other',
-    'layout.toml:35 [nope]: package "@ai-sdk/nope" is not in VERSIONS.json',
+    'layout.toml:36 [nope]: package "@ai-sdk/nope" is not in VERSIONS.json',
   ]);
 });
 
@@ -446,4 +448,150 @@ status = "mapped"
   assert.deepEqual(rUnlisted.errors, [
     'aimux-providers/src/groq/tests/u.rs:1: marker for @ai-sdk/provider-utils sits in @ai-sdk/groq directory aimux-providers/src/groq/tests/u.rs',
   ]);
+});
+
+test('scanMarkers handles pre-marker #[ignore]/#[test], same-line #[test] #[ignore], and multiline attributes', () => {
+  const src = [
+    '#[ignore]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › pre_ignore\n#[test]\nfn f1() {}\n',
+    '#[test] #[ignore]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › same_line\nfn f2() {}\n',
+    '#[test]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › pre_test\nfn f3() {}\n',
+    '#[tokio::test(\n  flavor = "multi_thread"\n)]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › multi_attr\nasync fn f4() {}\n',
+  ].join('');
+  const { markers, errors } = scanMarkers('x.rs', src);
+  assert.deepEqual(markers.map((m) => m.chain), ['d › pre_test', 'd › multi_attr']);
+  assert.deepEqual(errors, [
+    'x.rs:2: marker sits on an #[ignore] test (RFC-0045 §5)',
+    'x.rs:6: marker sits on an #[ignore] test (RFC-0045 §5)',
+  ]);
+});
+
+test('readLayouts rejects non-table tests, non-string/negative fields, aimux/elsewhere omissions, and array versions', () => {
+  const errors = [];
+  readLayouts([{
+    rel: 'layout.toml',
+    src: `
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/a.ts"
+status = "mapped"
+tests = true
+
+[[groq.files]]
+upstream = "src/b.ts"
+status = "elsewhere"
+
+[groq.files.tests]
+constructor = []
+ts-only = [{ case = "c", reason = true }]
+sub-feature = [{ case = "c", reason = "r", issue = -1 }]
+
+[[groq.files]]
+rust = "groq/x.rs"
+status = "aimux"
+
+[[groq.files]]
+upstream = "src/v.ts"
+status = "missing"
+issue = 275
+version = ["4.0.53"]
+`,
+  }], versions, errors);
+  assert.deepEqual(errors, [
+    'layout.toml:5 src/a.ts: tests must be a table',
+    'layout.toml:10 src/b.ts: an elsewhere entry needs a rust path',
+    'layout.toml:10 src/b.ts: unknown exclusion category constructor',
+    'layout.toml:16 ts-only: exclusion without reason',
+    'layout.toml:17 sub-feature: issue must be an issue number',
+    'layout.toml:19 groq/x.rs: an aimux entry needs a reason',
+    'layout.toml:23 src/v.ts: version ["4.0.53"] is not x.y.z',
+  ]);
+});
+
+test('check resolves cross-crate elsewhere ownership and multi-table missing-only vendors', () => {
+  const layout = `
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/sigv4.ts"
+rust = "../aimux-provider-utils/src/sigv4.rs"
+status = "elsewhere"
+
+[groq.files.tests]
+
+[fal]
+package = "@ai-sdk/fal"
+
+[[fal.files]]
+upstream = "src/fal.ts"
+status = "missing"
+issue = 275
+`;
+  const v = { ...versions, '@ai-sdk/fal': { version: '3.0.54' }, '@ai-sdk/provider-utils': { version: '5.0.55' } };
+  const errors = [];
+  const tables = readLayouts([{ rel: 'aimux-providers/layout.toml', src: layout }], v, errors);
+  assert.deepEqual(errors, []);
+  const inventory = [pkg('@ai-sdk/groq', '4.0.52', { 'src/sigv4.test.ts': "it('s', f);" })];
+  const mCross = scanMarkers('aimux-provider-utils/src/tests/sigv4.rs', marker('@ai-sdk/groq src/sigv4.test.ts › s')).markers[0];
+  const mUnlisted = scanMarkers('aimux-providers/src/other_unlisted.rs', marker('@ai-sdk/provider-utils src/u.test.ts › u')).markers[0];
+  const r = check({
+    versions: v,
+    tables,
+    markers: [mCross, mUnlisted],
+    inventory: [...inventory, pkg('@ai-sdk/provider-utils', '5.0.55', { 'src/u.test.ts': "it('u', f);" })],
+  });
+  assert.deepEqual(r.errors, []);
+});
+
+test('diffCases compares per-file effective versions across lock catchup and override bumps', () => {
+  const baseVersions = { ai: { version: '7.0.127' } };
+  const baseTables = readLayouts([{
+    rel: 'aimux-core/layout.toml',
+    src: `
+[ai]
+package = "ai"
+[[ai.files]]
+upstream = "src/decide/decide.ts"
+status = "mapped"
+version = "7.0.128"
+[ai.files.tests]
+[[ai.files]]
+upstream = "src/text.ts"
+status = "mapped"
+[ai.files.tests]
+`,
+  }], baseVersions, []);
+
+  // Lock catches up to 7.0.128 and removes decide's version override: decide has 0 new cases, text has 1 new case.
+  const headVersions = { ai: { version: '7.0.128' } };
+  const headTables = readLayouts([{
+    rel: 'aimux-core/layout.toml',
+    src: `
+[ai]
+package = "ai"
+[[ai.files]]
+upstream = "src/decide/decide.ts"
+status = "mapped"
+[ai.files.tests]
+[[ai.files]]
+upstream = "src/text.ts"
+status = "mapped"
+[ai.files.tests]
+`,
+  }], headVersions, []);
+
+  const inventory = [
+    pkg('ai', '7.0.127', { 'src/text.test.ts': "it('t1', f);" }),
+    pkg('ai', '7.0.128', {
+      'src/decide/decide.test.ts': "it('d1', f); it('d2', f);",
+      'src/text.test.ts': "it('t1', f); it('t2', f);",
+    }),
+  ];
+  const catchup = diffCases({ baseVersions, baseTables, versions: headVersions, tables: headTables, markers: [], inventory });
+  assert.deepEqual(catchup, [{
+    package: 'ai',
+    rows: [{ file: 'src/text.test.ts', beforeVer: '7.0.127', afterVer: '7.0.128', added: ['t2'] }],
+  }]);
 });

@@ -90,7 +90,7 @@ function readBlobs(repo, specs) {
 const CALLEES = new Set(['describe', 'it', 'test']);
 const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequential', 'fails', 'skipIf', 'runIf']);
 // A `/` after one of these starts a regular expression, otherwise it divides.
-const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
+const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^', 'return', 'throw', 'case']);
 
 // Returns `{ line, chain, start, end }` for every case in a TypeScript test
 // file; `start` and `end` are the offsets of the call (from `it` to its
@@ -126,7 +126,7 @@ export function listCases(src) {
       if (c === '\\') { text += src[++i]; continue; }
       if (c === '\n') line++;
       if (c === '`') { i++; return { text, open: false }; }
-      if (c === '$' && src[i + 1] === '{') { i += 2; templates.push(depth); depth++; return { text, open: true }; }
+      if (c === '$' && src[i + 1] === '{') { i += 2; templates.push(depth); depth++; prev = '{'; return { text, open: true }; }
       text += c;
     }
     return { text, open: false };
@@ -163,8 +163,24 @@ export function listCases(src) {
     // From an opening `(`, skip to just after its matching `)`.
     const start = depth;
     depth++;
+    prev = '(';
     i++;
     while (i < src.length && depth > start) step();
+  };
+  const skipTypeArgs = () => {
+    let angle = 1;
+    i++;
+    while (i < src.length && angle > 0) {
+      const c = src[i];
+      if (c === '\n') { line++; i++; }
+      else if (src.startsWith('//', i) || src.startsWith('/*', i)) skipSpace();
+      else if (c === '"' || c === "'") skipString(c);
+      else if (c === '`') skipWholeTemplate();
+      else if (c === '=' && src[i + 1] === '>') i += 2;
+      else if (c === '<') { angle++; i++; }
+      else if (c === '>') { angle--; i++; }
+      else i++;
+    }
   };
 
   function step() {
@@ -221,6 +237,10 @@ export function listCases(src) {
         i += mod.length;
         if (mod === 'each') {
           skipSpace();
+          if (src[i] === '<') {
+            skipTypeArgs();
+            skipSpace();
+          }
           if (src[i] === '`') skipWholeTemplate();
           else if (src[i] === '(') skipBalanced();
           else return;
@@ -307,4 +327,6 @@ function main() {
   if (args.json) fs.writeFileSync(args.json, JSON.stringify(report, null, 1) + '\n');
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+const isMain = process.argv[1] && fs.existsSync(process.argv[1]) &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isMain) main();

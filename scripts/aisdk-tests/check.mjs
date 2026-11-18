@@ -106,50 +106,68 @@ export function scanMarkers(rel, src) {
   const partials = [];
   const errors = [];
   const lines = src.split('\n');
-  lines.forEach((text, k) => {
-    const m = MARKER.exec(text);
-    if (!m) {
-      const p = PARTIAL.exec(text);
-      if (p) partials.push({ rel, where: `${rel}:${k + 1}`, text: p[1].trim() });
-      return;
+  const bracketDelta = (s) => {
+    let d = 0;
+    for (const ch of s) if (ch === '[') d++; else if (ch === ']') d--;
+    return d;
+  };
+  for (let idx = 0; idx < lines.length; ) {
+    if (!/^\s*(\/\/\/|#\[)/.test(lines[idx])) { idx++; continue; }
+    const start = idx;
+    let attrDepth = 0;
+    while (idx < lines.length) {
+      const l = lines[idx];
+      if (attrDepth > 0) {
+        attrDepth = Math.max(0, attrDepth + bracketDelta(l));
+        idx++;
+      } else if (/^\s*#\[/.test(l)) {
+        attrDepth = Math.max(0, bracketDelta(l));
+        idx++;
+      } else if (/^\s*\/\/\//.test(l)) {
+        idx++;
+      } else break;
     }
-    const where = `${rel}:${k + 1}`;
-    const body = MARKER_BODY.exec(m[1].replace(/\s+$/, ''));
-    if (!body) {
-      errors.push(`${where}: malformed marker, expected "/// upstream: <package> src/<file>.test.ts › <describe chain>"`);
-      return;
-    }
-    const [, pkg, file, chain] = body;
-    if (chain.split(SEP).some((s) => s.trim() === '' || s !== s.trim())) {
-      errors.push(`${where}: empty or padded describe level in the marker`);
-      return;
-    }
-    // A marker sits above a test: only doc comments and attributes between.
-    let blockStart = k - 1;
-    while (blockStart >= 0 && /^\s*(\/\/\/|#\[)/.test(lines[blockStart])) blockStart--;
-    blockStart++;
-    let j = k + 1;
-    let hasTestAttr = false;
-    let ignored = false;
-    while (j < lines.length && /^\s*(\/\/\/|#\[)/.test(lines[j])) {
-      if (/^\s*#\[(?:tokio::)?test(?:\s*\([^)]*\))?\s*\]/.test(lines[j])) hasTestAttr = true;
-      if (/^\s*#\[ignore(?:\s*=.*)?\s*\]/.test(lines[j])) ignored = true;
-      j++;
-    }
-    if (!/^\s*(pub(\(\w+\))?\s+)?(async\s+)?fn\s/.test(lines[j] ?? '') || !hasTestAttr) {
-      errors.push(`${where}: marker is not above a test function`);
-      return;
-    }
-    if (lines.slice(blockStart, j).some((line) => PARTIAL.test(line))) {
-      errors.push(`${where}: marker sits on a partial test (remove upstream: or complete the port)`);
-      return;
-    }
-    if (ignored) {
-      errors.push(`${where}: marker sits on an #[ignore] test (RFC-0045 §5)`);
-      return;
-    }
-    markers.push({ rel, where, pkg, file, chain });
-  });
+    const blockLines = lines.slice(start, idx);
+    const attrsText = blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n');
+    const hasTestAttr = /#\[(?:tokio::)?test(?:\s*\([\s\S]*?\))?\s*\]/.test(attrsText);
+    const ignored = /#\[ignore(?:\s*=[^\]]*)?\s*\]/.test(attrsText);
+    const hasPartial = blockLines.some((l) => PARTIAL.test(l));
+    const onFn = /^\s*(pub(\([^)]+\))?\s+)?(async\s+)?fn\s/.test(lines[idx] ?? '');
+
+    blockLines.forEach((text, offset) => {
+      const k = start + offset;
+      const m = MARKER.exec(text);
+      if (!m) {
+        const p = PARTIAL.exec(text);
+        if (p) partials.push({ rel, where: `${rel}:${k + 1}`, text: p[1].trim() });
+        return;
+      }
+      const where = `${rel}:${k + 1}`;
+      const body = MARKER_BODY.exec(m[1].replace(/\s+$/, ''));
+      if (!body) {
+        errors.push(`${where}: malformed marker, expected "/// upstream: <package> src/<file>.test.ts › <describe chain>"`);
+        return;
+      }
+      const [, pkg, file, chain] = body;
+      if (chain.split(SEP).some((s) => s.trim() === '' || s !== s.trim())) {
+        errors.push(`${where}: empty or padded describe level in the marker`);
+        return;
+      }
+      if (!onFn || !hasTestAttr) {
+        errors.push(`${where}: marker is not above a test function`);
+        return;
+      }
+      if (hasPartial) {
+        errors.push(`${where}: marker sits on a partial test (remove upstream: or complete the port)`);
+        return;
+      }
+      if (ignored) {
+        errors.push(`${where}: marker sits on an #[ignore] test (RFC-0045 §5)`);
+        return;
+      }
+      markers.push({ rel, where, pkg, file, chain });
+    });
+  }
   return { markers, partials, errors };
 }
 
@@ -206,45 +224,61 @@ export function readLayouts(layoutFiles, versions, errors) {
           continue;
         }
         if (entry.status !== 'aimux') {
-          if (typeof entry.upstream !== 'string') errors.push(`${where}: no upstream path`);
+          if (typeof entry.upstream !== 'string' || !entry.upstream.trim()) errors.push(`${where}: no upstream path`);
           else if (seen.has(entry.upstream)) errors.push(`${where}: upstream listed twice`);
           else seen.add(entry.upstream);
+        } else {
+          if (entry.upstream !== undefined) errors.push(`${where}: an aimux entry has no upstream path`);
+          if (typeof entry.rust !== 'string' || !entry.rust.trim()) errors.push(`${where}: an aimux entry needs a rust path`);
+          if (typeof entry.reason !== 'string' || !entry.reason.trim()) errors.push(`${where}: an aimux entry needs a reason`);
         }
+        if (entry.status === 'elsewhere' && (typeof entry.rust !== 'string' || !entry.rust.trim()))
+          errors.push(`${where}: an elsewhere entry needs a rust path`);
         e.version = locked;
         if (entry.version !== undefined) {
-          const v = parseSemver(String(entry.version));
+          const v = typeof entry.version === 'string' ? parseSemver(entry.version) : null;
+          const lv = parseSemver(locked);
           if (!v) errors.push(`${where}: version ${JSON.stringify(entry.version)} is not x.y.z`);
-          else if (compareSemver(v, parseSemver(locked)) < 0)
+          else if (lv && compareSemver(v, lv) < 0)
             errors.push(`${where}: version ${entry.version} is below the locked ${locked}`);
           else e.version = entry.version;
         }
         if (SELECTED.has(entry.status) && entry.tests === undefined)
           errors.push(`${where}: a ${entry.status} entry needs a tests table (RFC-0045 §3.2)`);
-        if (!SELECTED.has(entry.status) && entry.tests !== undefined)
+        else if (!SELECTED.has(entry.status) && entry.tests !== undefined)
           errors.push(`${where}: a ${entry.status} entry has no tests to exclude`);
         if (entry.status === 'missing' && (!Number.isInteger(entry.issue) || entry.issue <= 0))
           errors.push(`${where}: a missing entry needs an issue number`);
         if (entry.status === 'not-applicable' && (typeof entry.reason !== 'string' || entry.reason.trim() === ''))
           errors.push(`${where}: a not-applicable entry needs a reason`);
-        for (const [category, items] of Object.entries(entry.tests ?? {})) {
-          if (!CATEGORIES[category]) {
-            errors.push(`${where}: unknown exclusion category ${category}`);
-            continue;
-          }
-          if (!Array.isArray(items)) {
-            errors.push(`${where}: tests.${category} is not an array`);
-            continue;
-          }
-          for (const item of items) {
-            const at = `${rel}:${item[LINE] ?? entry[LINE]} ${category}`;
-            const required = ['case', 'reason', ...CATEGORIES[category]];
-            const missing = required.filter((f) => item[f] === undefined || item[f] === '');
-            const extra = Object.keys(item).filter((f) => !required.includes(f));
-            if (missing.length) errors.push(`${at}: exclusion without ${missing.join(', ')}`);
-            if (extra.length) errors.push(`${at}: unknown field ${extra.join(', ')}`);
-            if (category === 'sub-feature' && item.issue !== undefined && !Number.isInteger(item.issue))
-              errors.push(`${at}: issue must be an issue number`);
-            if (typeof item.case === 'string') e.exclusions.push({ category, case: item.case, where: at });
+        if (entry.tests !== undefined && (typeof entry.tests !== 'object' || entry.tests === null || Array.isArray(entry.tests))) {
+          errors.push(`${where}: tests must be a table`);
+        } else {
+          for (const [category, items] of Object.entries(entry.tests ?? {})) {
+            if (!Object.hasOwn(CATEGORIES, category)) {
+              errors.push(`${where}: unknown exclusion category ${category}`);
+              continue;
+            }
+            if (!Array.isArray(items)) {
+              errors.push(`${where}: tests.${category} is not an array`);
+              continue;
+            }
+            for (const item of items) {
+              if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+                errors.push(`${where}: tests.${category} entry is not a table`);
+                continue;
+              }
+              const at = `${rel}:${item[LINE] ?? entry[LINE]} ${category}`;
+              const required = ['case', 'reason', ...CATEGORIES[category]];
+              const missing = required.filter((f) =>
+                f === 'issue' ? item[f] === undefined : typeof item[f] !== 'string' || item[f].trim() === '');
+              const extra = Object.keys(item).filter((f) => !required.includes(f));
+              if (missing.length) errors.push(`${at}: exclusion without ${missing.join(', ')}`);
+              if (extra.length) errors.push(`${at}: unknown field ${extra.join(', ')}`);
+              if (category === 'sub-feature' && item.issue !== undefined && (!Number.isInteger(item.issue) || item.issue <= 0))
+                errors.push(`${at}: issue must be an issue number`);
+              if (typeof item.case === 'string' && item.case.trim() !== '') e.exclusions.push({ category, case: item.case, where: at });
+            }
           }
         }
         files.push(e);
@@ -276,16 +310,43 @@ export function check({ versions, tables, markers, inventory }) {
     for (const e of t.files)
       if (e.upstream) for (const f of testFilesOf(e.upstream)) owners.set(`${t.package} ${f}`, e);
   }
+  const crateTableCounts = new Map();
+  for (const t of tables) crateTableCounts.set(t.crate, (crateTableCounts.get(t.crate) ?? 0) + 1);
   const cratePrefixOf = (t) => (t.crate && t.crate !== '.' ? `${t.crate}/` : '');
-  const isVendorScoped = (t) => t.files.some((f) => typeof f.rust === 'string' && f.rust.startsWith(`${t.key}/`));
+  const isVendorScoped = (t) =>
+    (crateTableCounts.get(t.crate) ?? 0) > 1 ||
+    t.files.some((f) => typeof f.rust === 'string' && f.rust.startsWith(`${t.key}/`));
+  const resolveRustTarget = (t, rust) => {
+    const clean = rust.replace(/\\/g, '/');
+    if (clean.startsWith('../../')) return path.posix.normalize(path.posix.join(`${cratePrefixOf(t)}src`, clean));
+    if (clean.startsWith('../')) return path.posix.normalize(path.posix.join(t.crate || '.', clean));
+    if (clean.includes('/src/')) return path.posix.normalize(clean);
+    return path.posix.normalize(`${cratePrefixOf(t)}src/${clean}`);
+  };
   const expectedPrefixesFor = (pkg, owner) => {
-    const list = pkgTables.get(pkg) ?? [];
-    return list.map((t) => {
+    const out = new Set();
+    for (const t of pkgTables.get(pkg) ?? []) {
       const base = cratePrefixOf(t);
-      if (!isVendorScoped(t)) return `${base}src/`;
-      const vendorDir = owner?.rust && owner.rust.includes('/') ? owner.rust.split('/')[0] : t.key;
-      return `${base}src/${vendorDir}/tests/`;
-    });
+      const vendorScoped = isVendorScoped(t);
+      if (typeof owner?.rust === 'string' && owner.rust.trim()) {
+        const resolved = resolveRustTarget(t, owner.rust);
+        const parts = resolved.split('/');
+        const srcIdx = parts.indexOf('src');
+        if (srcIdx >= 0) {
+          const targetCrate = parts.slice(0, srcIdx).join('/');
+          const targetBase = targetCrate ? `${targetCrate}/` : '';
+          const afterSrc = parts.slice(srcIdx + 1);
+          const targetVendorScoped = targetCrate === (t.crate === '.' ? '' : t.crate)
+            ? vendorScoped
+            : (crateTableCounts.get(targetCrate) ?? 0) > 1;
+          out.add(targetVendorScoped && afterSrc.length > 1 ? `${targetBase}src/${afterSrc[0]}/tests/` : `${targetBase}src/`);
+        }
+        if (vendorScoped) out.add(`${base}src/${t.key}/tests/`);
+      } else {
+        out.add(vendorScoped ? `${base}src/${t.key}/tests/` : `${base}src/`);
+      }
+    }
+    return [...out];
   };
   const ownedPrefixes = tables.map((t) => ({
     pkg: t.package,
@@ -549,37 +610,78 @@ function runTags(args) {
   for (const p of neededPackages(versions, tables, markers)) console.log(`${p.name}@${p.version}`);
 }
 
+export function diffCases({ baseVersions, baseTables, versions, tables, markers, inventory }) {
+  const baseOwners = new Map();
+  for (const t of baseTables)
+    for (const e of t.files)
+      if (e.upstream) for (const f of testFilesOf(e.upstream)) baseOwners.set(`${t.package} ${f}`, e.version);
+  const byPkgVer = new Map();
+  for (const p of inventory) {
+    const dir = `packages/${p.package.replace(/^@ai-sdk\//, '')}/`;
+    byPkgVer.set(`${p.package}@${p.version}`,
+      new Map(p.files.map((f) => [f.file.slice(dir.length), keyCases(f.cases)])));
+  }
+  const headVersionsUsed = new Set(neededPackages(versions, tables, markers).map((p) => `${p.name}@${p.version}`));
+  const headInventory = inventory.filter((p) => headVersionsUsed.has(`${p.package}@${p.version}`));
+  const { progress } = check({ versions, tables, markers, inventory: headInventory });
+  const changes = [];
+  for (const p of progress) {
+    const pkgAdded = [];
+    for (const row of p.rows) {
+      const beforeVer = baseOwners.get(`${p.package} ${row.file}`) ?? baseVersions[p.package]?.version;
+      if (!beforeVer || beforeVer === row.version) continue;
+      const oldCases = byPkgVer.get(`${p.package}@${beforeVer}`)?.get(row.file) ?? new Map();
+      const newCases = byPkgVer.get(`${p.package}@${row.version}`)?.get(row.file) ?? new Map();
+      const added = [...newCases.keys()].filter((k) => !oldCases.has(k));
+      if (added.length || baseVersions[p.package]?.version !== versions[p.package]?.version)
+        pkgAdded.push({ file: row.file, beforeVer, afterVer: row.version, added });
+    }
+    if (pkgAdded.length) changes.push({ package: p.package, rows: pkgAdded });
+  }
+  return changes;
+}
+
 function runDiff(args) {
   const versions = JSON.parse(fs.readFileSync(args.versions, 'utf8'));
-  const base = JSON.parse(execFileSync('git', ['-C', root, 'show', `${args.base}:fixtures/aisdk/VERSIONS.json`], { encoding: 'utf8' }));
+  const baseVersions = JSON.parse(execFileSync('git', ['-C', root, 'show', `${args.base}:fixtures/aisdk/VERSIONS.json`], { encoding: 'utf8' }));
+  const baseLayoutPaths = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', '-r', args.base], { encoding: 'utf8', maxBuffer: 1 << 26 })
+    .split('\n')
+    .filter((rel) => /^[^/]+\/layout\.toml$/.test(rel));
+  const baseTables = readLayouts(
+    baseLayoutPaths.map((rel) => ({ rel, src: execFileSync('git', ['-C', root, 'show', `${args.base}:${rel}`], { encoding: 'utf8' }) })),
+    baseVersions,
+    [],
+  );
   const errors = [];
   const { tables, markers } = loadRepo(versions, errors);
-  const bumped = tables.filter((t) => base[t.package] && base[t.package].version !== versions[t.package].version);
-  if (!bumped.length) {
+  const baseSet = new Map(neededPackages(baseVersions, baseTables, []).map((p) => [`${p.name}@${p.version}`, p]));
+  const headSet = new Map(neededPackages(versions, tables, markers).map((p) => [`${p.name}@${p.version}`, p]));
+  const changedPkgs = new Set();
+  for (const t of tables) {
+    if (baseVersions[t.package]?.version !== versions[t.package]?.version) changedPkgs.add(t.package);
+    const bt = baseTables.find((b) => b.package === t.package && b.key === t.key);
+    const bMap = new Map((bt?.files ?? []).filter((e) => e.upstream).map((e) => [e.upstream, e.version]));
+    for (const e of t.files) if (e.upstream && (bMap.get(e.upstream) ?? baseVersions[t.package]?.version) !== e.version) changedPkgs.add(t.package);
+  }
+  if (!changedPkgs.size) {
     console.log('no package with a layout.toml table changed version');
     return;
   }
-  const pairs = bumped.flatMap((t) => [
-    { name: t.package, version: base[t.package].version },
-    { name: t.package, version: versions[t.package].version },
-  ]);
+  const pairs = [...new Map([...baseSet, ...headSet].filter(([, p]) => changedPkgs.has(p.name))).values()];
   const inventory = readPackages(args.repo, pairs);
-  const progress = check({ versions, tables, markers, inventory: inventory.filter((p) => p.version === versions[p.package].version) }).progress;
-  for (const t of bumped) {
-    const dir = `packages/${t.package.replace(/^@ai-sdk\//, '')}/`;
-    const at = (v) => new Map(inventory.find((p) => p.package === t.package && p.version === v).files.map((f) => [f.file.slice(dir.length), keyCases(f.cases)]));
-    const before = at(base[t.package].version);
-    const after = at(versions[t.package].version);
-    console.log(`${t.package} ${base[t.package].version} → ${versions[t.package].version}`);
-    for (const row of progress.find((p) => p.package === t.package)?.rows ?? []) {
-      const old = before.get(row.file) ?? new Map();
-      const added = [...after.get(row.file).keys()].filter((k) => !old.has(k));
-      for (const k of added) console.log(`  new: ${row.file}${SEP}${k}`);
-    }
+  const changes = diffCases({ baseVersions, baseTables, versions, tables, markers, inventory });
+  for (const c of changes) {
+    const bLock = baseVersions[c.package]?.version;
+    const hLock = versions[c.package]?.version;
+    console.log(bLock !== hLock ? `${c.package} ${bLock} → ${hLock}` : `${c.package} (entry version override)`);
+    for (const r of c.rows)
+      for (const k of r.added) console.log(`  new: ${r.file}${SEP}${k}`);
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const isMain = process.argv[1] && fs.existsSync(process.argv[1]) &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isMain) {
   const args = parseArgs(process.argv.slice(2));
   if (args.command === 'diff') runDiff(args);
   else if (args.command === 'tags') runTags(args);

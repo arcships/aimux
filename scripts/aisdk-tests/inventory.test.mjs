@@ -85,6 +85,25 @@ describe('outer', () => {
   ]);
 });
 
+test('handles TypeScript type arguments on each and regex literals in predicates and return', () => {
+  const src = `
+describe('Azure', () => {
+  it.each<{ name: string; check: (x: number) => boolean }>([
+    { name: 'a', check: (x) => x > 0 },
+  ])('supports $name on Azure messages', () => {
+    return /\\)/;
+  });
+  test.runIf(/[(]/.test(v))('after regex predicate', () => {});
+});
+`;
+  const parsed = listCases(src);
+  assert.deepEqual(parsed.map((c) => `${c.line} ${c.chain.join(' › ')}`), [
+    '3 Azure › supports $name on Azure messages',
+    '8 Azure › after regex predicate',
+  ]);
+  assert.ok(src.slice(parsed[0].start, parsed[0].end).endsWith('})'));
+});
+
 test('readPackages works on a full (non-promisor) git repo and with empty test lists', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aisdk-inv-'));
   try {
