@@ -97,6 +97,52 @@ pub fn denoise(value: &Value) -> Value {
     denoise_at(value, 0)
 }
 
+/// Serialize `value` to JSON bytes with noise keys stripped on the fly,
+/// avoiding an intermediate cloned `serde_json::Value` tree.
+///
+/// # Errors
+///
+/// Returns `serde_json::Error` if JSON serialization fails.
+pub fn denoised_to_vec(value: &Value) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(&DenoisedRef(value, 0))
+}
+
+struct DenoisedRef<'a>(&'a Value, usize);
+
+impl serde::Serialize for DenoisedRef<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        let Self(value, depth) = *self;
+        match value {
+            Value::Object(map) => {
+                let mut m = serializer.serialize_map(None)?;
+                for (k, v) in map {
+                    if depth == 0 {
+                        if NOISE_KEYS.contains(&k.as_str()) {
+                            continue;
+                        }
+                    } else if k == "request_id" || k == "requestId" {
+                        continue;
+                    }
+                    m.serialize_entry(k, &DenoisedRef(v, depth + 1))?;
+                }
+                m.end()
+            }
+            Value::Array(items) => {
+                let mut seq = serializer.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    seq.serialize_element(&DenoisedRef(item, depth + 1))?;
+                }
+                seq.end()
+            }
+            other => other.serialize(serializer),
+        }
+    }
+}
+
 fn denoise_at(value: &Value, depth: usize) -> Value {
     match value {
         Value::Object(map) => {
@@ -241,5 +287,51 @@ mod tests {
         assert!(f.block_hashes.iter().all(|h| h.len() == 32));
         let json = serde_json::to_string(&f).unwrap();
         assert!(json.contains("\"bodyHash\":\""));
+    }
+
+    #[test]
+    fn denoised_to_vec_matches_denoise_at_bytes_and_values() {
+        let cases = [
+            serde_json::json!({
+                "model": "gpt-4o",
+                "request_id": "top-req-1",
+                "requestId": "top-req-2",
+                "timestamp": 1_700_000_000,
+                "nonce": "top-nonce",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "hello",
+                        "request_id": "nested-req-1",
+                        "requestId": "nested-req-2",
+                        "timestamp": 42,
+                        "nonce": "keep-nested-nonce"
+                    }
+                ],
+                "nested": {
+                    "request_id": "drop-me",
+                    "requestId": "drop-me-too",
+                    "timestamp": "keep-me",
+                    "nonce": "keep-me-too",
+                    "deep": [{"request_id": "gone", "value": [1, true, null, "ok"]}]
+                }
+            }),
+            serde_json::json!([
+                {"request_id": "in-array-depth-1", "timestamp": 99, "keep": "yes"},
+                "scalar",
+                123
+            ]),
+            serde_json::json!("plain-string"),
+        ];
+
+        for v in &cases {
+            let streamed = denoised_to_vec(v).expect("streamed denoise should serialize");
+            let eager_val = denoise(v);
+            let eager_bytes =
+                serde_json::to_vec(&eager_val).expect("eager denoise should serialize");
+            assert_eq!(streamed, eager_bytes);
+            let parsed_streamed: Value = serde_json::from_slice(&streamed).unwrap();
+            assert_eq!(parsed_streamed, eager_val);
+        }
     }
 }

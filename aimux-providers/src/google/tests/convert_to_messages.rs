@@ -105,8 +105,7 @@ fn convert_for_model(model_id: &str, namespace: Namespace, prompt: Value) -> (Va
     let options = call_options(prompt);
     validate_call_options_for_namespace(&options, namespace).expect("valid prompt");
     let (body, warnings) =
-        build_request_body_with_warnings_for_namespace(model_id, &options, namespace)
-            .expect("body builds");
+        build_request_body_with_warnings_for_namespace(model_id, &options, namespace);
     let mut value = json!({ "contents": body["contents"] });
     if let Some(system_instruction) = body.get("systemInstruction") {
         value["systemInstruction"] = system_instruction.clone();

@@ -143,6 +143,6 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 - **钩子抛错不是流错误**:它是 `failed` 答复,core 把调用标成 `ToolCallRepair` 错误,照常作为数据投递。
 - **边界失败**(解不开 context、FFI 拒绝答复这类绑定或 core 自身的 bug)在流中各绑定行为不同,均为既定行为:Java / Kotlin 先调 `onError` 再投递未修复的原 part;Swift 调 `onError` 后流继续,但不投递这个 part;Python / Go / Node / Dart 终止流。没有任何绑定会静默丢弃这个调用。
-- **流等待钩子,不设超时**(与 AI SDK 一致):钩子挂起,流就挂起。Swift 在钩子运行期间 abort 不生效,钩子返回后才生效。这是与上游的差异:上游让修复函数与 abortSignal 竞争,abort 立即生效(ai 7.0.127 `generate-text/parse-tool-call.ts:73-89`、`:137-173`)。
+- **无独立修复专用超时；受操作总/步超时与 abort 约束**:上游 AI SDK 同样不设独立于请求预算的 repair 专用定时器，但通过 `mergeAbortSignals(abortSignal, totalTimeoutMs, stepAbortController?.signal, ...)` 将 `totalMs` / `stepMs` 并入传入 `parseToolCall` 的 `abortSignal`(ai 7.0.127 `generate-text/generate-text.ts:628-632`、`:1088`，`generate-text/stream-text.ts:860-866`、`:2425`，`generate-text/stream-language-model-call.ts:695-703`，`generate-text/parse-tool-call.ts:73-89`、`:137-173`)。Rust Core 侧 `generate_text` / `stream_text` 在执行 `parse_tool_call` (`repair_tool_call`) 时同样受 `abort_signal` 与操作级 `OperationTimeout`(`total_ms` / `step_ms`)约束，但超时以 `Err(AiMuxError::Timeout)` 返回而不转为 `AbortSignal` / 流内 `abort` part(登记于 [RFC-0042](0042-v4-type-boundaries.md#82-允许差异表) 与[架构对齐文档](../docs/aisdk-architecture-alignment.md#5-rust-适配与明确的产品差异))；宿主绑定循环中 Swift 在钩子运行期间 abort 仍不生效，需等钩子返回后才生效。
 - **JVM**:钩子运行在借用了流读锁的工作线程上(daemon),可以回调同一个 Model;但在钩子里对正在流式输出的同一个 Model 调 `close()` 会死锁,与在流回调里调 `close()` 相同。
 - **Swift / JVM 的线程跳转**必须是真正的新线程:GCD 的 `sync` 在可能时就地执行 block,会把钩子留在受重入保护的回调线程上(`AIMUX_E_FFI_REENTRANT_CALL`)。

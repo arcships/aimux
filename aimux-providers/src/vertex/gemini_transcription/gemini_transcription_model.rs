@@ -7,14 +7,13 @@ use serde_json::{Value, json};
 use crate::google::internal::{
     GOOGLE, Namespace, TranscriptionOptions, google_failed_response_handler, parse_offset_seconds,
 };
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_base64};
 use crate::vertex::provider_base::ProjectLocationSource;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse,
-    TranscriptionResult, TranscriptionSegment, TranscriptionStreamOptions,
-    TranscriptionStreamResult,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse, TranscriptionResult,
+    TranscriptionSegment, TranscriptionStreamOptions, TranscriptionStreamResult,
 };
 
 #[derive(Deserialize)]
@@ -106,11 +105,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         let config =
             TranscriptionOptions::parse(Namespace::Vertex, options.provider_options.as_ref())?
                 .audio_transcription_config();
-        let audio = match &options.audio {
-            AudioInput::Base64(value) => value.clone(),
-            AudioInput::Binary(value) => aimux_provider_utils::convert_uint8_array_to_base64(value),
-            AudioInput::Url(_) => return Err(AudioInput::url_error()),
-        };
+        let audio = audio_input_to_base64(&options.audio)?;
         let mut body = json!({"contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": options.media_type, "data": audio}}]}]});
         if config.as_object().is_some_and(|config| !config.is_empty()) {
             body["generationConfig"] = json!({"audioTranscriptionConfig": config});

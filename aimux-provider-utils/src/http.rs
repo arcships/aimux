@@ -193,7 +193,8 @@ pub(crate) struct DownloadValidation {
 #[derive(Debug, Clone)]
 pub(crate) struct PreparedRequest {
     method: HttpMethod,
-    body: HttpBody,
+    pub(crate) body: std::sync::Arc<HttpBody>,
+    wire_body: std::sync::Arc<std::sync::OnceLock<Result<Bytes, serde_json::Error>>>,
     pub(crate) url: String,
     headers: Vec<(String, String)>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
@@ -211,6 +212,25 @@ pub(crate) struct PreparedRequest {
     provider_utils_user_agent: bool,
 }
 
+impl PreparedRequest {
+    /// Materialize and cache the wire `Bytes` for `self.body` at most once per
+    /// `PreparedRequest` (and across clones/redirect hops), returning a cheap
+    /// reference-counted `Bytes` clone on subsequent calls.
+    pub(crate) fn wire_body_bytes(&self) -> Result<Bytes, AiMuxError> {
+        match self.wire_body.get_or_init(|| match &*self.body {
+            HttpBody::Json(value) => serde_json::to_vec(value).map(Bytes::from),
+            HttpBody::Bytes(bytes, _) => Ok(Bytes::copy_from_slice(bytes)),
+            HttpBody::Empty => Ok(Bytes::new()),
+        }) {
+            Ok(bytes) => Ok(bytes.clone()),
+            Err(error) => Err(AiMuxError::InvalidArgument {
+                message: format!("request body is not serializable: {error}"),
+                cause: Some(aimux_core::ErrorCause::source(error)),
+            }),
+        }
+    }
+}
+
 impl HttpRequest {
     pub(crate) fn prepare(self, method: HttpMethod, body: HttpBody) -> PreparedRequest {
         // AI SDK gates credentialed headers independently of validateUrl:
@@ -226,7 +246,8 @@ impl HttpRequest {
         }
         PreparedRequest {
             method,
-            body,
+            body: std::sync::Arc::new(body),
+            wire_body: std::sync::Arc::new(std::sync::OnceLock::new()),
             url: self.url,
             headers,
             abort_signal: self.abort_signal,
@@ -324,7 +345,7 @@ pub(crate) async fn send_request_once(
         "request"
     );
     if body_logging_enabled()
-        && let HttpBody::Json(value) = &request.body
+        && let HttpBody::Json(value) = &*request.body
     {
         tracing::trace!(
             target: "aimux_provider_utils::http",
@@ -538,7 +559,8 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
             ) && matches!(current.method, HttpMethod::Post))
         {
             current.method = HttpMethod::Get;
-            current.body = HttpBody::Empty;
+            current.body = std::sync::Arc::new(HttpBody::Empty);
+            current.wire_body = std::sync::Arc::new(std::sync::OnceLock::new());
         }
         current.url = next;
     }
@@ -603,22 +625,16 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             })?,
         );
     }
-    let body = match &request.body {
-        HttpBody::Json(value) => {
+    match &*request.body {
+        HttpBody::Json(_) => {
             if !headers.contains_key(http::header::CONTENT_TYPE) {
                 headers.insert(
                     http::header::CONTENT_TYPE,
                     http::HeaderValue::from_static("application/json"),
                 );
             }
-            Bytes::from(
-                serde_json::to_vec(value).map_err(|error| AiMuxError::InvalidArgument {
-                    message: format!("request body is not serializable: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                })?,
-            )
         }
-        HttpBody::Bytes(bytes, content_type) => {
+        HttpBody::Bytes(_, content_type) => {
             let value = http::HeaderValue::try_from(content_type).map_err(|error| {
                 AiMuxError::InvalidArgument {
                     message: format!("invalid content type: {content_type}"),
@@ -632,10 +648,10 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             if is_multipart(content_type) || !headers.contains_key(http::header::CONTENT_TYPE) {
                 headers.insert(http::header::CONTENT_TYPE, value);
             }
-            Bytes::copy_from_slice(bytes)
         }
-        HttpBody::Empty => Bytes::new(),
-    };
+        HttpBody::Empty => {}
+    }
+    let body = request.wire_body_bytes()?;
     Ok(FetchRequest {
         method: match request.method {
             HttpMethod::Get => http::Method::GET,
@@ -890,14 +906,18 @@ fn to_http_record(request: &PreparedRequest) -> HttpRecord {
             )
         })
         .collect();
-    let body = match &request.body {
-        HttpBody::Json(value) => {
-            serde_json::to_string(&crate::logging::redact_error_context(value.clone())).ok()
-        }
+    let body = match &*request.body {
+        HttpBody::Json(value) => crate::logging::redact_error_context_to_string(value),
         HttpBody::Bytes(bytes, _) => Some(String::from_utf8_lossy(bytes).into_owned()),
         HttpBody::Empty => None,
     }
-    .map(|body| truncate_utf8(&body, RECORD_BODY_CAP).to_owned());
+    .map(|mut body| {
+        if body.len() > RECORD_BODY_CAP {
+            let end = truncate_utf8(&body, RECORD_BODY_CAP).len();
+            body.truncate(end);
+        }
+        body
+    });
     HttpRecord {
         method: request.method.as_str().into(),
         url: sanitized_request_url(&request.url),
@@ -964,8 +984,9 @@ fn truncate_utf8(value: &str, maximum: usize) -> &str {
 }
 
 fn request_body_size(request: &PreparedRequest) -> u64 {
-    match &request.body {
-        HttpBody::Json(value) => serde_json::to_vec(value)
+    match &*request.body {
+        HttpBody::Json(_) => request
+            .wire_body_bytes()
             .map(|bytes| bytes.len() as u64)
             .unwrap_or_default(),
         HttpBody::Bytes(bytes, _) => bytes.len() as u64,
@@ -1061,6 +1082,31 @@ mod tests {
         assert_eq!(
             sanitized_request_url("https://api.example.com/v1/chat?key=sk-1"),
             "https://api.example.com/v1/chat"
+        );
+    }
+
+    #[test]
+    fn prepared_request_caches_and_shares_wire_body_bytes_across_builds_and_clones() {
+        let req = super::HttpRequest {
+            url: "https://api.example.com/v1/chat/completions".into(),
+            ..Default::default()
+        };
+        let payload = serde_json::json!({
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "x".repeat(16 * 1024)}],
+        });
+        let prepared = req.prepare(super::HttpMethod::Post, super::HttpBody::Json(payload));
+        let size = super::request_body_size(&prepared);
+        let fetch_req_1 = super::build_fetch_request(&prepared).unwrap();
+        let cloned = prepared.clone();
+        let fetch_req_2 = super::build_fetch_request(&cloned).unwrap();
+
+        assert!(std::sync::Arc::ptr_eq(&prepared.body, &cloned.body));
+        assert_eq!(size, fetch_req_1.body.len() as u64);
+        assert_eq!(
+            fetch_req_1.body.as_ptr(),
+            fetch_req_2.body.as_ptr(),
+            "wire Bytes buffer must be serialized once and shared via O(1) Bytes::clone"
         );
     }
 }

@@ -1,5 +1,5 @@
 ﻿//! End-to-end tests for the cassette replay infrastructure in
-//! [`common::replay`].
+//! [`aimux_providers::test_support::replay`].
 //!
 //! These tests mount the hand-written fixtures under `tests/replay_fixtures/`
 //! onto a real `wiremock` `MockServer` and drive it over HTTP with `reqwest`,
@@ -14,9 +14,7 @@
 //! The fixtures are prefixed `01_`..`04_` so filename sort order — and thus the
 //! fallback target — is deterministic.
 
-mod common;
-
-use common::replay;
+use aimux_providers::test_support::replay;
 use serde_json::{Value, json};
 use wiremock::MockServer;
 

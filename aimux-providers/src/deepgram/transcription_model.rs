@@ -5,16 +5,15 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResponse,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::HttpBody;
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_bytes};
 
 use super::error::deepgram_failed_response_handler;
 use super::options::{parse_deepgram_options, query_params};
@@ -63,18 +62,6 @@ struct DeepgramResponse {
 }
 
 // ── Model ───────────────────────────────────────────────────────────────────
-
-fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
-    match audio {
-        AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
-            .map_err(|e| AiMuxError::InvalidArgument {
-                message: format!("invalid base64: {e}"),
-                cause: Some(ErrorCause::source(&e)),
-            }),
-        AudioInput::Url(_) => Err(AudioInput::url_error()),
-    }
-}
 
 pub struct DeepgramTranscriptionModel {
     model_id: String,

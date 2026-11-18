@@ -5,6 +5,15 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- Removed the `aimux_providers::voyage::embedding` and
+  `aimux_providers::voyage::reranking` submodule paths; import
+  `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
+  instead (RFC-0046 §4.5).
+
 ## [0.6.1] - 2026-11-05
 
 Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,
@@ -2198,7 +2207,82 @@ detailed sections below.
   instead of aimux's own per-field messages (`` `user` must be a string ``,
   `invalid <namespace> provider option echo`, `invalid
   providerOptions.<namespace>.dimensions`). The body is unchanged
+
+- Vertex's embedding, transcription and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleVertexEmbeddingModelOptions`,
+  `googleVertexTranscriptionProviderOptionsSchema`,
+  `googleVertexVideoModelOptionsSchema`), reading the same namespaces as
+  before (`googleVertex`, then `vertex`, then `google` for embedding and
+  transcription; `googleVertex`, then `vertex` for video). A value outside a
+  schema fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, and nothing
+  is sent. Embedding used to fail with `Invalid Vertex embedding provider
+  option: <key>`; transcription dropped a value of the wrong type (and the
+  non-string entries of `languageCodes`); video forwarded it, or ignored it
+  for the poll settings. The requests for valid options are unchanged
   (RFC-0046 R1).
+
+- Google's embedding, image, language and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleEmbeddingModelOptions`, `googleImageModelOptionsSchema`,
+  `googleLanguageModelOptions`, `googleVideoModelOptionsSchema`), reading
+  the same namespaces as before (`google`; for the Vertex language model
+  `googleVertex`, then `vertex`, then `google`). A value outside a schema
+  fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, instead of
+  `Invalid Google provider option: <key>`, `Invalid Google video option:
+  <key>`, `Invalid Google image googleSearch option`,
+  `outputDimensionality must be a number` and the like. What is checked and
+  the requests are unchanged, but for the Vertex Gemini image model: it now
+  checks the options it hands to the language model against
+  `googleLanguageModelOptions` too, as upstream's inner `doGenerate` does,
+  where it used to send them unchecked (only a `structuredOutputs` that is
+  not a boolean failed, with `invalid googleVertex provider options`)
+  (RFC-0046 R1).
+
+- OpenAI's completion, image, speech, transcription and files models parse
+  `providerOptions.openai` with `parse_provider_options` against the
+  upstream schemas (`openaiLanguageModelCompletionOptions` under `openai`
+  and the provider's own key, `openaiImageModelGenerationOptions` /
+  `openaiImageModelEditOptions`, `openaiSpeechModelOptionsSchema`,
+  `openAITranscriptionModelOptions`, `openaiFilesOptionsSchema`). A value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid openai provider options` and the serde error as
+  its cause, and nothing is sent. Completion, image and speech used to fail
+  with their own messages (`invalid openai provider option <key>`, `invalid
+  openai image option: <key>`, `invalid openai speech option: <key>`);
+  transcription and files dropped a value of the wrong type (transcription
+  also the non-string entries of `include` and `timestampGranularities`)
+  and forwarded an unknown `responseFormat`, `chunkingStrategy` or
+  `streaming.delay`. The requests for valid options are unchanged but for
+  two: files used to leave out an `expiresAfter` that is not a non-negative
+  integer (fractional, negative, or written with a decimal point) and now
+  send it as written, as upstream's `String(value)` does; image sends an
+  `outputCompression` written as `80.0` as `80`, as `JSON.stringify` does
+  (RFC-0046 R1).
+
+- Hugging Face's responses model parses `providerOptions.huggingface` with
+  `parse_provider_options` against `huggingfaceLanguageModelResponsesOptions`:
+  a value outside the schema (`metadata` with a non-string value,
+  `instructions: 42`, `strictJsonSchema: "true"`, `reasoningEffort: null`)
+  fails with `Invalid argument for parameter providerOptions: invalid
+  huggingface provider options` and the serde error as its cause, and nothing
+  is sent. It used to be read key by key, so a value of the wrong type was
+  dropped (or, for `metadata`, sent as given). The requests for valid options
+  are unchanged (RFC-0046 R1).
+
+- Mistral's chat, embedding, transcription and speech models parse
+  `providerOptions.mistral` with `parse_provider_options` against the
+  upstream schemas (`mistralLanguageModelChatOptions`,
+  `mistralEmbeddingModelOptions`, `mistralTranscriptionModelOptions`,
+  `mistralSpeechModelOptions`), their refinements (`min(1)`, the context-bias
+  pattern, `max(100)`, `int().positive()`, the enums) included: any value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid mistral provider options` and the serde error as
+  its cause, instead of `Invalid mistral provider option <key>`,
+  `mistral.metadata must be a record` and the like. The request is
+  unchanged (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq

@@ -8,6 +8,7 @@
 //! - Multiple values: `POST {base_url}/models/{model}:batchEmbedContents`
 
 use async_trait::async_trait;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -15,8 +16,86 @@ use aimux_core::embedding_model::{
 };
 use aimux_core::error::AiMuxError;
 
-use super::options::google_options;
+use super::options::GOOGLE;
 use crate::shared::EndpointConfig;
+
+/// `googleEmbeddingModelOptions` (google-embedding-model-options.ts). Every
+/// key is `.optional()`: absent is `None`, `null` fails.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleEmbeddingOptions {
+    /// `z.number()`, sent as given.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    output_dimensionality: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    task_type: Option<TaskType>,
+    #[serde(default, deserialize_with = "multimodal_content")]
+    content: Option<MultimodalContent>,
+}
+
+/// `z.array(z.array(googleEmbeddingContentPartSchema).min(1).nullable())`:
+/// per value, its extra parts or `null`.
+type MultimodalContent = Vec<Option<Vec<ContentPart>>>;
+
+/// The `taskType` enum, sent under the same name.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum TaskType {
+    SemanticSimilarity,
+    Classification,
+    Clustering,
+    RetrievalDocument,
+    RetrievalQuery,
+    QuestionAnswering,
+    FactVerification,
+    CodeRetrievalQuery,
+}
+
+/// `googleEmbeddingContentPartSchema`, a `z.union` of `z.object`s: the first
+/// variant that matches, with only the keys it declares.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum ContentPart {
+    Text {
+        text: String,
+    },
+    InlineData {
+        #[serde(rename = "inlineData")]
+        inline_data: InlineData,
+    },
+    FileData {
+        #[serde(rename = "fileData")]
+        file_data: FileData,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InlineData {
+    mime_type: String,
+    data: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileData {
+    mime_type: String,
+    file_uri: String,
+}
+
+/// `content`: `.optional()` (`null` fails), and each non-null entry has at
+/// least one part (`.min(1)`).
+fn multimodal_content<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<MultimodalContent>, D::Error> {
+    let content = MultimodalContent::deserialize(deserializer)?;
+    if content.iter().flatten().any(Vec::is_empty) {
+        return Err(serde::de::Error::custom(
+            "each content entry has at least one part or is null",
+        ));
+    }
+    Ok(Some(content))
+}
 
 /// A Google Gemini embedding model (e.g. `"gemini-embedding-001"`).
 ///
@@ -55,37 +134,18 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        let provider_options = google_options(options.provider_options.as_ref());
+        // google-embedding-model.ts: `parseProviderOptions` under `google`.
+        let google_options: GoogleEmbeddingOptions = aimux_provider_utils::parse_provider_options(
+            GOOGLE,
+            options.provider_options.as_ref(),
+        )?
+        .unwrap_or_default();
         let mut settings = Map::new();
-        if let Some(opts) = provider_options {
-            if let Some(dimension) = opts.get("outputDimensionality") {
-                if !dimension.is_number() {
-                    return Err(AiMuxError::invalid_argument(
-                        "outputDimensionality must be a number",
-                    ));
-                }
-                settings.insert("outputDimensionality".into(), dimension.clone());
-            }
-            if let Some(task) = opts.get("taskType") {
-                if !matches!(
-                    task.as_str(),
-                    Some(
-                        "SEMANTIC_SIMILARITY"
-                            | "CLASSIFICATION"
-                            | "CLUSTERING"
-                            | "RETRIEVAL_DOCUMENT"
-                            | "RETRIEVAL_QUERY"
-                            | "QUESTION_ANSWERING"
-                            | "FACT_VERIFICATION"
-                            | "CODE_RETRIEVAL_QUERY"
-                    )
-                ) {
-                    return Err(AiMuxError::invalid_argument(
-                        "Invalid Google embedding taskType",
-                    ));
-                }
-                settings.insert("taskType".into(), task.clone());
-            }
+        if let Some(dimension) = &google_options.output_dimensionality {
+            settings.insert("outputDimensionality".into(), json!(dimension));
+        }
+        if let Some(task) = google_options.task_type {
+            settings.insert("taskType".into(), json!(task));
         }
         if options.values.len() > 100 {
             return Err(AiMuxError::invalid_argument(format!(
@@ -95,45 +155,15 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 options.values.len()
             )));
         }
-        let multimodal = provider_options.and_then(|o| o.get("content"));
-        let multimodal = multimodal
-            .map(|v| {
-                v.as_array().ok_or_else(|| {
-                    AiMuxError::invalid_argument("Google embedding content must be an array")
-                })
-            })
-            .transpose()?;
-        if let Some(content) = multimodal {
-            if content.len() != options.values.len() {
-                return Err(AiMuxError::invalid_argument(format!(
-                    "The number of multimodal content entries ({}) must match the number of values ({}).",
-                    content.len(),
-                    options.values.len()
-                )));
-            }
-            for entry in content.iter().filter(|v| !v.is_null()) {
-                let parts = entry.as_array().filter(|p| !p.is_empty()).ok_or_else(|| {
-                    AiMuxError::invalid_argument(
-                        "Google embedding content entries must be nonempty arrays or null",
-                    )
-                })?;
-                for part in parts {
-                    let valid = part.get("text").is_some_and(Value::is_string)
-                        || part.get("inlineData").is_some_and(|p| {
-                            p.get("mimeType").is_some_and(Value::is_string)
-                                && p.get("data").is_some_and(Value::is_string)
-                        })
-                        || part.get("fileData").is_some_and(|p| {
-                            p.get("mimeType").is_some_and(Value::is_string)
-                                && p.get("fileUri").is_some_and(Value::is_string)
-                        });
-                    if !valid {
-                        return Err(AiMuxError::invalid_argument(
-                            "Invalid Google embedding content part",
-                        ));
-                    }
-                }
-            }
+        let multimodal = google_options.content.as_deref();
+        if let Some(content) = multimodal
+            && content.len() != options.values.len()
+        {
+            return Err(AiMuxError::invalid_argument(format!(
+                "The number of multimodal content entries ({}) must match the number of values ({}).",
+                content.len(),
+                options.values.len()
+            )));
         }
         let single = options.values.len() == 1;
         let requests: Vec<Value> = options
@@ -141,18 +171,13 @@ impl EmbeddingModel for GoogleEmbeddingModel {
             .iter()
             .enumerate()
             .map(|(index, value)| {
-                let extras = multimodal.and_then(|entries| entries[index].as_array());
+                let extras = multimodal.and_then(|entries| entries[index].as_deref());
                 let mut parts = Vec::new();
                 if extras.is_none() || !value.is_empty() {
                     parts.push(json!({"text": value}));
                 }
                 if let Some(extras) = extras {
-                    parts.extend(extras.iter().map(|part| {
-                        if let Some(text) = part.get("text").and_then(Value::as_str) { json!({"text": text}) }
-                        else if let Some(inline) = part.get("inlineData").filter(|v| v.get("mimeType").is_some_and(Value::is_string) && v.get("data").is_some_and(Value::is_string)) {
-                            json!({"inlineData": {"mimeType": inline["mimeType"], "data": inline["data"]}})
-                        } else { json!({"fileData": {"mimeType": part["fileData"]["mimeType"], "fileUri": part["fileData"]["fileUri"]}}) }
-                    }));
+                    parts.extend(extras.iter().map(|part| json!(part)));
                 }
                 let mut content = json!({"parts": parts});
                 if !single {

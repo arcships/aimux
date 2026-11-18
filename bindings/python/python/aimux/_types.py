@@ -3185,9 +3185,10 @@ class RuntimeDescribeParams(_Wire):
 #: A model entry returned by a provider's `/models` endpoint (the sparse,
 #: account-level truth of "what this key can call").
 #:
-#: Carries only what the provider returns — typically just `id`. Configuration
-#: comes from [`ModelSpec`] (community knowledge); the host merges the two as
-#: needed (RFC-0027). aimux itself does not combine them.
+#: Carries only what the provider's list response declares: always `id`, and
+#: `owned_by`, `created` and the token `limits` when the provider sends them.
+#: Configuration comes from [`ModelSpec`] (community knowledge); the host
+#: merges the two as needed (RFC-0027). aimux itself does not combine them.
 class RuntimeModel(_Wire):
     #: `created` unix timestamp from OpenAI-compatible `/models` responses.
     created: Optional[U64] = Field(default=None, alias="created")

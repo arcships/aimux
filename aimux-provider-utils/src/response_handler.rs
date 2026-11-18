@@ -11,9 +11,62 @@ use aimux_core::{AiMuxError, ApiCallError, ErrorCause};
 
 use crate::extract_response_headers::extract_response_headers;
 use crate::fetch::FetchResponse;
+use crate::http::HttpBody;
 use crate::read_response_with_size_limit::{
-    DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit,
+    DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit_lazy,
 };
+
+tokio::task_local! {
+    static CURRENT_BODY_SOURCE: RequestBodySource;
+}
+
+fn current_request_body_source() -> Option<RequestBodySource> {
+    CURRENT_BODY_SOURCE.try_with(Clone::clone).ok()
+}
+
+/// Shared lazy source for a redacted request body used in error context.
+#[derive(Debug, Clone)]
+pub enum RequestBodySource {
+    HttpBody(std::sync::Arc<HttpBody>),
+    Redacted(std::sync::Arc<serde_json::Value>),
+}
+
+impl RequestBodySource {
+    /// Materialize the redacted `serde_json::Value` for an error payload.
+    #[must_use]
+    pub fn materialize(&self) -> serde_json::Value {
+        match self {
+            Self::HttpBody(body) => crate::logging::redact_request_values(body),
+            Self::Redacted(value) => (**value).clone(),
+        }
+    }
+
+    /// Convert into a shared redacted `Arc<serde_json::Value>`, releasing any
+    /// underlying unredacted `HttpBody` (and redacting `HttpBody::Json` in
+    /// place when uniquely owned so large Base64/image strings are freed
+    /// immediately before a response stream is consumed).
+    #[must_use]
+    pub fn into_redacted_arc(self) -> std::sync::Arc<serde_json::Value> {
+        match self {
+            Self::HttpBody(arc_body) => {
+                let redacted = match std::sync::Arc::try_unwrap(arc_body) {
+                    Ok(HttpBody::Json(value)) => crate::logging::redact_error_context(value),
+                    Ok(other) => crate::logging::redact_request_values(&other),
+                    Err(shared) => crate::logging::redact_request_values(&shared),
+                };
+                std::sync::Arc::new(redacted)
+            }
+            Self::Redacted(value) => value,
+        }
+    }
+
+    /// Convert into [`Self::Redacted`] so streaming response handlers never
+    /// retain the raw unredacted [`HttpBody`] across the lifetime of the stream.
+    #[must_use]
+    pub fn into_stream_source(self) -> Self {
+        Self::Redacted(self.into_redacted_arc())
+    }
+}
 
 /// Input supplied to one response handler.
 pub struct ResponseHandlerInput {
@@ -38,7 +91,8 @@ pub struct ResponseHandlerOutput<T> {
 
 type HandlerFuture<T> =
     Pin<Box<dyn Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send>>;
-type HandlerFn<T> = dyn FnOnce(ResponseHandlerInput) -> HandlerFuture<T> + Send;
+type HandlerFn<T> =
+    dyn FnOnce(ResponseHandlerInput, Option<RequestBodySource>) -> HandlerFuture<T> + Send;
 
 /// Provider-specific fields extracted from a failed response body.
 pub struct ProviderErrorParts {
@@ -54,6 +108,7 @@ pub struct ResponseHandler<T> {
     /// streaming exchange must not be bounded by the per-exchange response
     /// timeout in `call_to_api`.
     streaming: bool,
+    lazy_request_body: bool,
 }
 
 impl<T> ResponseHandler<T> {
@@ -64,8 +119,32 @@ impl<T> ResponseHandler<T> {
         Fut: Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send + 'static,
     {
         Self {
-            handler: Box::new(move |input| Box::pin(handler(input))),
+            handler: Box::new(move |input, _source| Box::pin(handler(input))),
             streaming: false,
+            lazy_request_body: false,
+        }
+    }
+
+    /// Create a handler that receives a lazy [`RequestBodySource`] instead of
+    /// eagerly materializing `request_body_values` before the handler runs.
+    pub fn new_with_source<F, Fut>(handler: F) -> Self
+    where
+        F: FnOnce(ResponseHandlerInput, RequestBodySource) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send + 'static,
+    {
+        Self {
+            handler: Box::new(move |mut input, source| {
+                let source = source
+                    .or_else(current_request_body_source)
+                    .unwrap_or_else(|| {
+                        RequestBodySource::Redacted(std::sync::Arc::new(std::mem::take(
+                            &mut input.request_body_values,
+                        )))
+                    });
+                Box::pin(handler(input, source))
+            }),
+            streaming: false,
+            lazy_request_body: true,
         }
     }
 
@@ -82,6 +161,10 @@ impl<T> ResponseHandler<T> {
         self.streaming
     }
 
+    pub(crate) fn uses_lazy_request_body(&self) -> bool {
+        self.lazy_request_body
+    }
+
     /// Consume the handler and process one response.
     ///
     /// # Errors
@@ -91,8 +174,92 @@ impl<T> ResponseHandler<T> {
         self,
         input: ResponseHandlerInput,
     ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-        (self.handler)(input).await
+        (self.handler)(input, None).await
     }
+
+    /// Consume the handler with an explicit lazy [`RequestBodySource`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the handler's contextual API, parse, or caller-abort failure.
+    pub async fn handle_with_source(
+        self,
+        input: ResponseHandlerInput,
+        source: Option<RequestBodySource>,
+    ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+        let streaming = self.streaming;
+        match source {
+            Some(src) => {
+                let src = if streaming {
+                    src.into_stream_source()
+                } else {
+                    src
+                };
+                CURRENT_BODY_SOURCE
+                    .scope(src.clone(), (self.handler)(input, Some(src)))
+                    .await
+            }
+            None => (self.handler)(input, None).await,
+        }
+    }
+}
+
+async fn read_json_response_body(
+    input: ResponseHandlerInput,
+    body_source: &RequestBodySource,
+) -> Result<
+    (
+        u16,
+        std::collections::HashMap<String, String>,
+        String,
+        Bytes,
+    ),
+    AiMuxError,
+> {
+    let ResponseHandlerInput {
+        url,
+        response,
+        abort_signal,
+        max_json_response_bytes,
+        ..
+    } = input;
+    let status = response.status().as_u16();
+    let headers = extract_response_headers(response.headers());
+    let max_bytes = max_json_response_bytes.unwrap_or(DEFAULT_MAX_JSON_RESPONSE_SIZE);
+    let read_source = body_source.clone();
+    let body = read_response_with_size_limit_lazy(
+        response,
+        &url,
+        move || read_source.materialize(),
+        max_bytes,
+        abort_signal.as_ref(),
+    )
+    .await?;
+    Ok((status, headers, url, body))
+}
+
+#[cold]
+#[inline(never)]
+fn invalid_json_response_error(
+    error: &serde_json::Error,
+    status: u16,
+    headers: std::collections::HashMap<String, String>,
+    url: String,
+    body: &[u8],
+    body_source: &RequestBodySource,
+) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        status_code: Some(status),
+        response_body: Some(String::from_utf8_lossy(body).into_owned()),
+        response_headers: Some(headers),
+        cause: Some(ErrorCause::source(error)),
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
+        ..ApiCallError::new(
+            format!("Invalid JSON response: {error}"),
+            url,
+            body_source.materialize(),
+        )
+    }))
 }
 
 /// Parse a successful JSON response using the endpoint's response type.
@@ -106,20 +273,8 @@ pub fn create_json_response_handler<T>() -> ResponseHandler<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
-    ResponseHandler::new(|input| async move {
-        let status = input.response.status().as_u16();
-        let headers = extract_response_headers(input.response.headers());
-        let max_bytes = input
-            .max_json_response_bytes
-            .unwrap_or(DEFAULT_MAX_JSON_RESPONSE_SIZE);
-        let body = read_response_with_size_limit(
-            input.response,
-            &input.url,
-            &input.request_body_values,
-            max_bytes,
-            input.abort_signal.as_ref(),
-        )
-        .await?;
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let (status, headers, url, body) = read_json_response_body(input, &body_source).await?;
         // Deserialize straight into `T` instead of parsing a
         // `serde_json::Value` first and converting that — the previous
         // two-step parse cloned the intermediate `Value` tree, holding
@@ -128,18 +283,7 @@ where
         // deserialization already proves `body` is valid JSON, so this
         // cannot fail in a way that changes the outcome.
         let value = serde_json::from_slice::<T>(&body).map_err(|error| {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
-                response_body: Some(String::from_utf8_lossy(&body).into_owned()),
-                response_headers: Some(headers.clone()),
-                cause: Some(ErrorCause::source(&error)),
-                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-                ..ApiCallError::new(
-                    format!("Invalid JSON response: {error}"),
-                    input.url.clone(),
-                    input.request_body_values.clone(),
-                )
-            }))
+            invalid_json_response_error(&error, status, headers.clone(), url, &body, &body_source)
         })?;
         let raw_value = serde_json::from_slice::<serde_json::Value>(&body).ok();
         Ok(ResponseHandlerOutput {
@@ -221,15 +365,10 @@ pub fn invalid_response_api_call(
     }))
 }
 
-/// Parse an error JSON and map its data to a provider message and code.
-#[must_use]
-pub fn create_json_error_response_handler<F>(
-    error_to_message_and_code: F,
-) -> ResponseHandler<AiMuxError>
-where
-    F: Fn(&serde_json::Value) -> ProviderErrorParts + Send + 'static,
-{
-    ResponseHandler::new(move |input| async move {
+fn create_json_error_response_handler_dyn(
+    error_to_message_and_code: Box<dyn Fn(&serde_json::Value) -> ProviderErrorParts + Send>,
+) -> ResponseHandler<AiMuxError> {
+    ResponseHandler::new_with_source(move |input, body_source| async move {
         let status = input.response.status().as_u16();
         let status_text = input
             .response
@@ -250,7 +389,7 @@ where
         let parsed_data = serde_json::from_slice::<serde_json::Value>(&body).ok();
         let parts = parsed_data
             .as_ref()
-            .map(error_to_message_and_code)
+            .map(&*error_to_message_and_code)
             .unwrap_or_else(|| ProviderErrorParts {
                 message: status_text.clone(),
                 provider_code: None,
@@ -268,7 +407,7 @@ where
             data: parsed_data.map(crate::logging::redact_error_context),
             is_retryable: aimux_core::error::is_retryable_status(status),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,
@@ -278,17 +417,34 @@ where
     })
 }
 
+/// Parse an error JSON and map its data to a provider message and code.
+#[must_use]
+pub fn create_json_error_response_handler<F>(
+    error_to_message_and_code: F,
+) -> ResponseHandler<AiMuxError>
+where
+    F: Fn(&serde_json::Value) -> ProviderErrorParts + Send + 'static,
+{
+    create_json_error_response_handler_dyn(Box::new(error_to_message_and_code))
+}
+
 /// Read a successful response as bytes.
 #[must_use]
 pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
-    ResponseHandler::new(|input| async move {
-        let headers = extract_response_headers(input.response.headers());
-        let value = read_response_with_size_limit(
-            input.response,
-            &input.url,
-            &input.request_body_values,
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let ResponseHandlerInput {
+            url,
+            response,
+            abort_signal,
+            ..
+        } = input;
+        let headers = extract_response_headers(response.headers());
+        let value = read_response_with_size_limit_lazy(
+            response,
+            &url,
+            move || body_source.materialize(),
             DEFAULT_MAX_DOWNLOAD_SIZE,
-            input.abort_signal.as_ref(),
+            abort_signal.as_ref(),
         )
         .await?;
         Ok(ResponseHandlerOutput {
@@ -299,18 +455,124 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
     })
 }
 
-/// One SSE `data:` field, as the AI SDK's `parseJsonEventStream` reads it
-/// (`safeParseJSON`): text that is not JSON is a JSON parse error naming the
-/// text, in the AI SDK's `JSONParseError` message
-/// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
-fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
-    serde_json::from_str(data).map_err(|error| match AiMuxError::from(error) {
+#[cold]
+#[inline(never)]
+fn event_json_parse_error(data: &str, error: serde_json::Error) -> AiMuxError {
+    match AiMuxError::from(error) {
         AiMuxError::JsonParse { message, cause } => AiMuxError::JsonParse {
             message: format!("JSON parsing failed: Text: {data}.\nError message: {message}"),
             cause,
         },
         other => other,
-    })
+    }
+}
+
+/// One SSE `data:` field, as the AI SDK's `parseJsonEventStream` reads it
+/// (`safeParseJSON`): text that is not JSON is a JSON parse error naming the
+/// text, in the AI SDK's `JSONParseError` message
+/// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
+fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
+    serde_json::from_str(data).map_err(|error| event_json_parse_error(data, error))
+}
+
+fn raw_event_source_stream(
+    input: ResponseHandlerInput,
+    body_source: RequestBodySource,
+) -> (
+    std::collections::HashMap<String, String>,
+    impl futures::Stream<Item = Result<String, AiMuxError>> + Send + 'static,
+) {
+    let headers = extract_response_headers(input.response.headers());
+    let output_headers = headers.clone();
+    let url = input.url;
+    let signal = input.abort_signal;
+    let redacted_body = body_source.into_redacted_arc();
+    let body_url = url.clone();
+    let body_request_values = redacted_body.clone();
+    let body = input.response.bytes_stream().map(move |result| {
+        result.map_err(|error| {
+            AiMuxError::ApiCall(Box::new(ApiCallError {
+                response_headers: Some(headers.clone()),
+                is_retryable: true,
+                cause: Some(ErrorCause::source(&error)),
+                origin: aimux_core::ApiCallErrorOrigin::Transport,
+                ..ApiCallError::new(
+                    error.to_string(),
+                    body_url.clone(),
+                    (*body_request_values).clone(),
+                )
+            }))
+        })
+    });
+
+    let stream_headers = output_headers.clone();
+    let stream_url = url;
+    let stream_request_values = redacted_body;
+    let stream = async_stream::stream! {
+        let events = aimux_stream::SseStream::new(body);
+        futures::pin_mut!(events);
+        loop {
+            let item = match signal.as_ref() {
+                Some(signal) => tokio::select! {
+                    biased;
+                    () = signal.cancelled() => {
+                        yield Err(AiMuxError::from_abort_signal(signal));
+                        break;
+                    }
+                    item = events.next() => item,
+                },
+                None => events.next().await,
+            };
+            let Some(item) = item else {
+                break;
+            };
+            match item {
+                // `data: [DONE]` is OpenAI's terminal frame ("the stream
+                // terminated by a `data: [DONE]` message", openai-openapi
+                // `CreateChatCompletionRequest.stream`). End here rather
+                // than wait for the body to close: a server that keeps
+                // the connection open after it would otherwise hold the
+                // caller's last `next()` forever. The AI SDK skips the
+                // frame and waits for EOF (`parse-json-event-stream.ts`).
+                Ok(event) if event.data == "[DONE]" => break,
+                Ok(event) => yield Ok(event.data),
+                Err(aimux_stream::SseError::Stream(error)) => {
+                    // Preserve response transport failures as ApiCallError
+                    // items, eligible for retry before output is emitted.
+                    yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                        response_headers: Some(stream_headers.clone()),
+                        is_retryable: true,
+                        cause: Some(ErrorCause::source(error.as_ref())),
+                        origin: aimux_core::ApiCallErrorOrigin::Transport,
+                        ..ApiCallError::new(
+                            error.to_string(),
+                            stream_url.clone(),
+                            (*stream_request_values).clone(),
+                        )
+                    })));
+                    break;
+                }
+                Err(error) => {
+                    // The SSE decoder ends after this error. Reporting a
+                    // recoverable JsonParse would let providers treat that
+                    // EOF as success and flush incomplete output/tool calls.
+                    yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                        response_headers: Some(stream_headers.clone()),
+                        is_retryable: false,
+                        cause: Some(ErrorCause::source(&error)),
+                        origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
+                        ..ApiCallError::new(
+                            error.to_string(),
+                            stream_url.clone(),
+                            (*stream_request_values).clone(),
+                        )
+                    })));
+                    break;
+                }
+            }
+        }
+    };
+    (output_headers, stream)
 }
 
 /// Parse an SSE response and deserialize each `data:` field as `T`.
@@ -324,97 +586,10 @@ pub fn create_event_source_response_handler<T>()
 where
     T: DeserializeOwned + Send + 'static,
 {
-    ResponseHandler::new(|input| async move {
-        let headers = extract_response_headers(input.response.headers());
-        let output_headers = headers.clone();
-        let url = input.url;
-        let request_body_values = input.request_body_values;
-        let signal = input.abort_signal;
-        let body_url = url.clone();
-        let body_request_body_values = request_body_values.clone();
-        let body = input.response.bytes_stream().map(move |result| {
-            result.map_err(|error| {
-                AiMuxError::ApiCall(Box::new(ApiCallError {
-                    response_headers: Some(headers.clone()),
-                    is_retryable: true,
-                    cause: Some(ErrorCause::source(&error)),
-                    origin: aimux_core::ApiCallErrorOrigin::Transport,
-                    ..ApiCallError::new(
-                        error.to_string(),
-                        body_url.clone(),
-                        body_request_body_values.clone(),
-                    )
-                }))
-            })
-        });
-
-        let stream_headers = output_headers.clone();
-        let stream_url = url.clone();
-        let stream_request_body_values = request_body_values.clone();
-        let value: BoxStream<'static, Result<T, AiMuxError>> = Box::pin(async_stream::stream! {
-            let events = aimux_stream::SseStream::new(body);
-            futures::pin_mut!(events);
-            loop {
-                let item = match signal.as_ref() {
-                    Some(signal) => tokio::select! {
-                        biased;
-                        () = signal.cancelled() => {
-                            yield Err(AiMuxError::from_abort_signal(signal));
-                            break;
-                        }
-                        item = events.next() => item,
-                    },
-                    None => events.next().await,
-                };
-                let Some(item) = item else {
-                    break;
-                };
-                match item {
-                    // `data: [DONE]` is OpenAI's terminal frame ("the stream
-                    // terminated by a `data: [DONE]` message", openai-openapi
-                    // `CreateChatCompletionRequest.stream`). End here rather
-                    // than wait for the body to close: a server that keeps
-                    // the connection open after it would otherwise hold the
-                    // caller's last `next()` forever. The AI SDK skips the
-                    // frame and waits for EOF (`parse-json-event-stream.ts`).
-                    Ok(event) if event.data == "[DONE]" => break,
-                    Ok(event) => yield parse_event::<T>(&event.data),
-                    Err(aimux_stream::SseError::Stream(error)) => {
-                        // Preserve response transport failures as ApiCallError
-                        // items, eligible for retry before output is emitted.
-                        yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                            response_headers: Some(stream_headers.clone()),
-                            is_retryable: true,
-                            cause: Some(ErrorCause::source(error.as_ref())),
-                            origin: aimux_core::ApiCallErrorOrigin::Transport,
-                            ..ApiCallError::new(
-                                error.to_string(),
-                                stream_url.clone(),
-                                stream_request_body_values.clone(),
-                            )
-                        })));
-                        break;
-                    }
-                    Err(error) => {
-                        // The SSE decoder ends after this error. Reporting a
-                        // recoverable JsonParse would let providers treat that
-                        // EOF as success and flush incomplete output/tool calls.
-                        yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                            response_headers: Some(stream_headers.clone()),
-                            is_retryable: false,
-                            cause: Some(ErrorCause::source(&error)),
-                            origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
-                            ..ApiCallError::new(
-                                error.to_string(),
-                                stream_url.clone(),
-                                stream_request_body_values.clone(),
-                            )
-                        })));
-                        break;
-                    }
-                }
-            }
-        });
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let (output_headers, stream) = raw_event_source_stream(input, body_source);
+        let value: BoxStream<'static, Result<T, AiMuxError>> =
+            Box::pin(stream.map(|item| item.and_then(|data| parse_event::<T>(&data))));
         Ok(ResponseHandlerOutput {
             value,
             raw_value: None,
@@ -427,7 +602,7 @@ where
 /// Build an error using only status, headers and body.
 #[must_use]
 pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError> {
-    ResponseHandler::new(|input| async move {
+    ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let message = input
             .response
@@ -451,7 +626,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
             response_headers: Some(headers.clone()),
             is_retryable: aimux_core::error::is_retryable_status(status),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,

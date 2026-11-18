@@ -55,18 +55,22 @@ bash scripts/check_provider_boundaries.sh
 
 碰到 napi、FFI 时加跑 `scripts/local-ci.sh` 对应的节。每个 worktree 用自己的 `CARGO_TARGET_DIR`。
 
+lint 统一写在根 `Cargo.toml` 的 `[workspace.lints]`，成员 crate 用 `[lints] workspace = true`，CI 用 `-D warnings`。新开一个 lint 的 PR 同时清掉它报的全部位置，不用全局 `allow` 绕过；逐处抑制用带 `reason` 的 `#[expect]`。哪些 lint 分哪批开、各报多少处，记在风格整改的 issue 里。
+
 ## 项目决定
 
 - wire 跟 AI SDK 的 JSON 形态；wire 变化单独成 PR，同步所有绑定。
 - 可选方法用 `Option<Result<…>>`（§5、D22）；provider 可调用 `call(model_id)`；默认 provider 访问不可失败，显式工厂返回 `Result`。
 - 设置求值时机（工厂、取模型、请求）逐包跟上游（D10）；headers 每次请求求值。
-- 不用 provider 名字判断厂商（D8）；providerOptions 的键在各包 `options.rs` 只写一次（D9）；retry 只在调用层（D14）；core 单步，不跑 agent loop（D25）。
+- 不用 provider 名字判断厂商（D8）；providerOptions 的键在各包只写一次：有 schema 的写在 `options.rs`，没有 schema 的写成 `NAMESPACE` 常量、经 `shared::namespaced_options` 读（D9）；retry 只在调用层（D14）；core 单步，不跑 agent loop（D25）。
 - `do_generate`/`do_stream` 保持 `async_trait`（registry、FFI 要 `dyn`）。
 - 分层单向：`shared/`、`openai_compatible/` 不引用具体厂商模块。跨模块扩展点由共享层定义 trait，厂商用自己的纯数据 struct 实现；包内有限几种情况用包内 enum（`check_provider_boundaries.sh` 守）。
 - 流：每个厂商的流是一个实现 `Transformer` 的具名 struct；工具调用的累积是流 struct 自己的字段，没有共享的 tracker 类型（和上游 provider-utils 结构不同，行为照上游）。
 - 保留 openai-compatible 的 `transformRequestBody`、`metadataExtractor`、`supportsMultiPartToolContent` 和 `specification_version`。
 - 栈内 breaking 直接替换，不留 deprecated 别名，同一 PR 改完调用方和绑定（D31）。
 - 范围只做结构清理、行为对齐和缺陷修复，不新增对外能力（§0.4）。
+- 锁 poison 一律转成错误返回：不 `unwrap`/`expect`（release 是 abort，panic 等于宿主进程退出），也不用 `PoisonError::into_inner` 吞掉继续用。
+- 移植先照上游结构忠实移植，原生写法是第二步；差分用大样本随机输入；不加默认的 `#[non_exhaustive]`；setter 取 `self`（rig 风格）；错误跟 AI SDK 错误类走（按功能拆分错误类型、错误 JSON 不变，在 #365 待讨论），`thiserror` 保留 `#[error]`、`#[source]`。通用 Rust 风格指南和这些冲突时按这里。
 
 ## 陷阱
 
@@ -76,6 +80,7 @@ bash scripts/check_provider_boundaries.sh
 - headers：settings → 单次调用 → 鉴权，后层覆盖；`None` 删除；名字小写。
 - JS promise 创建就跑，Rust future 不 poll 不跑；不 await 的 promise 移植时改成 spawn 或删掉。
 - UTF-16：JS 的长度和下标按码元；截断、长度校验用 emoji 和中文对一次上游。
+- panic 策略：`release`、`ios-release` profile 是 `panic = "abort"`，这两种产物里 `catch_unwind` 拦不住 panic；dev、test 能拦住不代表发布产物能（发布产物改 unwind 并在 FFI 边界 `catch_unwind`，在 #372 讨论）。
 
 ## 工作约束
 

@@ -1,4 +1,5 @@
 import 'package:aimux/errors.dart';
+import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -50,9 +51,32 @@ void main() {
         },
       },
     });
-    expect(error.cause?['message'], 'tcp connect error');
-    expect((error.cause?['cause'] as Map)['message'], 'Connection refused');
+    final source = (error.cause as ErrorCauseBranchSourceError).value;
+    expect(source.message, 'tcp connect error');
+    expect(source.cause?.message, 'Connection refused');
+    expect(
+        ((error.error as Map)['cause'] as Map)['message'], 'tcp connect error');
     expect(bindingFailure('x').cause, isNull);
+    final nested = OpsException.fromJson({
+      'kind': 'aimux',
+      'code': 11,
+      'message': 'm',
+      'error': {
+        'name': 'AI_APICallError',
+        'url': 'https://example.test/v1',
+        'requestBodyValues': <String, dynamic>{},
+        'statusCode': 200,
+        'message': 'm',
+        'isRetryable': false,
+        'cause': {
+          'name': 'AI_JSONParseError',
+          'message': 'Unexpected end of JSON input',
+        },
+      },
+    });
+    final parse = (nested.cause as ErrorCauseBranchAiMuxError).value
+        as AiMuxErrorAIJSONParseError;
+    expect(parse.message, 'Unexpected end of JSON input');
     final retry = OpsException.fromJson({
       'kind': 'aimux',
       'code': 10,
@@ -62,12 +86,14 @@ void main() {
         'message': 'r',
         'reason': 'maxRetriesExceeded',
         'errors': [
-          {'name': 'AI_APICallError', 'message': 'first'},
-          {'name': 'AI_APICallError', 'message': 'last'},
+          {'name': 'AI_JSONParseError', 'message': 'first'},
+          {'name': 'AI_JSONParseError', 'message': 'last'},
         ],
       },
     });
-    expect(retry.cause?['message'], 'last');
+    final last = (retry.cause as ErrorCauseBranchAiMuxError).value
+        as AiMuxErrorAIJSONParseError;
+    expect(last.message, 'last');
   });
   test('malformed envelope is rejected', () {
     expect(() => OpsException.fromJson({'kind': 'aimux', 'code': 11}),

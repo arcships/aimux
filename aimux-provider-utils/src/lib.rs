@@ -84,14 +84,16 @@ pub use media_type::{
     is_full_media_type, resolve_full_media_type,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
-pub use parse_provider_options::{optional_field, parse_option_fields, parse_provider_options};
+pub use parse_provider_options::{
+    nullish_positive, optional_field, parse_option_fields, parse_provider_options,
+};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
-    ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
-    create_binary_response_handler, create_event_source_response_handler,
+    ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
+    ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
     create_status_code_error_response_handler, invalid_response_api_call,
 };

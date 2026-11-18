@@ -26,14 +26,30 @@ struct WireTests {
             {"kind":"aimux","code":11,"message":"API call error: Cannot connect","error":{"name":"AI_APICallError",
              "message":"Cannot connect","cause":{"message":"tcp connect error","cause":{"message":"Connection refused"}}}}
             """#.utf8))
-        try require(error.cause?["message"] == .string("tcp connect error"))
-        try require(error.cause?["cause"]?["message"] == .string("Connection refused"))
+        guard case .sourceError(let source)? = error.cause else {
+            throw CheckFailure(description: "transport cause is not a SourceError: \(String(describing: error.cause))")
+        }
+        try require(source.message == "tcp connect error")
+        try require(source.cause?.message == "Connection refused")
+        try require(error.error["cause"]?["message"] == .string("tcp connect error"))
         try require(AimuxError.binding("x").cause == nil)
+        let nested = try JSONDecoder().decode(AimuxError.self, from: Data(#"""
+            {"kind":"aimux","code":11,"message":"m","error":{"name":"AI_APICallError","url":"https://example.test/v1",
+             "requestBodyValues":{},"statusCode":200,"message":"m","isRetryable":false,
+             "cause":{"name":"AI_JSONParseError","message":"Unexpected end of JSON input"}}}
+            """#.utf8))
+        guard case .aiMuxError(.aijsonParseError(_, let message))? = nested.cause else {
+            throw CheckFailure(description: "nested cause is not an AiMuxError: \(String(describing: nested.cause))")
+        }
+        try require(message == "Unexpected end of JSON input")
         let retry = try JSONDecoder().decode(AimuxError.self, from: Data(#"""
             {"kind":"aimux","code":10,"message":"r","error":{"name":"AI_RetryError","message":"r","reason":"maxRetriesExceeded",
-             "errors":[{"name":"AI_APICallError","message":"first"},{"name":"AI_APICallError","message":"last"}]}}
+             "errors":[{"name":"AI_JSONParseError","message":"first"},{"name":"AI_JSONParseError","message":"last"}]}}
             """#.utf8))
-        try require(retry.cause?["message"] == .string("last"))
+        guard case .aiMuxError(.aijsonParseError(_, let last))? = retry.cause else {
+            throw CheckFailure(description: "retry cause is not its last attempt: \(String(describing: retry.cause))")
+        }
+        try require(last == "last")
     }
 
 #if !AIMUX_STANDALONE

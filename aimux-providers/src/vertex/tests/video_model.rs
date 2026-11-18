@@ -669,3 +669,61 @@ async fn should_include_response_data() {
         Some("veo-3.0-generate-001".to_string())
     );
 }
+
+/// aimux's own: `providerOptions.googleVertex`, else `vertex`, is parsed
+/// against `googleVertexVideoModelOptionsSchema` (google-vertex-video-model.ts:139-148).
+/// A value outside the schema fails with the upstream message, naming the
+/// namespace read, before anything is sent. `null` passes (`.nullish()`), and
+/// keys the schema does not declare are still forwarded (`z.looseObject`).
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for (namespace, options) in [
+            ("googleVertex", json!({ "personGeneration": "everyone" })),
+            ("googleVertex", json!({ "pollIntervalMs": 0 })),
+            ("vertex", json!({ "negativePrompt": 1 })),
+            ("vertex", json!({ "generateAudio": "yes" })),
+            ("vertex", json!({ "referenceImages": [{ "gcsUri": 1 }] })),
+        ] {
+            let (model, fetch) = create_mock_model(MockModel::default());
+            let mut call = default_options();
+            call.provider_options = provider_options(json!({ namespace: options }));
+            let Err(error) = model.do_start(&call).await else {
+                panic!("{namespace}: {options} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {options}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{options}"
+            );
+            assert!(cause.is_some(), "{options}");
+            assert!(fetch.seen().is_empty(), "{options}");
+        }
+    }
+
+    #[tokio::test]
+    async fn null_passes_and_undeclared_keys_are_forwarded() {
+        let mut options = default_options();
+        options.provider_options = provider_options(json!({
+            "googleVertex": {
+                "personGeneration": null,
+                "pollTimeoutMs": null,
+                "enhancePrompt": true,
+            },
+        }));
+        assert_eq!(
+            start_with(options).await,
+            json!({
+                "instances": [{"prompt": PROMPT}],
+                "parameters": {"sampleCount": 1, "enhancePrompt": true},
+            })
+        );
+    }
+}

@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::decision_support::{
+use crate::decision::support::{
     DecisionConfig, DecisionEndpoint, DecisionImage, DecisionProbabilitySource, invalid,
     provider_metadata, response_info,
 };
@@ -168,7 +168,7 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     } else {
         let mut content = Vec::new();
         for image in &provider_options.images {
-            let inline = crate::decision_support::inline_image(image)?;
+            let inline = crate::decision::support::inline_image(image)?;
             let mut part = json!({"type":"input_image", "image_url":inline.data_url});
             if let Some(detail) = &image.detail {
                 if !matches!(detail.as_str(), "low" | "high" | "auto" | "original") {
@@ -486,7 +486,7 @@ impl DecisionModel for OpenAIDecisionModel {
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
         let Request { body, values } = request_body(&self.model_id, options)?;
         let url = self.config.url("/decisions")?;
-        crate::decision_support::post(&self.config, options, &url, body, |raw, headers| {
+        crate::decision::support::post(&self.config, options, &url, body, |raw, headers| {
             let data = serde_json::from_value(raw.clone()).map_err(|e| {
                 AiMuxError::InvalidResponseData {
                     message: format!("OpenAI decisions: {e}"),

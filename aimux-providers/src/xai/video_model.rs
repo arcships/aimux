@@ -646,20 +646,20 @@ const MAX_PENDING_BODY_BYTES: usize = 1024 * 1024;
 /// xAI answers 202 while a generation is still running, sometimes with an
 /// empty body: that is `pending`, whatever the body holds.
 fn status_response_handler() -> aimux_provider_utils::ResponseHandler<StatusResponse> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         if input.response.status().as_u16() != 202 {
             return aimux_provider_utils::create_json_response_handler::<StatusResponse>()
-                .handle(input)
+                .handle_with_source(input, Some(body_source))
                 .await;
         }
         let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
             input.response.headers(),
         );
         let body =
-            aimux_provider_utils::read_response_with_size_limit::read_response_with_size_limit(
+            aimux_provider_utils::read_response_with_size_limit::read_response_with_size_limit_lazy(
                 input.response,
                 &input.url,
-                &input.request_body_values,
+                move || body_source.materialize(),
                 MAX_PENDING_BODY_BYTES,
                 input.abort_signal.as_ref(),
             )

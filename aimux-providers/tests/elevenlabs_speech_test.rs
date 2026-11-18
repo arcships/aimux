@@ -67,6 +67,7 @@ fn speech_options(text: &str) -> SpeechCallOptions {
 // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
 /// TS: "should generate speech with required parameters"
+/// partial: `should generate speech with required parameters`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_generate_speech_with_required_parameters() {
     let server = MockServer::start().await;
@@ -129,6 +130,7 @@ async fn should_include_user_agent_header() {
 }
 
 /// TS: "should handle custom output format"
+/// partial: `should handle custom output format`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_handle_custom_output_format() {
     let server = MockServer::start().await;
@@ -156,6 +158,7 @@ async fn should_handle_custom_output_format() {
 }
 
 /// TS: "should handle language parameter"
+/// partial: `should handle language parameter`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_handle_language_parameter() {
     let server = MockServer::start().await;
@@ -184,6 +187,7 @@ async fn should_handle_language_parameter() {
 }
 
 /// TS: "should handle speed parameter in voice settings"
+/// partial: `should handle speed parameter in voice settings`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_handle_speed_parameter_in_voice_settings() {
     let server = MockServer::start().await;
@@ -206,6 +210,7 @@ async fn should_handle_speed_parameter_in_voice_settings() {
 }
 
 /// TS: "should warn about unsupported instructions parameter"
+/// partial: `should warn about unsupported instructions parameter`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_warn_about_unsupported_instructions_parameter() {
     let server = MockServer::start().await;
@@ -236,6 +241,7 @@ async fn should_warn_about_unsupported_instructions_parameter() {
 }
 
 /// TS: "should pass provider-specific options"
+/// partial: `should pass provider-specific options`; full port in src/elevenlabs/tests/speech_model.rs.
 #[tokio::test]
 async fn should_pass_provider_specific_options() {
     let server = MockServer::start().await;

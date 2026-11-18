@@ -135,7 +135,7 @@ JS / Python / Go 等绑定没有闭包入口，provider 级的固定字段请在
 ## 7. Model List API 与模型配置补充（RFC-0027）
 
 aimux 提供两个**独立原语**,host 各自调用并按需合并(aimux 是库、不持有状态):
-- Rust: `Provider::discovery()` → `ProviderDiscovery::list_models()` — 运行时从 provider `/models` 发现可用模型,返回 `RuntimeModel[]`(provider 官方数据,通常只有 id)。
+- Rust: `Provider::discovery()` → `ProviderDiscovery::list_models()` — 运行时从 provider `/models` 发现可用模型,返回 `RuntimeModel[]`(provider 官方数据:总有 id;provider 在列表里声明了的话还有 `owned_by`、`created` 和 token 上限 `limits`,见 7.7)。
 - `get_model_specs()` — 独立拉取 `models.anya2a.com` 社区聚合数据,返回 `ModelSpec` 配置/能力。
 
 aimux **不自动合并**二者:`list_models` 不带 anya2a 配置,`get_model_specs` 不带可用性。host 自行按 modelId 把 spec 合并进 `list_models` 的结果。
@@ -146,9 +146,11 @@ aimux **不自动合并**二者:`list_models` 不带 anya2a 配置,`get_model_sp
 // 1. 创建 provider 句柄
 const p = await createProvider('deepseek', apiKey)
 
-// 2. 列出可用模型(仅 provider 官方数据:RuntimeModel[],通常只有 id)
+// 2. 列出可用模型(仅 provider 官方数据:RuntimeModel[],总有 id,其余字段视 provider 声明而定)
 const models = await p.listModels()
 // → [{ id: 'deepseek-v4', owned_by: 'deepseek', created: 1715367049 }, ...]
+// OpenRouter / vLLM 这类在列表里声明上限的,还会带 limits:
+// → [{ id: 'openai/gpt-4o', limits: { context: 128000, output: 16384 } }, ...]
 
 // 3. 独立拉取 anya2a 社区配置(thin fetch,无缓存);host 自行按 modelId 合并
 const catalogue = await getModelSpecs()
@@ -170,7 +172,7 @@ await generateText(model, prompt, { max_output_tokens: 8000, provider_options: {
 
 | 数据源 | API | 角色 | 特点 |
 |---|---|---|---|
-| provider `/models` | `list_models()` | 可用性权威 | 账号级(这 key 能调什么),实时但稀疏(通常只有 id) |
+| provider `/models` | `list_models()` | 可用性权威 | 账号级(这 key 能调什么),实时但稀疏(总有 id;`limits` 只在 provider 声明时出现) |
 | anya2a 社区聚合 | `get_model_specs()` | 补充配置/能力 | 社区知识(context/reasoning/cost),丰富但可能滞后 |
 
 anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字段留空。两者**独立拉取、无内置缓存**:`list_models` 每次实时调 provider,`get_model_specs` 是 thin fetch(无 FS 写入、无 TTL);host 决定如何缓存/持久化。
@@ -195,3 +197,15 @@ aimux 是库、不持有状态:`list_models` 与 `get_model_specs` 都是**实�
 | `reasoning.effort_default` / `mode` | `provider_options.<provider>` 里填 `thinking:{enabled}` / `reasoning_effort` |
 | `cost` | 发送前预估成本(用户自行算) |
 | `modalities` | 决定能否传 image/audio 内容 |
+
+### 7.7 `RuntimeModel.limits`:provider 自己声明的上限
+
+`limits` 只取 provider `/models` 列表响应里**同一条目**声明的 token 上限,没有声明就不出现;aimux 不从 anya2a 填、不推断、不按模型名猜。
+
+| `limits` 字段 | 来源 |
+|---|---|
+| `context` | 条目的 `context_length`(OpenRouter 及照搬其列表格式的聚合商),否则 `top_provider.context_length`,否则 `max_model_len`(vLLM) |
+| `output` | `top_provider.max_completion_tokens`(OpenRouter) |
+| `input` | 不填(没有 provider 在列表里单独声明输入上限) |
+
+值不是非负整数(字符串、小数等)时按未声明处理,不会让整个列表失败。`limits` 与 `ModelSpec.limits` 是两个来源:前者是 provider 对这个 key 的声明,后者是社区知识;两者不一致时由 host 决定用哪个,aimux 不合并。
