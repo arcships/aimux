@@ -14,13 +14,13 @@ use http::{HeaderMap, Method, StatusCode};
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use aimux_core::{AbortSignal, SourceError};
+use aimux_core::{AbortSignal, AiMuxError, SourceError};
 use aimux_provider_utils::{
     AuthScheme, AwsCredentials, Credential, Fetch, FetchError, FetchFunction, FetchRequest,
     FetchResponse, NativeContext, NativeEndpoint, NativeError, NativeExchangeFinished,
     NativeExchangeObserver, NativeExchangeOutcome, NativeExchangeStarted, NativeRequest,
     NativeRetryPolicy, ProviderHeaders, ReqwestFetch, Resolvable, SIGV4_PROTECTED_HEADERS,
-    SafeRetryOptions, SigV4Fetch, SigV4Signing, native_request,
+    SafeRetryOptions, SigV4AuthFetch, SigV4Fetch, SigV4Signing, native_request,
 };
 
 type FetchHandler = Arc<
@@ -1306,14 +1306,21 @@ async fn sentinel_secrets_never_leak_across_debug_errors_or_observer() {
         Some(user_headers.into_iter().collect()),
     );
 
-    let endpoint = NativeEndpoint::with_provider_headers(
+    let userinfo_err = NativeEndpoint::with_provider_headers(
         &format!("https://basic-user:{SENTINEL_ENC}@api.example.com/v1"),
-        provider_headers,
+        provider_headers.clone(),
     )
-    .unwrap()
-    .try_with_protected_headers(["x-custom-fixed"])
-    .unwrap()
-    .with_fetch(mock);
+    .unwrap_err();
+    assert!(matches!(userinfo_err, NativeError::InvalidConfig { .. }));
+    assert_no_leak(&format!("{userinfo_err}"), "userinfo error Display");
+    assert_no_leak(&format!("{userinfo_err:?}"), "userinfo error Debug");
+
+    let endpoint =
+        NativeEndpoint::with_provider_headers("https://api.example.com/v1", provider_headers)
+            .unwrap()
+            .try_with_protected_headers(["x-custom-fixed"])
+            .unwrap()
+            .with_fetch(mock);
 
     assert_no_leak(&format!("{endpoint:?}"), "endpoint Debug");
 
@@ -1558,4 +1565,402 @@ async fn regression_observer_response_head_redaction_valueless_query_and_retry_d
         .map(|v| v.to_str().unwrap())
         .collect();
     assert_eq!(obs_multi, ["one", "two"]);
+}
+
+#[tokio::test]
+async fn security_rejects_base_url_userinfo_across_all_constructors() {
+    let (mock, _) = MockFetch::new(|req| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            req.url,
+            Bytes::new(),
+        ))
+    });
+
+    for bad_url in [
+        "https://user:super-secret@api.example.com/v1",
+        "https://user@api.example.com/v1",
+        "https://:super-secret@api.example.com/v1",
+        "https://:@api.example.com/v1",
+        "https://@api.example.com/v1",
+    ] {
+        let err = NativeEndpoint::unauthenticated(bad_url).unwrap_err();
+        assert!(
+            matches!(err, NativeError::InvalidConfig { .. }),
+            "expected InvalidConfig for `{bad_url}`, got {err:?}"
+        );
+        assert!(!err.to_string().contains("super-secret"));
+
+        let err_ph = NativeEndpoint::with_provider_headers(
+            bad_url,
+            ProviderHeaders::bearer(Credential::None, vec![], None),
+        )
+        .unwrap_err();
+        assert!(matches!(err_ph, NativeError::InvalidConfig { .. }));
+        assert!(!err_ph.to_string().contains("super-secret"));
+
+        let err_hr = NativeEndpoint::with_header_resolver(bad_url, [], || {
+            Box::pin(async { Ok(HeaderMap::new()) })
+        })
+        .unwrap_err();
+        assert!(matches!(err_hr, NativeError::InvalidConfig { .. }));
+        assert!(!err_hr.to_string().contains("super-secret"));
+
+        let err_sigv4 = NativeEndpoint::with_sigv4(bad_url, mock.clone()).unwrap_err();
+        assert!(matches!(err_sigv4, NativeError::InvalidConfig { .. }));
+        assert!(!err_sigv4.to_string().contains("super-secret"));
+    }
+}
+
+#[tokio::test]
+async fn security_with_header_resolver_auto_protects_dynamic_headers_and_handles_errors() {
+    let (mock, calls) = MockFetch::new(|req| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            req.url,
+            Bytes::from_static(b"ok"),
+        ))
+    });
+
+    // 1. Happy path + auto-protection even when protected_headers is empty.
+    let evals = Arc::new(AtomicUsize::new(0));
+    let evals_ref = evals.clone();
+    let ep_auto =
+        NativeEndpoint::with_header_resolver("https://api.example.com/v1", [], move || {
+            let evals_ref = evals_ref.clone();
+            Box::pin(async move {
+                evals_ref.fetch_add(1, Ordering::SeqCst);
+                let mut h = HeaderMap::new();
+                h.insert(
+                    "authorization",
+                    HeaderValue::from_static("Bearer dynamic-secret"),
+                );
+                h.insert(
+                    "x-custom-dyn-auth",
+                    HeaderValue::from_static("dyn-custom-secret"),
+                );
+                Ok(h)
+            })
+        })
+        .unwrap()
+        .try_with_idempotency_header("x-custom-dyn-auth")
+        .unwrap()
+        .with_fetch(mock.clone());
+
+    let obs = RecordingObserver::new();
+    let resp = native_request(
+        &ep_auto,
+        NativeRequest::new(Method::POST, "responses"),
+        NativeContext::new().with_observer(obs.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(drain_body(resp.body).await.unwrap().as_ref(), b"ok");
+    assert_eq!(evals.load(Ordering::SeqCst), 1);
+
+    {
+        let recorded = calls.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(
+            recorded[0].headers.get("authorization").unwrap(),
+            "Bearer dynamic-secret"
+        );
+        assert_eq!(
+            recorded[0].headers.get("x-custom-dyn-auth").unwrap(),
+            "dyn-custom-secret"
+        );
+    }
+
+    // Dynamic headers returned by resolver must be redacted in observer events.
+    let started = obs.started_events();
+    assert_eq!(started.len(), 1);
+    let started_dbg = format!("{:?}", started[0]);
+    assert!(!started_dbg.contains("dynamic-secret"));
+    assert!(!started_dbg.contains("dyn-custom-secret"));
+
+    // Caller override of resolver-returned `authorization` or `x-custom-dyn-auth` fails with 0 network calls.
+    for (hdr_name, hdr_val) in [
+        ("Authorization", "Bearer attacker"),
+        ("X-Custom-Dyn-Auth", "attacker"),
+    ] {
+        let mut spoof = HeaderMap::new();
+        spoof.insert(
+            HeaderName::try_from(hdr_name).unwrap(),
+            HeaderValue::from_static(hdr_val),
+        );
+        let err = native_request(
+            &ep_auto,
+            NativeRequest::new(Method::POST, "responses").with_headers(spoof),
+            NativeContext::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, NativeError::InvalidHeader { .. }));
+    }
+
+    // Retry idempotency_key cannot override a resolver-returned header either.
+    let err_idem = native_request(
+        &ep_auto,
+        NativeRequest::new(Method::POST, "responses").with_retry(NativeRetryPolicy::Safe(
+            SafeRetryOptions::default().with_idempotency_key(
+                HeaderName::from_static("x-custom-dyn-auth"),
+                HeaderValue::from_static("attacker-idem"),
+            ),
+        )),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_idem, NativeError::InvalidHeader { .. }));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+
+    // 2. Pre-declared protected_headers reject caller overrides BEFORE calling resolver (0 evals, 0 network).
+    let pre_evals = Arc::new(AtomicUsize::new(0));
+    let pre_evals_ref = pre_evals.clone();
+    let ep_pre = NativeEndpoint::with_header_resolver(
+        "https://api.example.com/v1",
+        [HeaderName::from_static("authorization")],
+        move || {
+            let pre_evals_ref = pre_evals_ref.clone();
+            Box::pin(async move {
+                pre_evals_ref.fetch_add(1, Ordering::SeqCst);
+                Ok(HeaderMap::new())
+            })
+        },
+    )
+    .unwrap()
+    .with_fetch(mock.clone());
+
+    let mut conflict = HeaderMap::new();
+    conflict.insert("authorization", HeaderValue::from_static("Bearer attacker"));
+    let err_pre = native_request(
+        &ep_pre,
+        NativeRequest::new(Method::GET, "models").with_headers(conflict),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_pre, NativeError::InvalidHeader { .. }));
+    assert_eq!(pre_evals.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.lock().unwrap().len(), 1);
+
+    // 3. Error path: resolver error surfaces as NativeError::Auth with 0 fetch calls.
+    let ep_err = NativeEndpoint::with_header_resolver("https://api.example.com/v1", [], || {
+        Box::pin(async { Err(AiMuxError::invalid_argument("token mint failed")) })
+    })
+    .unwrap()
+    .with_fetch(mock);
+
+    let err_auth = native_request(
+        &ep_err,
+        NativeRequest::new(Method::GET, "models"),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_auth, NativeError::Auth(_)));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn security_rejects_cross_origin_response_url_from_transport() {
+    // 1. Cross-origin host, scheme downgrade, port mismatch, and unexpected userinfo must fail closed.
+    for bad_resp_url in [
+        "https://evil.test/v1/responses?secret=leak-me",
+        "http://api.example.com/v1/responses",
+        "https://api.example.com:8443/v1/responses",
+        "https://user:leak-me@api.example.com/v1/responses",
+    ] {
+        let bad_url = Url::parse(bad_resp_url).unwrap();
+        let (mock, calls) = MockFetch::new(move |_| {
+            let bad_url = bad_url.clone();
+            async move {
+                Ok(FetchResponse::from_bytes(
+                    StatusCode::OK,
+                    HeaderMap::new(),
+                    bad_url,
+                    Bytes::from_static(b"spoofed body"),
+                ))
+            }
+        });
+
+        let ep = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+            .unwrap()
+            .with_fetch(mock);
+        let obs = RecordingObserver::new();
+        let err = native_request(
+            &ep,
+            NativeRequest::new(Method::GET, "models").with_retry(NativeRetryPolicy::Safe(
+                SafeRetryOptions::default()
+                    .with_max_retries(3)
+                    .with_initial_backoff(Duration::from_millis(1)),
+            )),
+            NativeContext::new().with_observer(obs.clone()),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(err, NativeError::Transport(FetchError::Other(_))),
+            "expected Transport(Other) for `{bad_resp_url}`, got {err:?}"
+        );
+        assert!(!err.to_string().contains("leak-me"));
+        // Must never retry or deliver response head/chunks to observer.
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        assert_eq!(obs.heads.lock().unwrap().len(), 0);
+        assert_eq!(obs.chunk_count(), 0);
+        let finished = obs.finished_events();
+        assert_eq!(finished.len(), 1);
+        assert!(matches!(
+            finished[0].outcome,
+            NativeExchangeOutcome::Failed(_)
+        ));
+        assert!(!finished[0].recording_complete);
+    }
+
+    // 2. Same-origin response URL with explicit default port / different path succeeds.
+    let (mock_same, _) = MockFetch::new(|_| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            Url::parse("https://api.example.com:443/other-path").unwrap(),
+            Bytes::from_static(b"same-origin-ok"),
+        ))
+    });
+    let ep_same = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .with_fetch(mock_same);
+    let resp = native_request(
+        &ep_same,
+        NativeRequest::new(Method::GET, "models"),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        drain_body(resp.body).await.unwrap().as_ref(),
+        b"same-origin-ok"
+    );
+}
+
+#[tokio::test]
+async fn security_sigv4_auto_protects_authorization_and_all_x_amz_headers() {
+    let (inner_capture, wire_calls) = MockFetch::new(|req| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            req.url,
+            Bytes::from_static(b"signed-ok"),
+        ))
+    });
+
+    let creds = AwsCredentials {
+        access_key_id: "AKIAEXAMPLE".to_string(),
+        secret_access_key: "secret-aws-key".to_string(),
+        session_token: Some("sess-token".to_string()),
+        region: "us-east-1".to_string(),
+    };
+    let sigv4 = Arc::new(SigV4Fetch::new(
+        inner_capture.clone(),
+        Resolvable::Value(creds.clone()),
+        "bedrock",
+        SigV4Signing::AllHeaders,
+    ));
+
+    // 1. Even WITHOUT calling try_with_protected_headers, with_fetch(SigV4Fetch) protects authorization + x-amz-*.
+    let auto_ep =
+        NativeEndpoint::unauthenticated("https://bedrock-runtime.us-east-1.amazonaws.com")
+            .unwrap()
+            .with_fetch(sigv4.clone());
+
+    for spoofed in [
+        "authorization",
+        "x-amz-date",
+        "x-amz-security-token",
+        "x-amz-content-sha256",
+        "x-amz-target",
+        "X-Amz-Custom-Header",
+    ] {
+        let mut h = HeaderMap::new();
+        h.insert(
+            HeaderName::try_from(spoofed).unwrap(),
+            HeaderValue::from_static("spoof"),
+        );
+        let err = native_request(
+            &auto_ep,
+            NativeRequest::new(Method::POST, "model/m/invoke").with_headers(h),
+            NativeContext::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, NativeError::InvalidHeader { .. }),
+            "expected InvalidHeader for `{spoofed}`, got {err:?}"
+        );
+    }
+    assert_eq!(wire_calls.lock().unwrap().len(), 0);
+
+    // 2. SigV4AuthFetch bound via with_fetch also auto-protects x-amz-*.
+    let sigv4_auth: FetchFunction = Arc::new(SigV4AuthFetch::new(
+        SigV4Fetch::new(
+            inner_capture.clone(),
+            Resolvable::Value(creds),
+            "bedrock",
+            SigV4Signing::Aws4Fetch,
+        ),
+        inner_capture,
+        HeaderName::from_static("authorization"),
+    ));
+    let auth_fetch_ep =
+        NativeEndpoint::unauthenticated("https://bedrock-runtime.us-east-1.amazonaws.com")
+            .unwrap()
+            .with_fetch(sigv4_auth);
+    let mut spoof_amz = HeaderMap::new();
+    spoof_amz.insert("x-amz-security-token", HeaderValue::from_static("spoof"));
+    let err_auth_fetch = native_request(
+        &auth_fetch_ep,
+        NativeRequest::new(Method::POST, "model/m/invoke").with_headers(spoof_amz),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_auth_fetch, NativeError::InvalidHeader { .. }));
+
+    // 3. NativeEndpoint::with_sigv4 protects authorization and x-amz-* even behind an opaque custom Fetch wrapper.
+    struct OpaqueWrapper(FetchFunction);
+    #[async_trait]
+    impl Fetch for OpaqueWrapper {
+        async fn fetch(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+            self.0.fetch(req).await
+        }
+    }
+    let wrapped_ep = NativeEndpoint::with_sigv4(
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+        Arc::new(OpaqueWrapper(sigv4)),
+    )
+    .unwrap();
+    let mut spoof_target = HeaderMap::new();
+    spoof_target.insert("x-amz-target", HeaderValue::from_static("spoof"));
+    let err_wrapped = native_request(
+        &wrapped_ep,
+        NativeRequest::new(Method::POST, "model/m/invoke").with_headers(spoof_target),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_wrapped, NativeError::InvalidHeader { .. }));
+    assert_eq!(wire_calls.lock().unwrap().len(), 0);
+
+    // Valid request through with_sigv4 signs cleanly.
+    let resp = native_request(
+        &wrapped_ep,
+        NativeRequest::new(Method::POST, "model/m/invoke").with_body(Bytes::from_static(b"hi")),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(drain_body(resp.body).await.unwrap().as_ref(), b"signed-ok");
+    assert_eq!(wire_calls.lock().unwrap().len(), 1);
 }

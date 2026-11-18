@@ -53,12 +53,22 @@ pub const MAX_ALLOWED_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 pub const DEFAULT_MAX_RECORDED_BYTES: usize = 6 * 1024 * 1024;
 
 /// Headers owned and overwritten by [`crate::SigV4Fetch`] on AWS endpoints.
+///
+/// Endpoints created with [`NativeEndpoint::with_sigv4`], or bound via
+/// [`NativeEndpoint::with_fetch`] to [`crate::SigV4Fetch`] / [`crate::SigV4AuthFetch`],
+/// automatically protect these headers and the `x-amz-*` prefix. Custom `Fetch` wrappers
+/// around a SigV4 signer must use [`NativeEndpoint::with_sigv4`] or explicitly protect
+/// both `SIGV4_PROTECTED_HEADERS` and `"x-amz-"` via
+/// [`NativeEndpoint::try_with_protected_headers`] /
+/// [`NativeEndpoint::try_with_protected_header_prefixes`].
 pub const SIGV4_PROTECTED_HEADERS: &[&str] = &[
     "authorization",
     "x-amz-date",
     "x-amz-security-token",
     "x-amz-content-sha256",
 ];
+
+const SIGV4_PROTECTED_PREFIX: &str = "x-amz-";
 
 static NEXT_EXCHANGE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -99,7 +109,7 @@ pub enum NativeError {
 }
 
 /// A configured endpoint for L0 native passthrough, pinned to one base URL,
-/// auth scope, protected header set, and transport.
+/// auth scope, protected header policy, and transport.
 #[derive(Clone)]
 pub struct NativeEndpoint {
     base_url: Url,
@@ -107,6 +117,7 @@ pub struct NativeEndpoint {
     base_path_prefix: String,
     auth: EndpointAuth,
     protected_headers: BTreeSet<String>,
+    protected_header_prefixes: BTreeSet<String>,
     fetch: Option<FetchFunction>,
     idempotency_header: Option<HeaderName>,
     max_buffer_bytes: usize,
@@ -116,14 +127,34 @@ impl NativeEndpoint {
     /// Construct an unauthenticated endpoint pinned to `base_url`.
     ///
     /// Owns no credential headers and reads no environment credentials; callers
-    /// may send normal headers unless restricted via [`Self::try_with_protected_headers`].
+    /// may send normal headers unless restricted via [`Self::try_with_protected_headers`]
+    /// or [`Self::try_with_protected_header_prefixes`]. For AWS SigV4 endpoints, prefer
+    /// [`Self::with_sigv4`] (or bind [`crate::SigV4Fetch`] / [`crate::SigV4AuthFetch`]
+    /// via [`Self::with_fetch`], which auto-protects `authorization` and `x-amz-*`).
     ///
     /// # Errors
     ///
     /// Returns [`NativeError::InvalidConfig`] when `base_url` is blank, unparseable,
-    /// not `http`/`https`, lacks a host, or carries a query or fragment.
+    /// not `http`/`https`, lacks a host, contains userinfo, or carries a query or fragment.
     pub fn unauthenticated(base_url: &str) -> Result<Self, NativeError> {
         Self::new_inner(base_url, EndpointAuth::None, BTreeSet::new())
+    }
+
+    /// Construct a SigV4-authenticated endpoint pinned to `base_url` using `sigv4_fetch`.
+    ///
+    /// Automatically protects [`SIGV4_PROTECTED_HEADERS`] (`authorization`, `x-amz-date`,
+    /// `x-amz-security-token`, `x-amz-content-sha256`) and all `x-amz-*` headers so callers
+    /// cannot supply or spoof AWS signing headers.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeError::InvalidConfig`] when `base_url` is blank, unparseable,
+    /// not `http`/`https`, lacks a host, contains userinfo, or carries a query or fragment.
+    pub fn with_sigv4(base_url: &str, sigv4_fetch: FetchFunction) -> Result<Self, NativeError> {
+        let mut endpoint = Self::unauthenticated(base_url)?;
+        endpoint.enable_sigv4_protection();
+        endpoint.fetch = Some(sigv4_fetch);
+        Ok(endpoint)
     }
 
     /// Construct an endpoint authenticated by `headers`.
@@ -156,8 +187,10 @@ impl NativeEndpoint {
 
     /// Construct an endpoint using a custom async header resolver (for dynamic tokens).
     ///
-    /// All names in `protected_headers` are marked endpoint-owned and cannot be
-    /// passed in [`NativeRequest::headers`].
+    /// All names in `protected_headers` are marked endpoint-owned upfront (rejected before
+    /// invoking `resolver`), and every header name returned by `resolver` is also
+    /// automatically protected per request so caller-supplied headers cannot override
+    /// dynamic auth headers and their values remain redacted in observer events.
     ///
     /// # Errors
     ///
@@ -196,15 +229,32 @@ impl NativeEndpoint {
             base_path_prefix,
             auth,
             protected_headers,
+            protected_header_prefixes: BTreeSet::new(),
             fetch: None,
             idempotency_header: None,
             max_buffer_bytes: DEFAULT_MAX_BUFFER_BYTES,
         })
     }
 
+    fn enable_sigv4_protection(&mut self) {
+        for name in SIGV4_PROTECTED_HEADERS {
+            self.protected_headers.insert((*name).to_string());
+        }
+        self.protected_header_prefixes
+            .insert(SIGV4_PROTECTED_PREFIX.to_string());
+    }
+
     /// Bind an explicit [`FetchFunction`] (such as a proxy transport or [`crate::SigV4Fetch`]).
+    ///
+    /// If `fetch` reports SigV4 signing ([`crate::SigV4Fetch`] / [`crate::SigV4AuthFetch`]),
+    /// [`SIGV4_PROTECTED_HEADERS`] and the `x-amz-*` prefix are protected automatically.
+    /// If wrapping a SigV4 signer inside a custom `Fetch`, use [`Self::with_sigv4`] or
+    /// declare protected headers/prefixes explicitly.
     #[must_use]
     pub fn with_fetch(mut self, fetch: FetchFunction) -> Self {
+        if fetch.protects_sigv4_headers() {
+            self.enable_sigv4_protection();
+        }
         self.fetch = Some(fetch);
         self
     }
@@ -223,6 +273,27 @@ impl NativeEndpoint {
                 message: format!("invalid protected header name `{raw}`: {err}"),
             })?;
             self.protected_headers
+                .insert(valid.as_str().to_ascii_lowercase());
+        }
+        Ok(self)
+    }
+
+    /// Declare endpoint-owned header name prefixes (such as `"x-amz-"`) that callers
+    /// may not set or override.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeError::InvalidConfig`] if any supplied prefix is empty or contains
+    /// invalid HTTP header name characters.
+    pub fn try_with_protected_header_prefixes<'a>(
+        mut self,
+        prefixes: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Self, NativeError> {
+        for raw in prefixes {
+            let valid = validate_header_name(raw).map_err(|err| NativeError::InvalidConfig {
+                message: format!("invalid protected header prefix `{raw}`: {err}"),
+            })?;
+            self.protected_header_prefixes
                 .insert(valid.as_str().to_ascii_lowercase());
         }
         Ok(self)
@@ -270,6 +341,12 @@ impl NativeEndpoint {
         &self.protected_headers
     }
 
+    /// Return the set of lowercased protected header name prefixes owned by this endpoint.
+    #[must_use]
+    pub fn protected_header_prefixes(&self) -> &BTreeSet<String> {
+        &self.protected_header_prefixes
+    }
+
     /// Return the configured idempotency header name, if any.
     #[must_use]
     pub fn idempotency_header(&self) -> Option<&HeaderName> {
@@ -304,6 +381,7 @@ impl fmt::Debug for NativeEndpoint {
         f.debug_struct("NativeEndpoint")
             .field("base_url", &self.sanitized_base_url())
             .field("protected_headers", &self.protected_headers)
+            .field("protected_header_prefixes", &self.protected_header_prefixes)
             .field("has_fetch", &self.fetch.is_some())
             .field(
                 "idempotency_header",
@@ -954,7 +1032,12 @@ pub async fn native_request(
     )?;
 
     let target_url = endpoint.resolve_url(&request.relative_path_and_query)?;
-    validate_caller_headers(endpoint, &request.headers, &request.retry)?;
+    validate_caller_headers(
+        &endpoint.protected_headers,
+        &endpoint.protected_header_prefixes,
+        &request.headers,
+        &request.retry,
+    )?;
 
     let resolved_headers = resolve_endpoint_headers(
         endpoint,
@@ -964,12 +1047,39 @@ pub async fn native_request(
     )
     .await?;
 
-    let wire_headers =
-        assemble_wire_headers(endpoint, resolved_headers, &request.headers, &request.retry);
+    let effective_protected: std::borrow::Cow<'_, BTreeSet<String>> =
+        if matches!(endpoint.auth, EndpointAuth::CustomResolver(_)) && !resolved_headers.is_empty()
+        {
+            let mut merged = endpoint.protected_headers.clone();
+            for name in resolved_headers.keys() {
+                merged.insert(name.as_str().to_ascii_lowercase());
+            }
+            validate_caller_headers(
+                &merged,
+                &endpoint.protected_header_prefixes,
+                &request.headers,
+                &request.retry,
+            )?;
+            std::borrow::Cow::Owned(merged)
+        } else {
+            std::borrow::Cow::Borrowed(&endpoint.protected_headers)
+        };
+
+    let wire_headers = assemble_wire_headers(
+        endpoint,
+        effective_protected.as_ref(),
+        resolved_headers,
+        &request.headers,
+        &request.retry,
+    );
 
     let fetch = endpoint.fetch.clone().unwrap_or_else(default_fetch);
     let sanitized_target = sanitize_url(&target_url);
-    let redacted_req_headers = redact_header_pairs(&wire_headers, &endpoint.protected_headers);
+    let redacted_req_headers = redact_header_pairs(
+        &wire_headers,
+        effective_protected.as_ref(),
+        &endpoint.protected_header_prefixes,
+    );
     let (max_retries, initial_backoff, retryable_statuses) =
         effective_retry_plan(endpoint, &request.method, &request.retry);
 
@@ -988,7 +1098,8 @@ pub async fn native_request(
             &sanitized_target,
             &wire_headers,
             &redacted_req_headers,
-            &endpoint.protected_headers,
+            effective_protected.as_ref(),
+            &endpoint.protected_header_prefixes,
             &request.body,
             endpoint.max_buffer_bytes,
             context.max_recorded_bytes,
@@ -1034,6 +1145,7 @@ async fn execute_attempt(
     wire_headers: &HeaderMap,
     redacted_req_headers: &[(String, String)],
     protected_headers: &BTreeSet<String>,
+    protected_prefixes: &BTreeSet<String>,
     body: &Bytes,
     max_buffer_bytes: usize,
     max_recorded_bytes: usize,
@@ -1103,9 +1215,20 @@ async fn execute_attempt(
         }
     };
 
+    if !is_same_origin(&response.url, target_url) {
+        let sanitized_resp_url = sanitize_url(&response.url);
+        drop(response);
+        let err = NativeError::Transport(FetchError::Other(aimux_core::SourceError::from(
+            format!("transport returned cross-origin response URL: {sanitized_resp_url}"),
+        )));
+        finisher.finish(NativeExchangeOutcome::Failed(err.to_string()), false);
+        return Err(AttemptError::Fatal(err));
+    }
+
     if observer_active && let Some(obs) = &observer {
         let sanitized_effective = sanitize_url(&response.url);
-        let redacted_head = redact_response_headers(&response.headers, protected_headers);
+        let redacted_head =
+            redact_response_headers(&response.headers, protected_headers, protected_prefixes);
         if let Err(reason) = obs.on_response_head(
             exchange_id,
             response.status,
@@ -1238,6 +1361,15 @@ fn parse_and_normalize_base_url(base_url: &str) -> Result<(Url, String, String),
     if parsed.host_str().map(str::is_empty).unwrap_or(true) || parsed.cannot_be_a_base() {
         return Err(NativeError::InvalidConfig {
             message: "base_url must have a valid host".to_string(),
+        });
+    }
+    let authority_has_at = base_url
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
+        .is_some_and(|authority| authority.contains('@'));
+    if !parsed.username().is_empty() || parsed.password().is_some() || authority_has_at {
+        return Err(NativeError::InvalidConfig {
+            message: "base_url must not contain userinfo".to_string(),
         });
     }
     if parsed.query().is_some() || base_url.contains('?') {
@@ -1445,18 +1577,36 @@ fn percent_decode_strict(segment: &str) -> Result<Vec<u8>, NativeError> {
     Ok(out)
 }
 
+fn is_same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host_str().is_some()
+        && a.host_str() == b.host_str()
+        && a.port_or_known_default() == b.port_or_known_default()
+        && a.username() == b.username()
+        && a.password() == b.password()
+}
+
 fn validate_header_name(name: &str) -> Result<HeaderName, http::header::InvalidHeaderName> {
     HeaderName::try_from(name)
 }
 
+fn is_protected_header_name(
+    name: &str,
+    protected: &BTreeSet<String>,
+    prefixes: &BTreeSet<String>,
+) -> bool {
+    let lower = name.to_ascii_lowercase();
+    protected.contains(&lower) || prefixes.iter().any(|prefix| lower.starts_with(prefix))
+}
+
 fn validate_caller_headers(
-    endpoint: &NativeEndpoint,
+    protected: &BTreeSet<String>,
+    prefixes: &BTreeSet<String>,
     headers: &HeaderMap,
     retry: &NativeRetryPolicy,
 ) -> Result<(), NativeError> {
     for name in headers.keys() {
-        let lower = name.as_str().to_ascii_lowercase();
-        if endpoint.protected_headers.contains(&lower) {
+        if is_protected_header_name(name.as_str(), protected, prefixes) {
             return Err(NativeError::InvalidHeader {
                 name: name.as_str().to_string(),
                 message: "header is owned by endpoint authentication and cannot be overridden"
@@ -1466,14 +1616,12 @@ fn validate_caller_headers(
     }
     if let NativeRetryPolicy::Safe(opts) = retry
         && let Some((name, _)) = &opts.idempotency_key
+        && is_protected_header_name(name.as_str(), protected, prefixes)
     {
-        let lower = name.as_str().to_ascii_lowercase();
-        if endpoint.protected_headers.contains(&lower) {
-            return Err(NativeError::InvalidHeader {
-                name: name.as_str().to_string(),
-                message: "idempotency header cannot name an endpoint-protected header".to_string(),
-            });
-        }
+        return Err(NativeError::InvalidHeader {
+            name: name.as_str().to_string(),
+            message: "idempotency header cannot name an endpoint-protected header".to_string(),
+        });
     }
     Ok(())
 }
@@ -1535,6 +1683,7 @@ async fn resolve_endpoint_headers(
 
 fn assemble_wire_headers(
     endpoint: &NativeEndpoint,
+    protected_headers: &BTreeSet<String>,
     resolved_endpoint_headers: HeaderMap,
     caller_headers: &HeaderMap,
     retry: &NativeRetryPolicy,
@@ -1542,10 +1691,11 @@ fn assemble_wire_headers(
     let mut wire = HeaderMap::new();
 
     for (name, value) in &resolved_endpoint_headers {
-        if endpoint
-            .protected_headers
-            .contains(&name.as_str().to_ascii_lowercase())
-        {
+        if is_protected_header_name(
+            name.as_str(),
+            protected_headers,
+            &endpoint.protected_header_prefixes,
+        ) {
             wire.append(name.clone(), value.clone());
         } else {
             // Non-protected endpoint defaults apply only when the caller did not specify the name.
@@ -1573,24 +1723,29 @@ fn assemble_wire_headers(
     wire
 }
 
-fn is_redacted_header(name: &HeaderName, protected: &BTreeSet<String>) -> bool {
-    let lower = name.as_str().to_ascii_lowercase();
-    protected.contains(&lower) || aimux_core::recording::is_sensitive_key(name.as_str())
+fn is_redacted_header(
+    name: &HeaderName,
+    protected: &BTreeSet<String>,
+    prefixes: &BTreeSet<String>,
+) -> bool {
+    is_protected_header_name(name.as_str(), protected, prefixes)
+        || aimux_core::recording::is_sensitive_key(name.as_str())
 }
 
 fn redact_response_headers<'a>(
     headers: &'a HeaderMap,
     protected: &BTreeSet<String>,
+    prefixes: &BTreeSet<String>,
 ) -> std::borrow::Cow<'a, HeaderMap> {
     if !headers
         .keys()
-        .any(|name| is_redacted_header(name, protected))
+        .any(|name| is_redacted_header(name, protected, prefixes))
     {
         return std::borrow::Cow::Borrowed(headers);
     }
     let mut redacted = HeaderMap::with_capacity(headers.len());
     for (name, value) in headers {
-        if is_redacted_header(name, protected) {
+        if is_redacted_header(name, protected, prefixes) {
             redacted.append(name.clone(), HeaderValue::from_static("[REDACTED]"));
         } else {
             redacted.append(name.clone(), value.clone());
@@ -1599,12 +1754,16 @@ fn redact_response_headers<'a>(
     std::borrow::Cow::Owned(redacted)
 }
 
-fn redact_header_pairs(headers: &HeaderMap, protected: &BTreeSet<String>) -> Vec<(String, String)> {
+fn redact_header_pairs(
+    headers: &HeaderMap,
+    protected: &BTreeSet<String>,
+    prefixes: &BTreeSet<String>,
+) -> Vec<(String, String)> {
     headers
         .iter()
         .map(|(name, value)| {
             let lower = name.as_str().to_ascii_lowercase();
-            let redacted = if is_redacted_header(name, protected) {
+            let redacted = if is_redacted_header(name, protected, prefixes) {
                 "[REDACTED]".to_string()
             } else {
                 value.to_str().unwrap_or("<binary>").to_string()

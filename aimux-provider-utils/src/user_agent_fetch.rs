@@ -31,6 +31,12 @@ impl crate::Fetch for UserAgentFetch {
         let inner = self.inner.clone().unwrap_or_else(crate::default_fetch);
         inner.fetch(request).await
     }
+
+    fn protects_sigv4_headers(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.protects_sigv4_headers())
+    }
 }
 
 /// Rewrite the last `ai-sdk-provider-utils/<v>` part of the `user-agent` to
