@@ -3059,7 +3059,18 @@ export interface ProviderConfigSettings {
   workspaceId?: string | null
 }
 
+/**
+ * Trusted-caller operation: constructs a provider handle from package settings
+ * and optional `{ "env": ... }` references. Untrusted callers must not be
+ * permitted to supply arbitrary `baseUrl` values with omitted credentials.
+ */
 export interface ProviderCreateParams {
+  /**
+   * Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+   * interpolation in `settings`. Does not restrict implicit per-provider
+   * default environment variable fallbacks when credential or `baseUrl`
+   * settings are omitted.
+   */
   envAllowlist?: Array<string> | null
   package: string
   settings?: ProviderSettings
@@ -3434,8 +3445,20 @@ export interface RegistryEntry {
   provider: string
 }
 
+/**
+ * Trusted-caller operation: constructs a provider registry from a declarative
+ * configuration document and optional `{ "env": ... }` references. Untrusted
+ * callers must not be permitted to supply arbitrary `baseUrl` values with
+ * omitted credentials.
+ */
 export interface RegistryFromConfigParams {
   config: ProviderConfigDocument
+  /**
+   * Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+   * interpolation inside `config`. Does not restrict implicit per-provider
+   * default environment variable fallbacks when credential or `baseUrl`
+   * settings are omitted.
+   */
   envAllowlist?: Array<string> | null
   namespace?: string
   separator?: string | null

@@ -2776,8 +2776,15 @@ class ProviderConfigSettings(_Wire):
     _omit_null: ClassVar[frozenset[str]] = frozenset(["access_key_id", "access_token", "api_key", "api_version", "auth_token", "base_url", "codex_mode", "cx", "endpoint", "headers", "include_usage", "location", "login", "name", "organization", "originator", "params", "password", "probability_source", "project", "query_params", "region", "resource_name", "secret_access_key", "session_token", "speech_base_url", "supports_multi_part_tool_content", "supports_structured_outputs", "use_deployment_based_urls", "workspace_id"])
 
 
+#: Trusted-caller operation: constructs a provider handle from package settings
+#: and optional `{ "env": ... }` references. Untrusted callers must not be
+#: permitted to supply arbitrary `baseUrl` values with omitted credentials.
 class ProviderCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
+    #: Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    #: interpolation in `settings`. Does not restrict implicit per-provider
+    #: default environment variable fallbacks when credential or `baseUrl`
+    #: settings are omitted.
     env_allowlist: Optional[List[str]] = Field(default=None, alias="envAllowlist")
     package: str = Field(alias="package")
     settings: Optional["_dto.ProviderSettings"] = Field(default=None, alias="settings")
@@ -3102,9 +3109,17 @@ class RegistryEntry(_Wire):
     provider: str = Field(alias="provider")
 
 
+#: Trusted-caller operation: constructs a provider registry from a declarative
+#: configuration document and optional `{ "env": ... }` references. Untrusted
+#: callers must not be permitted to supply arbitrary `baseUrl` values with
+#: omitted credentials.
 class RegistryFromConfigParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     config: "_dto.ProviderConfigDocument" = Field(alias="config")
+    #: Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    #: interpolation inside `config`. Does not restrict implicit per-provider
+    #: default environment variable fallbacks when credential or `baseUrl`
+    #: settings are omitted.
     env_allowlist: Optional[List[str]] = Field(default=None, alias="envAllowlist")
     namespace: Optional[str] = Field(default=None, alias="namespace")
     separator: Optional[str] = Field(default=None, alias="separator")

@@ -169,6 +169,29 @@ impl ProviderRegistry {
         *guard = providers;
     }
 
+    /// Atomically apply removals and insertions (or replace all providers)
+    /// under a single write lock, returning the resulting sorted provider ids.
+    pub fn update_providers(
+        &self,
+        remove: &[String],
+        set: BTreeMap<String, Arc<dyn Provider>>,
+        replace: bool,
+    ) -> Vec<String> {
+        let mut guard = self
+            .providers
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if replace {
+            *guard = set;
+        } else {
+            for key in remove {
+                guard.remove(key);
+            }
+            guard.extend(set);
+        }
+        guard.keys().cloned().collect()
+    }
+
     fn derive_with(&self, mutate: impl FnOnce(&mut BTreeMap<String, Arc<dyn Provider>>)) -> Self {
         let mut next = self
             .providers
@@ -216,6 +239,27 @@ impl ProviderRegistry {
     pub fn with_replaced_providers(&self, providers: BTreeMap<String, Arc<dyn Provider>>) -> Self {
         self.derive_with(|next| {
             *next = providers;
+        })
+    }
+
+    /// Return a new registry from a single consistent snapshot with `remove`
+    /// and `set` applied (or all providers replaced when `replace` is true).
+    #[must_use]
+    pub fn with_updated_providers(
+        &self,
+        remove: &[String],
+        set: BTreeMap<String, Arc<dyn Provider>>,
+        replace: bool,
+    ) -> Self {
+        self.derive_with(|next| {
+            if replace {
+                *next = set;
+            } else {
+                for key in remove {
+                    next.remove(key);
+                }
+                next.extend(set);
+            }
         })
     }
 

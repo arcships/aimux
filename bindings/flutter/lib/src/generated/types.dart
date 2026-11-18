@@ -9227,7 +9227,14 @@ final class ProviderConfigSettings {
       };
 }
 
+/// Trusted-caller operation: constructs a provider handle from package settings
+/// and optional `{ "env": ... }` references. Untrusted callers must not be
+/// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 final class ProviderCreateParams {
+  /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+  /// interpolation in `settings`. Does not restrict implicit per-provider
+  /// default environment variable fallbacks when credential or `baseUrl`
+  /// settings are omitted.
   final List<String>? envAllowlist;
   final String package;
   final ProviderSettings? settings;
@@ -10424,8 +10431,17 @@ final class RegistryEntry {
       };
 }
 
+/// Trusted-caller operation: constructs a provider registry from a declarative
+/// configuration document and optional `{ "env": ... }` references. Untrusted
+/// callers must not be permitted to supply arbitrary `baseUrl` values with
+/// omitted credentials.
 final class RegistryFromConfigParams {
   final ProviderConfigDocument config;
+
+  /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+  /// interpolation inside `config`. Does not restrict implicit per-provider
+  /// default environment variable fallbacks when credential or `baseUrl`
+  /// settings are omitted.
   final List<String>? envAllowlist;
   final String? namespace;
   final String? separator;

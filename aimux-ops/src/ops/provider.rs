@@ -190,12 +190,19 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     );
 }
 
+/// Trusted-caller operation: constructs a provider handle from package settings
+/// and optional `{ "env": ... }` references. Untrusted callers must not be
+/// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderCreateParams {
     package: String,
     #[serde(default)]
     settings: ProviderSettings,
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation in `settings`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
     #[serde(default)]
     env_allowlist: Option<Vec<String>>,
 }
@@ -462,19 +469,35 @@ fn default_method(provider: &Arc<dyn Provider>) -> Result<Option<ModelMethod>, O
         .and_then(|d| d.default_method))
 }
 
+fn push_provider_descriptor(
+    provider: &Arc<dyn Provider>,
+    default_method: Option<ModelMethod>,
+) -> Result<(), OpsError> {
+    let mut descriptors = descriptors().lock().map_err(|_| invalid_state())?;
+    descriptors.retain(|d| d.provider.strong_count() != 0);
+    descriptors.push(ProviderDescriptor {
+        provider: Arc::downgrade(provider),
+        default_method,
+    });
+    Ok(())
+}
+
+pub(crate) fn register_package_default_method(
+    provider: &Arc<dyn Provider>,
+    package: &str,
+) -> Result<(), OpsError> {
+    let method = aimux_providers::package_descriptor(package)
+        .and_then(|descriptor| descriptor.default_method)
+        .map(ModelMethod::from_modality_kind);
+    push_provider_descriptor(provider, method)
+}
+
 fn insert_provider(
     owner: Owner,
     provider: Arc<dyn Provider>,
     default_method: Option<ModelMethod>,
 ) -> Result<Value, OpsError> {
-    {
-        let mut descriptors = descriptors().lock().map_err(|_| invalid_state())?;
-        descriptors.retain(|d| d.provider.strong_count() != 0);
-        descriptors.push(ProviderDescriptor {
-            provider: Arc::downgrade(&provider),
-            default_method,
-        });
-    }
+    push_provider_descriptor(&provider, default_method)?;
     insert(owner, Entry::Provider(provider))
 }
 
@@ -1947,6 +1970,31 @@ mod tests {
             )
             .await,
             Err(OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_)))
+        ));
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn create_rejects_lone_anthropic_aws_session_token() {
+        let owner = owner();
+        let err = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "anthropic_aws",
+                "settings": {
+                    "sessionToken": "explicit-tok",
+                    "region": "us-east-1",
+                    "workspaceId": "ws"
+                }
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            OpsError::AiMux(AiMuxError::InvalidArgument { .. })
         ));
         HandleRegistry::global().release_owner(owner);
     }

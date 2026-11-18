@@ -165,13 +165,22 @@ mode, not an inference from the operation name.
 | `transport.create` | call | G | `handles::transport_create` | Current |
 | `video.generate` | call | Video | `modalities::generate_video` | Current |
 
-`provider.create` supports all 329 packages (including `openai_compatible` via
-`provider_from_config_with_transport`) and accepts strict settings
-(including `StringOrEnv` credential references with optional `envAllowlist`,
-package-specific settings, `params`, `fetch`, `webSocket`, and
-`credentialResolver`); accepted keys do not imply support by every factory, and
-`package_descriptor` supplies the authoritative `default_method`. WebSocket
-and credential slots are resolved then explicitly rejected when unsupported.
+`provider.create` and `registry.fromConfig` are trusted-caller operations that
+support all 329 packages (including `openai_compatible` via
+`provider_from_config_with_transport`) and accept strict package-validated
+settings (including `StringOrEnv` credential references with optional
+`envAllowlist`, package-specific settings, `params`, `fetch`, `webSocket`, and
+`credentialResolver`). `envAllowlist` governs explicit `{ "env": "VAR" }`
+(`StringOrEnv`) interpolation only and does not restrict implicit per-provider
+default environment variable fallbacks when credential or `baseUrl` fields are
+omitted (untrusted callers must not supply arbitrary `baseUrl` values with
+omitted credentials). Passing `organization` or `project` to preset or
+non-supporting native packages is rejected with `InvalidArgument` rather than
+injecting `OpenAI-Organization` / `OpenAI-Project` headers (pass those via
+`settings.headers` instead). Accepted keys do not imply support by every
+factory, and `package_descriptor` supplies the authoritative `default_method`
+(also recorded for providers built by `registry.fromConfig`). WebSocket and
+credential slots are resolved then explicitly rejected when unsupported.
 `provider.default` takes a package and default settings and rejects
 `openai_compatible`. `provider.descriptors` returns static `PackageDescriptor`
 metadata for all 329 packages. `provider.invoke` only accepts `listModels`.
@@ -180,7 +189,12 @@ metadata for all 329 packages. `provider.invoke` only accepts `listModels`.
 modality constructors. `model.resolve` takes an explicit
 `{modelRef:{namespace,key,method,modelId}}` (where `method` accepts
 `"chat"`, `"responses"`, `"completion"`, and `"messages"` as well as the
-standard modality methods); it never falls back to a gateway.
+standard modality methods); it never falls back to a gateway, and both
+`provider.model` and `model.resolve` return `UnsupportedFunctionality` (code 8)
+when a provider does not expose a requested `LanguageApi` or optional modality
+and `NoSuchModel` (code 9) when an offered constructor rejects `modelId`.
+`registry.update` validates all entries before applying multi-key updates
+atomically under a single write lock (or snapshot when `derive: true`).
 `model.wrap` supports existing Language/Image wrappers, not invented wrappers
 for every model kind. Trace middleware uses the canonical `TraceLayer` hook.
 

@@ -3,12 +3,14 @@
   "$id": "https://aimux.dev/schema/types/RegistryFromConfigParams.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "Trusted-caller operation: constructs a provider registry from a declarative\nconfiguration document and optional `{ \"env\": ... }` references. Untrusted\ncallers must not be permitted to supply arbitrary `baseUrl` values with\nomitted credentials.",
   "properties": {
     "config": {
       "$ref": "ProviderConfigDocument.json"
     },
     "envAllowlist": {
       "default": null,
+      "description": "Optional allowlist gating explicit `{ \"env\": \"VAR\" }` (`StringOrEnv`)\ninterpolation inside `config`. Does not restrict implicit per-provider\ndefault environment variable fallbacks when credential or `baseUrl`\nsettings are omitted.",
       "items": {
         "type": "string"
       },

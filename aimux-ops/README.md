@@ -121,3 +121,14 @@ Model source summaries are object-level owner-scoped metadata;
 (auth, setting fields, template params, capabilities, and default method)
 for all 329 packages, while `Provider` handles retain canonical
 `Arc<dyn Provider>` instances rather than full construction settings.
+
+`provider.create` and `registry.fromConfig` are **trusted-caller** operations:
+`envAllowlist` governs explicit `{ "env": "VAR" }` (`StringOrEnv`) config
+interpolation only and does **not** restrict implicit per-provider default
+environment variable fallbacks when credential or `baseUrl` settings are
+omitted (do not allow untrusted callers to pass arbitrary `baseUrl` values with
+omitted credentials). `provider.create` also validates `settings` strictly
+against each package's `PackageDescriptor.settings`, so `organization` (accepted
+only by `openai`) and `project` (accepted only by `openai` and `google_vertex`)
+are rejected on preset and other packages rather than injecting
+`OpenAI-Organization` / `OpenAI-Project` headers.

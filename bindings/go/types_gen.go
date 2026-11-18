@@ -5757,7 +5757,14 @@ type ProviderConfigSettings struct {
 	WorkspaceID                  *string            `json:"workspaceId,omitzero"`
 }
 
+// Trusted-caller operation: constructs a provider handle from package settings
+// and optional `{ "env": ... }` references. Untrusted callers must not be
+// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 type ProviderCreateParams struct {
+	// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+	// interpolation in `settings`. Does not restrict implicit per-provider
+	// default environment variable fallbacks when credential or `baseUrl`
+	// settings are omitted.
 	EnvAllowlist []string          `json:"envAllowlist,omitzero"`
 	Package      string            `json:"package"`
 	Settings     *ProviderSettings `json:"settings,omitzero"`
@@ -6232,11 +6239,19 @@ type RegistryEntry struct {
 	Provider string `json:"provider"`
 }
 
+// Trusted-caller operation: constructs a provider registry from a declarative
+// configuration document and optional `{ "env": ... }` references. Untrusted
+// callers must not be permitted to supply arbitrary `baseUrl` values with
+// omitted credentials.
 type RegistryFromConfigParams struct {
-	Config       ProviderConfigDocument `json:"config"`
-	EnvAllowlist []string               `json:"envAllowlist,omitzero"`
-	Namespace    *string                `json:"namespace,omitzero"`
-	Separator    *string                `json:"separator,omitzero"`
+	Config ProviderConfigDocument `json:"config"`
+	// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+	// interpolation inside `config`. Does not restrict implicit per-provider
+	// default environment variable fallbacks when credential or `baseUrl`
+	// settings are omitted.
+	EnvAllowlist []string `json:"envAllowlist,omitzero"`
+	Namespace    *string  `json:"namespace,omitzero"`
+	Separator    *string  `json:"separator,omitzero"`
 }
 
 type RegistryListParams struct{}

@@ -103,8 +103,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         TypeRef::of::<RegistryUpdateParams>(),
         TypeRef::of::<RegistryUpdateResult>(),
         &[
-            "aimux_core::provider_registry::ProviderRegistry::register",
-            "aimux_core::provider_registry::ProviderRegistry::unregister",
+            "aimux_core::provider_registry::ProviderRegistry::update_providers",
+            "aimux_core::provider_registry::ProviderRegistry::with_updated_providers",
         ],
     ),
     descriptor(
@@ -158,6 +158,10 @@ struct RegistryCreateParams {
     entries: Vec<RegistryEntry>,
 }
 
+/// Trusted-caller operation: constructs a provider registry from a declarative
+/// configuration document and optional `{ "env": ... }` references. Untrusted
+/// callers must not be permitted to supply arbitrary `baseUrl` values with
+/// omitted credentials.
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RegistryFromConfigParams {
@@ -165,6 +169,10 @@ struct RegistryFromConfigParams {
     namespace: String,
     #[serde(default)]
     separator: Option<String>,
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation inside `config`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
     #[serde(default)]
     env_allowlist: Option<Vec<String>>,
     config: ProviderConfigDocument,
@@ -476,6 +484,11 @@ fn from_config(ctx: Ctx, target: Target, params: Value) -> CallFuture {
         };
         let providers =
             providers_from_config_with_policy(&params.config, &policy).map_err(OpsError::AiMux)?;
+        for (key, spec) in &params.config.providers {
+            if let Some(provider) = providers.get(key) {
+                crate::ops::provider::register_package_default_method(provider, &spec.package)?;
+            }
+        }
         let entry = Entry::Registry(Arc::new(create_provider_registry(
             providers,
             ProviderRegistryOptions {
@@ -537,40 +550,15 @@ fn update(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             }
         }
         if !params.derive {
-            if params.replace {
-                registry.replace_providers(resolved_set);
-            } else {
-                for key in &params.remove {
-                    registry.unregister(key);
-                }
-                if !resolved_set.is_empty() {
-                    registry.extend_providers(resolved_set);
-                }
-            }
+            let keys = registry.update_providers(&params.remove, resolved_set, params.replace);
             return Ok(json!(RegistryUpdateResult {
-                keys: registry.provider_ids(),
+                keys,
                 handle: None,
                 kind: None,
             }));
         }
 
-        let derived = if params.replace {
-            registry.with_replaced_providers(resolved_set)
-        } else {
-            let mut next = if let Some(first) = params.remove.first() {
-                let mut tmp = registry.without_provider(first);
-                for key in &params.remove[1..] {
-                    tmp = tmp.without_provider(key);
-                }
-                tmp
-            } else {
-                registry.with_providers(Vec::new())
-            };
-            if !resolved_set.is_empty() {
-                next = next.with_providers(resolved_set);
-            }
-            next
-        };
+        let derived = registry.with_updated_providers(&params.remove, resolved_set, params.replace);
         let keys = derived.provider_ids();
         let namespace = match metadata(ctx.owner, &entry, None) {
             Some(Metadata::Namespace(namespace)) => namespace,
@@ -624,14 +612,16 @@ fn resolve(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn offered_language_entry(
-    model: Option<Result<Arc<dyn aimux_core::language_model::LanguageModel>, AiMuxError>>,
-    id: &str,
+fn unsupported(method: &str) -> AiMuxError {
+    AiMuxError::UnsupportedFunctionality(format!("provider does not support {method}"))
+}
+
+fn offered_entry<T>(
+    model: Option<Result<T, AiMuxError>>,
     method: &str,
+    wrap: impl FnOnce(T) -> Entry,
 ) -> Result<Entry, AiMuxError> {
-    model
-        .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, method)))
-        .map(Entry::Language)
+    model.ok_or_else(|| unsupported(method))?.map(wrap)
 }
 
 fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<Entry, OpsError> {
@@ -641,52 +631,50 @@ fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<En
     let id = reference.model_id.as_str();
     let result = match reference.method {
         ModelMethod::LanguageModel => provider.language_model(id).map(Entry::Language),
-        ModelMethod::Chat => offered_language_entry(
+        ModelMethod::Chat => offered_entry(
             provider.language_model_with_api(LanguageApi::Chat, id),
-            id,
             "chat",
+            Entry::Language,
         ),
-        ModelMethod::Responses => offered_language_entry(
+        ModelMethod::Responses => offered_entry(
             provider.language_model_with_api(LanguageApi::Responses, id),
-            id,
             "responses",
+            Entry::Language,
         ),
-        ModelMethod::Completion => offered_language_entry(
+        ModelMethod::Completion => offered_entry(
             provider.language_model_with_api(LanguageApi::Completion, id),
-            id,
             "completion",
+            Entry::Language,
         ),
-        ModelMethod::Messages => offered_language_entry(
+        ModelMethod::Messages => offered_entry(
             provider.language_model_with_api(LanguageApi::Messages, id),
-            id,
             "messages",
+            Entry::Language,
         ),
         ModelMethod::EmbeddingModel => provider.embedding_model(id).map(Entry::Embedding),
         ModelMethod::ImageModel => provider.image_model(id).map(Entry::Image),
-        ModelMethod::SpeechModel => provider
-            .speech_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "speechModel")))
-            .map(Entry::Speech),
-        ModelMethod::TranscriptionModel => provider
-            .transcription_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "transcriptionModel")))
-            .map(Entry::Transcription),
-        ModelMethod::RerankingModel => provider
-            .reranking_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "rerankingModel")))
-            .map(Entry::Reranking),
-        ModelMethod::VideoModel => provider
-            .video_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "videoModel")))
-            .map(Entry::Video),
-        ModelMethod::SearchModel => provider
-            .search_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "searchModel")))
-            .map(Entry::Search),
-        ModelMethod::Decision => provider
-            .decision_model(id)
-            .unwrap_or_else(|| Err(AiMuxError::no_such_model(id, "decisionModel")))
-            .map(Entry::Decision),
+        ModelMethod::SpeechModel => {
+            offered_entry(provider.speech_model(id), "speechModel", Entry::Speech)
+        }
+        ModelMethod::TranscriptionModel => offered_entry(
+            provider.transcription_model(id),
+            "transcriptionModel",
+            Entry::Transcription,
+        ),
+        ModelMethod::RerankingModel => offered_entry(
+            provider.reranking_model(id),
+            "rerankingModel",
+            Entry::Reranking,
+        ),
+        ModelMethod::VideoModel => {
+            offered_entry(provider.video_model(id), "videoModel", Entry::Video)
+        }
+        ModelMethod::SearchModel => {
+            offered_entry(provider.search_model(id), "searchModel", Entry::Search)
+        }
+        ModelMethod::Decision => {
+            offered_entry(provider.decision_model(id), "decision", Entry::Decision)
+        }
     };
     result.map_err(OpsError::AiMux)
 }
@@ -1287,6 +1275,283 @@ mod tests {
             .await,
             Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
         ));
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn from_config_registers_default_method_sidecar_for_extracted_providers() {
+        let owner = owner();
+        let created = crate::dispatch::call(
+            ctx(owner),
+            HandleId(0),
+            "registry.fromConfig",
+            json!({
+                "namespace": "cfg",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        },
+                        "search": {
+                            "package": "tavily",
+                            "settings": {
+                                "apiKey": "tavily-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+
+        let gw_provider = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "gw"}),
+        )
+        .await
+        .unwrap();
+        let gw_id: HandleId = serde_json::from_value(gw_provider["handle"].clone()).unwrap();
+        let gw_model = crate::dispatch::call(
+            ctx(owner),
+            gw_id,
+            "provider.model",
+            json!({"modelId": "llama3"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(gw_model["kind"], "Language");
+
+        let wrapped = crate::dispatch::call(ctx(owner), gw_id, "provider.wrap", json!({}))
+            .await
+            .unwrap();
+        let wrapped_id: HandleId = serde_json::from_value(wrapped["handle"].clone()).unwrap();
+        let wrapped_model = crate::dispatch::call(
+            ctx(owner),
+            wrapped_id,
+            "provider.model",
+            json!({"modelId": "llama3"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wrapped_model["kind"], "Language");
+
+        let tavily_provider = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "search"}),
+        )
+        .await
+        .unwrap();
+        let tavily_id: HandleId =
+            serde_json::from_value(tavily_provider["handle"].clone()).unwrap();
+        let search_model = crate::dispatch::call(
+            ctx(owner),
+            tavily_id,
+            "provider.model",
+            json!({"modelId": "tavily-search"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_model["kind"], "Search");
+
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn resolve_and_provider_model_share_unsupported_functionality_code() {
+        let owner = owner();
+        let created = crate::dispatch::call(
+            ctx(owner),
+            HandleId(0),
+            "registry.fromConfig",
+            json!({
+                "namespace": "cfg",
+                "config": {
+                    "providers": {
+                        "gw": {
+                            "package": "openai_compatible",
+                            "settings": {
+                                "baseUrl": "https://gw.example/v1",
+                                "apiKey": "literal-key"
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+        let prov = crate::dispatch::call(
+            ctx(owner),
+            reg_id,
+            "registry.provider",
+            json!({"key": "gw"}),
+        )
+        .await
+        .unwrap();
+        let prov_id: HandleId = serde_json::from_value(prov["handle"].clone()).unwrap();
+
+        for method in ["responses", "messages", "speechModel", "decision"] {
+            let resolve_err = crate::dispatch::call(
+                ctx(owner),
+                reg_id,
+                "model.resolve",
+                reference("cfg", "gw", method, "m1"),
+            )
+            .await
+            .unwrap_err();
+            let provider_err = crate::dispatch::call(
+                ctx(owner),
+                prov_id,
+                "provider.model",
+                json!({"method": method, "modelId": "m1"}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(resolve_err.code(), 8, "method {method}");
+            assert_eq!(resolve_err.code(), provider_err.code(), "method {method}");
+            assert_eq!(
+                resolve_err.envelope().error["name"],
+                provider_err.envelope().error["name"],
+                "method {method}"
+            );
+        }
+
+        HandleRegistry::global().release_owner(owner);
+    }
+
+    #[tokio::test]
+    async fn update_rejects_partial_failures_and_swaps_atomically() {
+        let owner = owner();
+        let (p1, _) = fixture(owner);
+        let (p2, _) = fixture(owner);
+        let (p3, _) = fixture(owner);
+        let not_a_provider = HandleRegistry::global()
+            .insert(owner, Entry::Embedding(Arc::new(Embedding)))
+            .unwrap();
+
+        let created = create(
+            ctx(owner),
+            Target::Global,
+            json!({
+                "namespace": "ns",
+                "entries": [
+                    {"key": "a", "provider": p1.0.to_string()},
+                    {"key": "b", "provider": p1.0.to_string()}
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+        let reg_id: HandleId = serde_json::from_value(created["handle"].clone()).unwrap();
+        let reg_entry = result_entry(owner, &created, HandleKind::Registry);
+        let Entry::Registry(reg_arc) = reg_entry.clone() else {
+            panic!()
+        };
+
+        // Any failure in `set` or `remove` leaves prior state 100% untouched.
+        for bad_params in [
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "", "provider": p3.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "c", "provider": p3.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [
+                    {"key": "c", "provider": p2.0.to_string()},
+                    {"key": "d", "provider": not_a_provider.0.to_string()}
+                ],
+                "remove": ["a"]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a", "c"]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a", ""]
+            }),
+            json!({
+                "set": [{"key": "c", "provider": p2.0.to_string()}],
+                "remove": ["a"],
+                "replace": true
+            }),
+        ] {
+            assert!(
+                crate::dispatch::call(ctx(owner), reg_id, "registry.update", bad_params)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(reg_arc.provider_ids(), vec!["a", "b"]);
+            let Entry::Provider(p1_arc) = HandleRegistry::global()
+                .get(owner, p1, &[HandleKind::Provider])
+                .unwrap()
+            else {
+                unreachable!()
+            };
+            assert!(Arc::ptr_eq(&reg_arc.provider("a").unwrap(), &p1_arc));
+        }
+
+        // Concurrent readers never observe a torn intermediate state during remove + set.
+        let writer_reg = reg_arc.clone();
+        let p2_arc = match HandleRegistry::global()
+            .get(owner, p2, &[HandleKind::Provider])
+            .unwrap()
+        {
+            Entry::Provider(p) => p,
+            _ => unreachable!(),
+        };
+        let reader_reg = reg_arc.clone();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_reader = stop.clone();
+        let reader = std::thread::spawn(move || {
+            while !stop_reader.load(std::sync::atomic::Ordering::Relaxed) {
+                let ids = reader_reg.provider_ids();
+                assert!(
+                    ids == vec!["a", "b"] || ids == vec!["c", "d"],
+                    "observed torn intermediate registry state: {ids:?}"
+                );
+            }
+        });
+        for i in 0..200 {
+            if i % 2 == 0 {
+                let set = BTreeMap::from([
+                    ("c".to_string(), p2_arc.clone()),
+                    ("d".to_string(), p2_arc.clone()),
+                ]);
+                let keys = writer_reg.update_providers(&["a".into(), "b".into()], set, false);
+                assert_eq!(keys, vec!["c", "d"]);
+            } else {
+                let set = BTreeMap::from([
+                    ("a".to_string(), p2_arc.clone()),
+                    ("b".to_string(), p2_arc.clone()),
+                ]);
+                let keys = writer_reg.update_providers(&["c".into(), "d".into()], set, false);
+                assert_eq!(keys, vec!["a", "b"]);
+            }
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        reader.join().unwrap();
+
         HandleRegistry::global().release_owner(owner);
     }
 }

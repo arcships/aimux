@@ -4731,7 +4731,14 @@ public struct ProviderConfigSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Trusted-caller operation: constructs a provider handle from package settings
+/// and optional `{ "env": ... }` references. Untrusted callers must not be
+/// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 public struct ProviderCreateParams: Codable, Equatable, Sendable {
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation in `settings`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
     public var envAllowlist: [String]?
     public var package: String
     public var settings: ProviderSettings?
@@ -5293,8 +5300,16 @@ public struct RegistryEntry: Codable, Equatable, Sendable {
     }
 }
 
+/// Trusted-caller operation: constructs a provider registry from a declarative
+/// configuration document and optional `{ "env": ... }` references. Untrusted
+/// callers must not be permitted to supply arbitrary `baseUrl` values with
+/// omitted credentials.
 public struct RegistryFromConfigParams: Codable, Equatable, Sendable {
     public var config: ProviderConfigDocument
+    /// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+    /// interpolation inside `config`. Does not restrict implicit per-provider
+    /// default environment variable fallbacks when credential or `baseUrl`
+    /// settings are omitted.
     public var envAllowlist: [String]?
     public var namespace: String?
     public var separator: String?
