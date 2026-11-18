@@ -1,6 +1,6 @@
 # RFC-0042: V4 类型边界、工具参数原文与绑定生成
 
-> **Status**: Draft
+> **Status**: Draft，部分实现（按 `master@c5a408370` 核对，2026-11-16）。T1–T5 已定案，§3 各层语义、§4 累积器与终结、§5 repair、§6 metadata 已随 V4 系列 PR 与 #265、#268 交付，D8 生成链随 #268 交付。未交付：§3.1 的 crate 分层（`aimux-provider` 尚不存在，V4 与 core 输出类型仍在 `aimux-core` 同一文件，按 RFC-0044 C2 做，见 #328）、§7.3 manifest 的来源版本与生成器版本记录。
 > **Date**: 2026-10-03
 > **Scope**: ROADMAP 的 #185、L2 类型/metadata 补齐、旧 L2 选型节点及 D8 类型镜像；补充 PR #200 的实现与验收边界，不实现代码
 > **Baseline**: master `a8e3a996`；目标设计为已合并的 [#200](https://github.com/arcships/aimux/pull/200)（`d8fb4ac5`，[docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md)，不占 RFC 编号）
@@ -35,6 +35,8 @@ PR #200 第一部分及 §0.5 优先于其第二部分的未消解建议：
 T2/T3 已按上述定案：彻底删除通用 tracker，累积状态放入 OpenAI-chat 一族共用的流处理内部；关联语义跟随上游 tracker 基线，歧义增量丢弃、不报错、不终止。不得同时留下两种实现或降低回归门槛；#185/#204 的处置据此同步。
 
 ## 2. 现状与真实缺口
+
+> 本节是基线 `a8e3a996` 的源码审阅，保留作改动理由，不是现状。按 `master@c5a408370`：流式事件是泛型 `StreamPart<C = RawToolCall, …>`，provider 输出 `ToolCall(RawToolCall)`（`input` 为原文字符串），core 经 `widen` / `into_text_stream_part` 转成解析后的 `ToolCall`，`raw_tool_input(Value)` 已删除；`ProviderMetadata` 是按 namespace 的对象（`aimux-core/src/shared.rs::SharedProviderMetadata`）；`aimux-stream` 的 tracker 已删除，chat 流的 `tool_calls[i]` 累积器在 `aimux-providers/src/stream/chat_tool_calls.rs`，OpenAI、OpenAI-compatible、DeepSeek、Groq、Mistral 的 chat 流共用；`scripts/gen_ts_types.py` 与 ts-rs 已删除，DTO 由 `aimux-codegen` 生成（#268）。
 
 基线源码显示：
 
@@ -257,6 +259,6 @@ D8 与新 C ABI、绑定迁移一起排在 V4 最后、发版之前交付。在�
 
 ## 9. 合并门槛与非目标
 
-文档可独立作为 Draft 评审；实现遵循已定案的 T1–T5（T2/T3 见 §1.1），并与 ops/provider RFC 交叉校验 type ownership。#200 已记录的单步运行时、无兼容层及生成链决定不在这里重新请求批准；当前实现仍是旧基线，V4 按层直接合入 master、每层 CI 全绿，完整闭包验收在全部合完、发版前满足。
+文档可独立作为 Draft 评审；实现遵循已定案的 T1–T5（T2/T3 见 §1.1），并与 ops/provider RFC 交叉校验 type ownership。#200 已记录的单步运行时、无兼容层及生成链决定不在这里重新请求批准；V4 按层直接合入 master、每层 CI 全绿，完整闭包验收在全部合完、发版前满足。（2026-11-16 注：V4 各层已合入并随 0.6.0 发布，不再是旧基线；未交付项见文首 Status。）
 
 不新增 agent loop、宿主工具执行、审批运行时、自定义 C callback、旧 wire 自动迁移、新的数据模型竞赛或 provider 能力承诺。类型可表示某种事件，不等于所有模型可产出它；必须以各协议 adapter/fixture 和能力声明为证据。
