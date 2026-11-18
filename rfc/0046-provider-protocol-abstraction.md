@@ -1,6 +1,6 @@
 # RFC-0046：provider 协议的小重构与抽象设计
 
-> **Status**: Draft；正文随 #294 于 2026-10-21 合并，实施中。R2、R4、R5 已完成，R1、R3、R7 部分完成，R6 未开始，见 §10（按 `master@c5a408370` 核对，2026-11-16）；逐 PR 进度见 #328。
+> **Status**: Draft；正文随 #294 于 2026-10-21 合并，实施中。R2、R3、R4、R5 已完成，R1、R7 部分完成，R6 未开始，见 §10（按 `master@c5a408370` 核对，2026-11-16）；逐 PR 进度见 #328。
 >
 > **Date**: 2026-10-20
 >
@@ -215,7 +215,7 @@ Vertex provider 建 Claude 模型                      aimux-providers/src/verte
 
 `src/` 里已有 19 个内联测试模块，`stream/chat_tool_calls_tests.rs` 是唯一的独立测试文件（复数 `_tests`）。
 
-> 2026-11-16 注（`master@c5a408370`）：有上游测试的厂商已把测试搬进 `src/<vendor>/tests/`（18 个目录）；`aimux-providers/tests/` 剩 75 个 `.rs`，其中仍有一批单厂商测试（没有上游包的厂商，以及 fal 等尚未搬的文件）；含 `#[cfg(test)]` 的源文件 43 个；`stream/chat_tool_calls_tests.rs` 仍在原处（R7 处理）。
+> 2026-11-16 注（`master@c5a408370`）：有上游测试的厂商已把测试搬进 `src/<vendor>/tests/`（18 个目录）；`aimux-providers/tests/` 剩 75 个顶层 `.rs`（加上 `tests/common/` 下 3 个辅助文件共 78 个 `.rs`），其中仍有一批单厂商测试（没有上游包的厂商，以及 fal 等尚未搬的文件）；含 `#[cfg(test)]` 的源文件 43 个；`stream/chat_tool_calls_tests.rs` 仍在原处（R7 处理）。
 
 ## 3. 抽象设计
 

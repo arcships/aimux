@@ -47,7 +47,7 @@
 |---|---|---|---|
 | `aimux-core` | 37,575 | 7,895 | |
 | `aimux-provider-utils` | 9,981 | 3,496 | RFC-0046 R1 补齐的通用函数及其上游测试 |
-| `aimux-providers` | 253,428 | 29,729 | 厂商测试按 RFC-0046 移入 `src/<vendor>/tests/`（222 个文件），`tests/` 剩 78 个文件 |
+| `aimux-providers` | 253,428 | 29,729 | 厂商测试按 RFC-0046 移入 `src/<vendor>/tests/`（222 个文件），`tests/` 剩 78 个 `.rs` 文件（75 个顶层文件 + `common/` 下 3 个辅助文件） |
 | `aimux-ops` | 11,119 | 9,975 | |
 | `tools/aimux-codegen` | 5,573 | 475 | #268 的业务 DTO 生成 |
 

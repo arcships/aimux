@@ -77,11 +77,11 @@
 | 基线位置 | 现在 |
 |---|---|
 | `aimux-ffi/src/lib.rs` 句柄表、`ffi_block_on` | `aimux-ffi/src/lib.rs` 只导出 `abi` 模块；句柄表移到 `aimux-ops/src/handle.rs::HandleRegistry`（非零 `u64` 计数 + `HashMap`，带 owner），23 种 kind（§3.1） |
-| 同文件 `aimux_error_*`、`aimux_trace_*`、`aimux_session_*`、`aimux_recording_*`、`aimux_router_new`、`aimux_moa_new` | 具名导出全部删除，改为通用 call/stream 原语（`aimux-ffi/src/abi.rs`）；错误是 `aimux-ops` 的四域信封 `OpsError::{AiMux, Recording, Binding, Protocol}`（§6）；trace、session、recording、composite 是 op（`trace.*`、`session.*`、`recording.*`、`composite.router`、`composite.moa`） |
+| 同文件 `aimux_error_*`、`aimux_trace_*`、`aimux_session_*`、`aimux_recording_*`、`aimux_router_new`、`aimux_moa_new` | 具名导出全部删除，改为通用 call/stream 原语（`aimux-ffi/src/abi.rs`）；错误是 `aimux-ops` 的四域信封 `OpsError::{AiMux, Recording, Binding, Protocol}`（§6）；trace、session、recording、composite 是 op（`trace.*`、`sessionStore.*`、`recorder.*`、`composite.router`、`composite.moa`） |
 | `aimux-ffi/src/transcription_session.rs` | 文件已删除；队列上限在 `aimux-ops/src/limits.rs`（音频输入 64 项、输出 256 项），清理上限 5 秒在 `aimux-ops/src/operation.rs`；终结状态有单独的槽位，不再因输出满而丢失 |
 | `aimux-core/src/error.rs::retry_after_hint` | 仍在，并有 `retry_after_ms_from_headers`；信封不再带 retry hint（§6.2） |
-| `bindings/node/src/lib.rs` | napi-rs 直接调用 `aimux_ops::dispatch`，没有 64 项通道和 AbortBridge |
-| `bindings/python/src/lib.rs` | PyO3 直接调用 `aimux_ops::dispatch`，所有入口经 `bridge::wait_call` 并在 `allow_threads` 中等待，不再有具名阻塞入口 |
+| `bindings/node/src/lib.rs` | napi-rs 直接调用 `aimux_ops::dispatch`；原 `AbortBridge` 已移除，流式导出仍保留 64 项 / 8 MiB 通道（`bindings/node/src/bridge.rs`） |
+| `bindings/python/src/lib.rs` | PyO3 直接调用 `aimux_ops::dispatch`，阻塞 `call` 入口经 `bridge::wait_call` 并在 `allow_threads` 中等待（`operation_push`、`manifest_*` 直接使用 `py.allow_threads`，`stream` 走 `StreamIterator::start`，`drop_later` 投递到 runtime），不再有具名阻塞入口 |
 | `bindings/java/build.gradle.kts`、`bindings/kotlin/build.gradle.kts` | Java 仍以 Java 8 为目标；Kotlin 不再有独立 JNA 实现，依赖 `ai.arcships:aimux-java`，JVM 17 |
 | Go、Swift、Flutter | Go 用 `cgo.Handle` 存回调状态，`Operation` 有 `Cancel()` 和 finalizer；Swift 流是 `AsyncSequence`（`BoundedStream`、`AimuxStream`），不是 `AsyncThrowingStream`；Flutter 仍用 `NativeFinalizer` |
 | `scripts/gen_ts_types.py` | 已删除；生成门禁是 `aimux-codegen --check`（§0.1.7） |

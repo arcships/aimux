@@ -1,6 +1,6 @@
 # RFC-0040：Provider 构造、凭证边界与原生传输契约
 
-> **状态：Draft，部分实现（按 `master@c5a408370` 核对，2026-11-16）。** G1 的鉴权与传输主体已随 #253、#259、#265 落地：包内 headers/fetch 鉴权、SigV4 签最终 body、redirect 规则、`auth=none`、`Some("")` 不回退 env、未知 package/设置报错、ops `provider.create`。G1 未做：`providers_from_config` 与结构化 `{env}` 引用、Package descriptor、`ProviderRegistration`、结构化模型引用、重复 registry key 报错（#275）。G2（§5 L0 原生透传）与 G3（§4 凭证协调）未开工（#274）。§3.1 有一处已登记的例外，见该节。
+> **状态：Draft，部分实现（按 `master@c5a408370` 核对，2026-11-16）。** G1 的鉴权与传输主体已随 #253、#259、#265 落地：包内 headers/fetch 鉴权、SigV4 签最终 body、redirect 规则、`auth=none`、`Some("")` 不回退 env、未知 package/设置报错、ops `provider.create` 与 `registry.create` 重复 key 报错。G1 未做：`providers_from_config` 与结构化 `{env}` 引用、Package descriptor、`ProviderRegistration`、结构化模型引用（#275）。G2（§5 L0 原生透传）与 G3（§4 凭证协调）未开工（#274）。§3.1 有一处已登记的例外，见该节。
 >
 > **修订（2026-10-15，V4 [5/8] #253）：** §3.2 第三段关于 redirect 的规则已按实现改写，见该段后的修订说明；“默认不跟随 redirect”不再适用于模型 API 请求。
 >
