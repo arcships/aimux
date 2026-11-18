@@ -24,6 +24,28 @@ use crate::openai::config::OpenAIModelConfig;
 /// The output formats accepted by the OpenAI TTS API.
 const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "opus", "aac", "flac", "wav", "pcm"];
 
+/// `openaiSpeechModelOptionsSchema` (openai-speech-model-options.ts). Both
+/// keys are `.nullish()`: `null` reads as absent.
+#[derive(Debug, Default, serde::Deserialize)]
+struct OpenAISpeechOptions {
+    #[serde(default)]
+    instructions: Option<String>,
+    /// `z.number().min(0.25).max(4.0)`.
+    #[serde(default, deserialize_with = "speed")]
+    speed: Option<f64>,
+}
+
+/// `speed`: `null`, or a number from 0.25 to 4.
+fn speed<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    use serde::Deserialize as _;
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(speed) if !(0.25..=4.0).contains(&speed) => {
+            Err(serde::de::Error::custom("expected a number from 0.25 to 4"))
+        }
+        speed => Ok(speed),
+    }
+}
+
 /// An OpenAI-compatible speech (TTS) model.
 ///
 /// Works with any OpenAI-compatible `/audio/speech` endpoint.
@@ -133,32 +155,15 @@ fn build_request_body_and_warnings(
         });
     }
 
-    if let Some(provider_options) = options
-        .provider_options
-        .as_ref()
-        .and_then(|options| options.get("openai"))
-    {
-        if let Some(value) = provider_options
-            .get("speed")
-            .filter(|value| !value.is_null())
-        {
-            let speed = value
-                .as_f64()
-                .filter(|speed| (0.25..=4.0).contains(speed))
-                .ok_or_else(|| {
-                    AiMuxError::invalid_argument("invalid openai speech option: speed")
-                })?;
-            body.insert("speed".into(), json!(speed));
-        }
-        if let Some(value) = provider_options
-            .get("instructions")
-            .filter(|value| !value.is_null())
-        {
-            let instructions = value.as_str().ok_or_else(|| {
-                AiMuxError::invalid_argument("invalid openai speech option: instructions")
-            })?;
-            body.insert("instructions".into(), json!(instructions));
-        }
+    // openai-speech-model.ts:62-66, 93-105
+    let openai_options: OpenAISpeechOptions =
+        aimux_provider_utils::parse_provider_options("openai", options.provider_options.as_ref())?
+            .unwrap_or_default();
+    if let Some(speed) = openai_options.speed {
+        body.insert("speed".into(), json!(speed));
+    }
+    if let Some(instructions) = openai_options.instructions {
+        body.insert("instructions".into(), json!(instructions));
     }
 
     if let Some(ref language) = options.language

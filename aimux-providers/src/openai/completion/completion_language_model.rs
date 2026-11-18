@@ -79,27 +79,16 @@ impl OpenAICompletionModel {
         }
         let mut provider_options = Map::new();
         for namespace in ["openai", self.provider_options_name()] {
+            // openai-completion-language-model.ts:111-120
+            aimux_provider_utils::parse_provider_options::<CompletionOptions>(
+                namespace,
+                options.provider_options.as_ref(),
+            )?;
             if let Some(values) = options
                 .provider_options
                 .as_ref()
                 .and_then(|all| all.get(namespace))
             {
-                for (key, value) in values {
-                    let valid = match key.as_str() {
-                        "echo" => value.is_boolean(),
-                        "user" | "suffix" => value.is_string(),
-                        "logitBias" => value
-                            .as_object()
-                            .is_some_and(|map| map.values().all(Value::is_number)),
-                        "logprobs" => value.is_boolean() || value.is_number(),
-                        _ => true,
-                    };
-                    if !valid {
-                        return Err(AiMuxError::invalid_argument(format!(
-                            "invalid {namespace} provider option {key}"
-                        )));
-                    }
-                }
                 provider_options.extend(values.clone());
             }
         }
@@ -159,6 +148,42 @@ impl OpenAICompletionModel {
             None => body,
         }
     }
+}
+
+/// `openaiLanguageModelCompletionOptions`
+/// (openai-completion-language-model-options.ts). Every key is
+/// `.optional()`: absent is `None`, `null` fails. Only checked: the request
+/// reads the namespaces as given.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request reads the raw namespaces"
+)]
+struct CompletionOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    echo: Option<bool>,
+    /// `z.record(z.string(), z.number())`.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    logit_bias: Option<std::collections::HashMap<String, serde_json::Number>>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    suffix: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    user: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    logprobs: Option<Logprobs>,
+}
+
+/// `z.union([z.boolean(), z.number()])`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+#[allow(
+    dead_code,
+    reason = "validated only; the request reads the raw namespaces"
+)]
+enum Logprobs {
+    Bool(bool),
+    Number(serde_json::Number),
 }
 
 /// The prompt of a text completion (`convertToOpenAICompletionPrompt`).

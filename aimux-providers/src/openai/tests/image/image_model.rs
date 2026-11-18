@@ -1633,3 +1633,71 @@ mod older_image {
         }
     }
 }
+
+/// aimux's own: `providerOptions.openai` is parsed against
+/// `openaiImageModelGenerationOptions`, or `openaiImageModelEditOptions` for
+/// an edit (openai-image-model.ts:136-140, 226-230). A value outside the
+/// schema fails with the upstream message before anything is sent.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for (edit, openai) in [
+            (false, json!({ "quality": "ultra" })),
+            (false, json!({ "quality": null })),
+            (false, json!({ "style": "bold" })),
+            (false, json!({ "outputCompression": 50.5 })),
+            (false, json!({ "outputCompression": 101 })),
+            (true, json!({ "inputFidelity": "medium" })),
+            (true, json!({ "background": "white" })),
+            (true, json!({ "user": 1 })),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let call = if edit {
+                edit_options(size_1024(), json!({ "openai": openai }))
+            } else {
+                options(size_1024(), json!({ "openai": openai }))
+            };
+            let Err(error) = provider(&mock)
+                .image("gpt-image-1")
+                .do_generate(&call)
+                .await
+            else {
+                panic!("{openai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {openai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{openai}"
+            );
+            assert!(cause.is_some(), "{openai}");
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+
+    /// The request is built from the parsed options: `outputCompression`
+    /// written as `80.0` passes `int()` and is sent as the integer `80`, as
+    /// `JSON.stringify` writes it.
+    #[tokio::test]
+    async fn the_request_carries_the_parsed_options() {
+        let mock = MockFetch::new(vec![json_response(&fixture("openai-image"), &[])]);
+
+        provider(&mock)
+            .image("gpt-image-1")
+            .do_generate(&options(
+                size_1024(),
+                json!({ "openai": { "outputCompression": 80.0, "style": "natural" } }),
+            ))
+            .await
+            .unwrap();
+
+        let body = mock.seen()[0].json_body();
+        assert_eq!(body["output_compression"], json!(80));
+        assert_eq!(body["style"], json!("natural"));
+    }
+}

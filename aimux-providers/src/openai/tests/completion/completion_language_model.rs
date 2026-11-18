@@ -688,3 +688,43 @@ mod do_stream {
         assert!(user_agent.contains(USER_AGENT), "{user_agent}");
     }
 }
+
+/// aimux's own: `providerOptions.openai` is parsed against
+/// `openaiLanguageModelCompletionOptions` (openai-completion-language-model.ts:111-120).
+/// A value outside the schema fails with the upstream message before
+/// anything is sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for openai in [
+            json!({ "echo": "yes" }),
+            json!({ "logitBias": { "50256": "-100" } }),
+            json!({ "logprobs": "5" }),
+            json!({ "suffix": null }),
+            json!({ "user": 1 }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let Err(error) = provider(&mock)
+                .completion("gpt-3.5-turbo-instruct")
+                .do_generate(&call_options(
+                    json!({ "providerOptions": { "openai": openai } }),
+                ))
+                .await
+            else {
+                panic!("{openai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {openai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{openai}"
+            );
+            assert!(cause.is_some(), "{openai}");
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+}
