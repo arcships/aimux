@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:aimux/aimux.dart';
 import 'package:aimux/generated/ops.dart' as ops;
+import 'package:flutter/widgets.dart';
 
 void main() {
   runApp(const AimuxDemoApp());
@@ -15,9 +15,19 @@ class AimuxDemoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return WidgetsApp(
       title: 'aimux demo',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      color: const Color(0xFF3F51B5),
+      pageRouteBuilder: <T>(RouteSettings settings, WidgetBuilder builder) =>
+          PageRouteBuilder<T>(
+            settings: settings,
+            pageBuilder: (
+              BuildContext context,
+              Animation<double> animation,
+              Animation<double> secondaryAnimation,
+            ) =>
+                builder(context),
+          ),
       home: const HomePage(),
     );
   }
@@ -52,22 +62,52 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('aimux demo')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            FilledButton(
-              onPressed: _busy ? null : _describe,
-              child: const Text('Describe runtime'),
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: const Color(0xFFFFFFFF),
+        child: SafeArea(
+          child: DefaultTextStyle(
+            style: const TextStyle(color: Color(0xFF1F2937), fontSize: 15),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'aimux demo',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: _busy ? null : _describe,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Color(_busy ? 0xFF9CA3AF : 0xFF3F51B5),
+                        borderRadius: const BorderRadius.all(Radius.circular(8)),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Center(
+                          child: Text(
+                            'Describe runtime',
+                            style: TextStyle(
+                              color: Color(0xFFFFFFFF),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: SingleChildScrollView(child: Text(_output)),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: SingleChildScrollView(child: SelectableText(_output)),
-            ),
-          ],
+          ),
         ),
       ),
     );

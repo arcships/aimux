@@ -3,8 +3,7 @@
 //! model's wire behaviour (ported from the `@ai-sdk/deepseek` tests) is in
 //! `src/deepseek/tests/chat/`.
 
-mod common;
-
+use aimux_providers::test_support::replay;
 use futures::StreamExt;
 use wiremock::MockServer;
 
@@ -26,7 +25,7 @@ fn deepseek_at(server: &MockServer) -> DeepSeekProvider {
 #[tokio::test]
 async fn recorded_deepseek_cassettes_replay_through_the_package() {
     let server = MockServer::start().await;
-    let n = common::replay::mount_cassettes(&server, "tests/cassettes/deepseek").await;
+    let n = replay::mount_cassettes(&server, "tests/cassettes/deepseek").await;
     assert!(n > 0, "no deepseek cassettes");
     let model = deepseek_at(&server).chat("deepseek-chat");
 

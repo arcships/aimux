@@ -14,8 +14,6 @@
 //! This guarantees every single one of the 2650 cassettes is actually
 //! replayed and its response is parsed by the provider.
 
-mod common;
-
 use std::fs;
 use std::path::Path;
 

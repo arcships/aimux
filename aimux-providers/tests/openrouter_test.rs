@@ -37,9 +37,7 @@ use aimux_core::types::FinishReasonUnified;
 use aimux_providers::openai_compatible::OpenAICompatibleProvider;
 use aimux_providers::{PresetSettings, create_provider, preset};
 
-// Shared cassette-replay infrastructure (same `mod common` used by
-// `conformance_test.rs`).
-mod common;
+use aimux_providers::test_support::replay;
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -661,8 +659,8 @@ mod conformance {
         }
     }
 
-    // Replay helper — same `mod common` used by conformance_test.rs.
+    // Replay helper.
     async fn mount_cassettes(server: &MockServer, dir: &str) -> usize {
-        common::replay::mount_cassettes(server, dir).await
+        replay::mount_cassettes(server, dir).await
     }
 }

@@ -18,9 +18,7 @@
 //!
 //! 4. **End-to-end**: `generate_text_as_openai` / `stream_text_as_openai`.
 
-mod common;
-
-use common::replay;
+use aimux_providers::test_support::replay;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};

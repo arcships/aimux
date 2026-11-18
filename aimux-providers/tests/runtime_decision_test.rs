@@ -18,7 +18,7 @@ use serial_test::serial;
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
-mod common;
+use aimux_providers::test_support::replay;
 
 fn object(value: Value) -> serde_json::Map<String, Value> {
     value
@@ -114,7 +114,7 @@ async fn replay(
     );
     assert_eq!(replayed.provider_metadata, result.provider_metadata);
     let server = MockServer::start().await;
-    common::replay::mount_recording(&server, &recordings[0]).await;
+    replay::mount_recording(&server, &recordings[0]).await;
     let rebuilt = rebuild(
         &recordings[0].provider,
         runtime(provider, Some("new-key"), format!("{}/v1", server.uri())),

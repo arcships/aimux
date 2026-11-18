@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'src/generated/types.dart';
 
 /// The native error envelope presented as a Dart exception.
@@ -13,10 +15,12 @@ final class OpsException implements Exception {
   Object? get error => envelope.error;
   Map<String, dynamic> toJson() => envelope.toJson();
 
-  /// The payload's cause: a nested AI SDK error (with `name`) or an
-  /// underlying OS, TLS or parser error as `{message, cause?}`. A retry
-  /// error's cause is its last attempt, the AI SDK `lastError`.
-  Map<String, dynamic>? get cause {
+  /// The payload's cause: a nested AI SDK error
+  /// ([ErrorCauseBranchAiMuxError]) or an underlying OS, TLS or parser error
+  /// ([ErrorCauseBranchSourceError], `{message, cause?}`). A retry error's
+  /// cause is its last attempt, the AI SDK `lastError`. The raw JSON stays in
+  /// `error['cause']`.
+  ErrorCause? get cause {
     final error = envelope.error;
     if (error is! Map) return null;
     var cause = error['cause'];
@@ -27,7 +31,14 @@ final class OpsException implements Exception {
         errors.isNotEmpty) {
       cause = errors.last;
     }
-    return cause is Map ? Map<String, dynamic>.unmodifiable(cause) : null;
+    if (cause is! Map) return null;
+    try {
+      // A JSON round trip gives nested maps the `Map<String, dynamic>` type
+      // the generated decoders expect, whatever map type the envelope holds.
+      return ErrorCause.fromJson(jsonDecode(jsonEncode(cause)));
+    } catch (_) {
+      return null;
+    }
   }
 
   @override

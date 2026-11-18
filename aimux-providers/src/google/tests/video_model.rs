@@ -779,3 +779,60 @@ mod older_video {
         );
     }
 }
+
+/// aimux's own: `providerOptions.google` is parsed against
+/// `googleVideoModelOptionsSchema` (google-video-model.ts:169-173). A value
+/// outside the schema fails with the upstream message before anything is
+/// sent. `null` passes (`.nullish()`), and keys the schema does not declare
+/// are still forwarded (`z.looseObject`).
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for google in [
+            json!({ "personGeneration": "everyone" }),
+            json!({ "pollIntervalMs": 0 }),
+            json!({ "pollTimeoutMs": "1000" }),
+            json!({ "negativePrompt": 1 }),
+            json!({ "referenceImages": [{ "gcsUri": 1 }] }),
+            json!({ "referenceImages": ["gs://bucket/reference.png"] }),
+        ] {
+            let (model, fetch) = create_mock_model(MockModel::default());
+            let mut options = default_options();
+            options.provider_options = google_options(google.clone());
+            let Err(error) = model.do_start(&options).await else {
+                panic!("{google} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {google}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid google provider options",
+                "{google}"
+            );
+            assert!(cause.is_some(), "{google}");
+            assert!(fetch.seen().is_empty(), "{google}");
+        }
+    }
+
+    #[tokio::test]
+    async fn null_passes_and_undeclared_keys_are_forwarded() {
+        let (model, fetch) = create_mock_model(MockModel::default());
+        let mut options = default_options();
+        options.provider_options = google_options(json!({
+            "personGeneration": null,
+            "pollTimeoutMs": null,
+            "enhancePrompt": true,
+        }));
+        model
+            .do_start(&options)
+            .await
+            .expect("the options are valid");
+        assert_eq!(
+            start_body(&fetch)["parameters"],
+            json!({ "sampleCount": 1, "enhancePrompt": true })
+        );
+    }
+}

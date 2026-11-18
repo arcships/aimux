@@ -510,3 +510,61 @@ mod older_speech {
         );
     }
 }
+
+/// aimux's own: `providerOptions.openai` is parsed against
+/// `openaiSpeechModelOptionsSchema` (openai-speech-model.ts:62-66). A value
+/// outside the schema fails with the upstream message before anything is
+/// sent; `null` reads as absent (`.nullish()`).
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    fn call(openai: Value) -> SpeechCallOptions {
+        SpeechCallOptions {
+            provider_options: Some(provider_options(json!({ "openai": openai }))),
+            ..SpeechCallOptions::new("Hello from the AI SDK!")
+        }
+    }
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for openai in [
+            json!({ "speed": 0.1 }),
+            json!({ "speed": 4.5 }),
+            json!({ "speed": "fast" }),
+            json!({ "instructions": 1 }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let Err(error) = provider_with(&mock, OpenAIProviderSettings::default())
+                .speech("tts-1")
+                .do_generate(&call(openai.clone()))
+                .await
+            else {
+                panic!("{openai} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {openai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{openai}"
+            );
+            assert!(cause.is_some(), "{openai}");
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+
+    #[tokio::test]
+    async fn null_reads_as_absent() {
+        let mock = MockFetch::new(vec![audio_response("mp3")]);
+        provider_with(&mock, OpenAIProviderSettings::default())
+            .speech("tts-1")
+            .do_generate(&call(json!({ "speed": null, "instructions": null })))
+            .await
+            .expect("the options are valid");
+        let body = mock.seen()[0].json_body();
+        assert!(body.get("speed").is_none(), "{body}");
+        assert!(body.get("instructions").is_none(), "{body}");
+    }
+}

@@ -834,6 +834,10 @@ jobs:
           ref: ${{ github.sha }}
       - name: Providers doc generator drift (docs/api/providers.md must match generator output)
         run: python3 scripts/gen_providers_doc.py --check
+      - name: Provider layout manifest (aimux-providers/layout.toml)
+        run: |
+          python3 scripts/tests/test_check_layout.py
+          python3 scripts/check_layout.py
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
       - name: Release asset list self-test (scripts/stage_release_assets.py)

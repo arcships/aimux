@@ -24,10 +24,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{FetchFunction, Resolvable};
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
-use mock_fetch::{Canned, RouteFetch};
+use aimux_providers::test_support::mock_fetch::{Canned, RouteFetch};
 
 fn options() -> CallOptions {
     CallOptions::new(vec![LanguageModelMessage::user_text("Hello")])
