@@ -35,6 +35,7 @@ fn options(prompt: &str) -> ImageCallOptions {
     ImageCallOptions::new(prompt.to_string())
 }
 
+/// partial: `should parse multiple images response`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_extract_generated_images() {
     let server = MockServer::start().await;
@@ -86,6 +87,7 @@ async fn should_include_the_package_user_agent() {
     );
 }
 
+/// partial: `should pass the correct parameters including size`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_prompt_and_n() {
     let server = MockServer::start().await;
@@ -105,6 +107,7 @@ async fn should_pass_prompt_and_n() {
     assert_eq!(body["num_images"], 1);
 }
 
+/// partial: `should pass the correct parameters including size`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_size() {
     let server = MockServer::start().await;
@@ -125,6 +128,7 @@ async fn should_pass_size() {
     assert_eq!(body["image_size"]["height"], 1024);
 }
 
+/// partial: `should convert aspect ratio to size`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
@@ -144,6 +148,7 @@ async fn should_pass_aspect_ratio() {
     assert_eq!(body["image_size"], "landscape_16_9");
 }
 
+/// partial: `should pass the correct parameters including size`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_seed() {
     let server = MockServer::start().await;
@@ -163,6 +168,7 @@ async fn should_pass_seed() {
     assert_eq!(body["seed"], 42);
 }
 
+/// partial: `should pass headers`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
@@ -186,6 +192,7 @@ async fn should_pass_auth_headers() {
     );
 }
 
+/// partial: `should convert camelCase provider options to snake_case for API`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_forward_provider_options() {
     let server = MockServer::start().await;
@@ -213,6 +220,7 @@ async fn should_forward_provider_options() {
     assert_eq!(body["output_format"], "png");
 }
 
+/// partial: `should parse single image response`; full port in src/fal/tests/image_model.rs.
 #[tokio::test]
 async fn should_handle_single_image_response() {
     let server = MockServer::start().await;

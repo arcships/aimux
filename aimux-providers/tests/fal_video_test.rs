@@ -60,6 +60,7 @@ async fn mock_queue_and_result(server: &MockServer, result: &Value) {
         .await;
 }
 
+/// partial: `should return completed status with video data`; full port in src/fal/tests/video_model.rs.
 #[tokio::test]
 async fn should_generate_video() {
     let server = MockServer::start().await;
@@ -80,6 +81,7 @@ async fn should_generate_video() {
     assert_eq!(r.videos.len(), 1);
 }
 
+/// partial: `should pass the correct parameters including prompt`; full port in src/fal/tests/video_model.rs.
 #[tokio::test]
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
@@ -103,6 +105,7 @@ async fn should_pass_prompt() {
     assert_eq!(body["prompt"], "A cat playing");
 }
 
+/// partial: `should pass headers`; full port in src/fal/tests/video_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -134,6 +137,7 @@ async fn should_pass_headers() {
     assert_eq!(h.get("custom-request-header").unwrap(), "req-val");
 }
 
+/// partial: `should return completed status with video data`; full port in src/fal/tests/video_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
