@@ -9,13 +9,17 @@ public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
     public var message: String { envelope.message }
     public var error: JSONValue { envelope.error }
     public var errorDescription: String? { message }
-    /// The payload's cause: a nested AI SDK error (with `name`) or an
-    /// underlying OS, TLS or parser error as `{message, cause?}`. A retry
-    /// error's cause is its last attempt, the AI SDK `lastError`.
-    public var cause: JSONValue? {
-        if let cause = error["cause"] { return cause }
-        guard error["name"] == .string("AI_RetryError") else { return nil }
-        return error["errors"]?.arrayValue?.last
+    /// The payload's cause: a nested AI SDK error (`.aiMuxError`) or an
+    /// underlying OS, TLS or parser error (`.sourceError`, `{message, cause?}`).
+    /// A retry error's cause is its last attempt, the AI SDK `lastError`.
+    /// The raw JSON stays in `error["cause"]`.
+    public var cause: ErrorCause? {
+        var cause = error["cause"]
+        if cause == nil, error["name"] == .string("AI_RetryError") {
+            cause = error["errors"]?.arrayValue?.last
+        }
+        guard let cause, let data = try? JSONEncoder().encode(cause) else { return nil }
+        return try? JSONDecoder().decode(ErrorCause.self, from: data)
     }
 
     public init(_ envelope: ErrorEnvelope) { self.envelope = envelope }

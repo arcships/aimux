@@ -959,7 +959,7 @@ mod older_decision {
 /// The native decision URL goes through the model's URL callback.
 #[test]
 fn native_decision_url_passes_endpoint_to_url_callback() {
-    use crate::decision_support::DecisionEndpoint;
+    use crate::decision::support::DecisionEndpoint;
     use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
     use aimux_provider_utils::{Credential, ProviderHeaders};
 

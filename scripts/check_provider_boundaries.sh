@@ -21,7 +21,7 @@
 #   8. Azure, xAI, Mistral, Cohere, Hugging Face, Codex, Open Responses, Voyage
 #      and ElevenLabs keep no builder-era config state (and `StaticBearerConfig`
 #      stays deleted), and their providerOptions / providerMetadata keys are
-#      spelled once, in each package's `options.rs`.
+#      spelled once, in each package's `options.rs` or `NAMESPACE` constant.
 #
 #   9. No provider code calls the operation-level retry: `prepare_retries` and
 #      `aimux_core::retry` are not used anywhere in aimux-providers/src (the
@@ -31,7 +31,7 @@
 #  10. The single-modality vendor packages (search, speech, transcription,
 #      image, video, reranking) keep no builder-era config state, and their
 #      providerOptions namespace keys are spelled once, in each package's
-#      `options.rs`.
+#      `options.rs` or `NAMESPACE` constant.
 #  11. Vendor packages never reach into another vendor package except through
 #      the four upstream internal surfaces (`openai::internal`,
 #      `anthropic::internal`, `google::internal`,
@@ -193,7 +193,7 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
 # names only the shared layers (including `stream`) and the decision layer
-# (`decision_support`, `runtime_decision`); the in-crate tests also name
+# (`decision`); the in-crate tests also name
 # `test_support`.
 require_paths aimux-providers/src/shared aimux-providers/src/openai_compatible
 rule4c_hits="$(
@@ -201,7 +201,7 @@ rule4c_hits="$(
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai_compatible|decision_support|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai_compatible|decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"
@@ -296,13 +296,14 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # No `XxxConfig` / `AzureAuth` / `TokenProvider` / `StaticBearerConfig` /
 # `body_overrides` / `api_key_source` / `from_env`, and the namespace keys
 # (`azure`, `xai`, `mistral`, `cohere`, `huggingface`, `voyage`, `elevenlabs`)
-# are quoted only in the package's `options.rs`, or its
+# are quoted only in the package's `options.rs`, its
 # `*_language_model_options.rs` once the package follows the upstream file
-# layout (RFC-0046 §4.2; comments, unit tests and the `DEFAULT_NAME`
-# provider-name constants aside). Codex reads the OpenAI
+# layout (RFC-0046 §4.2), or its `NAMESPACE` constant when the package reads
+# its options through `shared::namespaced_options` (RFC-0046 §3.6; comments,
+# unit tests and the `DEFAULT_NAME` provider-name constants aside). Codex reads the OpenAI
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
-vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex.rs aimux-providers/src/open_responses aimux-providers/src/elevenlabs'
+vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex aimux-providers/src/open_responses aimux-providers/src/elevenlabs'
 # shellcheck disable=SC2086
 require_paths $vendor_family
 rule8_hits="$(
@@ -319,12 +320,42 @@ rule8b_hits="$(
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
             in_tests { next }
             /^[[:space:]]*\/\// { next }
-            /"(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)"/ && !/DEFAULT_NAME/ {
+            /"(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)"/ && !/DEFAULT_NAME/ && !/const NAMESPACE: &str = / {
                 printf "%s:%d:%s\n", FILENAME, FNR, $0
             }
         ' || true
 )"
-violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs' "$rule8b_hits"
+violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs / NAMESPACE constant' "$rule8b_hits"
+
+check_single_namespace_const() {
+    local ns_pattern="$1"
+    shift
+    local dir hits count
+    for dir in "$@"; do
+        hits="$(
+            find "$dir" -name '*.rs' ! -path '*/tests/*' -print0 |
+                xargs -0 awk -v pat="$ns_pattern" '
+                    FNR == 1 { in_tests = 0 }
+                    /^#\[cfg\(test\)\]/ { in_tests = 1 }
+                    in_tests { next }
+                    /^[[:space:]]*\/\// { next }
+                    $0 ~ ("const NAMESPACE: &str = \"" pat "\"") {
+                        printf "%s:%d:%s\n", FILENAME, FNR, $0
+                    }
+                ' || true
+        )"
+        if [[ -n "$hits" ]]; then
+            count="$(printf '%s\n' "$hits" | wc -l | tr -d ' ')"
+            if (( count > 1 )); then
+                printf '%s\n' "$hits"
+            fi
+        fi
+    done
+}
+
+# shellcheck disable=SC2086
+rule8c_hits="$(check_single_namespace_const '(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)' $vendor_family)"
+violation 'multiple const NAMESPACE declarations in one vendor package' "$rule8c_hits"
 
 # ── Rule 9: no operation-level retry inside aimux-providers/src ──────────────
 #
@@ -343,8 +374,10 @@ violation 'prepare_retries / aimux_core::retry used in aimux-providers/src (exce
 # and the namespace keys (`lmnt`, `hume`, `deepgram`, `cartesia`, `stability`,
 # `aws_polly`, `prodia`, `luma`, `klingai`, `replicate`, `fal`, `recraft`,
 # `gladia`, `blackForestLabs`, `assemblyai`, `revai`, `linkup`, `jina`,
-# `google_pse`) are quoted only in the package's `options.rs` (comments, unit
-# tests and the `DEFAULT_NAME` provider-name constants aside).
+# `google_pse`) are quoted only in the package's `options.rs`, or its
+# `NAMESPACE` constant when the package reads its options through
+# `shared::namespaced_options` (RFC-0046 §3.6; comments, unit tests and the
+# `DEFAULT_NAME` provider-name constants aside).
 single_family='serper prodia deepgram you_com luma lmnt klingai dataforseo replicate fal recraft aws_polly jina_ai gladia tavily linkup tinyfish black_forest_labs assemblyai revai hume cartesia searxng parallel_ai firecrawl runwayml exa_ai stability google_pse'
 single_paths=''
 for name in $single_family; do
@@ -369,12 +402,15 @@ rule10b_hits="$(
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
             in_tests { next }
             /^[[:space:]]*\/\// { next }
-            /"(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)"/ && !/DEFAULT_NAME/ {
+            /"(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)"/ && !/DEFAULT_NAME/ && !/const NAMESPACE: &str = / {
                 printf "%s:%d:%s\n", FILENAME, FNR, $0
             }
         ' || true
 )"
-violation 'single-modality providerOptions namespace key spelled outside the package options.rs' "$rule10b_hits"
+violation 'single-modality providerOptions namespace key spelled outside the package options.rs / NAMESPACE constant' "$rule10b_hits"
+# shellcheck disable=SC2086
+rule10c_hits="$(check_single_namespace_const '(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)' $single_paths)"
+violation 'multiple const NAMESPACE declarations in one single-modality vendor package' "$rule10c_hits"
 
 # ── Rule 11: cross-vendor references go only through <vendor>::internal ──────
 #
@@ -385,6 +421,7 @@ violation 'single-modality providerOptions namespace key spelled outside the pac
 #   anthropic_aws, bedrock    -> crate::anthropic::internal
 #   vertex                    -> crate::{google,anthropic,openai_compatible}::internal
 #   preset                    -> crate::openai_compatible::internal
+#   decision                  -> crate::jev::internal (SystemOne wire codec)
 # No other vendor module (or test) reaches into another vendor module or uses a
 # crate-root vendor re-export (`crate::OpenAI*`, `use crate::{...}`).
 # `stream/chat_tool_calls_tests.rs` is the sole cross-vendor test file until it
@@ -394,6 +431,7 @@ require_paths \
     aimux-providers/src/anthropic/internal/mod.rs \
     aimux-providers/src/google/internal/mod.rs \
     aimux-providers/src/openai_compatible/internal/mod.rs \
+    aimux-providers/src/jev/internal/mod.rs \
     aimux-providers/src/stream/chat_tool_calls_tests.rs
 rule11_hits="$(
     python3 - <<'PY'
@@ -401,14 +439,14 @@ import glob, re
 
 root = "aimux-providers/src"
 shared_items = {
-    "shared", "stream", "test_support", "decision_support", "decision_scoring",
-    "runtime_decision", "catalogue", "default_providers", "replay",
+    "shared", "stream", "test_support", "decision",
+    "catalogue", "default_providers", "replay",
     "AuthMode", "PresetDescriptor", "PresetEntry", "PresetSettings",
     "create_provider", "default_providers", "provider_api_key_env",
     "provider_default_base_url", "provider_names", "init_logging",
     "get_model_specs", "Catalogue", "rebuild_decision_provider",
     "rebuild_provider", "__unsupported_required_model", "__optional_model",
-    "impl_single_modality_provider",
+    "impl_single_modality_provider", "impl_modality_provider",
 }
 allowed_internal = {
     "azure": {"openai"},
@@ -418,6 +456,7 @@ allowed_internal = {
     "bedrock": {"anthropic"},
     "vertex": {"google", "anthropic", "openai_compatible"},
     "preset": {"openai_compatible"},
+    "decision": {"jev"},
 }
 
 for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
@@ -436,8 +475,6 @@ for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
             for m in re.finditer(r"\bcrate::([A-Za-z0-9_]+)(?:::([A-Za-z0-9_]+))?", code):
                 first, second = m.group(1), m.group(2)
                 if first == pkg or first in shared_items:
-                    continue
-                if first == "systemone" and pkg in ("jev", "runtime_decision"):
                     continue
                 if first in allowed_internal.get(pkg, set()) and second == "internal":
                     continue

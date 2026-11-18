@@ -15,12 +15,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::google::internal::{Namespace, google_failed_response_handler};
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_base64};
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResponse,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::is_valid_hostname_part;
 
@@ -115,14 +115,6 @@ fn convert_bcp47_to_iso6391(value: &Option<String>) -> Option<String> {
             _ => s,
         })
         .filter(|s| s.len() == 2 && s.bytes().all(|b| b.is_ascii_alphabetic()))
-}
-
-fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
-    match audio {
-        AudioInput::Base64(s) => Ok(s.clone()),
-        AudioInput::Binary(bytes) => Ok(aimux_provider_utils::convert_uint8_array_to_base64(bytes)),
-        AudioInput::Url(_) => Err(AudioInput::url_error()),
-    }
 }
 
 // ── Model ───────────────────────────────────────────────────────────────────

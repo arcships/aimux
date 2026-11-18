@@ -21,6 +21,18 @@ int main() {
         caught = e.code() == 300 && e.json().find("\"InvalidOp\"") != std::string::npos;
     }
     assert(caught);
+    // The cause chain is in the envelope JSON: the serde error under
+    // InvalidWireJson is `error.cause`, an underlying `{message}`.
+    caught = false;
+    try { aimux::check(aimux_call(0, "abort.create", "{", 0, &raw)); }
+    catch (const aimux::NativeError &e) {
+        const std::string &json = e.json();
+        auto cause = json.find("\"cause\":{");
+        caught = e.code() == 202 && json.find("\"InvalidWireJson\"") != std::string::npos &&
+                 cause != std::string::npos &&
+                 json.find("\"message\":\"EOF while parsing", cause) != std::string::npos;
+    }
+    assert(caught && raw == nullptr);
 
     aimux::Handle first(create_handle("abort.create", 0, "{}"));
     auto id = first.get();

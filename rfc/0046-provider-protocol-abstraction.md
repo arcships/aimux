@@ -1,6 +1,6 @@
 # RFC-0046：provider 协议的小重构与抽象设计
 
-> **Status**: Draft
+> **Status**: Draft；正文随 #294 于 2026-10-21 合并，实施中。R2、R3、R4、R5 已完成，R1、R7 部分完成，R6 未开始，见 §10（按 `master@c5a408370` 核对，2026-11-16）；逐 PR 进度见 #328。
 >
 > **Date**: 2026-10-20
 >
@@ -27,6 +27,8 @@
 | V11 | 本文不拆 crate、不加按厂商的 cargo feature，厂商仍在一个 `aimux-providers` 里，以后再考虑；参考做法是只有厂商要引入很重的第三方库时才单独成 crate（Rig 的做法：27 个厂商在 rig-core，只有用 AWS SDK、Google Cloud SDK、gRPC、本地推理的拆出去） | 48 个厂商实现中文本模型占约 5.8 万行，多模态和搜索 31 家只有约 1.4 万行，按厂商开关省不了多少体积 |
 
 ## 2. 现状
+
+> 本节是基线 `5743a40a` 的统计，作为改动的理由保留，不随实施更新；文件、行号和数字有不少已被 R1–R7 改掉。当前的目录与测试数字见 §2.6、§2.8 末尾的注，实施进度见 §10。
 
 ### 2.1 协议实现和谁在用
 
@@ -164,6 +166,8 @@ Vertex provider 建 Claude 模型                      aimux-providers/src/verte
 
 文件名用通用名（`model.rs`、`convert.rs`、`types.rs`），不对应上游文件。282 个 preset 是 `provider_registry.json` 里的数据行，跑在兼容层上。
 
+> 2026-11-16 注（`master@c5a408370`）：`src/` 现在有 39 个目录、39 个文件。带 `mod.rs` 的厂商目录 19 个（有上游包的 17 家加 `open_responses/`、`voyage/`）；`<vendor>.rs` + 只有 `options.rs` 的同名目录 17 个（fal 的搬移在 #443）；单文件厂商 12 个；共用基础设施加上 `test_support/` 共 3 个；非厂商顶层文件不变。preset 仍是 282 行。
+
 ### 2.7 与上游对照
 
 上游不是每个包文件数相同，而是命名规则固定、一个模型类一个文件、测试紧挨源文件：
@@ -210,6 +214,8 @@ Vertex provider 建 Claude 模型                      aimux-providers/src/verte
 - 181 个测试函数名在多个文件里重名（搬进各自目录后在不同模块里，不冲突）。
 
 `src/` 里已有 19 个内联测试模块，`stream/chat_tool_calls_tests.rs` 是唯一的独立测试文件（复数 `_tests`）。
+
+> 2026-11-16 注（`master@c5a408370`）：有上游测试的厂商已把测试搬进 `src/<vendor>/tests/`（18 个目录）；`aimux-providers/tests/` 剩 75 个顶层 `.rs`（加上 `tests/common/` 下 3 个辅助文件共 78 个 `.rs`），其中仍有一批单厂商测试（没有上游包的厂商，以及 fal 等尚未搬的文件）；含 `#[cfg(test)]` 的源文件 43 个；`stream/chat_tool_calls_tests.rs` 仍在原处（R7 处理）。
 
 ## 3. 抽象设计
 
@@ -498,6 +504,14 @@ aimux-providers/tests/               只留跨厂商的测试（cassette 回放�
 - ROADMAP 里“tracker 移入 aimux-provider-utils（#204）”一行已被 RFC-0042 T2 取代，同步删除。
 - 登记：Vertex Gemini 的 ID 生成和流处理改为与 Google 一致（§3.4）；厂商之间内部用的 Config 钩子是枚举而不是回调（§3.5）。
 
+2026-11-16 核对：上面前四条尚未做——RFC-0044 那几处仍写“不在本文范围”而未链到本文；对齐文档 §5 仍引用 `stream/chat_tool_calls_tests.rs`（文件也还没移）；`docs/contributing/adding-a-provider.md` 仍按旧结构写，没有 `src/<vendor>/tests/` 和 `layout.toml`；ROADMAP 的 tracker 两行随 #277 的 ROADMAP 刷新删除。最后一条已在对齐文档 §5 登记（#395）。
+
+实施中与本文的出入（#328 已记录，这里一并登记）：
+
+- 没有 `GoogleConfig`（§3.1、§3.5、§6 R4）：Vertex Gemini 用 `GoogleModel` + `EndpointConfig` + `Namespace::Vertex`，Vertex 专有的行为在 `GoogleModel` 里按 `Namespace` 分支，与上游按 `isVertexProvider` 分支相同（#291）。
+- `AnthropicRequestUrl` 没有 `AwsRegional`，`AnthropicBodyRewrite` 没有 `Bedrock`（§3.5）：Claude Platform on AWS 的区域主机就是它的端点解析出的 base URL，上游 `createAnthropicAws` 也不传 `buildRequestUrl`；Bedrock Converse 不经过 Anthropic 模型（#394）。
+- Bedrock 能力表不改为调用 Anthropic 的 `get_model_capabilities`（§3.4、§6 R3）：上游 amazon-bedrock 5.0.100 仍有自己的 `amazon-bedrock-anthropic-model-support.ts`，aimux 照上游保留 `bedrock/anthropic_model_support.rs`。
+
 ## 8. 验收
 
 1. 每个厂商一个目录；`src/` 顶层只剩 `lib.rs`、`catalogue.rs`、`default_providers.rs`、`preset/`、`decision/`、`shared/`、`stream/`、`test_support/` 和厂商目录。
@@ -513,3 +527,19 @@ aimux-providers/tests/               只留跨厂商的测试（cassette 回放�
 - **旧子模块路径（待讨论）。** 本文的方案是不留 shim，作为破坏性变更随下一个 minor 版本发布（§4.5）。另一种做法是每家留一个 `#[deprecated]` 的同名 `pub mod`，只 `pub use` 新位置的内容，保留一个 minor 版本后删除；代价是 55 个过渡模块和一次之后的删除。
 - **Config 钩子的写法（待讨论）。** 本文的方案是厂商之间内部用的改写写成封闭枚举（`body_rewrite`、`build_request_url`），10 个公开设置里的用户回调保留（§3.5）。另外两种做法：一是全部保留回调，和上游写法一致，但配置不能打印、比较、写进录制，绑定也选不了；回调可以由 Vertex、Bedrock 自己的目录提供，也不会形成反向边。二是公开设置里的回调也删掉，用户改用自定义 fetch 或中间件改请求体；10 个字段和 7 处 `TransformRequestBody` re-export 删除，算破坏性变更，按 §4.5 第 2 条随下一个 minor 版本发布。
 - **扫描中发现的行为偏差**由单独的线程核实和修复，不放进搬移 PR。原列 6 处，其中 xAI 拒绝文本、Anthropic 显式 `outputFormat` 两处核对后与上游一致，不是偏差；剩下 4 处：HuggingFace 丢掉 `ToolChoice::None`、Vertex 上的 Grok 用量 total、preset 强制 `supports_structured_outputs`、Vertex Gemini 的 ID 规则（§3.4）。
+
+## 10. 实施状态
+
+按 `master@c5a408370` 核对（2026-11-16）。逐 PR 的进度和评审记录在 #328，这里只列结论。
+
+| 步骤 | 状态 | PR |
+|---|---|---|
+| R1 provider-utils 补齐通用函数 | 函数族已全部合入；用 serde 结构体替换手写 provider options 解析的后续部分合入 | 函数族：#379–#388（#388 共享凭证与 UA）；serde 后续已合入 #419、#424、#426、#427、#446，未合入 #420–#423、#425、#428、#429、#445 |
+| R2 解开七个环，加 `internal` 模块和边界检查 | 完成 | #389–#393；`internal` 模块与边界规则 11：#404 |
+| R3 托管变体改用 `AnthropicConfig` | 完成，Bedrock 能力表按 §7 登记不做 | #394（`AnthropicConfig`）、#447（Anthropic AWS 与 Bedrock 的 SigV4 外层合并进 provider-utils） |
+| R4 Vertex Gemini 改用 Google 模型 | 完成，不另设 `GoogleConfig`（§7） | #291 |
+| R5 兼容层的 Vertex 合作模型改写挪到 `body_rewrite` | 完成 | #395 |
+| R6 模态与搜索厂商去重 | 未开始（生成结果下载那部分等 RFC-0044 C4） | — |
+| R7 目录、文件名、测试位置，`layout.toml` | 有上游包的厂商：15 家已搬（#297–#370），Luma #433、Deepgram #439、ElevenLabs #440 已合入；fal 未合入（测试 #442、搬移 #443）。没有上游包的 29 个厂商与 preset（§4.3）未做 | 见 #328 |
+
+§8 的验收项都还没有满足：`src/` 顶层仍有单文件厂商和 `decision_*.rs`、`preset.rs`；`layout.toml` 缺 fal、provider-utils 和 aimux 三张表，也没有 CI 校验；`aimux-providers/tests/` 仍有单厂商测试，`test_support/` 仍用 `#[path]` 引 `tests/common/`。§9 的开放问题不在这里处理。
