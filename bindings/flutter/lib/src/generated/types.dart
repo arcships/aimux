@@ -2433,6 +2433,12 @@ final class BackendConfigRing extends BackendConfig {
   @override
   String get type => 'ring';
   factory BackendConfigRing.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'capacity', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for BackendConfigRing');
+      }
+    }
     return BackendConfigRing(
       capacity: json['capacity'] as int?,
     );
@@ -2452,6 +2458,12 @@ final class BackendConfigJsonl extends BackendConfig {
   @override
   String get type => 'jsonl';
   factory BackendConfigJsonl.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'directory', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for BackendConfigJsonl');
+      }
+    }
     return BackendConfigJsonl(
       directory: json['directory'] as String,
     );
@@ -7427,6 +7439,12 @@ final class LiveTargetModel extends LiveTarget {
   @override
   String get kind => 'model';
   factory LiveTargetModel.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'handle', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for LiveTargetModel');
+      }
+    }
     return LiveTargetModel(
       handle: HandleIdInput.fromJson(json['handle']),
     );
@@ -7446,6 +7464,12 @@ final class LiveTargetRegistry extends LiveTarget {
   @override
   String get kind => 'registry';
   factory LiveTargetRegistry.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'handle', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for LiveTargetRegistry');
+      }
+    }
     return LiveTargetRegistry(
       handle: HandleIdInput.fromJson(json['handle']),
     );
@@ -12210,6 +12234,12 @@ final class StrategyRule extends Strategy {
   @override
   String get type => 'rule';
   factory StrategyRule.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StrategyRule');
+      }
+    }
     return StrategyRule();
   }
 
@@ -12226,6 +12256,12 @@ final class StrategyWeighted extends Strategy {
   @override
   String get type => 'weighted';
   factory StrategyWeighted.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'weights', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StrategyWeighted');
+      }
+    }
     return StrategyWeighted(
       weights: (json['weights'] as List)
           .map((item) => (item as num).toDouble())
@@ -12300,6 +12336,12 @@ final class StreamFrameEvent extends StreamFrame {
   @override
   String get type => 'event';
   factory StreamFrameEvent.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'event', 'seq', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StreamFrameEvent');
+      }
+    }
     return StreamFrameEvent(
       event: StreamEvent.fromJson(json['event']),
       seq: _u64String(json['seq'] as String),
@@ -12325,6 +12367,12 @@ final class StreamFrameEnd extends StreamFrame {
   @override
   String get type => 'end';
   factory StreamFrameEnd.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'error', 'outcome', 'seq', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StreamFrameEnd');
+      }
+    }
     return StreamFrameEnd(
       error: json['error'] == null
           ? null
@@ -14138,6 +14186,12 @@ final class ToolCallRepairReplyRepaired extends ToolCallRepairReply {
   @override
   String get type => 'repaired';
   factory ToolCallRepairReplyRepaired.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'toolCall', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyRepaired');
+      }
+    }
     return ToolCallRepairReplyRepaired(
       toolCall:
           RepairedToolCall.fromJson(json['toolCall'] as Map<String, dynamic>),
@@ -14155,6 +14209,12 @@ final class ToolCallRepairReplyUnchanged extends ToolCallRepairReply {
   @override
   String get type => 'unchanged';
   factory ToolCallRepairReplyUnchanged.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyUnchanged');
+      }
+    }
     return ToolCallRepairReplyUnchanged();
   }
 
@@ -14171,6 +14231,12 @@ final class ToolCallRepairReplyFailed extends ToolCallRepairReply {
   @override
   String get type => 'failed';
   factory ToolCallRepairReplyFailed.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'message', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyFailed');
+      }
+    }
     return ToolCallRepairReplyFailed(
       message: json['message'] as String,
     );
@@ -16350,6 +16416,12 @@ final class TransportParamsFetch extends TransportParams {
   @override
   String get kind => 'fetch';
   factory TransportParamsFetch.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'proxy', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsFetch');
+      }
+    }
     return TransportParamsFetch(
       proxy: json['proxy'] == null
           ? null
@@ -16371,6 +16443,12 @@ final class TransportParamsWs extends TransportParams {
   @override
   String get kind => 'ws';
   factory TransportParamsWs.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'proxy', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsWs');
+      }
+    }
     return TransportParamsWs(
       proxy: json['proxy'] == null
           ? null
@@ -16392,6 +16470,12 @@ final class TransportParamsDownload extends TransportParams {
   @override
   String get kind => 'download';
   factory TransportParamsDownload.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'maxBytes', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsDownload');
+      }
+    }
     return TransportParamsDownload(
       maxBytes: json['maxBytes'] as int?,
     );
@@ -16840,6 +16924,12 @@ final class UploadFileDataData extends UploadFileData {
   @override
   String get type => 'data';
   factory UploadFileDataData.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'data', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for UploadFileDataData');
+      }
+    }
     return UploadFileDataData(
       data: FileBytes.fromJson(json['data']),
     );
@@ -16859,6 +16949,12 @@ final class UploadFileDataText extends UploadFileData {
   @override
   String get type => 'text';
   factory UploadFileDataText.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'text', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for UploadFileDataText');
+      }
+    }
     return UploadFileDataText(
       text: json['text'] as String,
     );

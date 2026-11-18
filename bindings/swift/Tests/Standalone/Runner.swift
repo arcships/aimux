@@ -38,6 +38,7 @@ import Foundation
             ("testFilePartsAreTheAiSdkFilePart", { try WireTests.testFilePartsAreTheAiSdkFilePart() }),
             ("testToolChoiceCodableWire", { try WireTests.testToolChoiceCodableWire() }),
             ("testGenerateTextResultRoundTrip", { try WireTests.testGenerateTextResultRoundTrip() }),
+            ("testClosedTaggedVariantsRejectUnknownFields", { try WireTests.testClosedTaggedVariantsRejectUnknownFields() }),
         ]
         for (name, check) in checks {
             try await check()

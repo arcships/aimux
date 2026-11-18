@@ -407,7 +407,7 @@ async fn handle_exhausted_negative_state_behaves_per_contract() {
         }
     }
 
-    struct StubTranscription;
+    struct StubTranscription(Arc<AtomicUsize>);
     impl TranscriptionModel for StubTranscription {
         fn provider(&self) -> &str {
             "stub"
@@ -424,6 +424,7 @@ async fn handle_exhausted_negative_state_behaves_per_contract() {
             'b: 'f,
             Self: 'f,
         {
+            self.0.fetch_add(1, Ordering::SeqCst);
             Box::pin(async { Err(AiMuxError::other("stub transcription generate unused")) })
         }
         fn do_stream(
@@ -434,6 +435,7 @@ async fn handle_exhausted_negative_state_behaves_per_contract() {
                 Box<dyn Future<Output = Result<TranscriptionStreamResult, AiMuxError>> + Send + '_>,
             >,
         > {
+            self.0.fetch_add(1, Ordering::SeqCst);
             Some(Box::pin(async {
                 let empty: Pin<
                     Box<
@@ -501,7 +503,10 @@ async fn handle_exhausted_negative_state_behaves_per_contract() {
         .insert(owner, Entry::Files(Arc::clone(&stub_files)))
         .unwrap();
     let transcription_id = registry
-        .insert(owner, Entry::Transcription(Arc::new(StubTranscription)))
+        .insert(
+            owner,
+            Entry::Transcription(Arc::new(StubTranscription(Arc::clone(&provider_calls)))),
+        )
         .unwrap();
     let trace_created = dispatch::call(ctx(owner), HandleId(0), "trace.create", json!({}))
         .await
@@ -776,6 +781,28 @@ async fn handle_exhausted_negative_state_behaves_per_contract() {
         .expect("allocator recovers after ExhaustionGuard drop");
     let recovered_id = HandleId(recovered["handle"].as_str().unwrap().parse().unwrap());
     assert_ne!(recovered_id.0, 0);
+
+    // Overlapping ExhaustionGuards stay exhausted until the last active guard drops.
+    let guard_outer = test_exhaust_handle_allocator();
+    let guard_inner = test_exhaust_handle_allocator();
+    drop(guard_outer);
+    let still_exhausted = dispatch::call(ctx(owner), HandleId(0), "abort.create", json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(still_exhausted.code(), 306);
+    drop(guard_inner);
+    let recovered_after_overlap =
+        dispatch::call(ctx(owner), HandleId(0), "abort.create", json!({}))
+            .await
+            .expect("allocator recovers after all overlapping ExhaustionGuards drop");
+    assert_ne!(
+        recovered_after_overlap["handle"]
+            .as_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap(),
+        0
+    );
 
     registry.release_owner(owner);
     registry.release_owner(other);

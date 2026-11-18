@@ -12,6 +12,14 @@ def test_closed_and_open_objects():
     with pytest.raises(ValidationError, match='extra_forbidden'):
         dto.TextRequest.model_validate({'prompt': 'hello', 'unknown': True})
     assert dto.RequestInfo.model_validate({'unknown': True}).model_dump(by_alias=True) == {}
+    envelope = dto.ErrorEnvelope.model_validate({
+        'kind': 'protocol',
+        'code': 302,
+        'message': 'future',
+        'error': {'name': 'UnsupportedOpsVersion'},
+        'futureField': True,
+    })
+    assert envelope.code == 302
 
 
 def test_presence_and_nested_large_integers():

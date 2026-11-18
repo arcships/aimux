@@ -530,3 +530,50 @@ fn emits_schema_manifest_sources_and_type_schema_hashes_in_all_bindings() {
         }
     }
 }
+
+#[test]
+fn error_envelope_stays_open_and_closed_tagged_variants_stay_closed() {
+    let runtime = aimux_ops::manifest::manifest();
+    let outputs = generate(&runtime, &aimux_ops::manifest::manifest_digest()).unwrap();
+
+    let java_env = std::str::from_utf8(
+        &outputs[Path::new("bindings/java/generated/ai/arcships/aimux/types/ErrorEnvelope.java")],
+    )
+    .unwrap();
+    assert!(
+        java_env.contains("@JsonIgnoreProperties(ignoreUnknown = true)"),
+        "Java ErrorEnvelope must ignore unknown fields"
+    );
+
+    let py_types =
+        std::str::from_utf8(&outputs[Path::new("bindings/python/python/aimux/_types.py")]).unwrap();
+    let py_env_block = py_types
+        .split("class ErrorEnvelope(_Wire):")
+        .nth(1)
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !py_env_block.contains("extra=\"forbid\""),
+        "Python ErrorEnvelope must remain open"
+    );
+
+    let dart_types =
+        std::str::from_utf8(&outputs[Path::new("bindings/flutter/lib/src/generated/types.dart")])
+            .unwrap();
+    assert!(
+        dart_types.contains("const allowedKeys = <String>{'capacity', 'type'};"),
+        "Dart BackendConfigRing must enforce closed keys while allowing discriminator"
+    );
+
+    let go_types = std::str::from_utf8(&outputs[Path::new("bindings/go/types_gen.go")]).unwrap();
+    assert!(
+        !go_types.contains("DisallowUnknownFields"),
+        "Go closed structs must not use decoder-wide DisallowUnknownFields"
+    );
+    assert!(
+        go_types.contains("func (v *BackendConfigVariantRing) UnmarshalJSON"),
+        "Go closed tagged variants must validate their own keys"
+    );
+}

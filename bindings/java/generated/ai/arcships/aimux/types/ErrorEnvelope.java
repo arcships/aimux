@@ -11,7 +11,7 @@ import java.util.*;
  * Keep the payload open so newer error variants, provider data, and explicit
  * JSON nulls survive decoding and re-encoding by an older adapter.
  */
-@JsonIgnoreProperties(ignoreUnknown = false)
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ErrorEnvelope {

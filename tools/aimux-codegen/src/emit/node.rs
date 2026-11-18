@@ -78,7 +78,7 @@ fn schema_ty(ty: &Ty) -> Value {
         Ty::Ref(name) => json!(["r", name]),
         Ty::String => json!("s"),
         Ty::Bool => json!("b"),
-        Ty::Int { .. } => json!("i"),
+        Ty::Int { unsigned, bits } => json!(["i", unsigned, bits]),
         Ty::Float => json!("f"),
         Ty::Json => json!("j"),
         Ty::Literal(expected) => json!(["l", expected]),
@@ -103,6 +103,7 @@ fn schema_spec(named: &NamedType) -> Value {
             "g": tag,
             "v": variants.iter().map(|v| json!({
                 "tv": v.tag_value,
+                "c": v.closed,
                 "f": schema_fields(&v.fields),
             })).collect::<Vec<_>>(),
         }),
@@ -115,7 +116,8 @@ fn schema_spec(named: &NamedType) -> Value {
 }
 
 const NODE_VALIDATOR: &str = r#"type SchemaTy =
-  | 's' | 'b' | 'i' | 'f' | 'j' | 'u64'
+  | 's' | 'b' | 'f' | 'j' | 'u64'
+  | ['i', boolean, number]
   | ['r', string] | ['l', string] | ['a', SchemaTy] | ['m', SchemaTy] | ['n', SchemaTy]
 
 type FieldSpec = readonly [boolean, SchemaTy]
@@ -123,7 +125,7 @@ type FieldSpec = readonly [boolean, SchemaTy]
 type TypeSpec =
   | { k: 's'; c: boolean; f: Record<string, FieldSpec> }
   | { k: 'e'; v: readonly string[] }
-  | { k: 't'; g: string; v: ReadonlyArray<{ tv: string; f: Record<string, FieldSpec> }> }
+  | { k: 't'; g: string; v: ReadonlyArray<{ tv: string; c: boolean; f: Record<string, FieldSpec> }> }
   | { k: 'u'; b: readonly SchemaTy[] }
   | { k: 'a'; t: SchemaTy }
 
@@ -132,14 +134,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isU64String(value: unknown): boolean {
-  if (typeof value !== 'string' || !/^(0|[1-9][0-9]{0,19})$/.test(value)) return false
-  return value.length < 20 || value <= '18446744073709551615'
+  if (typeof value !== 'string' || !/^[0-9]+$/.test(value)) return false
+  const digits = value.replace(/^0+/, '')
+  return digits.length < 20 || (digits.length === 20 && digits <= '18446744073709551615')
 }
 
-function checkFields(name: string, obj: Record<string, unknown>, fields: Record<string, FieldSpec>, closed: boolean): void {
+function isIntInRange(value: unknown, unsigned: boolean, bits: number): boolean {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return false
+  if (unsigned) {
+    if (value < 0) return false
+    if (bits <= 32) return value <= (bits === 32 ? 4294967295 : (1 << bits) - 1)
+    return value <= 18446744073709551616
+  }
+  if (bits <= 32) {
+    const bound = 2 ** (bits - 1)
+    return value >= -bound && value <= bound - 1
+  }
+  return value >= -9223372036854775808 && value <= 9223372036854775808
+}
+
+function checkFields(name: string, obj: Record<string, unknown>, fields: Record<string, FieldSpec>, closed: boolean, tag?: string): void {
   if (closed) {
     for (const k of Object.keys(obj)) {
-      if (!Object.prototype.hasOwnProperty.call(fields, k)) {
+      if (k !== tag && !Object.prototype.hasOwnProperty.call(fields, k)) {
         throw new Error(`Unknown field ${k} for ${name}`)
       }
     }
@@ -158,13 +175,13 @@ function checkTy(path: string, value: unknown, ty: SchemaTy): void {
     switch (ty) {
       case 's': if (typeof value !== 'string') throw new Error(`Expected string at ${path}`); return
       case 'b': if (typeof value !== 'boolean') throw new Error(`Expected boolean at ${path}`); return
-      case 'i': if (typeof value !== 'number' || !Number.isInteger(value)) throw new Error(`Expected integer at ${path}`); return
       case 'f': if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Expected number at ${path}`); return
       case 'j': if (value === undefined) throw new Error(`Expected JSON value at ${path}`); return
       case 'u64': if (!isU64String(value)) throw new Error(`Expected u64 string at ${path}`); return
     }
   }
   switch (ty[0]) {
+    case 'i': if (!isIntInRange(value, ty[1], ty[2])) throw new Error(`Expected integer at ${path}`); return
     case 'r': validateDto(ty[1], value); return
     case 'l': if (value !== ty[1]) throw new Error(`Expected literal ${ty[1]} at ${path}`); return
     case 'a':
@@ -202,7 +219,7 @@ export function validateDto(type: string, value: unknown): void {
       let lastError: unknown
       for (const candidate of candidates) {
         try {
-          checkFields(type, value, candidate.f, false)
+          checkFields(type, value, candidate.f, candidate.c, spec.g)
           return
         } catch (error) {
           lastError = error

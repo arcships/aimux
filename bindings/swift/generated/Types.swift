@@ -1267,12 +1267,25 @@ public indirect enum BackendConfig: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "jsonl":
+            let allowed: Set<String> = ["directory", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .jsonl(directory: try c.decode(String.self, forKey: .directory))
             return
         case "ring":
+            let allowed: Set<String> = ["capacity", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .ring(capacity: try c.decodeIfPresent(UInt64.self, forKey: .capacity))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown BackendConfig tag \(tag)"))
@@ -4083,12 +4096,25 @@ public indirect enum LiveTarget: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .kind)
         switch tag {
         case "model":
+            let allowed: Set<String> = ["handle", "kind"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .model(handle: try c.decode(HandleIdInput.self, forKey: .handle))
             return
         case "registry":
+            let allowed: Set<String> = ["handle", "kind"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .registry(handle: try c.decode(HandleIdInput.self, forKey: .handle))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown LiveTarget tag \(tag)"))
@@ -7377,12 +7403,25 @@ public indirect enum Strategy: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "rule":
+            let allowed: Set<String> = ["type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .rule
             return
         case "weighted":
+            let allowed: Set<String> = ["weights", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .weighted(weights: try c.decode([Double].self, forKey: .weights))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown Strategy tag \(tag)"))
@@ -7430,12 +7469,25 @@ public indirect enum StreamFrame: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "end":
+            let allowed: Set<String> = ["error", "outcome", "seq", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .end(error: try c.decodeIfPresent(ErrorEnvelope.self, forKey: .error), outcome: try c.decode(Outcome.self, forKey: .outcome), seq: try c.decode(WireUInt64.self, forKey: .seq))
             return
         case "event":
+            let allowed: Set<String> = ["event", "seq", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .event(event: try c.decode(StreamEvent.self, forKey: .event), seq: try c.decode(WireUInt64.self, forKey: .seq))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown StreamFrame tag \(tag)"))
@@ -8366,15 +8418,34 @@ public indirect enum ToolCallRepairReply: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "failed":
+            let allowed: Set<String> = ["message", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .failed(message: try c.decode(String.self, forKey: .message))
             return
         case "repaired":
+            let allowed: Set<String> = ["toolCall", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .repaired(toolCall: try c.decode(RepairedToolCall.self, forKey: .toolCall))
             return
         case "unchanged":
+            let allowed: Set<String> = ["type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .unchanged
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown ToolCallRepairReply tag \(tag)"))
@@ -9609,15 +9680,34 @@ public indirect enum TransportParams: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .kind)
         switch tag {
         case "download":
+            let allowed: Set<String> = ["maxBytes", "kind"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .download(maxBytes: try c.decodeIfPresent(UInt64.self, forKey: .maxBytes))
             return
         case "fetch":
+            let allowed: Set<String> = ["proxy", "kind"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .fetch(proxy: try c.decodeIfPresent(TransportProxy.self, forKey: .proxy))
             return
         case "ws":
+            let allowed: Set<String> = ["proxy", "kind"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .ws(proxy: try c.decodeIfPresent(TransportProxy.self, forKey: .proxy))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown TransportParams tag \(tag)"))
@@ -9957,12 +10047,25 @@ public indirect enum UploadFileData: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try decoder.container(keyedBy: WireKey.self)
         let tag = try c.decode(String.self, forKey: .type)
         switch tag {
         case "data":
+            let allowed: Set<String> = ["data", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .data(data: try c.decode(FileBytes.self, forKey: .data))
             return
         case "text":
+            let allowed: Set<String> = ["text", "type"]
+            for key in raw.allKeys {
+                if !allowed.contains(key.stringValue) {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+                }
+            }
             self = .text(text: try c.decode(String.self, forKey: .text))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown UploadFileData tag \(tag)"))

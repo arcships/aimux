@@ -1941,6 +1941,30 @@ type BackendConfigVariantRing struct {
 	Capacity *uint64 `json:"capacity,omitzero"`
 }
 
+func (v *BackendConfigVariantRing) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for BackendConfigVariantRing, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "capacity", "type":
+		default:
+			return fmt.Errorf("unknown field %q in BackendConfigVariantRing", key)
+		}
+	}
+	type alias BackendConfigVariantRing
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = BackendConfigVariantRing(tmp)
+	return nil
+}
+
 func (BackendConfigVariantRing) isBackendConfig() {}
 
 func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
@@ -1953,6 +1977,30 @@ func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
 
 type BackendConfigVariantJsonl struct {
 	Directory string `json:"directory"`
+}
+
+func (v *BackendConfigVariantJsonl) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for BackendConfigVariantJsonl, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "directory", "type":
+		default:
+			return fmt.Errorf("unknown field %q in BackendConfigVariantJsonl", key)
+		}
+	}
+	type alias BackendConfigVariantJsonl
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = BackendConfigVariantJsonl(tmp)
+	return nil
 }
 
 func (BackendConfigVariantJsonl) isBackendConfig() {}
@@ -2047,18 +2095,24 @@ type CatalogueFetchRequest struct {
 }
 
 func (v *CatalogueFetchRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for CatalogueFetchRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "sourceUrl":
+		default:
+			return fmt.Errorf("unknown field %q in CatalogueFetchRequest", key)
+		}
 	}
 	type alias CatalogueFetchRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in CatalogueFetchRequest")
 	}
 	*v = CatalogueFetchRequest(tmp)
 	return nil
@@ -2181,18 +2235,24 @@ type CodexRefreshRequest struct {
 }
 
 func (v *CodexRefreshRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for CodexRefreshRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "clientId", "refreshToken":
+		default:
+			return fmt.Errorf("unknown field %q in CodexRefreshRequest", key)
+		}
 	}
 	type alias CodexRefreshRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in CodexRefreshRequest")
 	}
 	*v = CodexRefreshRequest(tmp)
 	return nil
@@ -2928,18 +2988,24 @@ type CreateRecorderParams struct {
 }
 
 func (v *CreateRecorderParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for CreateRecorderParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "backend", "capturePolicy":
+		default:
+			return fmt.Errorf("unknown field %q in CreateRecorderParams", key)
+		}
 	}
 	type alias CreateRecorderParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in CreateRecorderParams")
 	}
 	*v = CreateRecorderParams(tmp)
 	return nil
@@ -2950,18 +3016,24 @@ type CredentialParams struct {
 }
 
 func (v *CredentialParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for CredentialParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "kind":
+		default:
+			return fmt.Errorf("unknown field %q in CredentialParams", key)
+		}
 	}
 	type alias CredentialParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in CredentialParams")
 	}
 	*v = CredentialParams(tmp)
 	return nil
@@ -2987,18 +3059,24 @@ type DecideOptions struct {
 }
 
 func (v *DecideOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for DecideOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "maxRetries", "providerOptions", "questions", "state", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in DecideOptions", key)
+		}
 	}
 	type alias DecideOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in DecideOptions")
 	}
 	*v = DecideOptions(tmp)
 	return nil
@@ -3131,18 +3209,24 @@ type DecisionBooleanCriteria struct {
 }
 
 func (v *DecisionBooleanCriteria) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for DecisionBooleanCriteria, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "false", "true":
+		default:
+			return fmt.Errorf("unknown field %q in DecisionBooleanCriteria", key)
+		}
 	}
 	type alias DecisionBooleanCriteria
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in DecisionBooleanCriteria")
 	}
 	*v = DecisionBooleanCriteria(tmp)
 	return nil
@@ -3157,18 +3241,24 @@ type DecisionDecideRequest struct {
 }
 
 func (v *DecisionDecideRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for DecisionDecideRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options":
+		default:
+			return fmt.Errorf("unknown field %q in DecisionDecideRequest", key)
+		}
 	}
 	type alias DecisionDecideRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in DecisionDecideRequest")
 	}
 	*v = DecisionDecideRequest(tmp)
 	return nil
@@ -3352,18 +3442,24 @@ type EmbeddingCallOptions struct {
 }
 
 func (v *EmbeddingCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for EmbeddingCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "maxRetries", "providerOptions", "timeout", "values":
+		default:
+			return fmt.Errorf("unknown field %q in EmbeddingCallOptions", key)
+		}
 	}
 	type alias EmbeddingCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in EmbeddingCallOptions")
 	}
 	*v = EmbeddingCallOptions(tmp)
 	return nil
@@ -3402,12 +3498,12 @@ type EmbeddingUsage struct {
 type EmptyParams struct{}
 
 func (v *EmptyParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return fmt.Errorf("expected object for EmptyParams, got null")
-	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for EmptyParams, got null")
 	}
 	if len(raw) > 0 {
 		return fmt.Errorf("unknown field in EmptyParams")
@@ -4191,18 +4287,24 @@ type GenerateTextOptions struct {
 }
 
 func (v *GenerateTextOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for GenerateTextOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		default:
+			return fmt.Errorf("unknown field %q in GenerateTextOptions", key)
+		}
 	}
 	type alias GenerateTextOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in GenerateTextOptions")
 	}
 	*v = GenerateTextOptions(tmp)
 	return nil
@@ -4468,18 +4570,24 @@ type ImageCallOptions struct {
 }
 
 func (v *ImageCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ImageCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aspectRatio", "files", "headers", "mask", "maxRetries", "n", "prompt", "providerOptions", "seed", "size", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in ImageCallOptions", key)
+		}
 	}
 	type alias ImageCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ImageCallOptions")
 	}
 	*v = ImageCallOptions(tmp)
 	return nil
@@ -4619,18 +4727,24 @@ type InputAudioFormat struct {
 }
 
 func (v *InputAudioFormat) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for InputAudioFormat, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "formatType", "rate":
+		default:
+			return fmt.Errorf("unknown field %q in InputAudioFormat", key)
+		}
 	}
 	type alias InputAudioFormat
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in InputAudioFormat")
 	}
 	*v = InputAudioFormat(tmp)
 	return nil
@@ -5143,6 +5257,30 @@ type LiveTargetVariantModel struct {
 	Handle HandleIdInput `json:"handle"`
 }
 
+func (v *LiveTargetVariantModel) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for LiveTargetVariantModel, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "handle", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in LiveTargetVariantModel", key)
+		}
+	}
+	type alias LiveTargetVariantModel
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = LiveTargetVariantModel(tmp)
+	return nil
+}
+
 func (LiveTargetVariantModel) isLiveTarget() {}
 
 func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
@@ -5155,6 +5293,30 @@ func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
 
 type LiveTargetVariantRegistry struct {
 	Handle HandleIdInput `json:"handle"`
+}
+
+func (v *LiveTargetVariantRegistry) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for LiveTargetVariantRegistry, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "handle", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in LiveTargetVariantRegistry", key)
+		}
+	}
+	type alias LiveTargetVariantRegistry
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = LiveTargetVariantRegistry(tmp)
+	return nil
 }
 
 func (LiveTargetVariantRegistry) isLiveTarget() {}
@@ -5197,18 +5359,24 @@ type LoggingConfig struct {
 }
 
 func (v *LoggingConfig) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for LoggingConfig, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "level":
+		default:
+			return fmt.Errorf("unknown field %q in LoggingConfig", key)
+		}
 	}
 	type alias LoggingConfig
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in LoggingConfig")
 	}
 	*v = LoggingConfig(tmp)
 	return nil
@@ -5244,18 +5412,24 @@ type MiddlewareParams struct {
 }
 
 func (v *MiddlewareParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for MiddlewareParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "auditMode", "kind", "scopeName", "traceStore":
+		default:
+			return fmt.Errorf("unknown field %q in MiddlewareParams", key)
+		}
 	}
 	type alias MiddlewareParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in MiddlewareParams")
 	}
 	*v = MiddlewareParams(tmp)
 	return nil
@@ -5304,18 +5478,24 @@ type MoaParams struct {
 }
 
 func (v *MoaParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for MoaParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aggregator", "aggregatorInstructions", "failMode", "modelId", "providerName", "references", "stripReferenceTools":
+		default:
+			return fmt.Errorf("unknown field %q in MoaParams", key)
+		}
 	}
 	type alias MoaParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in MoaParams")
 	}
 	*v = MoaParams(tmp)
 	return nil
@@ -5381,12 +5561,12 @@ type ModelInfo struct {
 type ModelInfoParams struct{}
 
 func (v *ModelInfoParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return fmt.Errorf("expected object for ModelInfoParams, got null")
-	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ModelInfoParams, got null")
 	}
 	if len(raw) > 0 {
 		return fmt.Errorf("unknown field in ModelInfoParams")
@@ -5603,18 +5783,24 @@ type ModelRef struct {
 }
 
 func (v *ModelRef) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ModelRef, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key", "method", "modelId", "namespace":
+		default:
+			return fmt.Errorf("unknown field %q in ModelRef", key)
+		}
 	}
 	type alias ModelRef
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ModelRef")
 	}
 	*v = ModelRef(tmp)
 	return nil
@@ -5625,18 +5811,24 @@ type ModelResolveParams struct {
 }
 
 func (v *ModelResolveParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ModelResolveParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "modelRef":
+		default:
+			return fmt.Errorf("unknown field %q in ModelResolveParams", key)
+		}
 	}
 	type alias ModelResolveParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ModelResolveParams")
 	}
 	*v = ModelResolveParams(tmp)
 	return nil
@@ -5695,18 +5887,24 @@ type ModelWrapParams struct {
 }
 
 func (v *ModelWrapParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ModelWrapParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "middleware":
+		default:
+			return fmt.Errorf("unknown field %q in ModelWrapParams", key)
+		}
 	}
 	type alias ModelWrapParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ModelWrapParams")
 	}
 	*v = ModelWrapParams(tmp)
 	return nil
@@ -5728,18 +5926,24 @@ type OpenAiOutputRequest struct {
 }
 
 func (v *OpenAiOutputRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for OpenAiOutputRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "metadataNamespace", "result":
+		default:
+			return fmt.Errorf("unknown field %q in OpenAiOutputRequest", key)
+		}
 	}
 	type alias OpenAiOutputRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in OpenAiOutputRequest")
 	}
 	*v = OpenAiOutputRequest(tmp)
 	return nil
@@ -5753,18 +5957,24 @@ type OpenAiTextRequest struct {
 }
 
 func (v *OpenAiTextRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for OpenAiTextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options", "prompt", "streamOptions":
+		default:
+			return fmt.Errorf("unknown field %q in OpenAiTextRequest", key)
+		}
 	}
 	type alias OpenAiTextRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in OpenAiTextRequest")
 	}
 	*v = OpenAiTextRequest(tmp)
 	return nil
@@ -5782,18 +5992,24 @@ type OperationNextParams struct {
 }
 
 func (v *OperationNextParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for OperationNextParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "timeoutMs":
+		default:
+			return fmt.Errorf("unknown field %q in OperationNextParams", key)
+		}
 	}
 	type alias OperationNextParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in OperationNextParams")
 	}
 	*v = OperationNextParams(tmp)
 	return nil
@@ -5990,18 +6206,24 @@ type Options struct {
 }
 
 func (v *Options) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for Options, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		default:
+			return fmt.Errorf("unknown field %q in Options", key)
+		}
 	}
 	type alias Options
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in Options")
 	}
 	*v = Options(tmp)
 	return nil
@@ -6249,18 +6471,24 @@ type ProviderCreateParams struct {
 }
 
 func (v *ProviderCreateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "package", "settings":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderCreateParams", key)
+		}
 	}
 	type alias ProviderCreateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderCreateParams")
 	}
 	*v = ProviderCreateParams(tmp)
 	return nil
@@ -6284,18 +6512,24 @@ type ProviderCustomParams struct {
 }
 
 func (v *ProviderCustomParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderCustomParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "decisionModels", "defaultMethod", "embeddingModels", "fallbackProvider", "files", "imageModelMiddleware", "imageModels", "languageModelMiddleware", "languageModels", "rerankingModels", "searchModels", "speechModels", "transcriptionModels", "videoModels":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderCustomParams", key)
+		}
 	}
 	type alias ProviderCustomParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderCustomParams")
 	}
 	*v = ProviderCustomParams(tmp)
 	return nil
@@ -6306,18 +6540,24 @@ type ProviderDefaultParams struct {
 }
 
 func (v *ProviderDefaultParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderDefaultParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "package":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderDefaultParams", key)
+		}
 	}
 	type alias ProviderDefaultParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderDefaultParams")
 	}
 	*v = ProviderDefaultParams(tmp)
 	return nil
@@ -6329,18 +6569,24 @@ type ProviderInvokeParams struct {
 }
 
 func (v *ProviderInvokeParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderInvokeParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "method":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderInvokeParams", key)
+		}
 	}
 	type alias ProviderInvokeParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderInvokeParams")
 	}
 	*v = ProviderInvokeParams(tmp)
 	return nil
@@ -6352,18 +6598,24 @@ type ProviderModelParams struct {
 }
 
 func (v *ProviderModelParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderModelParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "method", "modelId":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderModelParams", key)
+		}
 	}
 	type alias ProviderModelParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderModelParams")
 	}
 	*v = ProviderModelParams(tmp)
 	return nil
@@ -6399,18 +6651,24 @@ type ProviderSettings struct {
 }
 
 func (v *ProviderSettings) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderSettings, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "apiKey", "baseUrl", "credentialResolver", "endpoint", "fetch", "headers", "organization", "params", "probabilitySource", "project", "webSocket":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderSettings", key)
+		}
 	}
 	type alias ProviderSettings
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderSettings")
 	}
 	*v = ProviderSettings(tmp)
 	return nil
@@ -6446,18 +6704,24 @@ type ProviderWrapParams struct {
 }
 
 func (v *ProviderWrapParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ProviderWrapParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "imageModelMiddleware", "languageModelMiddleware":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderWrapParams", key)
+		}
 	}
 	type alias ProviderWrapParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ProviderWrapParams")
 	}
 	*v = ProviderWrapParams(tmp)
 	return nil
@@ -6858,18 +7122,24 @@ type RegistryCreateParams struct {
 }
 
 func (v *RegistryCreateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RegistryCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "entries", "namespace":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryCreateParams", key)
+		}
 	}
 	type alias RegistryCreateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RegistryCreateParams")
 	}
 	*v = RegistryCreateParams(tmp)
 	return nil
@@ -6881,18 +7151,24 @@ type RegistryEntry struct {
 }
 
 func (v *RegistryEntry) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RegistryEntry, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key", "provider":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryEntry", key)
+		}
 	}
 	type alias RegistryEntry
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RegistryEntry")
 	}
 	*v = RegistryEntry(tmp)
 	return nil
@@ -6903,18 +7179,24 @@ type RegistryProviderParams struct {
 }
 
 func (v *RegistryProviderParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RegistryProviderParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryProviderParams", key)
+		}
 	}
 	type alias RegistryProviderParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RegistryProviderParams")
 	}
 	*v = RegistryProviderParams(tmp)
 	return nil
@@ -6937,18 +7219,24 @@ type ReplayCreateParams struct {
 }
 
 func (v *ReplayCreateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ReplayCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "recordingsJsonl":
+		default:
+			return fmt.Errorf("unknown field %q in ReplayCreateParams", key)
+		}
 	}
 	type alias ReplayCreateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ReplayCreateParams")
 	}
 	*v = ReplayCreateParams(tmp)
 	return nil
@@ -6965,18 +7253,24 @@ type ReplayLiveParams struct {
 }
 
 func (v *ReplayLiveParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ReplayLiveParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "callId", "target":
+		default:
+			return fmt.Errorf("unknown field %q in ReplayLiveParams", key)
+		}
 	}
 	type alias ReplayLiveParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ReplayLiveParams")
 	}
 	*v = ReplayLiveParams(tmp)
 	return nil
@@ -7087,18 +7381,24 @@ type RerankingCallOptions struct {
 }
 
 func (v *RerankingCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RerankingCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "documents", "headers", "maxRetries", "providerOptions", "query", "timeout", "topN":
+		default:
+			return fmt.Errorf("unknown field %q in RerankingCallOptions", key)
+		}
 	}
 	type alias RerankingCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RerankingCallOptions")
 	}
 	*v = RerankingCallOptions(tmp)
 	return nil
@@ -7281,18 +7581,24 @@ type RouterParams struct {
 }
 
 func (v *RouterParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RouterParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "children", "fallback", "modelId", "providerName", "strategy":
+		default:
+			return fmt.Errorf("unknown field %q in RouterParams", key)
+		}
 	}
 	type alias RouterParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RouterParams")
 	}
 	*v = RouterParams(tmp)
 	return nil
@@ -7304,18 +7610,24 @@ type RuntimeConfigureParams struct {
 }
 
 func (v *RuntimeConfigureParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for RuntimeConfigureParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "logging", "proxy":
+		default:
+			return fmt.Errorf("unknown field %q in RuntimeConfigureParams", key)
+		}
 	}
 	type alias RuntimeConfigureParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in RuntimeConfigureParams")
 	}
 	*v = RuntimeConfigureParams(tmp)
 	return nil
@@ -7324,12 +7636,12 @@ func (v *RuntimeConfigureParams) UnmarshalJSON(data []byte) error {
 type RuntimeDescribeParams struct{}
 
 func (v *RuntimeDescribeParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return fmt.Errorf("expected object for RuntimeDescribeParams, got null")
-	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RuntimeDescribeParams, got null")
 	}
 	if len(raw) > 0 {
 		return fmt.Errorf("unknown field in RuntimeDescribeParams")
@@ -7389,18 +7701,24 @@ type SearchCallOptions struct {
 }
 
 func (v *SearchCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for SearchCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "excludeDomains", "headers", "includeDomains", "includeRawContent", "maxResults", "maxRetries", "providerOptions", "query", "timeRange", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in SearchCallOptions", key)
+		}
 	}
 	type alias SearchCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in SearchCallOptions")
 	}
 	*v = SearchCallOptions(tmp)
 	return nil
@@ -7509,18 +7827,24 @@ type SessionStoreCallsParams struct {
 }
 
 func (v *SessionStoreCallsParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for SessionStoreCallsParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "sessionId":
+		default:
+			return fmt.Errorf("unknown field %q in SessionStoreCallsParams", key)
+		}
 	}
 	type alias SessionStoreCallsParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in SessionStoreCallsParams")
 	}
 	*v = SessionStoreCallsParams(tmp)
 	return nil
@@ -7531,18 +7855,24 @@ type SessionStoreCreateParams struct {
 }
 
 func (v *SessionStoreCreateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for SessionStoreCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "infer":
+		default:
+			return fmt.Errorf("unknown field %q in SessionStoreCreateParams", key)
+		}
 	}
 	type alias SessionStoreCreateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in SessionStoreCreateParams")
 	}
 	*v = SessionStoreCreateParams(tmp)
 	return nil
@@ -7684,18 +8014,24 @@ type SpeechCallOptions struct {
 }
 
 func (v *SpeechCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for SpeechCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "instructions", "language", "maxRetries", "outputFormat", "providerOptions", "speed", "text", "timeout", "voice":
+		default:
+			return fmt.Errorf("unknown field %q in SpeechCallOptions", key)
+		}
 	}
 	type alias SpeechCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in SpeechCallOptions")
 	}
 	*v = SpeechCallOptions(tmp)
 	return nil
@@ -7940,6 +8276,24 @@ func (v *Strategy) UnmarshalJSON(data []byte) error {
 
 type StrategyVariantRule struct{}
 
+func (v *StrategyVariantRule) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StrategyVariantRule, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "type":
+		default:
+			return fmt.Errorf("unknown field %q in StrategyVariantRule", key)
+		}
+	}
+	return nil
+}
+
 func (StrategyVariantRule) isStrategy() {}
 
 func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
@@ -7952,6 +8306,30 @@ func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
 
 type StrategyVariantWeighted struct {
 	Weights []float64 `json:"weights"`
+}
+
+func (v *StrategyVariantWeighted) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StrategyVariantWeighted, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "weights", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StrategyVariantWeighted", key)
+		}
+	}
+	type alias StrategyVariantWeighted
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StrategyVariantWeighted(tmp)
+	return nil
 }
 
 func (StrategyVariantWeighted) isStrategy() {}
@@ -8049,6 +8427,30 @@ type StreamFrameVariantEvent struct {
 	Seq   Uint64String `json:"seq"`
 }
 
+func (v *StreamFrameVariantEvent) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StreamFrameVariantEvent, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "event", "seq", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StreamFrameVariantEvent", key)
+		}
+	}
+	type alias StreamFrameVariantEvent
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StreamFrameVariantEvent(tmp)
+	return nil
+}
+
 func (StreamFrameVariantEvent) isStreamFrame() {}
 
 func (v StreamFrameVariantEvent) MarshalJSON() ([]byte, error) {
@@ -8063,6 +8465,30 @@ type StreamFrameVariantEnd struct {
 	Error   *ErrorEnvelope `json:"error,omitzero"`
 	Outcome Outcome        `json:"outcome"`
 	Seq     Uint64String   `json:"seq"`
+}
+
+func (v *StreamFrameVariantEnd) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StreamFrameVariantEnd, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "error", "outcome", "seq", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StreamFrameVariantEnd", key)
+		}
+	}
+	type alias StreamFrameVariantEnd
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StreamFrameVariantEnd(tmp)
+	return nil
 }
 
 func (StreamFrameVariantEnd) isStreamFrame() {}
@@ -8081,18 +8507,24 @@ type StreamOptions struct {
 }
 
 func (v *StreamOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for StreamOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "includeReasoning", "includeUsage":
+		default:
+			return fmt.Errorf("unknown field %q in StreamOptions", key)
+		}
 	}
 	type alias StreamOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in StreamOptions")
 	}
 	*v = StreamOptions(tmp)
 	return nil
@@ -8148,18 +8580,24 @@ type TextRequest struct {
 }
 
 func (v *TextRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options", "prompt":
+		default:
+			return fmt.Errorf("unknown field %q in TextRequest", key)
+		}
 	}
 	type alias TextRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TextRequest")
 	}
 	*v = TextRequest(tmp)
 	return nil
@@ -8903,18 +9341,24 @@ type TimeoutConfiguration struct {
 }
 
 func (v *TimeoutConfiguration) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TimeoutConfiguration, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "chunkMs", "firstChunkMs", "stepMs", "totalMs":
+		default:
+			return fmt.Errorf("unknown field %q in TimeoutConfiguration", key)
+		}
 	}
 	type alias TimeoutConfiguration
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TimeoutConfiguration")
 	}
 	*v = TimeoutConfiguration(tmp)
 	return nil
@@ -9190,6 +9634,30 @@ type ToolCallRepairReplyVariantRepaired struct {
 	ToolCall RepairedToolCall `json:"toolCall"`
 }
 
+func (v *ToolCallRepairReplyVariantRepaired) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantRepaired, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "toolCall", "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantRepaired", key)
+		}
+	}
+	type alias ToolCallRepairReplyVariantRepaired
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolCallRepairReplyVariantRepaired(tmp)
+	return nil
+}
+
 func (ToolCallRepairReplyVariantRepaired) isToolCallRepairReply() {}
 
 func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
@@ -9201,6 +9669,24 @@ func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
 }
 
 type ToolCallRepairReplyVariantUnchanged struct{}
+
+func (v *ToolCallRepairReplyVariantUnchanged) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantUnchanged, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantUnchanged", key)
+		}
+	}
+	return nil
+}
 
 func (ToolCallRepairReplyVariantUnchanged) isToolCallRepairReply() {}
 
@@ -9214,6 +9700,30 @@ func (v ToolCallRepairReplyVariantUnchanged) MarshalJSON() ([]byte, error) {
 
 type ToolCallRepairReplyVariantFailed struct {
 	Message string `json:"message"`
+}
+
+func (v *ToolCallRepairReplyVariantFailed) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantFailed, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "message", "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantFailed", key)
+		}
+	}
+	type alias ToolCallRepairReplyVariantFailed
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolCallRepairReplyVariantFailed(tmp)
+	return nil
 }
 
 func (ToolCallRepairReplyVariantFailed) isToolCallRepairReply() {}
@@ -9486,18 +9996,24 @@ type ToolRepairApplyRequest struct {
 }
 
 func (v *ToolRepairApplyRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ToolRepairApplyRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "reply", "toolCall":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairApplyRequest", key)
+		}
 	}
 	type alias ToolRepairApplyRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ToolRepairApplyRequest")
 	}
 	*v = ToolRepairApplyRequest(tmp)
 	return nil
@@ -9511,18 +10027,24 @@ type ToolRepairApplyResultRequest struct {
 }
 
 func (v *ToolRepairApplyResultRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ToolRepairApplyResultRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "reply", "result", "toolCallId":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairApplyResultRequest", key)
+		}
 	}
 	type alias ToolRepairApplyResultRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ToolRepairApplyResultRequest")
 	}
 	*v = ToolRepairApplyResultRequest(tmp)
 	return nil
@@ -9535,18 +10057,24 @@ type ToolRepairContextRequest struct {
 }
 
 func (v *ToolRepairContextRequest) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for ToolRepairContextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "prompt", "toolCall":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairContextRequest", key)
+		}
 	}
 	type alias ToolRepairContextRequest
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in ToolRepairContextRequest")
 	}
 	*v = ToolRepairContextRequest(tmp)
 	return nil
@@ -10169,18 +10697,24 @@ type TraceAggregateFilter struct {
 }
 
 func (v *TraceAggregateFilter) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TraceAggregateFilter, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "model", "provider", "sessionId", "sinceUnixMs":
+		default:
+			return fmt.Errorf("unknown field %q in TraceAggregateFilter", key)
+		}
 	}
 	type alias TraceAggregateFilter
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TraceAggregateFilter")
 	}
 	*v = TraceAggregateFilter(tmp)
 	return nil
@@ -10191,18 +10725,24 @@ type TraceAggregateParams struct {
 }
 
 func (v *TraceAggregateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TraceAggregateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "filter":
+		default:
+			return fmt.Errorf("unknown field %q in TraceAggregateParams", key)
+		}
 	}
 	type alias TraceAggregateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TraceAggregateParams")
 	}
 	*v = TraceAggregateParams(tmp)
 	return nil
@@ -10237,18 +10777,24 @@ type TraceCreateParams struct {
 }
 
 func (v *TraceCreateParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TraceCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "auditMode", "capacity", "perScopeCapacity":
+		default:
+			return fmt.Errorf("unknown field %q in TraceCreateParams", key)
+		}
 	}
 	type alias TraceCreateParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TraceCreateParams")
 	}
 	*v = TraceCreateParams(tmp)
 	return nil
@@ -10290,18 +10836,24 @@ type TraceSessionParams struct {
 }
 
 func (v *TraceSessionParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TraceSessionParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "sessionId":
+		default:
+			return fmt.Errorf("unknown field %q in TraceSessionParams", key)
+		}
 	}
 	type alias TraceSessionParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TraceSessionParams")
 	}
 	*v = TraceSessionParams(tmp)
 	return nil
@@ -10347,18 +10899,24 @@ type TranscriptionCallOptions struct {
 }
 
 func (v *TranscriptionCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TranscriptionCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "audio", "headers", "maxRetries", "mediaType", "providerOptions", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in TranscriptionCallOptions", key)
+		}
 	}
 	type alias TranscriptionCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TranscriptionCallOptions")
 	}
 	*v = TranscriptionCallOptions(tmp)
 	return nil
@@ -10424,18 +10982,24 @@ type TranscriptionStartParams struct {
 }
 
 func (v *TranscriptionStartParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TranscriptionStartParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "headers", "includeRawChunks", "inputAudioFormat", "providerOptions", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in TranscriptionStartParams", key)
+		}
 	}
 	type alias TranscriptionStartParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TranscriptionStartParams")
 	}
 	*v = TranscriptionStartParams(tmp)
 	return nil
@@ -10698,6 +11262,30 @@ type TransportParamsVariantFetch struct {
 	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
+func (v *TransportParamsVariantFetch) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantFetch, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "proxy", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantFetch", key)
+		}
+	}
+	type alias TransportParamsVariantFetch
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantFetch(tmp)
+	return nil
+}
+
 func (TransportParamsVariantFetch) isTransportParams() {}
 
 func (v TransportParamsVariantFetch) MarshalJSON() ([]byte, error) {
@@ -10712,6 +11300,30 @@ type TransportParamsVariantWs struct {
 	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
+func (v *TransportParamsVariantWs) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantWs, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "proxy", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantWs", key)
+		}
+	}
+	type alias TransportParamsVariantWs
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantWs(tmp)
+	return nil
+}
+
 func (TransportParamsVariantWs) isTransportParams() {}
 
 func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
@@ -10724,6 +11336,30 @@ func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
 
 type TransportParamsVariantDownload struct {
 	MaxBytes *uint64 `json:"maxBytes,omitzero"`
+}
+
+func (v *TransportParamsVariantDownload) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantDownload, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "maxBytes", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantDownload", key)
+		}
+	}
+	type alias TransportParamsVariantDownload
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantDownload(tmp)
+	return nil
 }
 
 func (TransportParamsVariantDownload) isTransportParams() {}
@@ -10748,18 +11384,24 @@ type TransportProxy struct {
 }
 
 func (v *TransportProxy) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for TransportProxy, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "all_url", "http_url", "https_url", "no_proxy":
+		default:
+			return fmt.Errorf("unknown field %q in TransportProxy", key)
+		}
 	}
 	type alias TransportProxy
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in TransportProxy")
 	}
 	*v = TransportProxy(tmp)
 	return nil
@@ -10995,6 +11637,30 @@ type UploadFileDataVariantData struct {
 	Data FileBytes `json:"data"`
 }
 
+func (v *UploadFileDataVariantData) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for UploadFileDataVariantData, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "data", "type":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileDataVariantData", key)
+		}
+	}
+	type alias UploadFileDataVariantData
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = UploadFileDataVariantData(tmp)
+	return nil
+}
+
 func (UploadFileDataVariantData) isUploadFileData() {}
 
 func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
@@ -11007,6 +11673,30 @@ func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
 
 type UploadFileDataVariantText struct {
 	Text string `json:"text"`
+}
+
+func (v *UploadFileDataVariantText) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for UploadFileDataVariantText, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "text", "type":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileDataVariantText", key)
+		}
+	}
+	type alias UploadFileDataVariantText
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = UploadFileDataVariantText(tmp)
+	return nil
 }
 
 func (UploadFileDataVariantText) isUploadFileData() {}
@@ -11033,18 +11723,24 @@ type UploadFileParams struct {
 }
 
 func (v *UploadFileParams) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for UploadFileParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "data", "filename", "mediaType", "providerOptions":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileParams", key)
+		}
 	}
 	type alias UploadFileParams
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in UploadFileParams")
 	}
 	*v = UploadFileParams(tmp)
 	return nil
@@ -11391,18 +12087,24 @@ type VideoCallOptions struct {
 }
 
 func (v *VideoCallOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for VideoCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aspectRatio", "duration", "fps", "frameImages", "generateAudio", "headers", "image", "inputReferences", "maxRetries", "n", "poll", "prompt", "providerOptions", "resolution", "seed", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in VideoCallOptions", key)
+		}
 	}
 	type alias VideoCallOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in VideoCallOptions")
 	}
 	*v = VideoCallOptions(tmp)
 	return nil
@@ -11624,18 +12326,24 @@ type VideoPollOptions struct {
 }
 
 func (v *VideoPollOptions) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
 		return fmt.Errorf("expected object for VideoPollOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "intervalMs", "timeoutMs":
+		default:
+			return fmt.Errorf("unknown field %q in VideoPollOptions", key)
+		}
 	}
 	type alias VideoPollOptions
 	var tmp alias
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
-	}
-	if dec.More() {
-		return fmt.Errorf("trailing JSON in VideoPollOptions")
 	}
 	*v = VideoPollOptions(tmp)
 	return nil

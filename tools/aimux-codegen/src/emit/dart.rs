@@ -110,7 +110,7 @@ impl Emitter for Dart {
                             &format!("{name}{}", v.name),
                             &v.fields,
                             Some((name, tag, &v.tag_value)),
-                            false,
+                            v.closed,
                             model,
                         )?;
                     }
@@ -548,11 +548,11 @@ fn class(
         2,
     );
     if closed {
-        let allowed = fields
-            .iter()
-            .map(|f| quote(&f.json_name))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let mut allowed_list: Vec<String> = fields.iter().map(|f| quote(&f.json_name)).collect();
+        if let Some((_, tag, _)) = parent {
+            allowed_list.push(quote(tag));
+        }
+        let allowed = allowed_list.join(", ");
         writeln!(
             out,
             "    const allowedKeys = <String>{{{allowed}}};\n    for (final key in json.keys) {{\n      if (!allowedKeys.contains(key)) {{\n        throw FormatException('Unknown field $key for {name}');\n      }}\n    }}"

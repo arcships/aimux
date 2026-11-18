@@ -42,7 +42,13 @@ impl Emitter for Java {
             let mut out = String::from(HEADER);
             docs(&mut out, named.doc.as_deref(), "");
             match &named.kind {
-                Kind::Struct { fields, closed } => object(&mut out, &n, fields, *closed, None),
+                Kind::Struct { fields, closed } => object(
+                    &mut out,
+                    &n,
+                    fields,
+                    *closed && named.name != "ErrorEnvelope",
+                    None,
+                ),
                 Kind::StringEnum(values) => {
                     writeln!(out, "public enum {n} {{").unwrap();
                     for (i, value) in values.iter().enumerate() {

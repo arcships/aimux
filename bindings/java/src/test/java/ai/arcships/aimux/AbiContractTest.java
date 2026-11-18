@@ -138,6 +138,15 @@ class AbiContractTest {
             .hasMessageContainingAll(AimuxOps.MANIFEST_DIGEST, expectedTarget);
     }
 
+    @Test void errorEnvelopeRemainsOpenForForwardCompatibility() {
+        JsonNode envelope = DtoJson.parse(
+            "{\"kind\":\"protocol\",\"code\":302,\"message\":\"future\",\"error\":{\"name\":\"UnsupportedOpsVersion\"},\"futureField\":true}"
+        );
+        NativeException decoded = AimuxResult.decode(envelope);
+        assertThat(decoded).isInstanceOf(ProtocolException.class);
+        assertThat(decoded.envelope().getCode()).isEqualTo(302);
+    }
+
     private java.lang.ref.WeakReference<Resource> abandon(int id, boolean close) {
         Resource resource = aimux.own(Integer.toString(id));
         if (close) { resource.close(); resource.close(); }

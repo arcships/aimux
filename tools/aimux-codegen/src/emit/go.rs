@@ -101,16 +101,43 @@ fn structure(
     name: &str,
     fields: &[Field],
     closed: bool,
+    extra_key: Option<&str>,
     model: &Model,
 ) -> Result<()> {
+    let write_closed_check = |out: &mut String| {
+        let mut allowed: Vec<String> = fields
+            .iter()
+            .map(|f| format!("{:?}", f.json_name))
+            .collect();
+        if let Some(extra) = extra_key {
+            allowed.push(format!("{extra:?}"));
+        }
+        writeln!(
+            out,
+            "\tvar raw map[string]json.RawMessage\n\tif err := json.Unmarshal(data, &raw); err != nil {{\n\t\treturn err\n\t}}\n\tif raw == nil {{\n\t\treturn fmt.Errorf(\"expected object for {name}, got null\")\n\t}}"
+        )
+        .unwrap();
+        if allowed.is_empty() {
+            writeln!(
+                out,
+                "\tif len(raw) > 0 {{\n\t\treturn fmt.Errorf(\"unknown field in {name}\")\n\t}}"
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                out,
+                "\tfor key := range raw {{\n\t\tswitch key {{\n\t\tcase {}:\n\t\tdefault:\n\t\t\treturn fmt.Errorf(\"unknown field %q in {name}\", key)\n\t\t}}\n\t}}",
+                allowed.join(", ")
+            )
+            .unwrap();
+        }
+    };
     if fields.is_empty() {
         writeln!(out, "type {name} struct{{}}\n").unwrap();
         if closed {
-            writeln!(
-                out,
-                "func (v *{name}) UnmarshalJSON(data []byte) error {{\n\tif bytes.Equal(bytes.TrimSpace(data), []byte(\"null\")) {{\n\t\treturn fmt.Errorf(\"expected object for {name}, got null\")\n\t}}\n\tvar raw map[string]json.RawMessage\n\tif err := json.Unmarshal(data, &raw); err != nil {{\n\t\treturn err\n\t}}\n\tif len(raw) > 0 {{\n\t\treturn fmt.Errorf(\"unknown field in {name}\")\n\t}}\n\treturn nil\n}}\n"
-            )
-            .unwrap();
+            writeln!(out, "func (v *{name}) UnmarshalJSON(data []byte) error {{").unwrap();
+            write_closed_check(out);
+            out.push_str("\treturn nil\n}\n\n");
         }
         return Ok(());
     }
@@ -150,9 +177,11 @@ fn structure(
     }
     out.push_str("}\n\n");
     if closed {
+        writeln!(out, "func (v *{name}) UnmarshalJSON(data []byte) error {{").unwrap();
+        write_closed_check(out);
         writeln!(
             out,
-            "func (v *{name}) UnmarshalJSON(data []byte) error {{\n\tif bytes.Equal(bytes.TrimSpace(data), []byte(\"null\")) {{\n\t\treturn fmt.Errorf(\"expected object for {name}, got null\")\n\t}}\n\ttype alias {name}\n\tvar tmp alias\n\tdec := json.NewDecoder(bytes.NewReader(data))\n\tdec.DisallowUnknownFields()\n\tif err := dec.Decode(&tmp); err != nil {{\n\t\treturn err\n\t}}\n\tif dec.More() {{\n\t\treturn fmt.Errorf(\"trailing JSON in {name}\")\n\t}}\n\t*v = {name}(tmp)\n\treturn nil\n}}\n"
+            "\ttype alias {name}\n\tvar tmp alias\n\tif err := json.Unmarshal(data, &tmp); err != nil {{\n\t\treturn err\n\t}}\n\t*v = {name}(tmp)\n\treturn nil\n}}\n"
         )
         .unwrap();
     }
@@ -198,6 +227,7 @@ impl Emitter for Go {
                     &name,
                     fields,
                     *closed && named.name != "ErrorEnvelope",
+                    None,
                     model,
                 )?,
                 Kind::Alias(value) => {
@@ -280,7 +310,14 @@ impl Emitter for Go {
                     .unwrap();
                     for variant in variants {
                         let vn = format!("{name}Variant{}", ident(&variant.name));
-                        structure(&mut out, &vn, &variant.fields, false, model)?;
+                        structure(
+                            &mut out,
+                            &vn,
+                            &variant.fields,
+                            variant.closed,
+                            Some(tag.as_str()),
+                            model,
+                        )?;
                         writeln!(out, "func ({vn}) is{name}() {{}}\n\nfunc (v {vn}) MarshalJSON() ([]byte, error) {{\n\ttype plain {vn}\n\treturn json.Marshal(struct {{\n\t\t{} string `json:{tag:?}`\n\t\tplain\n\t}}{{{}: {:?}, plain: plain(v)}})\n}}\n", ident(tag), ident(tag), variant.tag_value).unwrap();
                     }
                 }

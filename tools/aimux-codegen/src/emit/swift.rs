@@ -474,6 +474,11 @@ impl Emitter for Swift {
                         writeln!(out, "        case {} = {}", camel(key), quoted(key)).unwrap();
                     }
                     out.push_str("    }\n    public init(from decoder: any Decoder) throws {\n        let c = try decoder.container(keyedBy: CodingKeys.self)\n");
+                    if variants.iter().any(|v| v.closed) {
+                        out.push_str(
+                            "        let raw = try decoder.container(keyedBy: WireKey.self)\n",
+                        );
+                    }
                     writeln!(out, "        let tag = try c.decode(String.self, forKey: .{})\n        switch tag {{", camel(tag)).unwrap();
                     let mut groups = BTreeMap::<&str, Vec<_>>::new();
                     for variant in variants {
@@ -490,6 +495,20 @@ impl Emitter for Swift {
                             } else {
                                 "            "
                             };
+                            if variant.closed {
+                                let allowed = variant
+                                    .fields
+                                    .iter()
+                                    .map(|f| quoted(&f.json_name))
+                                    .chain(std::iter::once(quoted(tag)))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                writeln!(
+                                    out,
+                                    "{indent}let allowed: Set<String> = [{allowed}]\n{indent}for key in raw.allKeys {{\n{indent}    if !allowed.contains(key.stringValue) {{\n{indent}        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: \"Unknown field \\(key.stringValue)\"))\n{indent}    }}\n{indent}}}"
+                                )
+                                .unwrap();
+                            }
                             write!(out, "{indent}self = .{}", camel(&variant.name)).unwrap();
                             if !variant.fields.is_empty() {
                                 let values: Vec<_> = variant

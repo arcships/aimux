@@ -196,8 +196,10 @@ fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             timeout: request.timeout,
             ..Default::default()
         };
+        let reservation = HandleRegistry::global().reserve()?;
         let operation = Operation::start(model, options, ctx.abort).await?;
-        let id = HandleRegistry::global().insert(ctx.owner, Entry::Operation(operation))?;
+        let id =
+            HandleRegistry::global().commit(ctx.owner, reservation, Entry::Operation(operation));
         serialize(id)
     })
 }
