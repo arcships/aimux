@@ -605,3 +605,57 @@ async fn supports_the_openai_responses_urls() {
         }
     }
 }
+
+#[tokio::test]
+async fn subscription_rejects_invalid_system_message_options_without_sending() {
+    let server = MockServer::start().await;
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: Some("acct_123".to_string()),
+        },
+        server.uri(),
+        Some("aimux-test"),
+    );
+    let model = provider.responses("gpt-6-astra");
+
+    for effort in [json!("minimal"), json!(1), json!(null)] {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([
+            {
+                "role": "system",
+                "content": "",
+                "providerOptions": { "openai": { "reasoningEffortUpdate": effort } },
+            },
+            {
+                "role": "user",
+                "content": [{ "type": "text", "text": "Hello" }],
+            },
+        ]))
+        .expect("valid prompt JSON");
+        let opts = CallOptions::new(prompt);
+
+        for (kind, result) in [
+            ("generate", model.do_generate(&opts).await.map(|_| ())),
+            ("stream", model.do_stream(&opts).await.map(|_| ())),
+        ] {
+            let Err(AiMuxError::InvalidArgument { message, cause }) = result else {
+                panic!("{kind} should reject {effort}, got {result:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{kind} {effort}"
+            );
+            assert!(cause.is_some(), "{kind} {effort}");
+        }
+    }
+
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("server records requests")
+            .is_empty(),
+        "invalid system-message options must fail before any HTTP request"
+    );
+}

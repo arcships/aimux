@@ -757,3 +757,32 @@ mod positioned_reasoning_effort_updates {
         }
     }
 }
+
+/// aimux's own: a system message's options are parsed against
+/// `openaiResponsesSystemMessageOptionsSchema` under the host's namespaces in
+/// turn (convert-to-openai-responses-input.ts:428-440). A value outside the
+/// schema, a non-string or `null` included, fails with the upstream message
+/// before anything is sent.
+#[tokio::test]
+async fn a_message_level_update_outside_the_schema_fails_before_sending() {
+    for effort in [json!("minimal"), json!(1), json!(null)] {
+        let system = json!({
+            "role": "system",
+            "content": "",
+            "providerOptions": {"openai": {"reasoningEffortUpdate": effort}},
+        });
+        for method in METHODS {
+            let outcome = request(method, &json!([system.clone(), user()]), &json!({})).await;
+            let Err(AiMuxError::InvalidArgument { message, cause }) = &outcome.result else {
+                panic!("{method} {effort}: {:?}", outcome.result);
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid openai provider options",
+                "{method} {effort}"
+            );
+            assert!(cause.is_some(), "{method} {effort}");
+            assert_eq!(outcome.calls, 0, "{method} {effort}");
+        }
+    }
+}
