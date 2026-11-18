@@ -22,11 +22,11 @@ This script does that work once, at release time:
    link ("relocation truncated to fit: IMAGE_REL_AMD64_ADDR32NB"), and it
    removed 77 KB of a 42 MB object in the first place;
    on Mach-O, Apple `ld -r -exported_symbols_list <list> -filelist <members>`
-   merges all members into one object (dropping any `__LLVM,__bitcode`
-   sections and per-member symbol/string/header tables), keeping the
-   `_aimux_*` C API exports plus `_rust_eh_personality` when defined in the
-   archive (`__LD,__compact_unwind` references it and `strip -S -x` would
-   remove it once `ld -r` internalizes unexported globals);
+   merges all members into one object (dropping per-member symbol/string/header
+   tables), keeping the `_aimux_*` C API exports plus `_rust_eh_personality`
+   when defined in the archive (`__LD,__compact_unwind` references it and
+   `strip -S -x` would remove it once `ld -r` internalizes unexported globals);
+   bitcode must already be stripped (`check_native_artifact.py --strip-bitcode`);
 3. `llvm-strip --strip-unneeded` (or Apple `strip -S -x` on Mach-O) removes
    the debug and local symbols the merged object no longer needs for
    relocation;
@@ -118,6 +118,56 @@ def is_import_member(body):
     return any(name.startswith(".idata$") for name, _ in check.coff_sections(body))
 
 
+MACHO_PLATFORMS = {
+    1: "macos",
+    2: "ios",
+    3: "tvos",
+    4: "watchos",
+    7: "ios-simulator",
+    8: "tvos-simulator",
+    9: "watchos-simulator",
+}
+LC_VERSION_MIN_PLATFORMS = {0x24: 1, 0x25: 2, 0x2F: 3, 0x30: 4}
+
+
+def format_macho_version(ver):
+    major, minor, patch = (ver >> 16) & 0xFFFF, (ver >> 8) & 0xFF, ver & 0xFF
+    return f"{major}.{minor}.{patch}" if patch else f"{major}.{minor}"
+
+
+def macho_platform_flags(bodies):
+    """Return `-platform_version <platform> <max_minos> <max_sdk>` from members."""
+    platforms = set()
+    max_minos = 0
+    max_sdk = 0
+    for body in bodies:
+        if body[:4] not in check.MACHO_MAGICS:
+            continue
+        end, bits = check.MACHO_MAGICS[body[:4]]
+        ncmds = check.struct.unpack_from(end + "I", body, 16)[0]
+        offset = 32 if bits == 64 else 28
+        for _ in range(ncmds):
+            cmd, cmdsize = check.struct.unpack_from(end + "II", body, offset)
+            if cmd == 0x32:  # LC_BUILD_VERSION
+                plat, minos, sdk = check.struct.unpack_from(end + "III", body, offset + 8)
+            elif cmd in LC_VERSION_MIN_PLATFORMS:
+                plat = LC_VERSION_MIN_PLATFORMS[cmd]
+                minos, sdk = check.struct.unpack_from(end + "II", body, offset + 8)
+            else:
+                offset += cmdsize
+                continue
+            platforms.add(plat)
+            max_minos = max(max_minos, minos)
+            max_sdk = max(max_sdk, sdk)
+            offset += cmdsize
+    if len(platforms) != 1:
+        return []
+    platform_name = MACHO_PLATFORMS.get(next(iter(platforms)))
+    if not platform_name or not max_minos:
+        return []
+    return ["-platform_version", platform_name, format_macho_version(max_minos), format_macho_version(max_sdk)]
+
+
 def object_format(data):
     for _, body in check.archive_members(data):
         if body[:4] == b"\x7fELF":
@@ -143,14 +193,16 @@ def main(argv):
     data = path.read_bytes()
     if not data.startswith(b"!<arch>\n"):
         sys.exit(f"{path}: not an archive")
+    crates = check.workspace_crates(root)
     names = [name for name, body in check.archive_members(data) if check.member_report(body) is not None]
     if names[:1] == [MERGED_MEMBER]:
+        if not check.check_archive(path, data, crates, expect_no_bitcode=True):
+            sys.exit(1)
         print(f"{path}: already merged ({len(data)} bytes)")
         if out != path:
             shutil.copyfile(path, out)
         return
     fmt = object_format(data)
-    crates = check.workspace_crates(root)
     ld = os.environ.get("AIMUX_LD") or shutil.which("ld") or sys.exit("no ld on PATH (set AIMUX_LD)")
     if fmt == "macho":
         strip = (
@@ -165,7 +217,7 @@ def main(argv):
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        members, imports = [], []
+        members, member_bodies, imports = [], [], []
         for i, (name, body) in enumerate(check.archive_members(data)):
             if check.member_report(body) is None:
                 continue
@@ -174,7 +226,11 @@ def main(argv):
             member = tmp / "members" / f"{i:05d}" / Path(name).name
             member.parent.mkdir(parents=True)
             member.write_bytes(body)
-            (imports if is_import_member(body) else members).append((member, name))
+            if is_import_member(body):
+                imports.append((member, name))
+            else:
+                members.append((member, name))
+                member_bodies.append(body)
         exports = defined_exports(nm, members)
         declared = header_exports(root)
         if exports != declared:
@@ -199,8 +255,19 @@ def main(argv):
             exports_file.write_text("\n".join(kept_symbols) + "\n", encoding="utf-8")
             filelist = tmp / "members.filelist"
             filelist.write_text("\n".join(str(m) for m, _ in members) + "\n", encoding="utf-8")
+            platform_flags = macho_platform_flags(member_bodies)
             subprocess.run(
-                [ld, "-r", "-exported_symbols_list", str(exports_file), "-filelist", str(filelist), "-o", str(merged)],
+                [
+                    ld,
+                    "-r",
+                    *platform_flags,
+                    "-exported_symbols_list",
+                    str(exports_file),
+                    "-filelist",
+                    str(filelist),
+                    "-o",
+                    str(merged),
+                ],
                 check=True,
             )
             print(
@@ -245,12 +312,12 @@ def main(argv):
                 encoding="utf-8",
             )
             subprocess.run([ar, "rcs", "--format=gnu", str(merged_archive), f"@{archive_response}"], check=True)
+        result = merged_archive.read_bytes()
+        if not check.check_archive(out, result, crates, expect_no_bitcode=True):
+            sys.exit(1)
         shutil.copyfile(merged_archive, out)
 
-    result = out.read_bytes()
     print(f"size {out} {len(result)} bytes")
-    if not check.check_archive(out, result, crates, expect_no_bitcode=True):
-        sys.exit(1)
 
 
 if __name__ == "__main__":

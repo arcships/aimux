@@ -134,7 +134,8 @@ jobs:
           platforms=$everything
           if [ "$(changed .github rust-toolchain.toml .cargo aimux-ffi bindings/node \
                 bindings/go bindings/flutter bindings/swift \
-                scripts/build-ios-xcframework.sh ':(glob)**/.gitattributes' \
+                scripts/build-ios-xcframework.sh scripts/check_native_artifact.py \
+                scripts/merge_archive.py ':(glob)**/.gitattributes' \
                 ':(glob)**/Cargo.toml' ':(glob)**/build.rs')" = true ]; then
             platforms=true
           fi
@@ -155,7 +156,7 @@ jobs:
             $(job rust-test aimux-ffi)
             $(job node-binding bindings/node)
             $(job python-binding bindings/python)
-            $(job ffi-build aimux-ffi bindings/go)
+            $(job ffi-build aimux-ffi bindings/go scripts/check_native_artifact.py scripts/merge_archive.py)
             $(job ffi-linux-arm aimux-ffi)
             $(job c-abi-bindings aimux-ffi bindings/java bindings/kotlin bindings/flutter)
             $(job ffi-sanitizers aimux-ffi)
@@ -515,6 +516,37 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: python3 scripts/merge_archive.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+      # release.yml go-build also ships x86_64-apple-darwin, whose Mach-O
+      # relocations differ from arm64. Rehearse that target on macos-latest:
+      # build staticlib-release, strip bitcode, merge/strip, verify symbols,
+      # and link + run C and Go smoke binaries (under Rosetta on Apple Silicon).
+      - name: Build, strip, merge and verify x86_64-apple-darwin archive
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build -p aimux-ffi --profile staticlib-release --target x86_64-apple-darwin
+          python3 scripts/check_native_artifact.py --strip-bitcode target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a
+          rm -f target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.so \
+                target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.dylib
+          python3 scripts/merge_archive.py target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a
+          nm_syms=$(nm -gU target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a | awk '{print $NF}')
+          grep -qx '_rust_eh_personality' <<< "$nm_syms"
+          for sym in $(python3 -c 'import sys; sys.path.insert(0, "scripts"); import merge_archive, pathlib; print(" ".join(sorted(merge_archive.header_exports(pathlib.Path(".")))))'); do
+            grep -qx "_$sym" <<< "$nm_syms" || { echo "Missing _$sym in x86_64 archive" >&2; exit 1; }
+          done
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          clang -arch x86_64 -std=c11 -Wall -Wextra -Werror -Oz -Wl,-dead_strip \
+            -Iaimux-ffi/include -Iaimux-ffi/tests/c aimux-ffi/tests/c/primitives.c \
+            target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a \
+            -framework CoreFoundation -o "$tmp/primitives-x64"
+          "$tmp/primitives-x64"
+          clang -arch x86_64 -std=c11 -Wall -Wextra -Werror -Oz -Wl,-dead_strip \
+            -Iaimux-ffi/include bindings/c/example.c \
+            target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a \
+            -framework CoreFoundation -o "$tmp/example-x64"
+          "$tmp/example-x64"
       # The Windows Go archive is the x86_64-pc-windows-gnu one (Go's cgo
       # links with mingw gcc), so the Windows leg rehearses release.yml
       # go-build on that target: build, strip the bitcode, merge the COFF
@@ -540,6 +572,15 @@ jobs:
             *) ARCHIVE_DIR="${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release" ;;
           esac
           export CGO_LDFLAGS="-L$ARCHIVE_DIR"
+          go vet ./...
+          go test ./...
+      - name: Vet + test Go binding (x86_64-apple-darwin cross-build)
+        if: runner.os == 'macOS'
+        working-directory: bindings/go
+        shell: bash
+        run: |
+          export GOARCH=amd64 CGO_ENABLED=1
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/x86_64-apple-darwin/staticlib-release"
           go vet ./...
           go test ./...
       - name: Race test Go binding
