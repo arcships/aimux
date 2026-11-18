@@ -18,8 +18,10 @@ use crate::openai::chat::chat_api::UsageResponse;
 /// of `UsageResponse` (e.g. prompt-cache hit counters) survive only
 /// through this raw value.
 pub(crate) fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
-    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
-    let completion_tokens = usage.completion_tokens.unwrap_or(0);
+    // #478: a count the provider did not report stays unknown (the AI SDK
+    // fills 0); a reported zero stays zero.
+    let prompt_tokens = usage.prompt_tokens;
+    let completion_tokens = usage.completion_tokens;
 
     // Cache-read tokens: only the nested `prompt_tokens_details.cached_tokens`
     // (upstream convert-openai-chat-usage.ts:28). A top-level `cached_tokens`
@@ -28,8 +30,7 @@ pub(crate) fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) ->
     let cached = usage
         .prompt_tokens_details
         .as_ref()
-        .and_then(|d| d.cached_tokens)
-        .unwrap_or(0);
+        .and_then(|d| d.cached_tokens);
 
     let cache_write = usage
         .prompt_tokens_details
@@ -41,29 +42,31 @@ pub(crate) fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) ->
     // `reasoning_tokens > completion_tokens`, and cached + cache-write tokens
     // can exceed `prompt_tokens`. Saturating to 0 avoids a panic on these
     // real-world responses; the non-underflow path is unchanged.
-    let no_cache = prompt_tokens
-        .saturating_sub(cached)
-        .saturating_sub(cache_write.unwrap_or(0));
+    let no_cache = prompt_tokens.map(|total| {
+        total
+            .saturating_sub(cached.unwrap_or(0))
+            .saturating_sub(cache_write.unwrap_or(0))
+    });
 
     // Reasoning tokens from completion_tokens_details.
     let reasoning_tokens = usage
         .completion_tokens_details
         .as_ref()
-        .and_then(|d| d.reasoning_tokens)
-        .unwrap_or(0);
-    let text_tokens = completion_tokens.saturating_sub(reasoning_tokens);
+        .and_then(|d| d.reasoning_tokens);
+    let text_tokens =
+        completion_tokens.map(|total| total.saturating_sub(reasoning_tokens.unwrap_or(0)));
 
     Usage {
         input_tokens: aimux_core::types::InputTokenUsage {
-            total: Some(prompt_tokens),
-            no_cache: Some(no_cache),
-            cache_read: Some(cached),
+            total: prompt_tokens,
+            no_cache,
+            cache_read: cached,
             cache_write,
         },
         output_tokens: aimux_core::types::OutputTokenUsage {
-            total: Some(completion_tokens),
-            text: Some(text_tokens),
-            reasoning: Some(reasoning_tokens),
+            total: completion_tokens,
+            text: text_tokens,
+            reasoning: reasoning_tokens,
         },
         // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
         // vendor-specific fields (e.g. a top-level `cached_tokens`, prompt-cache

@@ -53,11 +53,13 @@ const TEXT_CHUNKS: &str = include_str!("fixtures/deepseek-text.chunks.txt");
 const REASONING_CHUNKS: &str = include_str!("fixtures/deepseek-reasoning.chunks.txt");
 const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/deepseek-tool-call.chunks.txt");
 
+// #478: the unreported reasoning count stays unknown (the AI SDK fills 0).
 const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
 const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
 const SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT: &str =
     include_str!("snapshots/do_generate_json_response_format.json");
 const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
+// #478: the unreported reasoning count stays unknown (the AI SDK fills 0).
 const SNAPSHOT_DO_STREAM_TEXT: &str = include_str!("snapshots/do_stream_text.json");
 const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
 const SNAPSHOT_DO_STREAM_TOOL_CALL: &str = include_str!("snapshots/do_stream_tool_call.json");

@@ -58,6 +58,7 @@ async fn should_extract_generated_image() {
     }
 }
 
+/// partial: `should pass the correct parameters including aspect ratio`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_prompt_and_model() {
     let server = MockServer::start().await;
@@ -75,6 +76,7 @@ async fn should_pass_prompt_and_model() {
     assert_eq!(body["model"], "ray2");
 }
 
+/// partial: `should pass the correct parameters including aspect ratio`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_aspect_ratio() {
     let server = MockServer::start().await;
@@ -93,6 +95,7 @@ async fn should_pass_aspect_ratio() {
     assert_eq!(body["aspect_ratio"], "16:9");
 }
 
+/// partial: `should return warnings for unsupported parameters`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_warn_for_seed() {
     let server = MockServer::start().await;
@@ -109,6 +112,7 @@ async fn should_warn_for_seed() {
     assert!(result.warnings.iter().any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "seed")));
 }
 
+/// partial: `should return warnings for unsupported parameters`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_warn_for_size() {
     let server = MockServer::start().await;
@@ -125,6 +129,7 @@ async fn should_warn_for_size() {
     assert!(result.warnings.iter().any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "size")));
 }
 
+/// partial: `should pass headers`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_auth_headers() {
     let server = MockServer::start().await;
@@ -148,6 +153,7 @@ async fn should_pass_auth_headers() {
     );
 }
 
+/// partial: `should send image by default when URL file is provided`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_support_image_editing_with_urls() {
     let server = MockServer::start().await;
@@ -172,6 +178,7 @@ async fn should_support_image_editing_with_urls() {
     assert_eq!(images[0]["url"], "https://example.com/source.png");
 }
 
+/// partial: `should throw error when mask is provided`; full port in src/luma/tests/image_model.rs.
 #[tokio::test]
 async fn should_throw_for_mask() {
     let server = MockServer::start().await;

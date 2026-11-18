@@ -10,35 +10,35 @@ use super::api_types::UsageResponse;
 /// `raw` is the provider's original object, kept verbatim in `Usage.raw`.
 /// Cache reads come from `prompt_tokens_details`, as in the upstream converter.
 pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage {
-    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
-    let completion_tokens = usage.completion_tokens.unwrap_or(0);
+    let prompt_tokens = usage.prompt_tokens;
+    let completion_tokens = usage.completion_tokens;
 
     let cached = usage
         .prompt_tokens_details
         .as_ref()
-        .and_then(|d| d.cached_tokens)
-        .unwrap_or(0);
+        .and_then(|d| d.cached_tokens);
 
-    // Saturating: some servers report more cached or reasoning tokens than
-    // prompt or completion tokens.
-    let no_cache = prompt_tokens.saturating_sub(cached);
+    // A count the provider did not report stays unknown; a reported zero is
+    // reported as zero. Saturating: some servers report more cached or
+    // reasoning tokens than prompt or completion tokens.
+    let no_cache = prompt_tokens.map(|total| total.saturating_sub(cached.unwrap_or(0)));
     let reasoning_tokens = usage
         .completion_tokens_details
         .as_ref()
-        .and_then(|d| d.reasoning_tokens)
-        .unwrap_or(0);
+        .and_then(|d| d.reasoning_tokens);
 
     Usage {
         input_tokens: InputTokenUsage {
-            total: Some(prompt_tokens),
-            no_cache: Some(no_cache),
-            cache_read: Some(cached),
+            total: prompt_tokens,
+            no_cache,
+            cache_read: cached,
             cache_write: None,
         },
         output_tokens: OutputTokenUsage {
-            total: Some(completion_tokens),
-            text: Some(completion_tokens.saturating_sub(reasoning_tokens)),
-            reasoning: Some(reasoning_tokens),
+            total: completion_tokens,
+            text: completion_tokens
+                .map(|total| total.saturating_sub(reasoning_tokens.unwrap_or(0))),
+            reasoning: reasoning_tokens,
         },
         raw: raw.and_then(Value::as_object).cloned(),
     }

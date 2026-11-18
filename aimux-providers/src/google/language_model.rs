@@ -124,11 +124,8 @@ impl GoogleModel {
         options: &CallOptions,
         streaming: bool,
     ) -> Result<(Value, Vec<Warning>), AiMuxError> {
-        let (mut body, mut warnings) = build_request_body_with_warnings_for_namespace(
-            &self.model_id,
-            options,
-            self.namespace,
-        )?;
+        let (mut body, mut warnings) =
+            build_request_body_with_warnings_for_namespace(&self.model_id, options, self.namespace);
         for warning in &mut warnings {
             if let Warning::Other { message } = warning {
                 *message = message.replace("google.generative-ai", &self.config.provider);
@@ -305,8 +302,6 @@ struct GoogleLanguageModelStream {
     namespace: Namespace,
     code_execution_tool_name: String,
     text_id: Option<String>,
-    /// Signature of the open text block, from its last signed part.
-    text_signature: Option<String>,
     reasoning_id: Option<String>,
     block_counter: usize,
     final_usage: Usage,
@@ -422,11 +417,7 @@ impl GoogleLanguageModelStream {
                 // text part
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                     // An empty part is kept when it carries a signature (#467).
-                    let signature = part
-                        .get("thoughtSignature")
-                        .and_then(Value::as_str)
-                        .filter(|signature| !signature.is_empty());
-                    if !text.is_empty() || signature.is_some() {
+                    if !text.is_empty() || thought_sig_meta.is_some() {
                         let is_thought = part
                             .get("thought")
                             .and_then(serde_json::Value::as_bool)
@@ -456,20 +447,6 @@ impl GoogleLanguageModelStream {
                             if let Some(id) = self.reasoning_id.take() {
                                 controller.reasoning_end(id);
                             }
-                            // Gemini replays each signed part as received, so
-                            // a part signed differently from the open block
-                            // starts its own; an unsigned part continues it.
-                            // Upstream appends every part to one block (#467).
-                            if let Some(signature) = signature {
-                                if self
-                                    .text_signature
-                                    .as_deref()
-                                    .is_some_and(|open| open != signature)
-                                {
-                                    self.end_text(controller);
-                                }
-                                self.text_signature = Some(signature.to_owned());
-                            }
                             if self.text_id.is_none() {
                                 let id = format!("{}", self.block_counter);
                                 self.block_counter += 1;
@@ -485,6 +462,14 @@ impl GoogleLanguageModelStream {
                                     delta: text.to_string(),
                                     provider_metadata: thought_sig_meta.clone(),
                                 });
+                            }
+                            // Gemini signs the last part of a text block (the
+                            // recordings end each block with an empty signed
+                            // part), so a signed part closes its block and
+                            // the next part opens a new one. Upstream appends
+                            // every part to one block (#467).
+                            if thought_sig_meta.is_some() {
+                                self.end_text(controller);
                             }
                         }
                     }
@@ -642,7 +627,6 @@ impl GoogleLanguageModelStream {
         if let Some(id) = self.text_id.take() {
             controller.text_end(id);
         }
-        self.text_signature = None;
     }
 
     /// One `functionCall` part: a chunk of streamed arguments (`partialArgs`,
@@ -798,13 +782,12 @@ impl Transformer for GoogleLanguageModelStream {
 
         match event {
             Ok(GoogleStreamEvent::Chunk(chunk)) => {
-                let has_usage = chunk.usage_metadata.is_some();
                 self.transform_chunk(chunk, controller);
-                // The turn is complete once it has a finish reason (or a
-                // confirmed prompt block) and the usage at or after it, which
-                // may come in a later chunk; the body itself may stay open
+                // The turn is complete once it has both a finish reason (or a
+                // confirmed prompt block) and usage, in either order and
+                // possibly from separate chunks; the body itself may stay open
                 // (keep-alive, proxies). Upstream waits for its end (#469).
-                if has_usage && self.final_finish_reason.is_some() {
+                if self.last_usage_metadata_value.is_some() && self.final_finish_reason.is_some() {
                     self.finish(controller);
                     controller.terminate();
                 }
@@ -1205,16 +1188,10 @@ fn confirmed_prompt_block_reason(feedback: Option<&Value>) -> Option<String> {
 // ── getArgs (request body) ───────────────────────────────────────────────────
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
-/// namespaces when replaying response parts.
-///
-/// # Errors
-/// Returns an error when `structuredOutputs` is not a boolean.
-pub(crate) fn build_vertex_request_body(
-    model_id: &str,
-    options: &CallOptions,
-) -> Result<Value, AiMuxError> {
-    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex)
-        .map(|(body, _)| body)
+/// namespaces when replaying response parts. The provider options are
+/// checked first, by [`validate_call_options_for_namespace`].
+pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex).0
 }
 
 /// Build the Gemini `generateContent` request body from `CallOptions` **and**
@@ -1225,14 +1202,12 @@ pub(crate) fn build_vertex_request_body(
 /// response format, and the provider options the SDK maps (`thinkingConfig`,
 /// `responseModalities`, `audioTimestamp`, `mediaResolution`, `imageConfig`
 /// into `generationConfig`; `safetySettings`, `cachedContent`, `labels`,
-/// `serviceTier` and `retrievalConfig` next to it).
-///
-/// # Errors
-/// Returns an error when `structuredOutputs` is not a boolean.
+/// `serviceTier` and `retrievalConfig` next to it). The provider options are
+/// checked first, by [`validate_call_options`].
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> Result<(Value, Vec<Warning>), AiMuxError> {
+) -> (Value, Vec<Warning>) {
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
@@ -1240,24 +1215,21 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
-) -> Result<(Value, Vec<Warning>), AiMuxError> {
-    let provider_options = options.provider_options.as_ref().and_then(|options| {
-        namespace
-            .read_keys()
-            .iter()
-            .find_map(|name| options.get(*name).map(|value| (*name, value)))
-    });
-    let structured_outputs =
-        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
-            None => true,
-            Some(Value::Bool(value)) => *value,
-            Some(_) => {
-                return Err(AiMuxError::invalid_argument(format!(
-                    "invalid {} provider options",
-                    provider_options.unwrap().0
-                )));
-            }
-        };
+) -> (Value, Vec<Warning>) {
+    // `structuredOutputs` is a boolean: `validate_provider_options` checked
+    // the namespace before the body is built.
+    let structured_outputs = options
+        .provider_options
+        .as_ref()
+        .and_then(|options| {
+            namespace
+                .read_keys()
+                .iter()
+                .find_map(|name| options.get(*name))
+        })
+        .and_then(|options| options.get("structuredOutputs"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let GooglePrompt {
         mut system_instruction,
         mut contents,
@@ -1551,7 +1523,7 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
     warnings.extend(prompt_warnings);
     warnings.extend(thinking_warnings);
     warnings.extend(prepared.warnings);
-    Ok((Value::Object(body), warnings))
+    (Value::Object(body), warnings)
 }
 
 /// Validate prompt constraints and provider options before sending a request.
@@ -1638,10 +1610,10 @@ pub(crate) fn validate_call_options_for_namespace(
             _ => {}
         }
     }
-    let Some(values) = namespace.read_in(options.provider_options.as_ref()) else {
-        return Ok(());
-    };
-    super::language_model_options::validate_provider_options(values)
+    super::language_model_options::validate_provider_options(
+        namespace,
+        options.provider_options.as_ref(),
+    )
 }
 
 fn validate_file_part(

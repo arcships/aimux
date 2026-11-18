@@ -86,6 +86,11 @@ pub fn convert_to_xai_responses_input(
                 input.push(json!({ "role": "user", "content": content_parts }));
             }
             LanguageModelMessage::Assistant { content, .. } => {
+                // Consecutive text parts of one message item become one
+                // input item with their joined text (#472; the AI SDK sends
+                // one item per part). Any other item in between starts a new
+                // one, so the order holds.
+                let mut last_text_item: Option<(String, usize)> = None;
                 for part in content {
                     match part {
                         AssistantPart::Text(TextPart {
@@ -98,11 +103,25 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
-                            let mut msg_obj = json!({ "role": "assistant", "content": text });
-                            if let Some(id) = id {
-                                msg_obj["id"] = json!(id);
+                            let continues = matches!(
+                                (&last_text_item, &id),
+                                (Some((last, index)), Some(id)) if last == id && index + 1 == input.len()
+                            );
+                            if continues {
+                                let item = input.last_mut().expect("the grouped text item");
+                                let joined = format!(
+                                    "{}{text}",
+                                    item["content"].as_str().unwrap_or_default()
+                                );
+                                item["content"] = json!(joined);
+                            } else {
+                                let mut msg_obj = json!({ "role": "assistant", "content": text });
+                                if let Some(id) = id {
+                                    last_text_item = Some((id.clone(), input.len()));
+                                    msg_obj["id"] = json!(id);
+                                }
+                                input.push(msg_obj);
                             }
-                            input.push(msg_obj);
                         }
                         AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,

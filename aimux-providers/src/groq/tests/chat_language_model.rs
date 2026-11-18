@@ -813,9 +813,10 @@ mod do_generate {
 
         assert_eq!(
             serde_json::to_value(&result.usage).unwrap(),
+            // #478: unreported counts stay unknown (the AI SDK fills 0).
             json!({
                 "inputTokens": { "total": 20, "noCache": 20 },
-                "outputTokens": { "total": 0, "text": 0 },
+                "outputTokens": {},
                 "raw": { "prompt_tokens": 20, "total_tokens": 20 }
             })
         );

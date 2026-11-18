@@ -8,8 +8,11 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, Warning};
-use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
+use aimux_provider_utils::{
+    HttpRequest, Transformer, optional_field, parse_provider_options, pipe_through,
+};
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -21,6 +24,44 @@ use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext}
 use super::convert_completion_usage::usage;
 use super::convert_to_completion_prompt::completion_prompt;
 use super::get_response_metadata::metadata;
+
+/// `openaiCompatibleLanguageModelCompletionOptions`
+/// (`openai-compatible-completion-language-model-options.ts`): a zod object
+/// of `.optional()` fields, so unknown keys are dropped and an explicit
+/// `null` is rejected.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompletionOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    echo: Option<bool>,
+    /// `z.record(z.string(), z.number())`, in the order given.
+    #[serde(default, deserialize_with = "optional_field")]
+    logit_bias: Option<IndexMap<String, serde_json::Number>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    suffix: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    user: Option<String>,
+}
+
+impl CompletionOptions {
+    /// `parseProviderOptions({ provider, providerOptions, schema })`.
+    fn parse(
+        provider: &str,
+        provider_options: Option<&aimux_core::shared::SharedProviderOptions>,
+    ) -> Result<Option<Self>, AiMuxError> {
+        parse_provider_options(provider, provider_options)
+    }
+
+    /// `Object.assign(self, later)`: every field `later` sets wins.
+    fn assign(self, later: Self) -> Self {
+        Self {
+            echo: later.echo.or(self.echo),
+            logit_bias: later.logit_bias.or(self.logit_bias),
+            suffix: later.suffix.or(self.suffix),
+            user: later.user.or(self.user),
+        }
+    }
+}
 
 /// A language model for the `/completions` endpoint.
 #[derive(Clone)]
@@ -62,53 +103,41 @@ impl OpenAICompatibleCompletionModel {
         }
         let name = self.provider().split('.').next().unwrap_or_default().trim();
         let camel = to_camel_case(name);
-        let mut provider_options = Map::new();
-        if camel != name
-            && options
-                .provider_options
-                .as_ref()
-                .is_some_and(|all| all.contains_key(name))
-        {
+        let all = options.provider_options.as_ref();
+        if camel != name && all.is_some_and(|all| all.contains_key(name)) {
             warnings.push(Warning::Deprecated {
                 setting: format!("providerOptions key '{name}'"),
                 message: format!("Use '{camel}' instead."),
             });
         }
+        // `Object.assign` of the parsed namespaces: the provider's own, then
+        // its camelCase form.
+        let mut completion = CompletionOptions::default();
         for namespace in [name, camel.as_str()] {
-            if let Some(values) = options
-                .provider_options
-                .as_ref()
-                .and_then(|all| all.get(namespace))
-            {
-                for (key, value) in values {
-                    let valid = match key.as_str() {
-                        "echo" => value.is_boolean(),
-                        "user" | "suffix" => value.is_string(),
-                        "logitBias" => value
-                            .as_object()
-                            .is_some_and(|map| map.values().all(Value::is_number)),
-                        _ => true,
-                    };
-                    if !valid {
-                        return Err(AiMuxError::invalid_argument(format!(
-                            "invalid {namespace} provider option {key}"
-                        )));
-                    }
-                }
+            if let Some(parsed) = CompletionOptions::parse(namespace, all)? {
+                completion = completion.assign(parsed);
+            }
+        }
+        // Both namespaces are also spread into the body as given.
+        let mut provider_options = Map::new();
+        for namespace in [name, camel.as_str()] {
+            if let Some(values) = all.and_then(|all| all.get(namespace)) {
                 provider_options.extend(values.clone());
             }
         }
         let mut body = Map::new();
         body.insert("model".into(), json!(self.model_id));
-        for (source, target) in [
-            ("echo", "echo"),
-            ("logitBias", "logit_bias"),
-            ("suffix", "suffix"),
-            ("user", "user"),
-        ] {
-            if let Some(value) = provider_options.get(source) {
-                body.insert(target.into(), value.clone());
-            }
+        if let Some(echo) = completion.echo {
+            body.insert("echo".into(), json!(echo));
+        }
+        if let Some(logit_bias) = completion.logit_bias {
+            body.insert("logit_bias".into(), json!(logit_bias));
+        }
+        if let Some(suffix) = completion.suffix {
+            body.insert("suffix".into(), json!(suffix));
+        }
+        if let Some(user) = completion.user {
+            body.insert("user".into(), json!(user));
         }
         for (key, value) in [
             ("max_tokens", json!(options.max_output_tokens)),

@@ -12,9 +12,6 @@
 //!   (`@ai-sdk/anthropic@4.0.71` `src/convert-to-anthropic-prompt.ts:1668-1673`,
 //!   used at `:1013`; aimux `anthropic/convert_to_prompt.rs:892-899`).
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage, ToolCallPart};
 use aimux_core::options::CallOptions;
@@ -22,7 +19,7 @@ use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::deepseek::{DeepSeekProviderSettings, create_deepseek};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
-use mock_fetch::{Canned, MockFetch};
+use aimux_providers::test_support::mock_fetch::{Canned, MockFetch};
 use serde_json::{Value, json};
 
 /// The inputs of the past tool calls: five non-objects, then an object as

@@ -17,14 +17,14 @@ use super::transcription_model_options::{TranscriptionOptions, parse_offset_seco
 #[cfg(feature = "realtime")]
 use crate::google::get_realtime_base_url::live_web_socket_url;
 use crate::google::options::google_metadata;
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_base64};
 use aimux_core::error::AiMuxError;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse,
-    TranscriptionResult, TranscriptionSegment, TranscriptionStreamOptions,
-    TranscriptionStreamResult,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse, TranscriptionResult,
+    TranscriptionSegment, TranscriptionStreamOptions, TranscriptionStreamResult,
 };
 
+#[cfg(feature = "realtime")]
 const LIVE_WEB_SOCKET_PATH: &str =
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
@@ -116,11 +116,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
             crate::google::options::Namespace::Google,
             options.provider_options.as_ref(),
         )?;
-        let audio = match &options.audio {
-            AudioInput::Url(_) => return Err(AudioInput::url_error()),
-            AudioInput::Base64(value) => value.clone(),
-            AudioInput::Binary(value) => aimux_provider_utils::convert_uint8_array_to_base64(value),
-        };
+        let audio = audio_input_to_base64(&options.audio)?;
 
         // Unary transcription is served by the Interactions API.
         let mut body = json!({

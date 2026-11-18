@@ -154,8 +154,9 @@ pub trait ProviderDiscovery: Send + Sync {
     /// provider's `/models` endpoint.
     ///
     /// Returns **only the provider's official data** (`RuntimeModel`: id,
-    /// owned_by, created) — no community catalogue enrichment. To supplement
-    /// with model specs (context length, capabilities, reasoning portrait),
+    /// owned_by, created, and the `limits` the list response declares) — no
+    /// community catalogue enrichment. To supplement with model specs
+    /// (capabilities, reasoning portrait, limits the list does not declare),
     /// call `get_model_specs` separately and merge in the host (RFC-0027).
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>>;
 }

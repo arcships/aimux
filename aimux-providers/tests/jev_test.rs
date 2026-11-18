@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-mod common;
+use aimux_providers::test_support::replay;
 
 fn fixture() -> Value {
     let fixture: Value = serde_json::from_str(include_str!("fixtures/jev_systemone.json")).unwrap();
@@ -112,7 +112,7 @@ async fn recorded_official_live_responses_replay_through_core_validation() {
     for line in include_str!("fixtures/jev_systemone_live.jsonl").lines() {
         let recording: aimux_core::recording::Recording = serde_json::from_str(line).unwrap();
         let server = MockServer::start().await;
-        common::replay::mount_recording(&server, &recording).await;
+        replay::mount_recording(&server, &recording).await;
         let request: DecideOptions =
             serde_json::from_value(recording.input.options.clone()).unwrap();
         let result = decide(model(&server).as_ref(), request).await.unwrap();

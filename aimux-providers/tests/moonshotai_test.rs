@@ -297,10 +297,11 @@ async fn converts_basic_usage() {
     let usage = usage_for(json!({ "prompt_tokens": 100, "completion_tokens": 50 })).await;
     assert_eq!(usage.input_tokens.total, Some(100));
     assert_eq!(usage.input_tokens.no_cache, Some(100));
-    assert_eq!(usage.input_tokens.cache_read, Some(0));
+    // #478: unreported counts stay unknown (the AI SDK fills 0).
+    assert_eq!(usage.input_tokens.cache_read, None);
     assert_eq!(usage.output_tokens.total, Some(50));
     assert_eq!(usage.output_tokens.text, Some(50));
-    assert_eq!(usage.output_tokens.reasoning, Some(0));
+    assert_eq!(usage.output_tokens.reasoning, None);
 }
 
 /// TS: "should convert usage with top-level cached_tokens (Moonshot format)".
@@ -383,12 +384,13 @@ async fn handles_null_usage_field_values() {
         "cached_tokens": null
     }))
     .await;
-    assert_eq!(usage.input_tokens.total, Some(0));
-    assert_eq!(usage.input_tokens.no_cache, Some(0));
-    assert_eq!(usage.input_tokens.cache_read, Some(0));
-    assert_eq!(usage.output_tokens.total, Some(0));
-    assert_eq!(usage.output_tokens.text, Some(0));
-    assert_eq!(usage.output_tokens.reasoning, Some(0));
+    // #478: unreported counts stay unknown (the AI SDK fills 0).
+    assert_eq!(usage.input_tokens.total, None);
+    assert_eq!(usage.input_tokens.no_cache, None);
+    assert_eq!(usage.input_tokens.cache_read, None);
+    assert_eq!(usage.output_tokens.total, None);
+    assert_eq!(usage.output_tokens.text, None);
+    assert_eq!(usage.output_tokens.reasoning, None);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

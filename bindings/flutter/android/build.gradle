@@ -1,7 +1,7 @@
 // Packages the Rust ABI and builds the Flutter credit/finalizer transport.
 
 group = 'ai.arcships'
-version = '0.6.0'
+version = '0.6.1'
 
 buildscript {
     repositories {

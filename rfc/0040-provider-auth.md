@@ -1,6 +1,6 @@
 # RFC-0040：Provider 构造、凭证边界与原生传输契约
 
-> **状态：Draft，待评审；本文不表示实现完成或维护者已接受。**
+> **状态：Draft，部分实现（按 `master@c5a408370` 核对，2026-11-16）。** G1 的鉴权与传输主体已随 #253、#259、#265 落地：包内 headers/fetch 鉴权、SigV4 签最终 body、redirect 规则、`auth=none`、`Some("")` 不回退 env、未知 package/设置报错、ops `provider.create` 与 `registry.create` 重复 key 报错。G1 未做：`providers_from_config` 与结构化 `{env}` 引用、Package descriptor、`ProviderRegistration`、结构化模型引用（#275）。G2（§5 L0 原生透传）与 G3（§4 凭证协调）未开工（#274）。§3.1 有一处已登记的例外，见该节。
 >
 > **修订（2026-10-15，V4 [5/8] #253）：** §3.2 第三段关于 redirect 的规则已按实现改写，见该段后的修订说明；“默认不跟随 redirect”不再适用于模型 API 请求。
 >
@@ -14,7 +14,7 @@
 
 ## 1. 问题与边界
 
-当前 `aimux-providers/src/provider.rs` 的内建 `RegistryEntry` 只有 name/display/base_url/env_var/profile；外部条目带 protocol 但仅支持 openai_compat。这不是通用协议工厂已经落地的证据。#166 的 B 轨把协议实现去重、配置式选择与能力保真混在一起；#174 的统一 `apply_auth(headers, spec, credential)` 又不足以签名最终 URL/body；#175 的全局解析序、store 与自动刷新会改变现有包的求值时机和 RFC-0018 的宿主持久化责任。
+核对基线 `72a37b5` 上，`aimux-providers/src/provider.rs` 的内建 `RegistryEntry` 只有 name/display/base_url/env_var/profile；外部条目带 protocol 但仅支持 openai_compat。这不是通用协议工厂已经落地的证据。（该文件和 `RegistryEntry` 已在 #265 删除；现在内建 preset 是 `aimux-providers/src/provider_registry.json` 解析出的 `preset.rs::PresetDescriptor`，入口是 `default_providers()` / `create_provider()`，外部条目的运行时 overlay 也随 #265 删除，见 #275。）#166 的 B 轨把协议实现去重、配置式选择与能力保真混在一起；#174 的统一 `apply_auth(headers, spec, credential)` 又不足以签名最终 URL/body；#175 的全局解析序、store 与自动刷新会改变现有包的求值时机和 RFC-0018 的宿主持久化责任。
 
 本 RFC 将其拆成三个交付面：
 
@@ -25,6 +25,8 @@
 不做 OAuth 交互登录、设备码/PKCE UI、账号池、跨账号失败转移、多租户网关、宿主工具执行、网络代理服务。跨语言宿主回调遵循 #200 §0.4 Q4，Node/Python 也不作为例外提前开放。
 
 ## 2. 设计归属与唯一真相
+
+> 本表的 `aimux-provider`、`aimux-devtools` 是 RFC-0044 的目标 crate（C2、C6），现在还不存在（进度见 #328）：V4 traits 在 `aimux-core/src/provider.rs`，录制与回放在 `aimux-core/src/recording.rs`、`aimux-core/src/replay.rs`。`replay_fetch` 也还没有，现在的回放入口是 `aimux_core::replay::replay_with_model`。
 
 | 数据/职责 | 所属层 | 不能承担的职责 |
 |---|---|---|
@@ -62,6 +64,7 @@ descriptor 中的 protocol/family 标识只描述实际适配实现和测试分�
 - API key / bearer 在包的 headers resolver 注入，header 名、前缀、额外版本头遵循该包契约。
 - SigV4 在 fetch 装饰器签名最终 method/URL/headers/body bytes；multipart 先编码，再签名。不能只给 HeaderMap 就声称完成签名。
 - Azure token、Vertex express 等按包 fetch 组合；ADC 走包明确的异步凭证能力。不得 shell out 获取凭证。
+  - **已登记的例外**：Vertex 外部账号凭证的 `credential_source.executable`（`aimux-providers/src/vertex/auth_external.rs`）会启动外部程序取 token，与 `@ai-sdk/google-vertex` 在 Node 下所用 google-auth-library 的 pluggable auth 一致。只在 `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` 时运行；命令按空白拆分后直接启动，不经 shell；超时限 5–120 秒。开关未设时请求以 `InvalidArgument` 失败，不启动进程，也不发请求（测试 `aimux-providers/src/vertex/tests/provider.rs::executable_credential_without_the_opt_in_fails_and_spawns_nothing`）。登记见 `docs/aisdk-architecture-alignment.md` §5。
 - `auth=none` 不解析 key/env/store，不注入占位 key。它表示“不自动加认证”，不是静默删除调用方明确传入的 Authorization；若 endpoint policy 禁止认证头，应显式拒绝。
 
 header 名大小写不敏感，以覆盖插入避免重复认证头，删除项遵循 `None` 语义。原生 model 路径的 provider/call/auth 优先序逐包测试，不能为了统一擅自改变 SDK 行为；G2 的凭证头防覆盖规则见 §5。
@@ -225,7 +228,7 @@ RFC-0032 若恢复，应以本 RFC 和 #200 为目标修订，而不是重新落
 
 ## 10. 核对来源
 
-- [当前 master provider.rs](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/aimux-providers/src/provider.rs)：内建 registry 和现有 profile。
+- [基线 `72a37b5` 的 provider.rs](https://github.com/arcships/aimux/blob/72a37b5058ecd620d75dfe66bee34ef51f89294a/aimux-providers/src/provider.rs)：当时的内建 registry 和 profile；该文件已在 #265 删除，现在对应 `aimux-providers/src/provider_registry.json`、`preset.rs`、`default_providers.rs`。
 - [#200 目标文本（固定 head）](https://github.com/arcships/aimux/blob/d8c3d15a9b84eaa176b64fe9c5f84d678498634d/rfc/0036-aisdk-architecture-alignment.md)：§0.4、第一部分 §3.2–3.4、§4.3–4.6、§6–9；链接指向未合并提案，不是当前规范。
 - [#166 B 轨](https://github.com/arcships/aimux/issues/166)：B1–B9 与七项修正；[#174](https://github.com/arcships/aimux/issues/174)、[#175](https://github.com/arcships/aimux/issues/175)：旧 auth 分层提案。
 - 本文为设计产物，仅核对文档与源代码，未执行实现、构建、协议测试或线上请求。

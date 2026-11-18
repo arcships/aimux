@@ -4,8 +4,6 @@
 //! real cassette data. Each cassette is mounted individually on a
 //! fresh wiremock server.
 
-mod common;
-
 use std::fs;
 
 use serde_json::Value;

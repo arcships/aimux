@@ -21,7 +21,7 @@ use crate::google::internal::{
     Namespace, VERTEX_VIDEO_METADATA_KEYS, google_failed_response_handler,
 };
 use crate::shared::EndpointConfig;
-use aimux_core::shared::{Warning, provider_namespace};
+use aimux_core::shared::{JsonObject, SharedProviderOptions, Warning, provider_namespace};
 use aimux_core::video_model::{VideoFile, VideoFrameType};
 
 /// A Google Vertex AI video generation model.
@@ -60,6 +60,80 @@ fn convert_image(file: &VideoFile, warnings: &mut Vec<Warning>) -> Option<Value>
     }
 }
 
+/// `googleVertexVideoModelOptionsSchema` (google-vertex-video-model-options.ts),
+/// a `z.looseObject` whose keys are all `.nullish()`. Only checked: the
+/// parameters are built from the namespace as given, which also forwards the
+/// keys the schema does not declare.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct VertexVideoOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
+    poll_interval_ms: Option<f64>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::nullish_positive")]
+    poll_timeout_ms: Option<f64>,
+    #[serde(default)]
+    person_generation: Option<PersonGeneration>,
+    #[serde(default)]
+    negative_prompt: Option<String>,
+    #[serde(default)]
+    generate_audio: Option<bool>,
+    #[serde(default)]
+    gcs_output_directory: Option<String>,
+    #[serde(default)]
+    reference_images: Option<Vec<ReferenceImage>>,
+}
+
+/// `z.enum(['dont_allow', 'allow_adult', 'allow_all'])`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PersonGeneration {
+    DontAllow,
+    AllowAdult,
+    AllowAll,
+}
+
+/// One `referenceImages` entry.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct ReferenceImage {
+    #[serde(default)]
+    bytes_base64_encoded: Option<String>,
+    #[serde(default)]
+    gcs_uri: Option<String>,
+}
+
+/// `parseProviderOptions` with `googleVertexVideoModelOptionsSchema` under
+/// `googleVertex`, then `vertex` (google-vertex-video-model.ts:139-148): the
+/// first namespace present, once it matches the schema.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid <namespace> provider options" when that
+/// namespace does not match the schema.
+fn vertex_video_options(
+    provider_options: &SharedProviderOptions,
+) -> Result<Option<&JsonObject>, AiMuxError> {
+    for key in Namespace::Vertex.write_keys() {
+        if aimux_provider_utils::parse_provider_options::<VertexVideoOptions>(
+            key,
+            Some(provider_options),
+        )?
+        .is_some()
+        {
+            return Ok(provider_options.get(*key));
+        }
+    }
+    Ok(None)
+}
+
 #[async_trait]
 impl VideoModel for VertexVideoModel {
     fn provider(&self) -> &str {
@@ -77,10 +151,7 @@ impl VideoModel for VertexVideoModel {
         options: &VideoCallOptions,
     ) -> Result<VideoOperationStart, AiMuxError> {
         let mut warnings = Vec::new();
-        let provider_options = Namespace::Vertex
-            .write_keys()
-            .iter()
-            .find_map(|key| options.provider_options.get(*key));
+        let provider_options = vertex_video_options(&options.provider_options)?;
         let mut instance = Map::new();
         if let Some(prompt) = &options.prompt {
             instance.insert("prompt".into(), json!(prompt));

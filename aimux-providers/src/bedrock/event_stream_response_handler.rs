@@ -8,14 +8,14 @@ use futures::stream::BoxStream;
 
 pub(super) fn bedrock_event_stream_response_handler()
 -> aimux_provider_utils::ResponseHandler<BoxStream<'static, Result<Bytes, AiMuxError>>> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
             input.response.headers(),
         );
         let output_headers = headers.clone();
         let url = input.url;
-        let request_body_values = input.request_body_values;
         let signal = input.abort_signal;
+        let redacted_body = body_source.into_redacted_arc();
         let stream = input.response.bytes_stream().map(move |result| {
             result.map_err(|error| {
                 AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
@@ -26,7 +26,7 @@ pub(super) fn bedrock_event_stream_response_handler()
                     ..aimux_core::ApiCallError::new(
                         error.to_string(),
                         url.clone(),
-                        request_body_values.clone(),
+                        (*redacted_body).clone(),
                     )
                 }))
             })

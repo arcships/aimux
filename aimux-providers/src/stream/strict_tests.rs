@@ -217,3 +217,28 @@ async fn a_stream_that_reported_its_error_is_not_failed_again() {
         ["error"]
     );
 }
+
+#[tokio::test]
+async fn a_tool_input_after_its_tool_call_fails() {
+    let tool_start = StreamPart::ToolInputStart {
+        id: "call-1".into(),
+        tool_name: "weather".into(),
+        provider_executed: None,
+        dynamic: None,
+        title: None,
+        provider_metadata: None,
+    };
+    let parts = vec![
+        tool_call("call-1", None),
+        tool_start,
+        finish(FinishReasonUnified::ToolCalls),
+    ];
+    assert_eq!(
+        run(parts.clone(), true).await,
+        ["failed: Strict stream: tool-input-start for tool call `call-1` that already completed"]
+    );
+    assert_eq!(
+        run(parts, false).await,
+        ["tool-call call-1", "tool-input-start", "finish"]
+    );
+}

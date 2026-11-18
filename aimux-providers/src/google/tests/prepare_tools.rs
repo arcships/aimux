@@ -49,8 +49,7 @@ fn prepare_vertex(
     options.tools = tools;
     options.tool_choice = tool_choice;
     let (body, warnings) =
-        build_request_body_with_warnings_for_namespace(model_id, &options, Namespace::Vertex)
-            .expect("body builds");
+        build_request_body_with_warnings_for_namespace(model_id, &options, Namespace::Vertex);
     let mut result = json!({ "toolWarnings": warnings });
     if let Some(tools) = body.get("tools") {
         result["tools"] = tools.clone();

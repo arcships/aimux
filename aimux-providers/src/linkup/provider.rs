@@ -1,0 +1,33 @@
+use aimux_provider_utils::AuthScheme;
+
+use crate::shared::define_vendor_provider;
+
+use super::search_model::LinkupSearchModel;
+
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.linkup.so";
+pub(crate) const API_KEY_ENV_VAR: &str = "LINKUP_API_KEY";
+const DEFAULT_NAME: &str = "linkup";
+
+define_vendor_provider! {
+    settings: LinkupProviderSettings,
+    provider: LinkupProvider,
+    create: create_linkup,
+    singleton: linkup,
+    display: "Linkup",
+    default_base_url: DEFAULT_BASE_URL,
+    api_key_env_var: API_KEY_ENV_VAR,
+    default_name: DEFAULT_NAME,
+    auth: AuthScheme::Bearer,
+    extra_headers: Vec::new(),
+    package: None,
+}
+
+impl LinkupProvider {
+    /// The search model; `provider()` is `"{name}.search"`.
+    #[must_use]
+    pub fn search_model(&self) -> LinkupSearchModel {
+        LinkupSearchModel::from_config(self.model_config("search"))
+    }
+}
+
+crate::impl_single_modality_provider!(LinkupProvider, search_model, |p, _id| p.search_model());

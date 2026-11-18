@@ -1,4 +1,5 @@
-//! The providerOptions namespace of Luma.
+//! The providerOptions namespace of Luma and its schema
+//! (`luma-image-model-options.ts`).
 //!
 //! Luma reads `providerOptions.luma`, whatever the provider is named. This
 //! module is the one place that spells the key.

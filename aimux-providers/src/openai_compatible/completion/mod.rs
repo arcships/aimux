@@ -1,7 +1,7 @@
 //! The text-completion model (`src/completion/`).
 
 mod completion_language_model;
-mod convert_completion_usage;
+pub(crate) mod convert_completion_usage;
 mod convert_to_completion_prompt;
 mod get_response_metadata;
 

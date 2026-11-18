@@ -8008,28 +8008,27 @@ mod older_upstream_e2e {
     }
 }
 
-// Not an upstream case: a part signed differently from the open text block
-// starts its own, an unsigned or same-signed part (Gemini streams a part's
-// signature on its last fragment) continues it, and text closes before a
-// function call (#467).
+// Not an upstream case: Gemini signs the last part of each text block (the
+// recordings end a block with an empty signed part), so a signed part closes
+// its block, the next part opens a new one, and text closes before a function
+// call (#467).
 mod signed_text_parts {
     use super::*;
 
     #[tokio::test]
-    async fn a_differently_signed_part_opens_its_own_text_block() {
+    async fn a_signed_part_closes_its_text_block() {
         let chunk = json!({
             "candidates": [{
                 "content": { "role": "model", "parts": [
-                    { "text": "plain" },
-                    { "text": "before", "thoughtSignature": "sig-before" },
-                    { "text": " more" },
-                    { "text": "", "thoughtSignature": "sig-before" },
-                    { "text": "after", "thoughtSignature": "sig-after" },
+                    { "text": "first" },
+                    { "text": " block", "thoughtSignature": "sig-1" },
+                    { "text": "second" },
+                    { "text": "", "thoughtSignature": "sig-2" },
                     {
                         "functionCall": { "id": "call-1", "name": "echo", "args": {} },
                         "thoughtSignature": "sig-tool",
                     },
-                    { "text": "", "thoughtSignature": "sig-end" },
+                    { "text": "after", "thoughtSignature": "sig-3" },
                 ]},
                 "finishReason": "STOP",
                 "index": 0,
@@ -8061,17 +8060,16 @@ mod signed_text_parts {
             trace,
             [
                 "text-start 0 -",
-                r#"delta 0 "plain" -"#,
-                r#"delta 0 "before" sig-before"#,
-                r#"delta 0 " more" -"#,
-                r#"delta 0 "" sig-before"#,
+                r#"delta 0 "first" -"#,
+                r#"delta 0 " block" sig-1"#,
                 "text-end 0 -",
-                "text-start 1 sig-after",
-                r#"delta 1 "after" sig-after"#,
+                "text-start 1 -",
+                r#"delta 1 "second" -"#,
+                r#"delta 1 "" sig-2"#,
                 "text-end 1 -",
                 "tool-call call-1",
-                "text-start 2 sig-end",
-                r#"delta 2 "" sig-end"#,
+                "text-start 2 sig-3",
+                r#"delta 2 "after" sig-3"#,
                 "text-end 2 -",
             ]
         );
@@ -8166,6 +8164,57 @@ mod terminal_chunk {
         assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
         assert_eq!(events.last().unwrap()["type"], "finish");
     }
+
+    #[tokio::test]
+    async fn the_stream_ends_at_the_finish_reason_after_the_usage() {
+        let mut finish_without_usage = terminal_chunk("done");
+        finish_without_usage
+            .as_object_mut()
+            .unwrap()
+            .remove("usageMetadata");
+        let usage =
+            json!({ "promptTokenCount": 1, "candidatesTokenCount": 3, "totalTokenCount": 4 });
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&json!({ "usageMetadata": usage })),
+            sse_data_chunk(&finish_without_usage),
+            sse_data_chunk(&terminal_chunk("late")),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        let deltas = stream_events_of_type(&events, &["text-delta"]);
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0]["delta"], "done");
+        let finishes = stream_events_of_type(&events, &["finish"]);
+        assert_eq!(finishes.len(), 1);
+        assert_eq!(finishes[0]["usage"]["outputTokens"]["total"], 3);
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
+
+    // An error event after the terminal chunk is not read. Upstream reads on
+    // but parses the event as an empty chunk (its `chunkSchema` has only
+    // optional fields) and ignores it, so it surfaces nothing either.
+    #[tokio::test]
+    async fn an_error_event_after_the_terminal_chunk_is_not_surfaced() {
+        let mock = sse_stream_mock(vec![
+            sse_data_chunk(&terminal_chunk("done")),
+            sse_data_chunk(&json!({
+                "error": { "code": 429, "message": "late", "status": "RESOURCE_EXHAUSTED" }
+            })),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let events = stream_events_of(&model, json!({})).await;
+
+        assert_eq!(
+            stream_events_of_type(&events, &["error"]),
+            Vec::<Value>::new()
+        );
+        let finish = stream_finish_event(&events);
+        assert_eq!(finish["finishReason"]["unified"], "stop");
+        assert_eq!(events.last().unwrap()["type"], "finish");
+    }
 }
 
 // Not an upstream case: the shape of the error an in-stream `{"error": ...}`
@@ -8184,8 +8233,9 @@ mod in_stream_error {
                 "status": "RESOURCE_EXHAUSTED",
             }
         });
-        // The text chunk carries no finish reason, which would end the
-        // stream before the error event (#469).
+        // The text chunk carries no finish reason: the error arrives before
+        // the terminal chunk (an error after it is not read, see
+        // `terminal_chunk`).
         let text_chunk = json!({
             "candidates": [{ "content": { "parts": [{ "text": "Hello" }], "role": "model" } }],
         });
@@ -8220,5 +8270,85 @@ mod in_stream_error {
         assert_eq!(error.response_body, Some(error_event.to_string()));
         assert!(error.url.starts_with(STREAM_TEST_BASE_URL));
         assert!(matches!(parts.last(), Some(StreamPart::Finish { .. })));
+    }
+}
+
+/// aimux's own: the first of the namespace's read keys present (`google`; for
+/// Vertex `googleVertex`, `vertex`, then `google`) is parsed against
+/// `googleLanguageModelOptions` (google-language-model.ts:173-191). A value
+/// outside the schema fails with the upstream message, naming that namespace,
+/// before anything is sent, for generate and stream alike.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    fn assert_invalid(error: &AiMuxError, namespace: &str, case: &Value) {
+        let AiMuxError::InvalidArgument { message, cause } = error else {
+            panic!("expected InvalidArgument for {case}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            &format!(
+                "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+            ),
+            "{case}"
+        );
+        assert!(cause.is_some(), "{case}");
+    }
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for google in [
+            json!({ "responseModalities": ["AUDIO"] }),
+            json!({ "thinkingConfig": { "thinkingLevel": "max" } }),
+            json!({ "thinkingConfig": { "thinkingBudget": "1024" } }),
+            json!({ "cachedContent": null }),
+            json!({ "safetySettings": [{ "category": "HARM_CATEGORY_HATE_SPEECH" }] }),
+            json!({ "labels": { "team": 1 } }),
+            json!({ "imageConfig": { "prominentPeople": "ALLOW" } }),
+            json!({ "imageConfig": { "imageOutputOptions": { "mimeType": "image/webp" } } }),
+            json!({ "retrievalConfig": { "latLng": { "latitude": 1 } } }),
+            json!({ "serviceTier": "batch" }),
+            json!({ "requestType": "dedicated" }),
+            json!({ "structuredOutputs": "yes" }),
+            json!({ "threshold": "BLOCK_ALL" }),
+            json!({ "audioTimestamp": "true" }),
+            json!({ "mediaResolution": "MEDIA_RESOLUTION_ULTRA" }),
+            json!({ "streamFunctionCallArguments": 1 }),
+            json!({ "sharedRequestType": "batch" }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let model = generate_test_provider(&mock).chat("gemini-pro");
+            let options = generate_call_options(json!({
+                "prompt": generate_test_prompt(),
+                "providerOptions": { "google": google },
+            }));
+            let Err(generate_error) = model.do_generate(&options).await else {
+                panic!("generate with {google} fails");
+            };
+            assert_invalid(&generate_error, "google", &google);
+            let Err(stream_error) = model.do_stream(&options).await else {
+                panic!("stream with {google} fails");
+            };
+            assert_invalid(&stream_error, "google", &google);
+            assert!(mock.seen().is_empty(), "{google}");
+        }
+    }
+
+    #[tokio::test]
+    async fn vertex_names_the_namespace_it_read() {
+        for namespace in ["googleVertex", "vertex", "google"] {
+            let mock = MockFetch::new(vec![]);
+            let model = generate_direct_model("gemini-pro", "google.vertex.chat", &[], &mock);
+            let options = generate_call_options(json!({
+                "prompt": generate_test_prompt(),
+                "providerOptions": { namespace: { "serviceTier": "batch" } },
+            }));
+            let Err(error) = model.do_generate(&options).await else {
+                panic!("generate with {namespace} fails");
+            };
+            assert_invalid(&error, namespace, &json!(namespace));
+            assert!(mock.seen().is_empty(), "{namespace}");
+        }
     }
 }

@@ -241,6 +241,20 @@ pub fn default_fetch() -> FetchFunction {
     default_transport()
 }
 
+/// The process default transport as a [`Fetch`], looked up on every request,
+/// as upstream reads `globalThis.fetch` per call. A transport decorator
+/// wraps it when the provider was given no `fetch` (the AWS SigV4 layers of
+/// Amazon Bedrock and Anthropic on AWS).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ProcessDefaultFetch;
+
+#[async_trait]
+impl Fetch for ProcessDefaultFetch {
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        default_fetch().fetch(request).await
+    }
+}
+
 pub(crate) fn default_transport() -> Arc<ReqwestFetch> {
     let mut slot = default_transport_slot()
         .write()

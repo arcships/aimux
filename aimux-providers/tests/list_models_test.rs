@@ -4,8 +4,6 @@
 //! Community catalogue (`get_model_specs`) is tested separately — the two are
 //! deliberately decoupled.
 
-mod common;
-
 use std::path::Path;
 
 use serde_json::Value;
@@ -278,6 +276,8 @@ async fn list_models_carries_the_limits_the_provider_declares() {
         "vllm",
         serde_json::json!({ "object": "list", "data": [
             { "id": "Qwen/Qwen3-8B", "object": "model", "owned_by": "vllm",
+              "max_model_len": 32768 },
+            { "id": "both/model", "object": "model", "context_length": 8192,
               "max_model_len": 32768 }
         ] }),
     )
@@ -285,6 +285,11 @@ async fn list_models_carries_the_limits_the_provider_declares() {
     assert_eq!(
         limits(&models, "Qwen/Qwen3-8B"),
         serde_json::json!({ "context": 32768 })
+    );
+    // With both declared, the top-level `context_length` is the window.
+    assert_eq!(
+        limits(&models, "both/model"),
+        serde_json::json!({ "context": 8192 })
     );
 
     // A native package on the shared OpenAI-shaped list reads the same keys.

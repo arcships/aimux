@@ -388,6 +388,37 @@ mod google_vertex_image_model {
     }
 }
 
+/// aimux's own: the options handed to the inner language model are parsed
+/// against `googleLanguageModelOptions` under `googleVertex` first, as the
+/// inner `doGenerate` does (google-vertex-image-model.ts:188-196,
+/// google-language-model.ts:173-181). A value outside the schema fails with
+/// the upstream message before anything is sent.
+#[tokio::test]
+async fn a_value_outside_the_language_schema_fails_before_sending() {
+    for vertex in [
+        json!({ "structuredOutputs": "yes" }),
+        json!({ "serviceTier": "batch" }),
+        json!({ "imageConfig": { "imageSize": "8K" } }),
+    ] {
+        let server = prepare_json_response(None, &[]);
+        let mut options = ImageCallOptions::new("A beautiful sunset");
+        options.provider_options = provider_options(json!({ "vertex": vertex }));
+        let Err(error) = model(&server).do_generate(&options).await else {
+            panic!("{vertex} fails");
+        };
+        let AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {vertex}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid googleVertex provider options",
+            "{vertex}"
+        );
+        assert!(cause.is_some(), "{vertex}");
+        assert!(server.seen().is_empty(), "{vertex}");
+    }
+}
+
 // ── Older ports (previously `tests/google_vertex_image_test.rs`) ──
 //
 // Rust translation of the Google Vertex AI image model tests.

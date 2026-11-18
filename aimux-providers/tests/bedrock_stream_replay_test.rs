@@ -18,9 +18,7 @@
 //! the frames actually carry, so the test can only pass if the bytes really
 //! travelled the whole path.
 
-mod common;
-
-use common::replay::mount_cassettes;
+use aimux_providers::test_support::replay::mount_cassettes;
 use futures::StreamExt;
 use wiremock::MockServer;
 

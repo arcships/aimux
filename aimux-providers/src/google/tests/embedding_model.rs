@@ -770,3 +770,66 @@ mod older_embedding {
     // These require the multimodal `content` provider option, which involves
     // complex per-value part merging. Documented for future translation.
 }
+
+/// aimux's own: `providerOptions.google` is parsed against
+/// `googleEmbeddingModelOptions` (google-embedding-model.ts). A value outside
+/// the schema fails with the upstream message before anything is sent, and a
+/// content part keeps the keys of the first variant it matches.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for google in [
+            json!({ "outputDimensionality": "768" }),
+            json!({ "taskType": "SEARCH" }),
+            json!({ "taskType": null }),
+            json!({ "content": null }),
+            json!({ "content": [[], null] }),
+            json!({ "content": [[{ "inlineData": { "mimeType": "image/png" } }], null] }),
+            json!({ "content": [[{ "fileData": { "fileUri": 1, "mimeType": "image/png" } }], null] }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let mut options = embed_options(&TEST_VALUES);
+            options.provider_options = google_options(google.clone());
+            let Err(error) = multimodal_model(&mock).do_embed(&options).await else {
+                panic!("{google} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {google}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid google provider options",
+                "{google}"
+            );
+            assert!(cause.is_some(), "{google}");
+            assert!(mock.seen().is_empty(), "{google}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_content_part_keeps_the_keys_of_the_variant_it_matches() {
+        let mock = MockFetch::new(vec![single_json_response()]);
+        let mut options = embed_options(&["a cat"]);
+        options.provider_options = google_options(json!({
+            "content": [[
+                { "text": "and a dog", "inlineData": { "mimeType": "image/png", "data": "x" } },
+                { "inlineData": { "mimeType": "image/png", "data": "img", "extra": 1 } },
+            ]],
+        }));
+        multimodal_model(&mock)
+            .do_embed(&options)
+            .await
+            .expect("the options are valid");
+        assert_eq!(
+            mock.seen()[0].json_body()["content"]["parts"],
+            json!([
+                { "text": "a cat" },
+                { "text": "and a dog" },
+                { "inlineData": { "mimeType": "image/png", "data": "img" } },
+            ])
+        );
+    }
+}

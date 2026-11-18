@@ -8,11 +8,9 @@ use super::provider::{
 };
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
-    AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
-    SigV4Fetch, default_fetch, is_valid_hostname_part, load_optional_setting, load_setting,
-    validate_base_url,
+    AwsCredentials, FetchFunction, Resolvable, SigV4AuthFetch, SigV4Fetch, is_valid_hostname_part,
+    load_optional_setting, load_setting, validate_base_url,
 };
-use async_trait::async_trait;
 
 /// Where the region, the API key and the AWS credentials of a request come
 /// from.
@@ -148,41 +146,16 @@ impl Auth {
     }
 }
 
-/// Signs a request with SigV4 unless it already carries an `Authorization`
-/// header (the API-key path): one decision, made by the provider headers.
-pub(super) struct BedrockAuthFetch {
-    pub(super) signing: SigV4Fetch,
-    pub(super) inner: FetchFunction,
-}
-
-#[async_trait]
-impl Fetch for BedrockAuthFetch {
-    async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // The transport's `ai-sdk-amazon-bedrock/<v>`, after the helper's
-        // `ai-sdk-provider-utils/<v>` (the 5.0.51 that amazon-bedrock pins)
-        // and before signing, like amazon-bedrock-sigv4-fetch.ts:42-46
-        // (SigV4) and :126-130 (API key).
-        let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
-        aimux_provider_utils::transport_user_agent(
-            &mut request.headers,
-            Some(package.provider_utils),
-            Some(&format!("ai-sdk-{}/{}", package.name, package.version)),
-        );
-        if request.headers.contains_key(reqwest::header::AUTHORIZATION) {
-            self.inner.fetch(request).await
-        } else {
-            self.signing.fetch(request).await
-        }
-    }
-}
-
-/// The process default transport, looked up on every request, as upstream
-/// reads `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129).
-pub(super) struct ProcessDefaultFetch;
-
-#[async_trait]
-impl Fetch for ProcessDefaultFetch {
-    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        default_fetch().fetch(request).await
-    }
+/// The provider's transport: the `ai-sdk-amazon-bedrock/<v>` user-agent
+/// part, after the helper's `ai-sdk-provider-utils/<v>` (the 5.0.51 that
+/// amazon-bedrock pins) and before signing, like
+/// amazon-bedrock-sigv4-fetch.ts:42-46 (SigV4) and :126-130 (API key); then
+/// SigV4 unless the request already carries `Authorization` (the API-key
+/// path): one decision, made by the provider headers.
+pub(super) fn auth_fetch(signing: SigV4Fetch, inner: FetchFunction) -> SigV4AuthFetch {
+    let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+    SigV4AuthFetch::new(signing, inner, reqwest::header::AUTHORIZATION).with_user_agent(
+        package.provider_utils,
+        format!("ai-sdk-{}/{}", package.name, package.version),
+    )
 }

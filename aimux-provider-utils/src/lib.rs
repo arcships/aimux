@@ -62,8 +62,9 @@ pub use create_tool_name_mapping::{ToolNameMapping, create_tool_name_mapping};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
-    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
-    RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
+    Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch,
+    ProcessDefaultFetch, ProxyConfig, RequestCredentials, ReqwestFetch, default_fetch,
+    set_default_transport,
 };
 pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
@@ -83,18 +84,20 @@ pub use media_type::{
     is_full_media_type, resolve_full_media_type,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
-pub use parse_provider_options::{optional_field, parse_option_fields, parse_provider_options};
+pub use parse_provider_options::{
+    nullish_positive, optional_field, parse_option_fields, parse_provider_options,
+};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
-    ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
-    create_binary_response_handler, create_event_source_response_handler,
+    ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
+    ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
     create_status_code_error_response_handler, invalid_response_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+pub use sigv4_fetch::{AwsCredentials, SigV4AuthFetch, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;
 pub use tool_result_to_content::{tool_result_content_value, tool_result_to_content};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};

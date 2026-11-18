@@ -176,6 +176,78 @@ impl ChatToolCalls {
         true
     }
 
+    /// Apply one delta in strict stream mode (#473), where a call has a
+    /// single shape: it starts at a new `index` with a non-blank `id` and
+    /// `function.name`, and later deltas at that index repeat that id and
+    /// name or omit them. Anything else ends the stream with a strict error
+    /// and returns `false`. The AI SDK repairs these deltas instead.
+    #[must_use]
+    pub(crate) fn strict_delta(
+        &mut self,
+        delta: ToolCallDelta<'_>,
+        controller: &mut Controller,
+    ) -> bool {
+        let ToolCallDelta {
+            index,
+            id,
+            name,
+            arguments,
+            invalid_type,
+            provider_metadata,
+        } = delta;
+        let Some(index) = index else {
+            return strict_invalid(controller, "a tool call delta without an index".into());
+        };
+        let Some(call) = self.calls.iter().position(|c| c.index == Some(index)) else {
+            let (Some(id), Some(name)) = (non_blank(id), non_blank(name)) else {
+                return strict_invalid(
+                    controller,
+                    format!("tool call at index {index} started without an id and a name"),
+                );
+            };
+            if invalid_type {
+                return invalid(controller, "Expected 'function' type.");
+            }
+            if self.calls.iter().any(|c| c.id == id) {
+                return strict_invalid(
+                    controller,
+                    format!("tool call id `{id}` repeated at index {index}"),
+                );
+            }
+            let arguments = arguments.unwrap_or("");
+            self.start(
+                Some(id),
+                Some(index),
+                name,
+                arguments,
+                provider_metadata,
+                controller,
+            );
+            return true;
+        };
+        let tool_call = &mut self.calls[call];
+        if id.is_some_and(|id| id != tool_call.id) || name.is_some_and(|n| n != tool_call.name) {
+            return strict_invalid(
+                controller,
+                format!(
+                    "tool call `{}` at index {index} changed its id or name",
+                    tool_call.id
+                ),
+            );
+        }
+        if let Some(arguments) = arguments {
+            tool_call.argument_state.append(arguments);
+            tool_call.arguments.push_str(arguments);
+            controller.tool_input_delta(tool_call.id.clone(), arguments.to_string());
+        }
+        true
+    }
+
+    /// Whether no call has started.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.calls.is_empty()
+    }
+
     /// End every call with `ToolInputEnd` and `ToolCall`, ordered by index
     /// when every call has one, otherwise by arrival.
     pub(crate) fn finish(mut self, controller: &mut Controller) {
@@ -349,6 +421,12 @@ impl ChatToolCalls {
 /// End the stream with the upstream `InvalidResponseDataError`.
 fn invalid(controller: &mut Controller, message: &str) -> bool {
     controller.error(AiMuxError::invalid_response_data(message.to_string()));
+    false
+}
+
+/// End the stream with a strict stream error.
+fn strict_invalid(controller: &mut Controller, problem: String) -> bool {
+    controller.error(super::strict_error(problem));
     false
 }
 

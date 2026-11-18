@@ -331,11 +331,11 @@ impl Provider for OpenAICompatibleProvider {
         &self,
         model_id: &str,
     ) -> Option<Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError>> {
-        if !crate::runtime_decision::supported(&self.name) {
+        if !crate::decision::runtime::supported(&self.name) {
             return None;
         }
         Some(
-            crate::runtime_decision::RuntimeDecisionModel::new(
+            crate::decision::runtime::RuntimeDecisionModel::new(
                 &self.name,
                 model_id,
                 Arc::new(self.model_config("decision")),
@@ -421,7 +421,7 @@ pub(crate) struct CompatModelConfig {
 /// The decision endpoint of a runtime preset: the base URL, credential and
 /// transport of its other models.
 #[async_trait::async_trait]
-impl crate::decision_support::DecisionEndpoint for CompatModelConfig {
+impl crate::decision::support::DecisionEndpoint for CompatModelConfig {
     fn url(&self, path: &str) -> Result<String, AiMuxError> {
         Ok(format!(
             "{}{}",

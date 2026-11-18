@@ -11,34 +11,32 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
         return Usage::default();
     };
 
-    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
+    // A count the provider did not report stays unknown; a reported zero is
+    // reported as zero.
+    let prompt_tokens = usage.prompt_tokens;
     let cache_read_tokens = usage
         .prompt_tokens_details
         .as_ref()
         .and_then(|details| details.cached_tokens);
-    let completion_tokens = usage.completion_tokens.unwrap_or(0);
+    let completion_tokens = usage.completion_tokens;
     let reasoning_tokens = usage
         .completion_tokens_details
         .as_ref()
         .and_then(|details| details.reasoning_tokens);
-    let text_tokens = match reasoning_tokens {
-        Some(reasoning) => completion_tokens.saturating_sub(reasoning),
-        None => completion_tokens,
-    };
+    let text_tokens =
+        completion_tokens.map(|total| total.saturating_sub(reasoning_tokens.unwrap_or(0)));
 
     Usage {
         input_tokens: InputTokenUsage {
-            total: Some(prompt_tokens),
-            no_cache: Some(match cache_read_tokens {
-                Some(cached) => prompt_tokens.saturating_sub(cached),
-                None => prompt_tokens,
-            }),
+            total: prompt_tokens,
+            no_cache: prompt_tokens
+                .map(|total| total.saturating_sub(cache_read_tokens.unwrap_or(0))),
             cache_read: cache_read_tokens,
             cache_write: None,
         },
         output_tokens: OutputTokenUsage {
-            total: Some(completion_tokens),
-            text: Some(text_tokens),
+            total: completion_tokens,
+            text: text_tokens,
             reasoning: reasoning_tokens,
         },
         raw: Some(usage.raw.clone()),

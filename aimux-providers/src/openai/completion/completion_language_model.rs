@@ -79,27 +79,16 @@ impl OpenAICompletionModel {
         }
         let mut provider_options = Map::new();
         for namespace in ["openai", self.provider_options_name()] {
+            // openai-completion-language-model.ts:111-120
+            aimux_provider_utils::parse_provider_options::<CompletionOptions>(
+                namespace,
+                options.provider_options.as_ref(),
+            )?;
             if let Some(values) = options
                 .provider_options
                 .as_ref()
                 .and_then(|all| all.get(namespace))
             {
-                for (key, value) in values {
-                    let valid = match key.as_str() {
-                        "echo" => value.is_boolean(),
-                        "user" | "suffix" => value.is_string(),
-                        "logitBias" => value
-                            .as_object()
-                            .is_some_and(|map| map.values().all(Value::is_number)),
-                        "logprobs" => value.is_boolean() || value.is_number(),
-                        _ => true,
-                    };
-                    if !valid {
-                        return Err(AiMuxError::invalid_argument(format!(
-                            "invalid {namespace} provider option {key}"
-                        )));
-                    }
-                }
                 provider_options.extend(values.clone());
             }
         }
@@ -161,6 +150,42 @@ impl OpenAICompletionModel {
     }
 }
 
+/// `openaiLanguageModelCompletionOptions`
+/// (openai-completion-language-model-options.ts). Every key is
+/// `.optional()`: absent is `None`, `null` fails. Only checked: the request
+/// reads the namespaces as given.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request reads the raw namespaces"
+)]
+struct CompletionOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    echo: Option<bool>,
+    /// `z.record(z.string(), z.number())`.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    logit_bias: Option<std::collections::HashMap<String, serde_json::Number>>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    suffix: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    user: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    logprobs: Option<Logprobs>,
+}
+
+/// `z.union([z.boolean(), z.number()])`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+#[allow(
+    dead_code,
+    reason = "validated only; the request reads the raw namespaces"
+)]
+enum Logprobs {
+    Bool(bool),
+    Number(serde_json::Number),
+}
+
 /// The prompt of a text completion (`convertToOpenAICompletionPrompt`).
 fn completion_prompt(options: &CallOptions) -> Result<String, AiMuxError> {
     let mut text = String::new();
@@ -209,8 +234,8 @@ fn completion_prompt(options: &CallOptions) -> Result<String, AiMuxError> {
 }
 
 /// `convertOpenAICompletionUsage`: only the three counts the response schema
-/// keeps; a missing count leaves its total unset.
-fn usage(raw: Option<Map<String, Value>>) -> Usage {
+/// keeps; a missing count stays unknown.
+pub(crate) fn usage(raw: Option<Map<String, Value>>) -> Usage {
     let Some(mut raw) = raw else {
         return Usage::default();
     };
@@ -228,15 +253,17 @@ fn usage(raw: Option<Map<String, Value>>) -> Usage {
         .get("completion_tokens")
         .and_then(Value::as_u64)
         .map(|n| n as u32);
+    // #478: a count the provider did not report stays unknown (the AI SDK
+    // fills 0); a reported zero stays zero.
     Usage {
         input_tokens: InputTokenUsage {
             total: input,
-            no_cache: Some(input.unwrap_or(0)),
+            no_cache: input,
             ..Default::default()
         },
         output_tokens: OutputTokenUsage {
             total: output,
-            text: Some(output.unwrap_or(0)),
+            text: output,
             ..Default::default()
         },
         raw: Some(raw),
