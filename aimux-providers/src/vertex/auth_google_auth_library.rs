@@ -357,6 +357,10 @@ impl GoogleAuth {
                         message: "Invalid Google service-account private key encoding".into(),
                         cause: Some(ErrorCause::source(&error)),
                     })?;
+                    // ring's `KeyRejected` and `Unspecified` implement
+                    // `std::error::Error` only with ring's `std` feature, which
+                    // this build does not enable, and have no source to keep;
+                    // their text is the whole cause.
                     let key_pair = RsaKeyPair::from_pkcs8(&der)
                         .or_else(|_| RsaKeyPair::from_der(&der))
                         .map_err(|error| AiMuxError::InvalidArgument {
@@ -568,6 +572,8 @@ impl GoogleAuth {
             der = der_wrap(0x30, wrapped);
         }
         let random = SystemRandom::new();
+        // As for the RSA key above, ring's errors have no `source()`: their
+        // text is the whole cause.
         let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
             &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
             &der,
