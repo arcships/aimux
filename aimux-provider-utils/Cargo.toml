@@ -28,7 +28,7 @@ futures = { workspace = true }
 indexmap = { workspace = true }
 async-stream = { workspace = true }
 url = { workspace = true }
-chrono = "0.4"
+jiff = { workspace = true }
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"

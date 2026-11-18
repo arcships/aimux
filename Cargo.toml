@@ -99,6 +99,9 @@ aimux-provider-utils = { path = "aimux-provider-utils", version = "0.6.1" }
 # HTTP date parsing (Retry-After header)
 httpdate = "1"
 
+# Date/time (UTC timestamps, RFC 2822/3339, SigV4 dates; no tzdb tables)
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+
 # Random number generation (Full Jitter backoff in retry.rs)
 rand = "0.8"
 

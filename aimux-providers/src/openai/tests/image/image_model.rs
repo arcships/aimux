@@ -933,9 +933,9 @@ mod older_image {
             opts.n = 1;
             opts.size = Some(Size::new(1024, 1024));
 
-            let before = chrono::Utc::now().timestamp_millis();
+            let before = jiff::Timestamp::now().as_millisecond();
             let result = model.do_generate(&opts).await.unwrap();
-            let after = chrono::Utc::now().timestamp_millis();
+            let after = jiff::Timestamp::now().as_millisecond();
 
             // A `Date`: millisecond precision.
             let ts = result.response.timestamp.unwrap().unix_millis();

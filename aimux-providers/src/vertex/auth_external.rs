@@ -164,9 +164,14 @@ pub(super) async fn aws(
     let host = parsed
         .port()
         .map_or_else(|| host.into(), |port| format!("{host}:{port}"));
-    let now = chrono::Utc::now();
-    let date = now.format("%Y%m%d").to_string();
-    let time = now.format("%Y%m%dT%H%M%SZ").to_string();
+    let now = jiff::tz::Offset::UTC.to_datetime(jiff::Timestamp::now());
+    let date = format!("{:04}{:02}{:02}", now.year(), now.month(), now.day());
+    let time = format!(
+        "{date}T{:02}{:02}{:02}Z",
+        now.hour(),
+        now.minute(),
+        now.second()
+    );
     let mut headers = BTreeMap::from([("host", host.clone()), ("x-amz-date", time.clone())]);
     if let Some(token) = token.filter(|value| !value.is_empty()) {
         headers.insert("x-amz-security-token", token);
@@ -258,7 +263,9 @@ pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError
             && value
                 .get("expiration_time")
                 .and_then(Value::as_i64)
-                .is_none_or(|expiry| expiry >= (chrono::Utc::now().timestamp_millis() + 500) / 1000)
+                .is_none_or(|expiry| {
+                    expiry >= (jiff::Timestamp::now().as_millisecond() + 500) / 1000
+                })
         {
             return executable_response(&value, true);
         }
@@ -358,7 +365,7 @@ fn executable_response(response: &Value, output_file: bool) -> Result<String, Ai
     let expiry = response.get("expiration_time").and_then(Value::as_i64);
     if (output_file && expiry.is_none())
         || expiry
-            .is_some_and(|expiry| expiry < (chrono::Utc::now().timestamp_millis() + 500) / 1000)
+            .is_some_and(|expiry| expiry < (jiff::Timestamp::now().as_millisecond() + 500) / 1000)
     {
         return Err(AiMuxError::invalid_response_data(
             "Google credential executable response has missing or expired expiration_time",

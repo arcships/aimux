@@ -3,9 +3,12 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, Datelike, SecondsFormat, TimeZone, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+// 0000-01-01T00:00:00.000Z ..= 9999-12-31T23:59:59.999Z
+const MIN_UNIX_MILLIS: i64 = -62_167_219_200_000;
+const MAX_UNIX_MILLIS: i64 = 253_402_300_799_999;
 
 /// A point in time: a `Date` in the AI SDK, whose JSON is
 /// `Date.prototype.toISOString()` (`2024-03-01T12:00:00.000Z`).
@@ -18,7 +21,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, JsonSchema)]
 #[schemars(with = "String")]
 #[schemars(extend("x-aimux-codec" = "timestamp", "format" = "date-time"))]
-pub struct Timestamp(DateTime<Utc>);
+pub struct Timestamp(jiff::Timestamp);
 
 /// The text is not an RFC 3339 date-time, or its time is outside 0000-9999.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -33,25 +36,32 @@ impl Timestamp {
     /// The current time.
     #[must_use]
     pub fn now() -> Self {
-        Self::from_datetime(Utc::now()).unwrap_or(Self(DateTime::UNIX_EPOCH))
+        Self::from_timestamp(jiff::Timestamp::now()).unwrap_or(Self(jiff::Timestamp::UNIX_EPOCH))
     }
 
-    /// The time, truncated to milliseconds, or `None` outside 0000-9999.
+    /// The time, truncated to milliseconds toward negative infinity, or `None`
+    /// outside 0000-9999.
+    ///
+    /// `jiff::Timestamp` spans years `-9999..=9999`, whereas `Timestamp`
+    /// enforces years `0000..=9999` for 4-digit JS `toISOString()` output, so
+    /// this conversion is fallible while [`Timestamp::to_timestamp`] (and
+    /// `From<Timestamp> for jiff::Timestamp`) is infallible.
     #[must_use]
-    pub fn from_datetime<Tz: TimeZone>(time: DateTime<Tz>) -> Option<Self> {
-        let time = time.with_timezone(&Utc);
-        if !(0..=9999).contains(&time.year()) {
-            return None;
-        }
-        Self::from_unix_millis(time.timestamp_millis())
+    pub fn from_timestamp(time: jiff::Timestamp) -> Option<Self> {
+        let millis = i64::try_from(time.as_nanosecond().div_euclid(1_000_000)).ok()?;
+        Self::from_unix_millis(millis)
     }
 
     /// `new Date(millis)`: milliseconds since the Unix epoch, or `None`
     /// outside 0000-9999.
     #[must_use]
     pub fn from_unix_millis(millis: i64) -> Option<Self> {
-        let time = DateTime::from_timestamp_millis(millis)?;
-        (0..=9999).contains(&time.year()).then_some(Self(time))
+        if !(MIN_UNIX_MILLIS..=MAX_UNIX_MILLIS).contains(&millis) {
+            return None;
+        }
+        let secs = millis.div_euclid(1_000);
+        let nanos = (millis.rem_euclid(1_000) as i32) * 1_000_000;
+        jiff::Timestamp::new(secs, nanos).ok().map(Self)
     }
 
     /// `new Date(seconds * 1000)`, the form providers use for a Unix
@@ -72,9 +82,10 @@ impl Timestamp {
     /// RFC 2822 reads it), or `None` when it is not one.
     #[must_use]
     pub fn from_http_date(text: &str) -> Option<Self> {
-        DateTime::parse_from_rfc2822(text.trim())
+        jiff::fmt::rfc2822::DateTimeParser::new()
+            .parse_timestamp(text.trim())
             .ok()
-            .and_then(Self::from_datetime)
+            .and_then(Self::from_timestamp)
     }
 
     /// Read an RFC 3339 date-time.
@@ -84,31 +95,109 @@ impl Timestamp {
     /// Fails when the text is not an RFC 3339 date-time or is outside
     /// 0000-9999.
     pub fn parse(text: &str) -> Result<Self, TimestampError> {
-        DateTime::parse_from_rfc3339(text)
+        if !is_strict_rfc3339(text) {
+            return Err(TimestampError {
+                text: text.to_owned(),
+            });
+        }
+        text.parse::<jiff::Timestamp>()
             .ok()
-            .and_then(Self::from_datetime)
+            .and_then(Self::from_timestamp)
             .ok_or_else(|| TimestampError {
                 text: text.to_owned(),
             })
     }
 
-    /// The time as a `chrono` UTC date-time.
+    /// The time as a `jiff::Timestamp` (UTC, millisecond precision).
+    ///
+    /// Infallible because `Timestamp` enforces years `0000..=9999`, a subset of
+    /// `jiff::Timestamp`'s `-9999..=9999` range.
     #[must_use]
-    pub fn to_datetime(self) -> DateTime<Utc> {
+    pub fn to_timestamp(self) -> jiff::Timestamp {
         self.0
     }
 
     /// Milliseconds since the Unix epoch (`Date.prototype.getTime()`).
     #[must_use]
     pub fn unix_millis(self) -> i64 {
-        self.0.timestamp_millis()
+        self.0.as_millisecond()
+    }
+}
+
+fn is_strict_rfc3339(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() < 20 {
+        return false;
+    }
+    if !bytes[0..4].iter().all(u8::is_ascii_digit)
+        || bytes[4] != b'-'
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || bytes[7] != b'-'
+        || !bytes[8..10].iter().all(u8::is_ascii_digit)
+        || !matches!(bytes[10], b'T' | b't')
+        || !bytes[11..13].iter().all(u8::is_ascii_digit)
+        || bytes[13] != b':'
+        || !bytes[14..16].iter().all(u8::is_ascii_digit)
+        || bytes[16] != b':'
+        || !bytes[17..19].iter().all(u8::is_ascii_digit)
+    {
+        return false;
+    }
+    let mut rest = &bytes[19..];
+    if let Some(after_dot) = rest.strip_prefix(b".") {
+        let digits = after_dot.iter().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 {
+            return false;
+        }
+        rest = &after_dot[digits..];
+    }
+    match rest {
+        b"Z" | b"z" => true,
+        [b'+' | b'-', h1, h2, b':', m1, m2]
+            if h1.is_ascii_digit()
+                && h2.is_ascii_digit()
+                && m1.is_ascii_digit()
+                && m2.is_ascii_digit() =>
+        {
+            let offset_hour = (h1 - b'0') * 10 + (h2 - b'0');
+            let offset_minute = (m1 - b'0') * 10 + (m2 - b'0');
+            offset_hour <= 23 && offset_minute <= 59
+        }
+        _ => false,
+    }
+}
+
+impl TryFrom<jiff::Timestamp> for Timestamp {
+    type Error = TimestampError;
+
+    fn try_from(time: jiff::Timestamp) -> Result<Self, Self::Error> {
+        Self::from_timestamp(time).ok_or_else(|| TimestampError {
+            text: time.to_string(),
+        })
+    }
+}
+
+impl From<Timestamp> for jiff::Timestamp {
+    fn from(timestamp: Timestamp) -> Self {
+        timestamp.to_timestamp()
     }
 }
 
 impl fmt::Display for Timestamp {
     /// `toISOString()`: `YYYY-MM-DDTHH:mm:ss.sssZ`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.to_rfc3339_opts(SecondsFormat::Millis, true))
+        let dt = jiff::tz::Offset::UTC.to_datetime(self.0);
+        write!(
+            f,
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+            dt.year(),
+            dt.month(),
+            dt.day(),
+            dt.hour(),
+            dt.minute(),
+            dt.second(),
+            dt.millisecond(),
+        )
     }
 }
 
@@ -201,5 +290,72 @@ mod tests {
             "2025-03-06T13:50:19.000Z"
         );
         assert_eq!(Timestamp::from_http_date("yesterday"), None);
+    }
+
+    #[test]
+    fn converts_jiff_timestamp_and_truncates_pre_1970_toward_floor() {
+        let jiff_ts: jiff::Timestamp = "2025-03-06T13:50:19.123456789Z".parse().unwrap();
+        let ts = Timestamp::from_timestamp(jiff_ts).unwrap();
+        assert_eq!(ts.unix_millis(), 1_741_269_019_123);
+        assert_eq!(
+            ts.to_timestamp(),
+            jiff::Timestamp::from_millisecond(1_741_269_019_123).unwrap()
+        );
+        assert_eq!(Timestamp::try_from(jiff_ts).unwrap(), ts);
+        assert_eq!(jiff::Timestamp::from(ts), ts.to_timestamp());
+
+        // Sub-millisecond pre-1970 instants must truncate toward -inf, not 0.
+        let pre_epoch: jiff::Timestamp = "1969-12-31T23:59:59.999999Z".parse().unwrap();
+        let truncated = Timestamp::from_timestamp(pre_epoch).unwrap();
+        assert_eq!(truncated.unix_millis(), -1);
+        assert_eq!(truncated.to_string(), "1969-12-31T23:59:59.999Z");
+        assert_eq!(
+            Timestamp::parse("1969-12-31T23:59:59.999999Z")
+                .unwrap()
+                .unix_millis(),
+            -1
+        );
+    }
+
+    #[test]
+    fn enforces_four_digit_year_bounds() {
+        let min = "0000-01-01T00:00:00.000Z".parse::<Timestamp>().unwrap();
+        assert_eq!(min.unix_millis(), MIN_UNIX_MILLIS);
+        assert_eq!(min.to_string(), "0000-01-01T00:00:00.000Z");
+
+        // `jiff::Timestamp::MAX` is `9999-12-30T22:00:00.999999999Z`.
+        let max_jiff_ms =
+            i64::try_from(jiff::Timestamp::MAX.as_nanosecond().div_euclid(1_000_000)).unwrap();
+        let max = "9999-12-30T22:00:00.999Z".parse::<Timestamp>().unwrap();
+        assert_eq!(max.unix_millis(), max_jiff_ms);
+        assert_eq!(max.to_string(), "9999-12-30T22:00:00.999Z");
+
+        assert_eq!(Timestamp::from_unix_millis(MIN_UNIX_MILLIS - 1), None);
+        assert_eq!(Timestamp::from_unix_millis(MAX_UNIX_MILLIS + 1), None);
+
+        let before_year_zero: jiff::Timestamp = "-000001-12-31T23:59:59Z".parse().unwrap();
+        assert_eq!(Timestamp::from_timestamp(before_year_zero), None);
+        assert!(Timestamp::try_from(before_year_zero).is_err());
+
+        assert!(Timestamp::parse("-0001-12-31T23:59:59Z").is_err());
+        assert!(Timestamp::parse("10000-01-01T00:00:00Z").is_err());
+        assert!(Timestamp::parse("0000-01-01T00:00:00+01:00").is_err());
+    }
+
+    #[test]
+    fn rejects_non_rfc3339_iso_extensions() {
+        for invalid in [
+            "2025-03-06T13:50:19Z[UTC]",
+            "2025-03-06T13:50:19-05:00[America/New_York]",
+            "2025-03-06 13:50:19Z",
+            "2025-03-06T13:50:19,123Z",
+            "2025-03-06T13:50:19+0200",
+            "2025-03-06T13:50:19+02",
+            "2025-03-06T13:50:19+24:00",
+            "2025-03-06T13:50:19.Z",
+            "+002025-03-06T13:50:19Z",
+        ] {
+            assert!(Timestamp::parse(invalid).is_err(), "{invalid:?}");
+        }
     }
 }

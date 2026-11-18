@@ -162,12 +162,12 @@ mod do_generate {
     async fn should_include_response_timestamp_model_id_and_headers() {
         let fetch = MockFetch::new(vec![audio_answer(&[("x-request-id", "test-request-id")])]);
 
-        let before = chrono::Utc::now().timestamp_millis();
+        let before = jiff::Timestamp::now().as_millisecond();
         let result = speech_model(&fetch)
             .do_generate(&SpeechCallOptions::new("Hello from the AI SDK!"))
             .await
             .expect("the call succeeds");
-        let after = chrono::Utc::now().timestamp_millis();
+        let after = jiff::Timestamp::now().as_millisecond();
 
         let timestamp = result
             .response
@@ -471,12 +471,12 @@ mod do_generate {
     #[tokio::test]
     async fn should_use_the_real_date_when_no_custom_date_provider_is_specified() {
         let server = server_with(audio_response("audio/mpeg", &[])).await;
-        let before = chrono::Utc::now().timestamp_millis();
+        let before = jiff::Timestamp::now().as_millisecond();
         let result = wiremock_speech_model(&server, None)
             .do_generate(&options("Hello from the AI SDK!"))
             .await
             .unwrap();
-        let after = chrono::Utc::now().timestamp_millis();
+        let after = jiff::Timestamp::now().as_millisecond();
 
         // A `Date`: millisecond precision.
         let timestamp = result.response.timestamp.unwrap().unix_millis();

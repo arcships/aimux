@@ -30,7 +30,6 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use chrono::{DateTime, TimeZone, Utc};
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, StatusCode};
@@ -58,9 +57,9 @@ const USER_AGENT: &str = "ai-sdk-amazon-bedrock/5.0.100";
 /// The signing date of upstream's mocked signer.
 const AMZ_DATE: &str = "20240315T000000Z";
 
-fn fixed_clock() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2024, 3, 15, 0, 0, 0)
-        .single()
+fn fixed_clock() -> jiff::Timestamp {
+    jiff::tz::Offset::UTC
+        .to_timestamp(jiff::civil::date(2024, 3, 15).at(0, 0, 0, 0))
         .expect("valid date")
 }
 
