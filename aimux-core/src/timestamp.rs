@@ -1,14 +1,15 @@
 //! A point in time as the AI SDK's JSON writes it.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-// 0000-01-01T00:00:00.000Z ..= 9999-12-31T23:59:59.999Z
+// `0000-01-01T00:00:00.000Z ..= 9999-12-30T22:00:00.999Z` (`jiff::Timestamp::MAX` floored to ms).
 const MIN_UNIX_MILLIS: i64 = -62_167_219_200_000;
-const MAX_UNIX_MILLIS: i64 = 253_402_300_799_999;
+const MAX_UNIX_MILLIS: i64 = 253_402_207_200_999;
 
 /// A point in time: a `Date` in the AI SDK, whose JSON is
 /// `Date.prototype.toISOString()` (`2024-03-01T12:00:00.000Z`).
@@ -23,7 +24,8 @@ const MAX_UNIX_MILLIS: i64 = 253_402_300_799_999;
 #[schemars(extend("x-aimux-codec" = "timestamp", "format" = "date-time"))]
 pub struct Timestamp(jiff::Timestamp);
 
-/// The text is not an RFC 3339 date-time, or its time is outside 0000-9999.
+/// The text is not an RFC 3339 date-time, or its time is outside the supported
+/// range (`0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "invalid timestamp {text:?}: expected an RFC 3339 date-time such as 2024-03-01T12:00:00.000Z"
@@ -40,10 +42,11 @@ impl Timestamp {
     }
 
     /// The time, truncated to milliseconds toward negative infinity, or `None`
-    /// outside 0000-9999.
+    /// before `0000-01-01T00:00:00.000Z` (note [`jiff::Timestamp::MAX`] is
+    /// `9999-12-30T22:00:00.999999999Z`).
     ///
-    /// `jiff::Timestamp` spans years `-9999..=9999`, whereas `Timestamp`
-    /// enforces years `0000..=9999` for 4-digit JS `toISOString()` output, so
+    /// `jiff::Timestamp` extends down to year `-9999`, whereas `Timestamp`
+    /// enforces 4-digit years (`>= 0000`) for JS `toISOString()` output, so
     /// this conversion is fallible while [`Timestamp::to_timestamp`] (and
     /// `From<Timestamp> for jiff::Timestamp`) is infallible.
     #[must_use]
@@ -53,7 +56,7 @@ impl Timestamp {
     }
 
     /// `new Date(millis)`: milliseconds since the Unix epoch, or `None`
-    /// outside 0000-9999.
+    /// outside `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`.
     #[must_use]
     pub fn from_unix_millis(millis: i64) -> Option<Self> {
         if !(MIN_UNIX_MILLIS..=MAX_UNIX_MILLIS).contains(&millis) {
@@ -66,8 +69,9 @@ impl Timestamp {
 
     /// `new Date(seconds * 1000)`, the form providers use for a Unix
     /// `created` field: a fraction below a millisecond is dropped, and a
-    /// value that is not finite or is outside 0000-9999 is `None` (an invalid
-    /// `Date` upstream).
+    /// value that is not finite or is outside
+    /// `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z` is `None` (an
+    /// invalid `Date` upstream).
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn from_unix_seconds(seconds: f64) -> Option<Self> {
@@ -82,10 +86,19 @@ impl Timestamp {
     /// RFC 2822 reads it), or `None` when it is not one.
     #[must_use]
     pub fn from_http_date(text: &str) -> Option<Self> {
-        jiff::fmt::rfc2822::DateTimeParser::new()
-            .parse_timestamp(text.trim())
+        let trimmed = text.trim();
+        let parsed = jiff::fmt::rfc2822::DateTimeParser::new()
+            .parse_timestamp(trimmed)
             .ok()
-            .and_then(Self::from_timestamp)
+            .and_then(Self::from_timestamp)?;
+        if rfc2822_has_leap_second(trimmed) {
+            parsed
+                .unix_millis()
+                .checked_add(1_000)
+                .and_then(Self::from_unix_millis)
+        } else {
+            Some(parsed)
+        }
     }
 
     /// Read an RFC 3339 date-time.
@@ -93,24 +106,32 @@ impl Timestamp {
     /// # Errors
     ///
     /// Fails when the text is not an RFC 3339 date-time or is outside
-    /// 0000-9999.
+    /// `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`.
     pub fn parse(text: &str) -> Result<Self, TimestampError> {
-        if !is_strict_rfc3339(text) {
-            return Err(TimestampError {
-                text: text.to_owned(),
-            });
-        }
-        text.parse::<jiff::Timestamp>()
+        let err = || TimestampError {
+            text: text.to_owned(),
+        };
+        let (normalized, leap_second) = prepare_strict_rfc3339(text).ok_or_else(err)?;
+        let parsed = normalized
+            .parse::<jiff::Timestamp>()
             .ok()
             .and_then(Self::from_timestamp)
-            .ok_or_else(|| TimestampError {
-                text: text.to_owned(),
-            })
+            .ok_or_else(err)?;
+        if leap_second {
+            parsed
+                .unix_millis()
+                .checked_add(1_000)
+                .and_then(Self::from_unix_millis)
+                .ok_or_else(err)
+        } else {
+            Ok(parsed)
+        }
     }
 
     /// The time as a `jiff::Timestamp` (UTC, millisecond precision).
     ///
-    /// Infallible because `Timestamp` enforces years `0000..=9999`, a subset of
+    /// Infallible because `Timestamp` is bounded to
+    /// `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`, a subset of
     /// `jiff::Timestamp`'s `-9999..=9999` range.
     #[must_use]
     pub fn to_timestamp(self) -> jiff::Timestamp {
@@ -124,10 +145,15 @@ impl Timestamp {
     }
 }
 
-fn is_strict_rfc3339(text: &str) -> bool {
+/// Validates strict RFC 3339 syntax (`YYYY-MM-DD[T|t]HH:MM:SS(\.\d+)?(Z|z|[+-]HH:MM)`)
+/// and normalizes two valid RFC 3339 constructs before `jiff::Timestamp` parsing:
+/// - `:60` leap seconds are rewritten to `:59` with `leap_second = true` so the
+///   caller advances by 1,000 ms (matching `chrono`'s `timestamp_millis()`).
+/// - fractional seconds longer than 9 digits are truncated to 9 digits.
+fn prepare_strict_rfc3339(text: &str) -> Option<(Cow<'_, str>, bool)> {
     let bytes = text.as_bytes();
     if bytes.len() < 20 {
-        return false;
+        return None;
     }
     if !bytes[0..4].iter().all(u8::is_ascii_digit)
         || bytes[4] != b'-'
@@ -141,17 +167,23 @@ fn is_strict_rfc3339(text: &str) -> bool {
         || bytes[16] != b':'
         || !bytes[17..19].iter().all(u8::is_ascii_digit)
     {
-        return false;
+        return None;
     }
     let mut rest = &bytes[19..];
+    let mut frac_end = 19;
+    let mut truncate_frac = false;
     if let Some(after_dot) = rest.strip_prefix(b".") {
         let digits = after_dot.iter().take_while(|b| b.is_ascii_digit()).count();
         if digits == 0 {
-            return false;
+            return None;
         }
+        if digits > 9 {
+            truncate_frac = true;
+        }
+        frac_end = 20 + digits;
         rest = &after_dot[digits..];
     }
-    match rest {
+    let valid_offset = match rest {
         b"Z" | b"z" => true,
         [b'+' | b'-', h1, h2, b':', m1, m2]
             if h1.is_ascii_digit()
@@ -164,7 +196,54 @@ fn is_strict_rfc3339(text: &str) -> bool {
             offset_hour <= 23 && offset_minute <= 59
         }
         _ => false,
+    };
+    if !valid_offset {
+        return None;
     }
+
+    let leap_second = &bytes[17..19] == b"60";
+    if !leap_second && !truncate_frac {
+        return Some((Cow::Borrowed(text), false));
+    }
+
+    let mut normalized = String::with_capacity(text.len());
+    normalized.push_str(&text[..17]);
+    normalized.push_str(if leap_second { "59" } else { &text[17..19] });
+    if truncate_frac {
+        normalized.push_str(&text[19..29]);
+        normalized.push_str(&text[frac_end..]);
+    } else {
+        normalized.push_str(&text[19..]);
+    }
+    Some((Cow::Owned(normalized), leap_second))
+}
+
+fn rfc2822_has_leap_second(text: &str) -> bool {
+    let mut stripped = Vec::with_capacity(text.len());
+    let mut depth = 0usize;
+    let mut escaped = false;
+    for b in text.bytes() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if b == b'\\' && depth > 0 {
+            escaped = true;
+        } else if b == b'(' {
+            depth += 1;
+        } else if b == b')' && depth > 0 {
+            depth -= 1;
+        } else if depth == 0 && !b.is_ascii_whitespace() {
+            stripped.push(b);
+        }
+    }
+    let mut colons = stripped.iter().enumerate().filter(|(_, b)| **b == b':');
+    let _hour_colon = colons.next();
+    if let Some((idx, _)) = colons.next() {
+        return stripped.get(idx + 1..idx + 3) == Some(b"60")
+            && !stripped.get(idx + 3).is_some_and(u8::is_ascii_digit);
+    }
+    false
 }
 
 impl TryFrom<jiff::Timestamp> for Timestamp {
@@ -324,22 +403,87 @@ mod tests {
         assert_eq!(min.to_string(), "0000-01-01T00:00:00.000Z");
 
         // `jiff::Timestamp::MAX` is `9999-12-30T22:00:00.999999999Z`.
-        let max_jiff_ms =
-            i64::try_from(jiff::Timestamp::MAX.as_nanosecond().div_euclid(1_000_000)).unwrap();
+        assert_eq!(
+            MAX_UNIX_MILLIS,
+            i64::try_from(jiff::Timestamp::MAX.as_nanosecond().div_euclid(1_000_000)).unwrap()
+        );
         let max = "9999-12-30T22:00:00.999Z".parse::<Timestamp>().unwrap();
-        assert_eq!(max.unix_millis(), max_jiff_ms);
+        assert_eq!(max.unix_millis(), MAX_UNIX_MILLIS);
         assert_eq!(max.to_string(), "9999-12-30T22:00:00.999Z");
 
+        assert_eq!(Timestamp::from_unix_millis(MIN_UNIX_MILLIS).unwrap(), min);
+        assert_eq!(Timestamp::from_unix_millis(MAX_UNIX_MILLIS).unwrap(), max);
+        assert_eq!(
+            Timestamp::from_unix_millis(MAX_UNIX_MILLIS - 1)
+                .unwrap()
+                .to_string(),
+            "9999-12-30T22:00:00.998Z"
+        );
         assert_eq!(Timestamp::from_unix_millis(MIN_UNIX_MILLIS - 1), None);
         assert_eq!(Timestamp::from_unix_millis(MAX_UNIX_MILLIS + 1), None);
+        assert!(Timestamp::from_unix_seconds(253_402_207_200.999).is_some());
+        assert_eq!(Timestamp::from_unix_seconds(253_402_207_201.0), None);
 
         let before_year_zero: jiff::Timestamp = "-000001-12-31T23:59:59Z".parse().unwrap();
         assert_eq!(Timestamp::from_timestamp(before_year_zero), None);
         assert!(Timestamp::try_from(before_year_zero).is_err());
 
         assert!(Timestamp::parse("-0001-12-31T23:59:59Z").is_err());
+        assert!(Timestamp::parse("9999-12-30T22:00:01Z").is_err());
+        assert!(Timestamp::parse("9999-12-31T23:59:59.999Z").is_err());
         assert!(Timestamp::parse("10000-01-01T00:00:00Z").is_err());
         assert!(Timestamp::parse("0000-01-01T00:00:00+01:00").is_err());
+    }
+
+    #[test]
+    fn parses_long_fractions_and_leap_seconds() {
+        // RFC 3339 allows any number of fractional digits (`"." 1*DIGIT`).
+        assert_eq!(
+            Timestamp::parse("2025-03-06T13:50:19.123456789123Z")
+                .unwrap()
+                .unix_millis(),
+            1_741_269_019_123
+        );
+        assert_eq!(
+            Timestamp::parse("2025-03-06T13:50:19.1234567890123-01:30")
+                .unwrap()
+                .to_string(),
+            "2025-03-06T15:20:19.123Z"
+        );
+
+        // Leap second `:60` maps to the following second, matching `chrono` `timestamp_millis()`.
+        assert_eq!(
+            Timestamp::parse("2016-12-31T23:59:60Z")
+                .unwrap()
+                .to_string(),
+            "2017-01-01T00:00:00.000Z"
+        );
+        assert_eq!(
+            Timestamp::parse("2016-12-31T23:59:60.234Z")
+                .unwrap()
+                .to_string(),
+            "2017-01-01T00:00:00.234Z"
+        );
+        assert_eq!(
+            Timestamp::parse("2015-02-18T23:59:60.234567890123+05:00")
+                .unwrap()
+                .to_string(),
+            "2015-02-18T19:00:00.234Z"
+        );
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:60 GMT")
+                .unwrap()
+                .to_string(),
+            "2025-03-06T13:51:00.000Z"
+        );
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:60 GMT (13:50:59)")
+                .unwrap()
+                .to_string(),
+            "2025-03-06T13:51:00.000Z"
+        );
+        assert!(Timestamp::parse("9999-12-30T22:00:60Z").is_err());
+        assert!(Timestamp::parse("9999-12-30T21:59:60.999Z").is_ok());
     }
 
     #[test]

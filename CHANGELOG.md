@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RUSTSEC-2026-0543` (#523, targeting `0.7.0` under pre-1.0 SemVer):
   - `aimux_core::Timestamp`: removed `Timestamp::from_datetime` and
     `Timestamp::to_datetime`; use `Timestamp::from_timestamp(jiff::Timestamp) -> Option<Self>`
-    / `TryFrom<jiff::Timestamp>` (fallible because `jiff::Timestamp` spans
-    years `-9999..=9999` while `Timestamp` enforces `0000..=9999` for
-    4-digit `toISOString()` output) and `Timestamp::to_timestamp(self) -> jiff::Timestamp`
+    / `TryFrom<jiff::Timestamp>` (fallible because `jiff::Timestamp` extends
+    to year `-9999`, whereas `Timestamp` enforces 4-digit years
+    `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`, capped at
+    `jiff::Timestamp::MAX`) and `Timestamp::to_timestamp(self) -> jiff::Timestamp`
     / `From<Timestamp> for jiff::Timestamp` instead.
   - `aimux_provider_utils::SigV4Fetch::with_clock`: changed parameter type from
     `fn() -> chrono::DateTime<chrono::Utc>` to `fn() -> jiff::Timestamp`.
