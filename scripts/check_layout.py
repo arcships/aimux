@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import json
 import pathlib
 import re
 import sys
@@ -33,6 +34,8 @@ except ModuleNotFoundError:
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_LAYOUT = ROOT / "aimux-providers" / "layout.toml"
 DEFAULT_SRC = ROOT / "aimux-providers" / "src"
+DEFAULT_VERSIONS = ROOT / "fixtures" / "aisdk" / "VERSIONS.json"
+NON_VENDOR_PACKAGES = frozenset({"ai", "@ai-sdk/provider", "@ai-sdk/provider-utils"})
 
 VALID_STATUSES = frozenset({"mapped", "missing", "elsewhere", "not-applicable", "aimux"})
 _BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
@@ -338,18 +341,24 @@ def _is_safe_relative_path(rel: str) -> bool:
     return not p.is_absolute() and ".." not in p.parts
 
 
-def validate_layout(layout: dict, src_dir: pathlib.Path) -> list:
+def validate_layout(layout: dict, src_dir: pathlib.Path, versions: dict = None) -> list:
     """Return a list of validation error strings for a parsed layout mapping."""
     errors = []
     if not isinstance(layout, dict) or not layout:
         return ["layout.toml contains no vendor tables"]
 
+    seen_packages = set()
     for vendor, table in layout.items():
         if not isinstance(table, dict):
             errors.append(f"[{vendor}]: expected a table")
             continue
-        if not _is_nonempty_str(table.get("package")):
+        package = table.get("package")
+        if not _is_nonempty_str(package):
             errors.append(f"[{vendor}]: missing or empty `package`")
+        else:
+            if package in seen_packages:
+                errors.append(f"[{vendor}]: duplicate `package` {package!r}")
+            seen_packages.add(package)
 
         vendor_dir = src_dir / vendor
         if not vendor_dir.is_dir():
@@ -376,16 +385,25 @@ def validate_layout(layout: dict, src_dir: pathlib.Path) -> list:
                 continue
 
             rust = entry.get("rust")
+            rust_valid = False
             if rust is not None:
                 if not _is_nonempty_str(rust) or not _is_safe_relative_path(rust):
                     errors.append(f"{label}: invalid `rust` path {rust!r}")
                 else:
+                    rust_valid = True
                     listed_rust_paths.add(rust)
                     rust_file = src_dir / rust
                     if not rust_file.is_file():
                         errors.append(
                             f"{label}: `rust` file does not exist under src/: {rust}"
                         )
+
+            if status in ("mapped", "aimux") and rust_valid:
+                parts = pathlib.PurePosixPath(rust).parts
+                if not parts or parts[0] != vendor:
+                    errors.append(
+                        f"{label}: status = {status!r} `rust` path must reside under {vendor}/: {rust}"
+                    )
 
             if status == "aimux":
                 if not _is_nonempty_str(rust):
@@ -422,11 +440,29 @@ def validate_layout(layout: dict, src_dir: pathlib.Path) -> list:
                         f"[{vendor}]: unlisted Rust source file under {vendor}/: {rel_to_src}"
                     )
 
+    if versions is not None:
+        if not isinstance(versions, dict):
+            errors.append("VERSIONS.json must be a JSON object")
+        else:
+            expected_packages = set(versions) - NON_VENDOR_PACKAGES
+            for pkg in sorted(expected_packages - seen_packages):
+                errors.append(
+                    f"upstream package {pkg!r} from VERSIONS.json has no table in layout.toml"
+                )
+            for pkg in sorted(seen_packages - expected_packages):
+                errors.append(
+                    f"layout.toml package {pkg!r} is not listed in VERSIONS.json"
+                )
+
     return errors
 
 
-def check_layout_files(layout_path: pathlib.Path, src_dir: pathlib.Path) -> list:
-    """Read, parse, and validate `layout_path` against `src_dir`."""
+def check_layout_files(
+    layout_path: pathlib.Path,
+    src_dir: pathlib.Path,
+    versions_path: pathlib.Path = None,
+) -> list:
+    """Read, parse, and validate `layout_path` against `src_dir` and optional `versions_path`."""
     try:
         text = layout_path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -435,16 +471,25 @@ def check_layout_files(layout_path: pathlib.Path, src_dir: pathlib.Path) -> list
         parsed = parse_toml(text)
     except Exception as exc:  # noqa: BLE001 - tomllib.TOMLDecodeError or TomlParseError
         return [f"invalid TOML in {layout_path}: {exc}"]
-    return validate_layout(parsed, src_dir)
+
+    versions = None
+    if versions_path is not None:
+        try:
+            versions = json.loads(versions_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return [f"unable to read {versions_path}: {exc}"]
+
+    return validate_layout(parsed, src_dir, versions=versions)
 
 
 def main(argv: list = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--layout", type=pathlib.Path, default=DEFAULT_LAYOUT)
     parser.add_argument("--src", type=pathlib.Path, default=DEFAULT_SRC)
+    parser.add_argument("--versions", type=pathlib.Path, default=DEFAULT_VERSIONS)
     args = parser.parse_args(argv)
 
-    errors = check_layout_files(args.layout, args.src)
+    errors = check_layout_files(args.layout, args.src, args.versions)
     if errors:
         for err in errors:
             print(f"layout check error: {err}", file=sys.stderr)

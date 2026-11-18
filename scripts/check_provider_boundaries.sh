@@ -327,6 +327,36 @@ rule8b_hits="$(
 )"
 violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs / NAMESPACE constant' "$rule8b_hits"
 
+check_single_namespace_const() {
+    local ns_pattern="$1"
+    shift
+    local dir hits count
+    for dir in "$@"; do
+        hits="$(
+            find "$dir" -name '*.rs' ! -path '*/tests/*' -print0 |
+                xargs -0 awk -v pat="$ns_pattern" '
+                    FNR == 1 { in_tests = 0 }
+                    /^#\[cfg\(test\)\]/ { in_tests = 1 }
+                    in_tests { next }
+                    /^[[:space:]]*\/\// { next }
+                    $0 ~ ("const NAMESPACE: &str = \"" pat "\"") {
+                        printf "%s:%d:%s\n", FILENAME, FNR, $0
+                    }
+                ' || true
+        )"
+        if [[ -n "$hits" ]]; then
+            count="$(printf '%s\n' "$hits" | wc -l | tr -d ' ')"
+            if (( count > 1 )); then
+                printf '%s\n' "$hits"
+            fi
+        fi
+    done
+}
+
+# shellcheck disable=SC2086
+rule8c_hits="$(check_single_namespace_const '(azure|xai|mistral|cohere|huggingface|voyage|elevenlabs)' $vendor_family)"
+violation 'multiple const NAMESPACE declarations in one vendor package' "$rule8c_hits"
+
 # ── Rule 9: no operation-level retry inside aimux-providers/src ──────────────
 #
 # Core owns `prepare_retries`. Providers run their poll / download stages with
@@ -378,6 +408,9 @@ rule10b_hits="$(
         ' || true
 )"
 violation 'single-modality providerOptions namespace key spelled outside the package options.rs / NAMESPACE constant' "$rule10b_hits"
+# shellcheck disable=SC2086
+rule10c_hits="$(check_single_namespace_const '(lmnt|hume|deepgram|cartesia|stability|aws_polly|prodia|luma|klingai|replicate|fal|recraft|gladia|blackForestLabs|assemblyai|revai|linkup|jina|google_pse)' $single_paths)"
+violation 'multiple const NAMESPACE declarations in one single-modality vendor package' "$rule10c_hits"
 
 # ── Rule 11: cross-vendor references go only through <vendor>::internal ──────
 #

@@ -274,8 +274,8 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/google-vertex-error.ts"
-rust = "google/mod.rs"
-status = "mapped"
+rust = "google/error.rs"
+status = "elsewhere"
 
 [vertex.files.tests]
 
@@ -337,10 +337,8 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/google-vertex-speech-model-options.ts"
-rust = "google/speech_model_options.rs"
-status = "mapped"
-
-[vertex.files.tests]
+status = "missing"
+issue = 275
 
 [[vertex.files]]
 upstream = "src/google-vertex-tools.ts"
@@ -3594,3 +3592,128 @@ reason = "the crate version is used instead (RFC-0046 §4.2)"
 rust = "elevenlabs/options.rs"
 status = "aimux"
 reason = "the providerOptions namespace of ElevenLabs"
+
+[fal]
+package = "@ai-sdk/fal"
+
+[[fal.files]]
+upstream = "src/fal-api-types.ts"
+rust = "fal/transcription_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-config.ts"
+rust = "fal/provider.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-error.ts"
+rust = "fal/error.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model-options.ts"
+rust = "fal/image_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model.ts"
+rust = "fal/image_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-settings.ts"
+status = "not-applicable"
+reason = "only the FalImageModelId string union; Rust takes the model id as &str"
+
+[[fal.files]]
+upstream = "src/fal-provider.ts"
+rust = "fal/provider.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-speech-model-options.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Fal speech (TTS) model"
+
+[[fal.files]]
+upstream = "src/fal-speech-model.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Fal speech (TTS) model"
+
+[[fal.files]]
+upstream = "src/fal-speech-settings.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no Fal speech (TTS) model"
+
+[[fal.files]]
+upstream = "src/fal-transcription-model-options.ts"
+rust = "fal/transcription_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-model.ts"
+rust = "fal/transcription_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-options.ts"
+rust = "fal/transcription_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model-options.ts"
+rust = "fal/video_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model.ts"
+rust = "fal/video_model.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-settings.ts"
+status = "not-applicable"
+reason = "only the FalVideoModelId string union; Rust takes the model id as &str"
+
+[[fal.files]]
+upstream = "src/index.ts"
+rust = "fal/mod.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[[fal.files]]
+rust = "fal/options.rs"
+status = "aimux"
+reason = "the providerOptions namespace of Fal"

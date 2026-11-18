@@ -194,6 +194,79 @@ status = "mapped"
         errors = check_layout.check_layout_files(layout, self.src)
         self.assertTrue(any("unlisted Rust source file" in e for e in errors), errors)
 
+    def test_rejects_cross_vendor_rust_path_for_mapped_and_aimux(self):
+        self._write_src("demo/mod.rs")
+        self._write_src("other/shared_thing.rs")
+        self._write_src("other/helper.rs")
+        layout = self._write_layout(
+            """
+[demo]
+package = "@ai-sdk/demo"
+
+[[demo.files]]
+upstream = "src/index.ts"
+rust = "demo/mod.rs"
+status = "mapped"
+
+[demo.files.tests]
+
+[[demo.files]]
+upstream = "src/cross.ts"
+rust = "other/shared_thing.rs"
+status = "mapped"
+
+[demo.files.tests]
+
+[[demo.files]]
+rust = "other/helper.rs"
+status = "aimux"
+reason = "cross-vendor path"
+
+[[demo.files]]
+upstream = "src/elsewhere.ts"
+rust = "other/helper.rs"
+status = "elsewhere"
+
+[demo.files.tests]
+"""
+        )
+        errors = check_layout.check_layout_files(layout, self.src)
+        self.assertTrue(
+            any("status = 'mapped' `rust` path must reside under demo/: other/shared_thing.rs" in e for e in errors),
+            errors,
+        )
+        self.assertTrue(
+            any("status = 'aimux' `rust` path must reside under demo/: other/helper.rs" in e for e in errors),
+            errors,
+        )
+        self.assertFalse(any("elsewhere" in e for e in errors), errors)
+
+    def test_cross_checks_versions_json_and_ignores_core_packages(self):
+        self._write_src("demo/mod.rs")
+        layout = self._write_layout(
+            """
+[demo]
+package = "@ai-sdk/demo"
+
+[[demo.files]]
+upstream = "src/index.ts"
+rust = "demo/mod.rs"
+status = "mapped"
+
+[demo.files.tests]
+"""
+        )
+        versions = self.root / "VERSIONS.json"
+        versions.write_text(
+            '{"ai": {}, "@ai-sdk/provider": {}, "@ai-sdk/provider-utils": {}, "@ai-sdk/demo": {}, "@ai-sdk/missing": {}}',
+            encoding="utf-8",
+        )
+        errors = check_layout.check_layout_files(layout, self.src, versions)
+        self.assertEqual(
+            errors,
+            ["upstream package '@ai-sdk/missing' from VERSIONS.json has no table in layout.toml"],
+        )
+
     def test_repo_layout_toml_passes_cli(self):
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):

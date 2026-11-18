@@ -81,8 +81,11 @@ where
         Some(p) => exchange.url(p),
         None => exchange.base_url().to_string(),
     };
+    let label = provider_label
+        .strip_suffix(".search")
+        .unwrap_or(provider_label);
     let mut url = url::Url::parse(&raw_url).map_err(|e| AiMuxError::InvalidArgument {
-        message: format!("invalid {provider_label} endpoint: {e}"),
+        message: format!("invalid {label} endpoint: {e}"),
         cause: Some(ErrorCause::source(&e)),
     })?;
     build_query(&mut url);
