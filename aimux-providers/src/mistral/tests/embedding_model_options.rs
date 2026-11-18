@@ -52,3 +52,31 @@ mod mistral_embedding_model_options {
         assert!(parse(json!({ "outputDtype": "base64" })).is_err());
     }
 }
+
+/// aimux's own: the refinements of the schema fail the same way as a wrong
+/// type, with the upstream message.
+mod refinements {
+    use super::*;
+
+    #[test]
+    fn output_dimension_is_a_positive_integer() {
+        assert!(parse(json!({ "outputDimension": 2.0 })).is_ok());
+        for value in [json!(0), json!(-1), json!(1.5), json!("8"), Value::Null] {
+            let error = parse(json!({ "outputDimension": value })).unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {value}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid mistral provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn metadata_is_a_record() {
+        assert!(parse(json!({ "metadata": ["a"] })).is_err());
+        assert!(parse(json!({ "metadata": {} })).is_ok());
+    }
+}
