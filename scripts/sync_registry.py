@@ -64,6 +64,8 @@ _PROFILE_ALLOWED_KEYS = {
     "convert_usage",
     "user_agent",
     "structured_output_models",
+    "in_band_retryable_codes",
+    "response_timeout_secs",
 }
 
 
@@ -207,6 +209,14 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
         som = profile["structured_output_models"]
         if not isinstance(som, list) or not all(isinstance(m, str) for m in som):
             raise RegistryInputError(f"registry row '{name}': profile.structured_output_models must be string list")
+    if "in_band_retryable_codes" in profile:
+        codes = profile["in_band_retryable_codes"]
+        if not isinstance(codes, list) or not all(isinstance(c, str) for c in codes):
+            raise RegistryInputError(f"registry row '{name}': profile.in_band_retryable_codes must be string list")
+    if "response_timeout_secs" in profile:
+        secs = profile["response_timeout_secs"]
+        if not isinstance(secs, int) or isinstance(secs, bool) or secs <= 0:
+            raise RegistryInputError(f"registry row '{name}': profile.response_timeout_secs must be a positive integer")
 
     raw_base_url = row["base_url"]
     if (
