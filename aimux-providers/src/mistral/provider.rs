@@ -204,6 +204,17 @@ impl Provider for MistralProvider {
         Some(Ok(Arc::new(self.speech(model_id))))
     }
 
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match api {
+            aimux_core::LanguageApi::Chat => Some(Ok(Arc::new(self.chat(model_id)))),
+            _ => None,
+        }
+    }
+
     fn transcription_model(
         &self,
         model_id: &str,

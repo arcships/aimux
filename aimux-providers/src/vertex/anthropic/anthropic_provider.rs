@@ -124,6 +124,19 @@ impl Provider for VertexAnthropicProvider {
         Ok(self.call(model_id))
     }
 
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match api {
+            aimux_core::LanguageApi::Messages | aimux_core::LanguageApi::Chat => {
+                Some(Ok(self.call(model_id)))
+            }
+            _ => None,
+        }
+    }
+
     fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
         Err(AiMuxError::NoSuchModel {
             model_id: model_id.into(),
