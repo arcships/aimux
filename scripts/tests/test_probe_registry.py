@@ -55,6 +55,7 @@ class ProbeRegistryTest(unittest.TestCase):
             ("cgnat", "https://api.example.com", lambda h, p: ["100.64.1.1"], "blocked-non-public-ip"),
             ("loopback_v6", "https://api.example.com", lambda h, p: ["::1"], "blocked-non-public-ip"),
             ("link_v6", "https://api.example.com", lambda h, p: ["fe80::1"], "blocked-non-public-ip"),
+            ("site_v6", "https://api.example.com", lambda h, p: ["fec0::1"], "blocked-non-public-ip"),
             ("ula_v6", "https://api.example.com", lambda h, p: ["fd12:3456::1"], "blocked-non-public-ip"),
             ("mapped_v4", "https://api.example.com", lambda h, p: ["::ffff:127.0.0.1"], "blocked-non-public-ip"),
             ("mixed_dns", "https://api.example.com", lambda h, p: ["93.184.216.34", "192.168.1.1"], "blocked-non-public-ip"),
@@ -72,7 +73,7 @@ class ProbeRegistryTest(unittest.TestCase):
         for pid, origin, resolver, expected in cases:
             report = probe.run_probe(
                 [_entry(pid, origin=origin)],
-                registry_urls={},
+                registry_urls=None,
                 resolver=resolver,
                 http_exchange=forbid_http,
             )
@@ -108,7 +109,7 @@ class ProbeRegistryTest(unittest.TestCase):
         for pid, hdrs, resolver, expected in scenarios:
             report = probe.run_probe(
                 [_entry(pid)],
-                registry_urls={},
+                registry_urls=None,
                 resolver=resolver,
                 http_exchange=lambda *_a: (302, {"location": hdrs["Location"]}),
                 max_redirects=3,
@@ -127,7 +128,7 @@ class ProbeRegistryTest(unittest.TestCase):
 
         reb_report = probe.run_probe(
             [_entry("rebind")],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: next(hops),
             http_exchange=rebind_http,
             max_redirects=3,
@@ -137,7 +138,7 @@ class ProbeRegistryTest(unittest.TestCase):
         # max_redirects=0 returns redirect-unverified without following
         zero_report = probe.run_probe(
             [_entry("noredir")],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: ["93.184.216.34"],
             http_exchange=lambda *_a: (302, {"location": "/v1/models/"}),
             max_redirects=0,
@@ -168,7 +169,7 @@ class ProbeRegistryTest(unittest.TestCase):
             for st, expected in statuses:
                 report = probe.run_probe(
                     [_entry(f"p{st}")],
-                    registry_urls={},
+                    registry_urls=None,
                     resolver=lambda h, p: ["93.184.216.34"],
                     http_exchange=status_http(st),
                 )
@@ -181,7 +182,7 @@ class ProbeRegistryTest(unittest.TestCase):
         # Timeout & limit-exceeded
         t_rep = probe.run_probe(
             [_entry("t1")],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: ["93.184.216.34"],
             http_exchange=lambda *_a: (_ for _ in ()).throw(TimeoutError()),
         )
@@ -189,7 +190,7 @@ class ProbeRegistryTest(unittest.TestCase):
 
         l_rep = probe.run_probe(
             [_entry("l1")],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: ["93.184.216.34"],
             http_exchange=lambda *_a: (_ for _ in ()).throw(probe.LimitExceededError("big")),
         )
@@ -227,7 +228,7 @@ class ProbeRegistryTest(unittest.TestCase):
     def test_dns_tls_connect_timeout_and_duplicate_allowlist_fixtures(self):
         # dns-error on empty resolution and OSError
         for res_fn in (lambda h, p: [], lambda h, p: (_ for _ in ()).throw(OSError("dns down"))):
-            rep = probe.run_probe([_entry("d1")], registry_urls={}, resolver=res_fn, http_exchange=lambda *_a: (200, {}))
+            rep = probe.run_probe([_entry("d1")], registry_urls=None, resolver=res_fn, http_exchange=lambda *_a: (200, {}))
             self.assertEqual(rep["results"][0]["outcome"], "dns-error")
 
         # tls-error and connect-error (including socket.timeout -> timeout on Python <3.10)
@@ -239,7 +240,7 @@ class ProbeRegistryTest(unittest.TestCase):
         ):
             rep = probe.run_probe(
                 [_entry("e1")],
-                registry_urls={},
+                registry_urls=None,
                 resolver=lambda h, p: ["93.184.216.34"],
                 http_exchange=lambda *_a, _e=exc: (_ for _ in ()).throw(_e),
             )
@@ -285,7 +286,7 @@ class ProbeRegistryTest(unittest.TestCase):
         t0 = time.monotonic()
         rep = probe.run_probe(
             entries,
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: ["93.184.216.34"],
             http_exchange=slow_exchange,
             concurrency=2,
@@ -307,7 +308,7 @@ class ProbeRegistryTest(unittest.TestCase):
         # Hung resolver respects per-target timeout
         dns_t_rep = probe.run_probe(
             [_entry("dns_slow")],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: (time.sleep(0.35), ["93.184.216.34"])[1],
             http_exchange=lambda *_a: (200, {}),
             timeout=0.05,
@@ -344,7 +345,7 @@ class ProbeRegistryTest(unittest.TestCase):
         for loc in ("/v1/models/%2e%2e/%2e%2e/admin", "/v1/models/..%2f..%2fadmin"):
             rep = probe.run_probe(
                 [_entry("trav")],
-                registry_urls={},
+                registry_urls=None,
                 resolver=lambda h, p: ["93.184.216.34"],
                 http_exchange=lambda *_a, _l=loc: (302, {"location": _l}),
             )
@@ -366,7 +367,7 @@ class ProbeRegistryTest(unittest.TestCase):
                 _entry("b_badloc", base_path="/badloc"),
                 _entry("c_nonascii", base_path="/nonascii"),
             ],
-            registry_urls={},
+            registry_urls=None,
             resolver=lambda h, p: ["93.184.216.34"],
             http_exchange=multi_http,
         )
@@ -388,6 +389,92 @@ class ProbeRegistryTest(unittest.TestCase):
                 probe._default_http_exchange(
                     "93.184.216.34", 80, "http", "api.example.com", "/v1/models/café", {}, 1.0, 1024, 1024
                 )
+
+    def test_sol_audit_regressions_empty_registry_framing_redirects_and_recovery(self):
+        # Empty supplied registry ({}) blocks targets instead of disabling the registry check
+        called = False
+
+        def forbid_http(*_a):
+            nonlocal called
+            called = True
+            return 200, {}
+
+        empty_rep = probe.run_probe(
+            [_entry("p1")],
+            registry_urls={},
+            resolver=lambda h, p: ["93.184.216.34"],
+            http_exchange=forbid_http,
+        )
+        self.assertEqual(empty_rep["results"][0]["outcome"], "blocked-unapproved")
+        self.assertFalse(called)
+
+        # Port 0, templated whitespace/backslash, and percent-encoded path creds are redacted
+        self.assertEqual(rs.sanitize_url("https://api.example.com:0/v1")["sanitized"], rs.REDACTED_URL)
+        self.assertEqual(rs.sanitize_url("https://api.example.com/{r} /v1")["sanitized"], rs.REDACTED_URL)
+        self.assertEqual(rs.sanitize_url("https://api.example.com/user%3Asecret/v1")["sanitized"], rs.REDACTED_URL)
+
+        # Bare trailing '?' and '#' on Location and double-encoded traversal are blocked
+        for loc, expected in (
+            ("/v1/models/?", "blocked-sensitive-url"),
+            ("/v1/models/#", "blocked-sensitive-url"),
+            ("/v1/models/%252e%252e/%252e%252e/admin", "blocked-cross-origin-redirect"),
+        ):
+            rep = probe.run_probe(
+                [_entry("loc_edge")],
+                registry_urls=None,
+                resolver=lambda h, p: ["93.184.216.34"],
+                http_exchange=lambda *_a, _l=loc: (302, {"location": _l}),
+            )
+            self.assertEqual(rep["results"][0]["outcome"], expected, loc)
+
+        # Successful same-origin redirect preserves initial `target` and records `final_target`
+        def redir_ok(_ip, _p, _s, _h, path, *_rest):
+            if path == "/v1/models":
+                return 302, {"location": "/v1/models/"}
+            return 200, {}
+
+        ok_rep = probe.run_probe(
+            [_entry("r_ok")],
+            registry_urls=None,
+            unreachable_ids={"r_ok"},
+            resolver=lambda h, p: ["93.184.216.34"],
+            http_exchange=redir_ok,
+        )
+        r_row = ok_rep["results"][0]
+        self.assertEqual(r_row["outcome"], "reachable")
+        self.assertEqual(r_row["target"], "https://api.example.com/v1/models")
+        self.assertEqual(r_row["final_target"], "https://api.example.com/v1/models/")
+        self.assertTrue(r_row.get("recovery_review_needed"))
+        self.assertIn("Recovered Targets", probe.render_markdown(ok_rep))
+
+        # 103 Early Hints skipped before final 200; truncated headers / Content-Length raise ProbeConnectError
+        early = io.BufferedReader(io.BytesIO(b"HTTP/1.1 103 Early Hints\r\nLink: </x>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"))
+        st, hdrs = probe._read_status_and_headers(early, 1024)
+        self.assertEqual(st, 200)
+        probe._drain_bounded_body(early, hdrs, 1024)
+
+        with self.assertRaises(probe.ProbeConnectError):
+            probe._read_status_and_headers(io.BufferedReader(io.BytesIO(b"HTTP/1.1 200 OK\r\nX-A: 1\r\n")), 1024)
+        short = io.BufferedReader(io.BytesIO(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc"))
+        _, shdrs = probe._read_status_and_headers(short, 1024)
+        with self.assertRaises(probe.ProbeConnectError):
+            probe._drain_bounded_body(short, shdrs, 1024)
+
+        # Allowlist rejects path embedded in origin and sensitive source URL
+        with tempfile.TemporaryDirectory() as tmp:
+            bad_origin = Path(tmp) / "bad_origin.json"
+            bad_origin.write_text(
+                json.dumps({"schema_version": 1, "entries": [_entry("bo", origin="https://api.example.com/v1", base_path="")]}),
+                encoding="utf-8",
+            )
+            with self.assertRaises(probe.ProbeInputError):
+                probe.load_allowlist(bad_origin)
+            bad_src = Path(tmp) / "bad_src.json"
+            e_src = _entry("bs")
+            e_src["source"] = "https://docs.example.com/?token=secret"
+            bad_src.write_text(json.dumps({"schema_version": 1, "entries": [e_src]}), encoding="utf-8")
+            with self.assertRaises(probe.ProbeInputError):
+                probe.load_allowlist(bad_src)
 
 
 if __name__ == "__main__":

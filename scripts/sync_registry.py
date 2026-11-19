@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import io
 import json
+import os
 import re
 import sys
 import time
@@ -75,14 +77,14 @@ def load_json_file(path: Path, label: str) -> object:
     except OSError as exc:
         raise RegistryInputError(f"{label}: failed to read: {exc}") from exc
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
+        return rs.parse_json_strict(text)
+    except (json.JSONDecodeError, ValueError) as exc:
         raise RegistryInputError(f"{label}: invalid JSON: {exc}") from exc
 
 
 def load_native_packages(packages_rs: Path) -> set[str]:
     if not packages_rs.exists():
-        return set()
+        raise RegistryInputError(f"packages source does not exist: {packages_rs}")
     try:
         src = packages_rs.read_text(encoding="utf-8")
     except OSError as exc:
@@ -149,6 +151,8 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
     if not isinstance(params, list):
         raise RegistryInputError(f"registry row '{name}': `params` must be an array")
     param_names: set[str] = set()
+    plain_param_names: set[str] = set()
+    derive_sources: list[tuple[str, str]] = []
     for param in params:
         if not isinstance(param, dict):
             raise RegistryInputError(f"registry row '{name}': param must be object")
@@ -180,6 +184,12 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
                 raise RegistryInputError(f"registry row '{name}': derive.map in `{pname}` must be string map")
             if not isinstance(d_other, str):
                 raise RegistryInputError(f"registry row '{name}': derive.otherwise in `{pname}` must be string")
+            derive_sources.append((pname, d_from))
+        else:
+            plain_param_names.add(pname)
+    for pname, d_from in derive_sources:
+        if d_from not in plain_param_names:
+            raise RegistryInputError(f"registry row '{name}': derive.from in `{pname}` must name a plain param")
 
     profile = row.get("profile", {})
     if not isinstance(profile, dict) or (set(profile.keys()) - _PROFILE_ALLOWED_KEYS):
@@ -187,10 +197,24 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
     for key, val in profile.items():
         if val is None:
             raise RegistryInputError(f"registry row '{name}': profile.`{key}` cannot be null")
+    if "max_tokens_key" in profile and profile["max_tokens_key"] not in ("max_tokens", "max_completion_tokens"):
+        raise RegistryInputError(f"registry row '{name}': invalid profile.max_tokens_key")
+    if "convert_usage" in profile and profile["convert_usage"] not in ("alibaba", "moonshotai"):
+        raise RegistryInputError(f"registry row '{name}': invalid profile.convert_usage")
+    if "user_agent" in profile and profile["user_agent"] != "amazon-bedrock":
+        raise RegistryInputError(f"registry row '{name}': invalid profile.user_agent")
+    if "structured_output_models" in profile:
+        som = profile["structured_output_models"]
+        if not isinstance(som, list) or not all(isinstance(m, str) for m in som):
+            raise RegistryInputError(f"registry row '{name}': profile.structured_output_models must be string list")
 
     raw_base_url = row["base_url"]
-    if not raw_base_url.isascii() or any(ch in raw_base_url for ch in ("<", ">", "$")):
-        raise RegistryInputError(f"registry row '{name}': invalid characters in base_url")
+    if (
+        not raw_base_url.isascii()
+        or not raw_base_url.lower().startswith(("http://", "https://"))
+        or any(ch in raw_base_url for ch in ("<", ">", "$"))
+    ):
+        raise RegistryInputError(f"registry row '{name}': invalid base_url")
     if set(_PLACEHOLDER_RE.findall(raw_base_url)) != param_names:
         raise RegistryInputError(f"registry row '{name}': URL placeholders differ from params")
 
@@ -242,16 +266,29 @@ def load_aliases(aliases_path: Path, valid_targets: set[str]) -> dict[str, str]:
     return aliases
 
 
+def _validate_optional_source_url(raw_url: object, ctx: str) -> str | None:
+    if raw_url is None:
+        return None
+    if not isinstance(raw_url, str):
+        raise RegistryInputError(f"{ctx}: `source_url` must be a string")
+    info = rs.sanitize_url(raw_url)
+    if info["kind"] != "static" or info["sensitive"]:
+        raise RegistryInputError(f"{ctx}: `source_url` must be a static non-sensitive HTTP(S) URL")
+    return info["sanitized"]
+
+
 def load_reconcile(reconcile_path: Path | None, valid_ids: set[str]) -> dict:
-    if reconcile_path is None or not reconcile_path.exists():
+    if reconcile_path is None:
         return {"schema_version": 1, "overrides": [], "entries": {}}
+    if not reconcile_path.exists():
+        raise RegistryInputError(f"{reconcile_path}: reconcile file does not exist")
     raw = load_json_file(reconcile_path, str(reconcile_path))
     if not isinstance(raw, dict):
         raise RegistryInputError(f"{reconcile_path}: expected JSON object")
     allowed_top = {"schema_version", "overrides", "entries"}
     if set(raw.keys()) - allowed_top:
         raise RegistryInputError(f"{reconcile_path}: unknown top-level keys {sorted(set(raw.keys()) - allowed_top)}")
-    if raw.get("schema_version") != 1:
+    if type(raw.get("schema_version")) is not int or raw.get("schema_version") != 1:
         raise RegistryInputError(f"{reconcile_path}: expected schema_version == 1")
 
     overrides_raw = raw.get("overrides", [])
@@ -281,22 +318,37 @@ def load_reconcile(reconcile_path: Path | None, valid_ids: set[str]) -> dict:
         if field == "base_url":
             for side in ("local_value", "upstream_value"):
                 val = item[side]
-                if not isinstance(val, str) or rs.sanitize_url(val)["sensitive"]:
+                if not isinstance(val, str):
+                    raise RegistryInputError(f"{reconcile_path}: override #{idx} `{side}` must be a URL string")
+                val_info = rs.sanitize_url(val)
+                if val_info["sensitive"] or val_info["kind"] != "static":
                     raise RegistryInputError(
-                        f"{reconcile_path}: override #{idx} `{side}` must be a non-sensitive URL string"
+                        f"{reconcile_path}: override #{idx} `{side}` must be a static non-sensitive URL string"
                     )
         else:
-            for side in ("local_value", "upstream_value"):
-                val = item[side]
-                if side == "local_value" and val is not None and not isinstance(val, str):
-                    raise RegistryInputError(f"{reconcile_path}: override #{idx} invalid local env_var")
-                if side == "upstream_value" and not isinstance(val, list) and not isinstance(val, str) and val is not None:
-                    raise RegistryInputError(f"{reconcile_path}: override #{idx} invalid upstream_value")
+            local_val = item["local_value"]
+            if local_val is not None and (not isinstance(local_val, str) or not local_val):
+                raise RegistryInputError(f"{reconcile_path}: override #{idx} invalid local env_var")
+            up_val = item["upstream_value"]
+            if isinstance(up_val, list):
+                if not all(isinstance(x, str) and x for x in up_val):
+                    raise RegistryInputError(f"{reconcile_path}: override #{idx} upstream_value list must contain non-empty strings")
+            elif isinstance(up_val, str):
+                if not up_val:
+                    raise RegistryInputError(f"{reconcile_path}: override #{idx} upstream_value cannot be empty string")
+            else:
+                raise RegistryInputError(f"{reconcile_path}: override #{idx} invalid upstream_value")
+        clean_src = _validate_optional_source_url(item.get("source_url"), f"{reconcile_path}: override #{idx}")
         key = (oid, upstream, field)
         if key in seen_override_keys:
             raise RegistryInputError(f"{reconcile_path}: duplicate override for {key}")
         seen_override_keys.add(key)
-        overrides.append(item)
+        ov_copy = dict(item)
+        if clean_src is not None:
+            ov_copy["source_url"] = clean_src
+        elif "source_url" in ov_copy:
+            del ov_copy["source_url"]
+        overrides.append(ov_copy)
 
     entries_raw = raw.get("entries", {})
     if not isinstance(entries_raw, dict):
@@ -314,7 +366,8 @@ def load_reconcile(reconcile_path: Path | None, valid_ids: set[str]) -> dict:
             raise RegistryInputError(f"{reconcile_path}: entry {eid!r} must have non-empty `note`")
         if status is not None and status != "unreachable":
             raise RegistryInputError(f"{reconcile_path}: entry {eid!r} invalid status {status!r}")
-        entries[eid] = {"note": note, "status": status, "source_url": meta.get("source_url")}
+        clean_src = _validate_optional_source_url(meta.get("source_url"), f"{reconcile_path}: entry {eid!r}")
+        entries[eid] = {"note": note, "status": status, "source_url": clean_src}
 
     return {"schema_version": 1, "overrides": overrides, "entries": entries}
 
@@ -340,26 +393,29 @@ def fetch_models_dev(
 ) -> dict:
     if max_bytes <= 0:
         raise RegistryInputError("max_bytes must be positive")
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "aimux-registry-sync/1.0",
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-        },
-    )
-    safe_url = rs.sanitize_url(url)["sanitized"] or "[REDACTED_URL]"
+    url_info = rs.sanitize_url(url)
+    safe_url = url_info["sanitized"] or rs.REDACTED_URL
+    if url_info["kind"] != "static" or url_info["sensitive"]:
+        raise RegistryInputError(f"models.dev fetch URL rejected ({safe_url})")
     try:
+        request = urllib.request.Request(
+            url_info["canonical"],
+            headers={
+                "User-Agent": "aimux-registry-sync/1.0",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+            },
+        )
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = _read_bounded_stream(response, max_bytes, f"models.dev response from {safe_url}")
             if response.headers.get("Content-Encoding", "").lower() == "gzip":
                 with gzip.GzipFile(fileobj=io.BytesIO(payload)) as gz:
                     payload = _read_bounded_stream(gz, max_bytes, f"models.dev gzip payload from {safe_url}")
-    except (urllib.error.URLError, OSError, gzip.BadGzipFile, EOFError, zlib.error) as exc:
+    except (urllib.error.URLError, OSError, gzip.BadGzipFile, EOFError, zlib.error, ValueError) as exc:
         raise RegistryInputError(f"models.dev fetch failed ({safe_url}): {type(exc).__name__}") from exc
     try:
-        data = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        data = rs.parse_json_strict(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise RegistryInputError(f"models.dev response invalid JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise RegistryInputError("models.dev response must be a JSON object")
@@ -369,49 +425,61 @@ def fetch_models_dev(
 def _unwrap_models_dev_providers(data: object) -> dict:
     if not isinstance(data, dict):
         raise RegistryInputError("models.dev snapshot must be a JSON object")
-    if "providers" in data and "schema_version" in data:
-        if data.get("schema_version") != 1 or not isinstance(data["providers"], dict):
+    if "schema_version" in data or ("providers" in data and set(data.keys()) <= {"schema_version", "source_url", "providers"}):
+        if (
+            set(data.keys()) - {"schema_version", "source_url", "providers"}
+            or type(data.get("schema_version")) is not int
+            or data.get("schema_version") != 1
+            or not isinstance(data.get("providers"), dict)
+        ):
             raise RegistryInputError("models.dev snapshot wrapper has invalid schema")
         return data["providers"]
     return data
 
 
-def slim_models_dev_snapshot(data: object, source_url: str = DEFAULT_MODELS_DEV_URL) -> dict:
+def slim_models_dev_snapshot(data: object, source_url: str | None = None) -> dict:
     providers_in = _unwrap_models_dev_providers(data)
+    if source_url is None:
+        raw_src = data.get("source_url") if isinstance(data, dict) and isinstance(data.get("source_url"), str) else DEFAULT_MODELS_DEV_URL
+    else:
+        raw_src = source_url
     providers_out: dict[str, dict] = {}
     for key in sorted(providers_in):
+        safe_key = rs.strip_control(str(key))[:80]
+        if not isinstance(key, str) or not key:
+            raise RegistryInputError("models.dev snapshot contains empty provider key")
         item = providers_in[key]
         if not isinstance(item, dict):
-            raise RegistryInputError(f"models.dev provider {key!r}: expected object")
+            raise RegistryInputError(f"models.dev provider {safe_key!r}: expected object")
         pid = item.get("id", key)
         if not isinstance(pid, str) or not pid or pid != key:
-            raise RegistryInputError(f"models.dev provider {key!r}: invalid `id` {pid!r}")
+            raise RegistryInputError(f"models.dev provider {safe_key!r}: invalid `id`")
         entry: dict[str, object] = {"id": pid}
         if "name" in item:
             if item["name"] is not None and not isinstance(item["name"], str):
-                raise RegistryInputError(f"models.dev provider {key!r}: `name` must be string")
+                raise RegistryInputError(f"models.dev provider {safe_key!r}: `name` must be string")
             if item["name"] is not None:
                 entry["name"] = item["name"]
         if "api" in item:
             if item["api"] is not None and not isinstance(item["api"], str):
-                raise RegistryInputError(f"models.dev provider {key!r}: `api` must be string")
+                raise RegistryInputError(f"models.dev provider {safe_key!r}: `api` must be string")
             if item["api"] is not None:
                 api_info = rs.sanitize_url(item["api"])
                 entry["api"] = api_info["sanitized"] if api_info["sensitive"] else item["api"]
         if "env" in item:
             env = item["env"]
-            if env is not None and (not isinstance(env, list) or not all(isinstance(v, str) for v in env)):
-                raise RegistryInputError(f"models.dev provider {key!r}: `env` must be string list")
+            if env is not None and (not isinstance(env, list) or not all(isinstance(v, str) and v for v in env)):
+                raise RegistryInputError(f"models.dev provider {safe_key!r}: `env` must be non-empty string list")
             if env is not None:
                 entry["env"] = sorted(set(env))
         if "npm" in item and item["npm"] is not None:
             if not isinstance(item["npm"], str):
-                raise RegistryInputError(f"models.dev provider {key!r}: `npm` must be string")
+                raise RegistryInputError(f"models.dev provider {safe_key!r}: `npm` must be string")
             entry["npm"] = item["npm"]
         providers_out[key] = entry
     return {
         "schema_version": 1,
-        "source_url": rs.sanitize_url(source_url)["sanitized"],
+        "source_url": rs.sanitize_url(raw_src)["sanitized"],
         "providers": providers_out,
     }
 
@@ -422,24 +490,28 @@ def parse_models_dev(data: object) -> tuple[list[dict], list[dict]]:
     records: list[dict] = []
     errors: list[dict] = []
     for key in sorted(providers_in):
+        safe_key = rs.strip_control(str(key))[:80]
+        if not isinstance(key, str) or not key:
+            errors.append({"upstream": "models-dev", "id": safe_key, "error": "empty provider key"})
+            continue
         item = providers_in[key]
         if not isinstance(item, dict):
-            errors.append({"upstream": "models-dev", "id": key, "error": "provider entry is not an object"})
+            errors.append({"upstream": "models-dev", "id": safe_key, "error": "provider entry is not an object"})
             continue
         pid = item.get("id")
         if pid is None:
             pid = key
         elif not isinstance(pid, str) or not pid or pid != key:
-            errors.append({"upstream": "models-dev", "id": key, "error": f"invalid provider id {pid!r}"})
+            errors.append({"upstream": "models-dev", "id": safe_key, "error": "invalid or mismatched provider id"})
             continue
         api = item.get("api")
         if "api" in item and api is not None and not isinstance(api, str):
-            errors.append({"upstream": "models-dev", "id": pid, "error": "`api` must be a string"})
+            errors.append({"upstream": "models-dev", "id": safe_key, "error": "`api` must be a string"})
             continue
         env_raw = item.get("env")
         if "env" in item and env_raw is not None:
             if not isinstance(env_raw, list) or not all(isinstance(v, str) and v for v in env_raw):
-                errors.append({"upstream": "models-dev", "id": pid, "error": "`env` must be a list of strings"})
+                errors.append({"upstream": "models-dev", "id": safe_key, "error": "`env` must be a list of strings"})
                 continue
         env_list = None if env_raw is None else sorted(set(env_raw))
         url_info = rs.sanitize_url(api)
@@ -461,13 +533,14 @@ def parse_models_dev(data: object) -> tuple[list[dict], list[dict]]:
     return records, errors
 
 
-def parse_litellm_checkout(checkout: Path) -> tuple[list[dict], list[dict]]:
+def parse_litellm_checkout(checkout: Path) -> tuple[list[dict], list[dict], str]:
     """Statically scan LiteLLM `litellm/llms/*/chat/transformation.py` without importing or executing code."""
     llms_dir = checkout / "litellm" / "llms"
     if not llms_dir.is_dir():
         raise RegistryInputError(f"{checkout}: missing `litellm/llms` directory")
     skip_dirs = {"deprecated_providers", "base_llm", "aiohttp_openai", "custom_httpx", "a2a", "empower"}
     records: list[dict] = []
+    digest_items: list[list[str]] = []
     for pdir in sorted(llms_dir.iterdir()):
         if not pdir.is_dir() or pdir.name in skip_dirs:
             continue
@@ -480,7 +553,10 @@ def parse_litellm_checkout(checkout: Path) -> tuple[list[dict], list[dict]]:
             if not py_files:
                 continue
             trans = py_files[0]
-        text = trans.read_text(encoding="utf-8", errors="replace")
+        raw_bytes = trans.read_bytes()
+        rel_path = trans.relative_to(checkout).as_posix()
+        digest_items.append([rel_path, hashlib.sha256(raw_bytes).hexdigest()])
+        text = raw_bytes.decode("utf-8", errors="replace")
         raw_api = None
         for pat in (
             r'(?:DEFAULT_API_BASE|api_base)\s*[:=]\s*["\'](https?://[^"\']+)["\']',
@@ -510,7 +586,7 @@ def parse_litellm_checkout(checkout: Path) -> tuple[list[dict], list[dict]]:
                 "candidate": True,
             }
         )
-    return records, []
+    return records, [], rs.sha256_canonical_json(digest_items)
 
 
 def _in_memory_url_equal(raw_a: str, info_a: dict, raw_b: str, info_b: dict) -> bool:
@@ -615,9 +691,28 @@ def compare_registries(
             "diffs": [],
         }
 
+    upstream_ids_by_source = {(r["upstream"], r["id"]) for r in upstream_records}
+    evaluated_upstreams = {r["upstream"] for r in upstream_records} | {
+        m["source"] for m in source_meta if isinstance(m.get("source"), str)
+    }
+
     for up_rec in upstream_records:
         up_name = up_rec["upstream"]
         up_id = up_rec["id"]
+        if up_id in aliases and (up_name, aliases[up_id]) in upstream_ids_by_source:
+            incomparable.append(
+                {
+                    "upstream": up_name,
+                    "upstream_id": up_id,
+                    "id": aliases[up_id],
+                    "field": "provider_id",
+                    "comparison": "unknown",
+                    "reason": "alias shadowed by canonical upstream id",
+                    "local": aliases[up_id],
+                    "upstream_value": up_rec["url_info"]["sanitized"],
+                }
+            )
+            continue
         target = aliases.get(up_id, up_id if up_id in all_builtin_ids else None)
 
         if target is None:
@@ -634,7 +729,7 @@ def compare_registries(
             )
             continue
 
-        if target not in local_by_id:
+        if target in native_packages or target not in local_by_id:
             matched_native.add(target)
             continue
 
@@ -736,9 +831,10 @@ def compare_registries(
                         ov is None
                         and not up_rec["candidate"]
                         and u_url["kind"] == "static"
-                        and up_rec["raw_api"]
-                        and up_rec["raw_api"].isascii()
-                        and not any(c in up_rec["raw_api"] for c in ("<", ">", "$", "{", "}"))
+                        and u_url["canonical"]
+                        and u_url["canonical"].isascii()
+                        and u_url["canonical"].startswith(("http://", "https://"))
+                        and not any(c in u_url["canonical"] for c in ("<", ">", "$", "{", "}"))
                     ):
                         proposed_updates.append(
                             {
@@ -748,7 +844,7 @@ def compare_registries(
                                 "upstream_id": up_id,
                                 "old_value": l_url["sanitized"],
                                 "new_value": u_url["canonical"],
-                                "raw_new_value": up_rec["raw_api"],
+                                "raw_new_value": u_url["canonical"],
                             }
                         )
 
@@ -804,28 +900,41 @@ def compare_registries(
                 box["diffs"].append(diff_row)
             else:
                 key_env_diffs.append(diff_row)
-                if (
-                    ov is None
-                    and not (local_entry["auth"] == "none" and local_env_val is None)
-                    and not up_rec["candidate"]
-                    and len(up_key_envs) == 1
-                    and _ENV_NAME_RE.match(up_key_envs[0])
-                ):
-                    proposed_updates.append(
-                        {
-                            "id": target,
-                            "field": "env_var",
-                            "upstream": up_name,
-                            "upstream_id": up_id,
-                            "old_value": local_env_val,
-                            "new_value": up_key_envs[0],
-                            "raw_new_value": up_key_envs[0],
-                        }
-                    )
+                if ov is None and not up_rec["candidate"]:
+                    if (
+                        not (local_entry["auth"] == "none" and local_env_val is None)
+                        and len(up_key_envs) == 1
+                        and _ENV_NAME_RE.match(up_key_envs[0])
+                    ):
+                        proposed_updates.append(
+                            {
+                                "id": target,
+                                "field": "env_var",
+                                "upstream": up_name,
+                                "upstream_id": up_id,
+                                "old_value": local_env_val,
+                                "new_value": up_key_envs[0],
+                                "raw_new_value": up_key_envs[0],
+                            }
+                        )
+                    elif local_entry["auth"] == "none" and local_env_val is not None and len(up_key_envs) == 0:
+                        proposed_updates.append(
+                            {
+                                "id": target,
+                                "field": "env_var",
+                                "upstream": up_name,
+                                "upstream_id": up_id,
+                                "old_value": local_env_val,
+                                "new_value": None,
+                                "raw_new_value": None,
+                            }
+                        )
 
-    # Check any stale overrides in reconcile.json
+    # Check stale overrides only for upstreams evaluated in this run
     stale_overrides: list[dict] = []
     for o in overrides:
+        if o["upstream"] not in evaluated_upstreams:
+            continue
         okey = (o["id"], o["upstream"], o["field"])
         if okey not in matched_override_keys:
             stale_overrides.append(
@@ -935,6 +1044,23 @@ def compare_registries(
     return report, proposed_updates
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
 def apply_updates(registry_path: Path, raw_rows: list[dict], proposed_updates: list[dict]) -> list[dict]:
     """Write back approved `base_url` / `env_var` updates to `provider_registry.json`."""
     row_by_name = {r["name"]: r for r in raw_rows}
@@ -949,7 +1075,10 @@ def apply_updates(registry_path: Path, raw_rows: list[dict], proposed_updates: l
         if field == "base_url":
             row["base_url"] = upd["raw_new_value"]
         elif field == "env_var":
-            row["env_var"] = upd["raw_new_value"]
+            if upd["raw_new_value"] is None:
+                row.pop("env_var", None)
+            else:
+                row["env_var"] = upd["raw_new_value"]
         applied.append(
             {
                 "id": rid,
@@ -961,9 +1090,9 @@ def apply_updates(registry_path: Path, raw_rows: list[dict], proposed_updates: l
             }
         )
     if applied:
-        registry_path.write_text(
+        _atomic_write_text(
+            registry_path,
             json.dumps(raw_rows, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
         )
     return applied
 
@@ -1082,7 +1211,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aliases", type=Path, default=DEFAULT_ALIASES)
     p.add_argument("--reconcile", type=Path, default=DEFAULT_RECONCILE)
     p.add_argument("--packages-rs", type=Path, default=DEFAULT_PACKAGES_RS)
-    p.add_argument("--fetch-url", default=DEFAULT_MODELS_DEV_URL)
+    p.add_argument("--fetch-url", default=None)
     p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECS)
     p.add_argument("--max-fetch-bytes", type=int, default=DEFAULT_MAX_FETCH_BYTES)
     return p
@@ -1124,6 +1253,18 @@ def main(argv: list[str] | None = None) -> int:
         print("--max-fetch-bytes must be positive", file=sys.stderr)
         return 2
 
+    input_paths = {
+        p.resolve()
+        for p in (args.registry, args.aliases, args.reconcile, args.packages_rs, args.snapshot)
+        if p is not None
+    }
+    for out_p in (args.output, args.markdown_output):
+        if out_p is not None and out_p.resolve() in input_paths:
+            print(f"output path {out_p} collides with an input file", file=sys.stderr)
+            return 2
+
+    fetch_url = args.fetch_url if args.fetch_url is not None else DEFAULT_MODELS_DEV_URL
+
     try:
         raw_rows, local_by_id = load_local_registry(args.registry)
         native_packages = load_native_packages(args.packages_rs)
@@ -1136,32 +1277,34 @@ def main(argv: list[str] | None = None) -> int:
         if args.source == "models-dev" or args.write_snapshot:
             if args.fetch:
                 raw_md = fetch_models_dev(
-                    args.fetch_url,
+                    fetch_url,
                     timeout=args.timeout,
                     max_bytes=args.max_fetch_bytes,
                 )
-                src_desc = rs.sanitize_url(args.fetch_url)["sanitized"]
+                src_desc = rs.sanitize_url(fetch_url)["sanitized"]
+                snap_source_url: str | None = fetch_url
             else:
                 raw_md = load_json_file(args.snapshot, str(args.snapshot))
                 src_desc = str(args.snapshot.name)
-            if args.write_snapshot:
-                slim = slim_models_dev_snapshot(raw_md, source_url=args.fetch_url)
-                args.write_snapshot.parent.mkdir(parents=True, exist_ok=True)
-                args.write_snapshot.write_text(
-                    json.dumps(slim, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-                    encoding="utf-8",
-                )
+                snap_source_url = args.fetch_url
             recs, _ = parse_models_dev(raw_md)
+            if args.write_snapshot:
+                slim = slim_models_dev_snapshot(raw_md, source_url=snap_source_url)
+                _atomic_write_text(
+                    args.write_snapshot,
+                    json.dumps(slim, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+                )
             upstream_records.extend(recs)
             source_meta.append({"source": "models-dev", "location": src_desc, "provider_count": len(recs)})
         if args.source == "litellm":
-            recs, _ = parse_litellm_checkout(args.checkout)
+            recs, _, content_hash = parse_litellm_checkout(args.checkout)
             upstream_records.extend(recs)
             source_meta.append(
                 {
                     "source": "litellm",
                     "location": str(args.checkout.name),
                     "commit": rs.get_git_commit(args.checkout),
+                    "content_hash": content_hash,
                     "provider_count": len(recs),
                 }
             )
@@ -1192,14 +1335,12 @@ def main(argv: list[str] | None = None) -> int:
 
         rendered = json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
         if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(rendered, encoding="utf-8")
+            _atomic_write_text(args.output, rendered)
         elif args.report or args.apply:
             sys.stdout.write(rendered)
 
         if args.markdown_output:
-            args.markdown_output.parent.mkdir(parents=True, exist_ok=True)
-            args.markdown_output.write_text(render_markdown(report), encoding="utf-8")
+            _atomic_write_text(args.markdown_output, render_markdown(report))
 
         if args.check:
             pending = report["counts"]["pending_review"]
@@ -1212,6 +1353,21 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     file=sys.stderr,
                 )
+                for d in report["base_url_diffs"]:
+                    print(
+                        f"  base_url [{d['id']}] local={d['local']} upstream({d['upstream']}:{d['upstream_id']})={d['upstream_value']}",
+                        file=sys.stderr,
+                    )
+                for d in report["key_env_diffs"]:
+                    print(
+                        f"  env_var [{d['id']}] local={d['local']} upstream({d['upstream']}:{d['upstream_id']})={d['upstream_value']}",
+                        file=sys.stderr,
+                    )
+                for s in report["stale_overrides"]:
+                    print(
+                        f"  stale_override [{s['id']}] ({s['upstream']}:{s['field']}) local={s['override_local_value']} upstream={s['override_upstream_value']}",
+                        file=sys.stderr,
+                    )
                 return 1
         return 0
     except RegistryInputError as exc:

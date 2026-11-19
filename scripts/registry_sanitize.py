@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 REDACTED = "[REDACTED]"
 REDACTED_URL = "[REDACTED_URL]"
@@ -111,11 +111,17 @@ def _invalid_sensitive(components: list[str] | None = None) -> dict:
 def _path_has_secret_like_segment(path: str) -> bool:
     if not path:
         return False
-    if _PATH_CREDS_RE.search(path):
-        return True
-    # Detect `user:pass` style segments anywhere in path outside templates.
-    cleaned = _TEMPLATE_RE.sub("", path)
-    return bool(re.search(r"/[^/]+:[^/]+", cleaned))
+    decoded_once = unquote(path)
+    decoded_twice = unquote(decoded_once)
+    for candidate in (path, decoded_once, decoded_twice):
+        if _CONTROL_RE.search(candidate) or "\\" in candidate or any(ch.isspace() for ch in candidate):
+            return True
+        if _PATH_CREDS_RE.search(candidate):
+            return True
+        cleaned = _TEMPLATE_RE.sub("", candidate)
+        if re.search(r"/[^/]+:[^/]+", cleaned):
+            return True
+    return False
 
 
 _LEADING_TEMPLATE_RE = re.compile(r"^(\$\{[A-Za-z0-9_]+\}|\{[A-Za-z0-9_]+\})(?=$|[/?#])")
@@ -222,6 +228,9 @@ def sanitize_url(raw: object) -> dict:
         return _invalid_sensitive(["url"])
     if not raw or _CONTROL_RE.search(raw) or raw != raw.strip():
         return _invalid_sensitive(["url"])
+    # Reject backslash confusion (`https://good.com\@evil.com`) and whitespace anywhere in URL.
+    if "\\" in raw or any(ch.isspace() for ch in raw):
+        return _invalid_sensitive(["url"])
 
     if _TEMPLATE_RE.search(raw):
         return _sanitize_templated_url(raw)
@@ -233,12 +242,11 @@ def sanitize_url(raw: object) -> dict:
     except ValueError:
         return _invalid_sensitive(["url"])
 
-    scheme = parsed.scheme.lower()
-    if scheme not in ("http", "https") or not hostname or not parsed.netloc:
+    if port is not None and (port < 1 or port > 65535):
         return _invalid_sensitive(["url"])
 
-    # Reject backslash confusion (`https://good.com\@evil.com`) and whitespace in netloc.
-    if "\\" in raw or any(ch.isspace() for ch in raw):
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https") or not hostname or not parsed.netloc:
         return _invalid_sensitive(["url"])
 
     redacted: list[str] = []
@@ -349,8 +357,8 @@ def is_public_ip(raw_ip: str) -> bool:
         if any(ip in net for net in _TEST_NETS_V4):
             return False
         return True
-    # IPv6 checks: block mapped IPv4, compatible IPv4 (::/96), transition & special ranges.
-    if ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None:
+    # IPv6 checks: block site-local, mapped IPv4, compatible IPv4 (::/96), transition & special ranges.
+    if ip.is_site_local or ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None:
         return False
     if int(ip) < (1 << 32):
         return False
@@ -369,6 +377,21 @@ def is_forbidden_hostname(hostname: str) -> bool:
     if host.endswith(".local") or host.endswith(".internal") or host.endswith(".home.arpa"):
         return True
     return False
+
+
+def parse_json_strict(text: str) -> object:
+    """Parse JSON while rejecting duplicate object keys."""
+    import json
+
+    def _no_dups(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        out: dict[str, object] = {}
+        for k, v in pairs:
+            if k in out:
+                raise ValueError(f"duplicate JSON key {strip_control(str(k))[:80]!r}")
+            out[k] = v
+        return out
+
+    return json.loads(text, object_pairs_hook=_no_dups)
 
 
 def sha256_canonical_json(obj: object) -> str:

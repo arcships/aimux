@@ -564,6 +564,187 @@ class SyncRegistryTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("fetch failed", err)
 
+        # Malformed/sensitive --fetch-url rejected before Request() without leaking query secret
+        sec = "fetch_secret_xyz_42"
+        code, stdout, err = _run_sync(
+            [
+                "--report", "--source", "models-dev", "--fetch",
+                "--fetch-url", f"ftp://user:{sec}@bad.invalid/api.json?k={sec}",
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertNotIn(sec, stdout + err)
+
+    def test_sol_audit_regressions_apply_canonical_alias_precedence_and_validation(self):
+        # 1. --apply writes canonical lowercase https:// (never uppercase HTTPS://),
+        #    clears optional env_var on auth:"none" when upstream is [], and respects exact-ID precedence over alias
+        reg_p, ali_p, rec_p, snap_p = self._fixture(
+            rows=[
+                {"name": "upper_v", "display": "U", "base_url": "https://old.example/v1", "env_var": "U_KEY"},
+                {"name": "opt_clear", "display": "O", "base_url": "http://127.0.0.1:8080/v1", "auth": "none", "env_var": "OLD_OPT"},
+                {"name": "fireworks", "display": "F", "base_url": "https://api.fireworks.ai/v1", "env_var": "FW_KEY"},
+            ],
+            up_providers={
+                "upper_v": {"id": "upper_v", "api": "HTTPS://NEW.EXAMPLE.COM:443/v1", "env": ["U_KEY"]},
+                "opt_clear": {"id": "opt_clear", "api": "http://127.0.0.1:8080/v1", "env": []},
+                "fireworks": {"id": "fireworks", "api": "https://api.fireworks.ai/v1", "env": ["FW_KEY"]},
+                "fireworks-ai": {"id": "fireworks-ai", "api": "https://shadowed-alias.example/v1", "env": ["FW_KEY"]},
+            },
+            aliases={"fireworks-ai": "fireworks"},
+        )
+        out = self.dir / "apply.json"
+        code, _, err = _run_sync(
+            [
+                "--apply", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs), "--output", str(out),
+            ]
+        )
+        self.assertEqual(code, 0, err)
+        updated = {r["name"]: r for r in json.loads(reg_p.read_text())}
+        self.assertEqual(updated["upper_v"]["base_url"], "https://new.example.com/v1")
+        self.assertNotIn("env_var", updated["opt_clear"])
+        self.assertEqual(updated["fireworks"]["base_url"], "https://api.fireworks.ai/v1")
+
+        # Post-apply --check must now pass cleanly!
+        chk_code, _, chk_err = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(chk_code, 0, chk_err)
+
+        # 2. --check failure prints concrete differing preset details to stderr
+        _write_json(
+            snap_p,
+            {"schema_version": 1, "source_url": "https://models.dev/api.json", "providers": {"upper_v": {"id": "upper_v", "api": "https://drift.example/v1", "env": ["U_KEY"]}}},
+        )
+        fail_code, _, fail_err = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(snap_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(fail_code, 1)
+        self.assertIn("upper_v", fail_err)
+        self.assertIn("https://drift.example/v1", fail_err)
+
+        # 3. Reconcile source_url with query secret rejected; mixed env_var list rejected; missing reconcile rejected
+        bad_rec = _write_json(
+            self.dir / "bad_rec.json",
+            {
+                "schema_version": 1,
+                "overrides": [],
+                "entries": {"upper_v": {"note": "n", "source_url": "https://docs.example.com/?token=secret_123"}},
+            },
+        )
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_reconcile(bad_rec, {"upper_v"})
+        bad_rec2 = _write_json(
+            self.dir / "bad_rec2.json",
+            {
+                "schema_version": 1,
+                "overrides": [
+                    {"id": "upper_v", "upstream": "models-dev", "field": "env_var", "local_value": "U_KEY", "upstream_value": [1, "U_KEY"], "reason": "r"}
+                ],
+                "entries": {},
+            },
+        )
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_reconcile(bad_rec2, {"upper_v"})
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_reconcile(self.dir / "does_not_exist.json", {"upper_v"})
+
+        # 4. Wrapper validation rejects missing schema_version / bool schema_version, and --write-snapshot validates before writing
+        with self.assertRaises(sync.RegistryInputError):
+            sync.parse_models_dev({"providers": {"upper_v": {"id": "upper_v"}}})
+        with self.assertRaises(sync.RegistryInputError):
+            sync.parse_models_dev({"schema_version": True, "providers": {}})
+        bad_snap = _write_json(
+            self.dir / "bad_snap.json",
+            {"schema_version": 1, "source_url": "https://custom.example/api.json", "providers": {"upper_v": {"id": "upper_v", "env": [""]}}},
+        )
+        target_snap = self.dir / "should_not_exist.json"
+        wcode, _, _ = _run_sync(
+            [
+                "--write-snapshot", str(target_snap), "--snapshot", str(bad_snap),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(wcode, 1)
+        self.assertFalse(target_snap.exists())
+
+        # Re-slimming a valid snapshot preserves its original source_url
+        good_snap = _write_json(
+            self.dir / "good_snap.json",
+            {"schema_version": 1, "source_url": "https://custom.example/api.json", "providers": {"upper_v": {"id": "upper_v", "api": "https://new.example.com/v1", "env": ["U_KEY"]}}},
+        )
+        reslim_p = self.dir / "reslim.json"
+        wcode2, _, werr2 = _run_sync(
+            [
+                "--write-snapshot", str(reslim_p), "--snapshot", str(good_snap),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(wcode2, 0, werr2)
+        self.assertEqual(json.loads(reslim_p.read_text())["source_url"], "https://custom.example/api.json")
+
+        # 5. LiteLLM run does not mark models-dev overrides stale and records content_hash
+        litellm_dir = self.dir / "litellm_repo"
+        trans = litellm_dir / "litellm" / "llms" / "upper_v" / "chat" / "transformation.py"
+        trans.parent.mkdir(parents=True, exist_ok=True)
+        trans.write_text('DEFAULT_API_BASE = "https://new.example.com/v1"\nkey = os.getenv("U_KEY")\n', encoding="utf-8")
+        rec_with_md = _write_json(
+            self.dir / "rec_md.json",
+            {
+                "schema_version": 1,
+                "overrides": [
+                    {"id": "upper_v", "upstream": "models-dev", "field": "base_url", "local_value": "https://new.example.com/v1", "upstream_value": "https://other.example/v1", "reason": "md only"}
+                ],
+                "entries": {},
+            },
+        )
+        lm_out = self.dir / "litellm_report.json"
+        lm_code, _, lm_err = _run_sync(
+            [
+                "--report", "--source", "litellm", "--checkout", str(litellm_dir),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_with_md),
+                "--packages-rs", str(self.packages_rs), "--output", str(lm_out),
+            ]
+        )
+        self.assertEqual(lm_code, 0, lm_err)
+        lm_rep = json.loads(lm_out.read_text())
+        self.assertEqual(lm_rep["counts"]["stale_overrides"], 0)
+        self.assertTrue(lm_rep["sources"][0]["content_hash"])
+
+        # 6. Duplicate JSON keys & invalid Rust profile/derive fields rejected
+        dup_json = self.dir / "dup_aliases.json"
+        dup_json.write_text('{"a": "upper_v", "a": "fireworks"}\n', encoding="utf-8")
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_aliases(dup_json, {"upper_v", "fireworks"})
+        bad_reg = _write_json(
+            self.dir / "bad_reg.json",
+            [{"name": "bad", "display": "B", "base_url": "https://a.example/v1", "env_var": "B_KEY", "profile": {"structured_output_models": "not-a-list"}}],
+        )
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_local_registry(bad_reg)
+        # Output path colliding with registry input rejected (exit 2)
+        col_code, _, _ = _run_sync(
+            [
+                "--report", "--source", "models-dev", "--snapshot", str(good_snap),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs), "--output", str(reg_p),
+            ]
+        )
+        self.assertEqual(col_code, 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

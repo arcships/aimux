@@ -29,6 +29,7 @@ SCHEMA_VERSION = 1
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ALLOWLIST = ROOT / "registry" / "probe_allowlist.json"
 DEFAULT_REGISTRY = ROOT / "aimux-providers" / "src" / "provider_registry.json"
+DEFAULT_RECONCILE = ROOT / "registry" / "reconcile.json"
 
 DEFAULT_TIMEOUT_SECS = 8.0
 DEFAULT_CONCURRENCY = 8
@@ -69,32 +70,35 @@ def _default_resolver(host: str, port: int) -> list[str]:
 
 
 def _read_status_and_headers(reader: io.BufferedReader, max_header_bytes: int) -> tuple[int, HTTPMessage]:
-    raw_lines: list[bytes] = []
     total = 0
     while True:
-        line = reader.readline(max_header_bytes - total + 2)
-        if not line:
-            if not raw_lines:
-                raise ProbeConnectError("empty HTTP response")
-            break
-        total += len(line)
-        if total > max_header_bytes or len(raw_lines) > DEFAULT_MAX_HEADERS + 1:
-            raise LimitExceededError("response headers exceeded byte/count limit")
-        raw_lines.append(line)
-        if line in (b"\r\n", b"\n"):
-            break
+        raw_lines: list[bytes] = []
+        while True:
+            line = reader.readline(max_header_bytes - total + 2)
+            if not line:
+                if not raw_lines:
+                    raise ProbeConnectError("empty HTTP response")
+                raise ProbeConnectError("truncated HTTP headers")
+            total += len(line)
+            if total > max_header_bytes or len(raw_lines) > DEFAULT_MAX_HEADERS + 1:
+                raise LimitExceededError("response headers exceeded byte/count limit")
+            raw_lines.append(line)
+            if line in (b"\r\n", b"\n"):
+                break
 
-    status_line = raw_lines[0].decode("latin-1").strip()
-    parts = status_line.split(None, 2)
-    if len(parts) < 2 or not parts[0].startswith("HTTP/") or not parts[1].isascii() or not parts[1].isdigit():
-        raise ProbeConnectError("malformed HTTP status line")
-    status = int(parts[1])
-    if status < 100 or status > 599:
-        raise ProbeConnectError("invalid HTTP status code")
+        status_line = raw_lines[0].decode("latin-1").strip()
+        parts = status_line.split(None, 2)
+        if len(parts) < 2 or not parts[0].startswith("HTTP/") or not parts[1].isascii() or not parts[1].isdigit():
+            raise ProbeConnectError("malformed HTTP status line")
+        status = int(parts[1])
+        if status < 100 or status > 599:
+            raise ProbeConnectError("invalid HTTP status code")
 
-    header_bytes = b"".join(raw_lines[1:-1])
-    headers = parse_headers(io.BytesIO(header_bytes))
-    return status, headers
+        header_bytes = b"".join(raw_lines[1:-1])
+        headers = parse_headers(io.BytesIO(header_bytes))
+        if 100 <= status < 200 and status != 101:
+            continue
+        return status, headers
 
 
 def _drain_bounded_body(reader: io.BufferedReader, headers: HTTPMessage, max_body_bytes: int) -> None:
@@ -112,7 +116,7 @@ def _drain_bounded_body(reader: io.BufferedReader, headers: HTTPMessage, max_bod
         while remaining > 0:
             chunk = reader.read(min(remaining, 16384))
             if not chunk:
-                break
+                raise ProbeConnectError("truncated HTTP response body")
             remaining -= len(chunk)
         return
 
@@ -203,10 +207,10 @@ def _default_http_exchange(
 
 def load_allowlist(path: Path) -> list[dict]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        data = rs.parse_json_strict(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise ProbeInputError(f"{path}: failed to load allowlist: {exc}") from exc
-    if not isinstance(data, dict) or data.get("schema_version") != 1:
+    if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data.get("schema_version") != 1:
         raise ProbeInputError(f"{path}: expected schema_version == 1")
     if set(data.keys()) - {"schema_version", "entries"}:
         raise ProbeInputError(f"{path}: unknown top-level allowlist keys")
@@ -223,26 +227,67 @@ def load_allowlist(path: Path) -> list[dict]:
             if not isinstance(item[k], str) or (k != "base_path" and not item[k]):
                 raise ProbeInputError(f"{path}: entry #{idx} invalid `{k}`")
         if item["id"] in seen_ids:
-            raise ProbeInputError(f"{path}: duplicate allowlist id {item['id']!r}")
+            raise ProbeInputError(f"{path}: duplicate allowlist id {rs.strip_control(item['id'])[:80]!r}")
+        origin_info = rs.sanitize_url(item["origin"])
+        if (
+            origin_info["kind"] != "static"
+            or origin_info["sensitive"]
+            or origin_info["path"] not in ("", None)
+            or origin_info["origin"] != item["origin"]
+        ):
+            raise ProbeInputError(f"{path}: entry #{idx} `origin` must be a normalized origin-only URL")
+        if item["base_path"] and not item["base_path"].startswith("/"):
+            raise ProbeInputError(f"{path}: entry #{idx} `base_path` must be empty or start with '/'")
+        combined_info = rs.sanitize_url(item["origin"] + item["base_path"])
+        if combined_info["kind"] != "static" or combined_info["sensitive"]:
+            raise ProbeInputError(f"{path}: entry #{idx} combined URL is invalid or sensitive")
+        if "://" in item["source"] and rs.sanitize_url(item["source"].split("#", 1)[0])["sensitive"]:
+            raise ProbeInputError(f"{path}: entry #{idx} `source` contains sensitive URL")
         seen_ids.add(item["id"])
         entries.append(item)
     return entries
 
 
-def load_registry_urls(path: Path | None) -> dict[str, str]:
+def load_registry_urls(path: Path | None) -> dict[str, str] | None:
     if path is None:
-        return {}
+        return None
     try:
-        rows = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        rows = rs.parse_json_strict(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise ProbeInputError(f"{path}: failed to read registry: {exc}") from exc
     if not isinstance(rows, list):
         raise ProbeInputError(f"{path}: registry must be JSON array")
     urls: dict[str, str] = {}
-    for row in rows:
-        if isinstance(row, dict) and isinstance(row.get("name"), str) and isinstance(row.get("base_url"), str):
-            urls[row["name"]] = row["base_url"]
+    for idx, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ProbeInputError(f"{path}: registry row #{idx} must be an object")
+        name = row.get("name")
+        base_url = row.get("base_url")
+        if not isinstance(name, str) or not name or not isinstance(base_url, str) or not base_url:
+            raise ProbeInputError(f"{path}: registry row #{idx} missing valid `name` or `base_url`")
+        if name in urls:
+            raise ProbeInputError(f"{path}: duplicate registry row {rs.strip_control(name)[:80]!r}")
+        urls[name] = base_url
     return urls
+
+
+def load_unreachable_ids(path: Path | None) -> set[str]:
+    if path is None or not path.exists():
+        return set()
+    try:
+        data = rs.parse_json_strict(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise ProbeInputError(f"{path}: failed to read reconcile file: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ProbeInputError(f"{path}: reconcile file must be an object")
+    entries = data.get("entries", {})
+    if not isinstance(entries, dict):
+        raise ProbeInputError(f"{path}: reconcile `entries` must be an object")
+    out: set[str] = set()
+    for pid, meta in entries.items():
+        if isinstance(meta, dict) and meta.get("status") == "unreachable":
+            out.add(pid)
+    return out
 
 
 def classify_http_status(status: int) -> str:
@@ -351,12 +396,14 @@ def _is_target_approved(
     if url_info["origin"] != initial_origin:
         return False
     path = url_info["path"] or "/"
-    lowered_path = path.lower()
-    if "%2f" in lowered_path or "%5c" in lowered_path or "\\" in path:
-        return False
-    decoded_segments = unquote(path).split("/")
-    if any(seg in (".", "..") for seg in decoded_segments):
-        return False
+    decoded_once = unquote(path)
+    decoded_twice = unquote(decoded_once)
+    for candidate in (path, decoded_once, decoded_twice):
+        lowered = candidate.lower()
+        if "%2f" in lowered or "%5c" in lowered or "\\" in candidate:
+            return False
+        if any(seg in (".", "..") for seg in candidate.split("/")):
+            return False
     norm_base = initial_base_path.rstrip("/")
     expected_prefix = (norm_base + "/models") if norm_base else "/models"
     return path == expected_prefix or path.startswith(expected_prefix + "/")
@@ -365,7 +412,7 @@ def _is_target_approved(
 def probe_entry(
     entry: dict,
     *,
-    registry_urls: dict[str, str],
+    registry_urls: dict[str, str] | None,
     resolver: Callable[[str, int], list[str]],
     http_exchange: Callable[..., tuple[int, dict[str, str]]],
     timeout: float,
@@ -397,8 +444,8 @@ def probe_entry(
             "latency_ms": 0,
         }
 
-    # Verify registry's current base_url matches approved allowlist entry if registry supplied.
-    if registry_urls:
+    # Verify registry's current base_url matches approved allowlist entry unless explicitly disabled (`None`).
+    if registry_urls is not None:
         local_raw = registry_urls.get(pid)
         if local_raw is None:
             return {
@@ -440,21 +487,25 @@ def probe_entry(
 
     probe_raw = allow_raw.rstrip("/") + "/models"
     current_info = rs.sanitize_url(probe_raw)
-    current_url = current_info["sanitized"]
+    initial_target = current_info["sanitized"]
+    current_url = initial_target
     visited = {current_url}
     redirect_count = 0
 
     while True:
         block_reason, ips = _validate_and_resolve(current_info, resolver, timeout=timeout)
         if block_reason is not None:
-            return {
+            out_row = {
                 "id": pid,
-                "target": current_info["sanitized"],
+                "target": initial_target,
                 "outcome": block_reason,
                 "http_status": None,
                 "redirects": redirect_count,
                 "latency_ms": int((time.monotonic() - started) * 1000),
             }
+            if redirect_count > 0:
+                out_row["final_target"] = current_info["sanitized"]
+            return out_row
 
         scheme = current_info["scheme"]
         host = current_info["host"]
@@ -511,23 +562,30 @@ def probe_entry(
                 outcome = "redirect-unverified"
                 http_status = status
                 break
+            raw_has_q = "?" in location and ("#" not in location or location.find("?") < location.find("#"))
+            raw_has_f = "#" in location
             try:
                 next_raw = urljoin(current_url, location)
             except ValueError:
                 return {
                     "id": pid,
-                    "target": current_info["sanitized"],
+                    "target": initial_target,
                     "final_target": rs.REDACTED_URL,
                     "outcome": "blocked-invalid-url",
                     "http_status": status,
                     "redirects": redirect_count,
                     "latency_ms": int((time.monotonic() - started) * 1000),
                 }
+            if raw_has_q and "?" not in next_raw.split("#", 1)[0]:
+                base_part, *frag_part = next_raw.split("#", 1)
+                next_raw = base_part + "?x" + ("#" + frag_part[0] if frag_part else "")
+            if raw_has_f and "#" not in next_raw:
+                next_raw = next_raw + "#x"
             next_info = rs.sanitize_url(next_raw)
             if next_info["sensitive"]:
                 return {
                     "id": pid,
-                    "target": current_info["sanitized"],
+                    "target": initial_target,
                     "final_target": next_info["sanitized"],
                     "outcome": "blocked-sensitive-url",
                     "http_status": status,
@@ -537,7 +595,7 @@ def probe_entry(
             if scheme == "https" and next_info["scheme"] == "http":
                 return {
                     "id": pid,
-                    "target": current_info["sanitized"],
+                    "target": initial_target,
                     "final_target": next_info["sanitized"],
                     "outcome": "blocked-https-downgrade",
                     "http_status": status,
@@ -549,7 +607,7 @@ def probe_entry(
             ):
                 return {
                     "id": pid,
-                    "target": current_info["sanitized"],
+                    "target": initial_target,
                     "final_target": next_info["sanitized"],
                     "outcome": "blocked-cross-origin-redirect",
                     "http_status": status,
@@ -559,7 +617,7 @@ def probe_entry(
             if next_info["sanitized"] in visited:
                 return {
                     "id": pid,
-                    "target": current_info["sanitized"],
+                    "target": initial_target,
                     "final_target": next_info["sanitized"],
                     "outcome": "blocked-redirect-loop",
                     "http_status": status,
@@ -576,14 +634,17 @@ def probe_entry(
         http_status = status
         break
 
-    return {
+    final_row = {
         "id": pid,
-        "target": current_info["sanitized"],
+        "target": initial_target,
         "outcome": outcome,
         "http_status": http_status,
         "redirects": redirect_count,
         "latency_ms": int((time.monotonic() - started) * 1000),
     }
+    if redirect_count > 0:
+        final_row["final_target"] = current_info["sanitized"]
+    return final_row
 
 
 def _not_run_result(entry: dict) -> tuple[dict, bool]:
@@ -610,7 +671,8 @@ def _record_redacted(res: dict) -> bool:
 def run_probe(
     entries: list[dict],
     *,
-    registry_urls: dict[str, str],
+    registry_urls: dict[str, str] | None = None,
+    unreachable_ids: set[str] | None = None,
     resolver: Callable[[str, int], list[str]] = _default_resolver,
     http_exchange: Callable[..., tuple[int, dict[str, str]]] = _default_http_exchange,
     timeout: float = DEFAULT_TIMEOUT_SECS,
@@ -625,6 +687,7 @@ def run_probe(
     sorted_entries = sorted(entries, key=lambda e: e["id"])
     results: list[dict] = []
     any_redacted = False
+    marked_unreachable = unreachable_ids or set()
 
     # Process with bounded daemon workers so total_budget bounds both run_probe and CLI exit.
     n = len(sorted_entries)
@@ -677,6 +740,8 @@ def run_probe(
     for i, entry in enumerate(sorted_entries):
         if i in completed:
             res = completed[i]
+            if res["id"] in marked_unreachable and res["outcome"].startswith("reachable"):
+                res["recovery_review_needed"] = True
             if _record_redacted(res):
                 any_redacted = True
             results.append(res)
@@ -749,6 +814,16 @@ def render_markdown(report: dict) -> str:
     for k, v in sorted(report["counts"].items()):
         lines.append(f"| {rs.escape_markdown(k)} | {v} |")
     lines.append("")
+    recovered = [r for r in report["results"] if r.get("recovery_review_needed")]
+    if recovered:
+        lines.extend(["#### Recovered Targets (Manual `unreachable` Status Review)", "", "| Provider | Target | Outcome | Status |", "|---|---|---|---:|"])
+        for r in recovered[:80]:
+            st = str(r["http_status"]) if r["http_status"] is not None else "-"
+            lines.append(
+                f"| {rs.escape_markdown(r['id'])} | {rs.escape_markdown(str(r['target']))} "
+                f"| {rs.escape_markdown(r['outcome'])} | {st} |"
+            )
+        lines.append("")
     issues = [
         r
         for r in report["results"]
@@ -792,6 +867,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="RFC-0033 credential-free reachability probe")
     p.add_argument("--allowlist", type=Path, default=DEFAULT_ALLOWLIST)
     p.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    p.add_argument("--reconcile", type=Path, default=DEFAULT_RECONCILE)
     p.add_argument("--no-registry-check", action="store_true", help="Probe allowlist directly without comparing local registry file")
     p.add_argument("--output", type=Path, help="Write JSON report to PATH (stdout if omitted)")
     p.add_argument("--markdown-output", type=Path, help="Write Markdown report view to PATH")
@@ -811,12 +887,24 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
+    input_paths = {
+        p.resolve()
+        for p in (args.allowlist, None if args.no_registry_check else args.registry, args.reconcile)
+        if p is not None
+    }
+    for out_p in (args.output, args.markdown_output):
+        if out_p is not None and out_p.resolve() in input_paths:
+            print(f"output path {out_p} collides with an input file", file=sys.stderr)
+            return 2
+
     try:
         entries = load_allowlist(args.allowlist)
-        reg_urls = {} if args.no_registry_check else load_registry_urls(args.registry)
+        reg_urls = None if args.no_registry_check else load_registry_urls(args.registry)
+        unreachable_ids = load_unreachable_ids(args.reconcile)
         report = run_probe(
             entries,
             registry_urls=reg_urls,
+            unreachable_ids=unreachable_ids,
             timeout=args.timeout,
             concurrency=args.concurrency,
             total_budget=args.total_budget,
