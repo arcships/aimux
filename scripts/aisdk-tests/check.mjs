@@ -108,21 +108,32 @@ export function scanMarkers(rel, src) {
   const lines = src.split('\n');
   const stripRustAttrLiterals = (s) => {
     let out = '';
+    let open = false;
     for (let p = 0; p < s.length; ) {
       if (s.startsWith('//', p)) {
         const nl = s.indexOf('\n', p);
         if (nl < 0) break;
         out += '\n';
         p = nl + 1;
+      } else if (s.startsWith('/*', p)) {
+        let depth = 1;
+        for (p += 2; p < s.length && depth > 0; p++) {
+          if (s.startsWith('/*', p)) { depth++; p++; }
+          else if (s.startsWith('*/', p)) { depth--; p++; }
+        }
+        if (depth > 0) open = true;
+        out += ' ';
       } else if (s[p] === '"') {
         out += '""';
         for (p++; p < s.length && s[p] !== '"'; p++) if (s[p] === '\\') p++;
+        if (p >= s.length) open = true;
         p++;
       } else if (s[p] === 'r' && /^r(#*)"/.test(s.slice(p, p + 16))) {
         const hashes = /^r(#*)"/.exec(s.slice(p, p + 16))[1];
         const end = s.indexOf(`"${hashes}`, p + 2 + hashes.length);
         out += '""';
-        p = end < 0 ? s.length : end + 1 + hashes.length;
+        if (end < 0) { open = true; p = s.length; }
+        else p = end + 1 + hashes.length;
       } else if (s[p] === "'" && (s[p + 1] === '\\' ? s[p + 3] === "'" : s[p + 2] === "'")) {
         out += "''";
         p += s[p + 1] === '\\' ? 4 : 3;
@@ -130,31 +141,35 @@ export function scanMarkers(rel, src) {
         out += s[p++];
       }
     }
-    return out;
+    return { text: out, open };
   };
-  const bracketDelta = (s) => {
+  const attrOpen = (s) => {
+    const { text, open } = stripRustAttrLiterals(s);
+    if (open) return true;
     let d = 0;
-    for (const ch of stripRustAttrLiterals(s)) if (ch === '[') d++; else if (ch === ']') d--;
-    return d;
+    for (const ch of text) if (ch === '[') d++; else if (ch === ']') d--;
+    return d > 0;
   };
   for (let idx = 0; idx < lines.length; ) {
     if (!/^\s*(\/\/\/|#\[)/.test(lines[idx])) { idx++; continue; }
     const start = idx;
-    let attrDepth = 0;
+    let attrBuf = null;
     while (idx < lines.length) {
       const l = lines[idx];
-      if (attrDepth > 0) {
-        attrDepth = Math.max(0, attrDepth + bracketDelta(l));
+      if (attrBuf !== null) {
+        attrBuf += '\n' + l;
         idx++;
+        if (!attrOpen(attrBuf)) attrBuf = null;
       } else if (/^\s*#\[/.test(l)) {
-        attrDepth = Math.max(0, bracketDelta(l));
+        attrBuf = l;
         idx++;
+        if (!attrOpen(attrBuf)) attrBuf = null;
       } else if (/^\s*\/\/\//.test(l)) {
         idx++;
       } else break;
     }
     const blockLines = lines.slice(start, idx);
-    const attrsText = stripRustAttrLiterals(blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n'));
+    const attrsText = stripRustAttrLiterals(blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n')).text;
     const hasTestAttr = /#\[(?:tokio::)?test(?:\s*\([\s\S]*?\))?\s*\]/.test(attrsText);
     const ignored = /#\[ignore(?:\s*=[^\]]*)?\s*\]/.test(attrsText);
     const hasPartial = blockLines.some((l) => PARTIAL.test(l));
@@ -367,7 +382,11 @@ export function check({ versions, tables, markers, inventory }) {
           const targetBase = targetCrate ? `${targetCrate}/` : '';
           const afterSrc = parts.slice(srcIdx + 1);
           const targetVendorScoped = crateIsVendorScoped(targetCrate || '.');
-          out.add(targetVendorScoped && afterSrc.length > 1 ? `${targetBase}src/${afterSrc[0]}/tests/` : `${targetBase}src/`);
+          if (targetVendorScoped) {
+            out.add(afterSrc.length > 1 ? `${targetBase}src/${afterSrc[0]}/tests/` : `${targetBase}src/tests/`);
+          } else {
+            out.add(`${targetBase}src/`);
+          }
         }
         if (vendorScoped) out.add(`${base}src/${t.key}/tests/`);
       } else {
@@ -654,7 +673,12 @@ export function diffCases({ baseVersions, baseTables, versions, tables, markers,
   const baseInventory = inventory.filter((p) => baseVersionsUsed.has(`${p.package}@${p.version}`));
   const baseSelected = new Map();
   for (const p of check({ versions: baseVersions, tables: baseTables, markers: [], inventory: baseInventory }).progress)
-    for (const r of p.rows) baseSelected.set(`${p.package} ${r.file}`, r.version);
+    for (const r of p.rows) {
+      const k = `${p.package} ${r.file}`;
+      const set = baseSelected.get(k) ?? new Set();
+      set.add(r.version);
+      baseSelected.set(k, set);
+    }
   const headVersionsUsed = new Set(neededPackages(versions, tables, markers).map((p) => `${p.name}@${p.version}`));
   const headInventory = inventory.filter((p) => headVersionsUsed.has(`${p.package}@${p.version}`));
   const { progress } = check({ versions, tables, markers, inventory: headInventory });
@@ -662,13 +686,14 @@ export function diffCases({ baseVersions, baseTables, versions, tables, markers,
   for (const p of progress) {
     const pkgAdded = [];
     for (const row of p.rows) {
-      const beforeVer = baseSelected.get(`${p.package} ${row.file}`) ?? baseOwners.get(`${p.package} ${row.file}`) ?? baseVersions[p.package]?.version;
-      if (!beforeVer || beforeVer === row.version) continue;
-      const oldCases = byPkgVer.get(`${p.package}@${beforeVer}`)?.get(row.file) ?? new Map();
+      const fallback = baseOwners.get(`${p.package} ${row.file}`) ?? baseVersions[p.package]?.version;
+      const beforeVers = baseSelected.get(`${p.package} ${row.file}`) ?? (fallback ? new Set([fallback]) : new Set());
+      if (!beforeVers.size || beforeVers.has(row.version)) continue;
+      const oldKeys = new Set([...beforeVers].flatMap((v) => [...(byPkgVer.get(`${p.package}@${v}`)?.get(row.file)?.keys() ?? [])]));
       const newCases = byPkgVer.get(`${p.package}@${row.version}`)?.get(row.file) ?? new Map();
-      const added = [...newCases.keys()].filter((k) => !oldCases.has(k));
+      const added = [...newCases.keys()].filter((k) => !oldKeys.has(k));
       if (added.length || baseVersions[p.package]?.version !== versions[p.package]?.version)
-        pkgAdded.push({ file: row.file, beforeVer, afterVer: row.version, added });
+        pkgAdded.push({ file: row.file, beforeVer: [...beforeVers].join(','), afterVer: row.version, added });
     }
     if (pkgAdded.length) changes.push({ package: p.package, rows: pkgAdded });
   }

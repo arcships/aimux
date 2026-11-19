@@ -222,10 +222,10 @@ export function listCases(src) {
       const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i, i + 64));
       const word = m[0];
       const start = i;
-      const afterDot = prev === '.';
+      const afterMember = prev === '.' || prev === '#';
       i += word.length;
-      prev = afterDot ? 'prop' : word;
-      if (afterDot || !CALLEES.has(word)) return;
+      prev = afterMember ? 'prop' : word;
+      if (afterMember || !CALLEES.has(word)) return;
       const at = line;
       for (;;) {
         skipSpace();

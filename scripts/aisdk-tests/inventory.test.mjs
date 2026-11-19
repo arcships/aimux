@@ -94,7 +94,7 @@ describe('Azure', () => {
     return /\\)/;
   });
   test.runIf(/[(]/.test(v))('after regex predicate', () => {
-    const ratio = record.return / 2;
+    const ratio = record.return / 2 + this.#return / 2;
     const s = \`\${/\\)/.test(v)}\`;
     return ratio + s.length;
   });

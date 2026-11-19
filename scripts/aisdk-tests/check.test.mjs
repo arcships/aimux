@@ -458,13 +458,16 @@ test('scanMarkers handles pre-marker #[ignore]/#[test], same-line #[test] #[igno
     '#[tokio::test(\n  flavor = "multi_thread"\n)]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › multi_attr\nasync fn f4() {}\n',
     '/// upstream: @ai-sdk/groq src/a.test.ts › d › quoted_bracket\n#[test]\n#[should_panic(expected = "missing [")]\nfn f5() {}\n',
     '/// upstream: @ai-sdk/groq src/a.test.ts › d › doc_fake_test\n#[doc = "Shows #[test] syntax."]\nfn helper() {}\n',
+    '#[doc = "two\nlines"]\nfn h2() {}\n/// upstream: @ai-sdk/groq src/a.test.ts › d › after_multiline_doc\n#[test]\nfn f6() {}\n',
+    '/// upstream: @ai-sdk/groq src/a.test.ts › d › block_comment_test\n#[doc = /* #[test] */ "helper"]\nfn h3() {}\n',
   ].join('');
   const { markers, errors } = scanMarkers('x.rs', src);
-  assert.deepEqual(markers.map((m) => m.chain), ['d › pre_test', 'd › multi_attr', 'd › quoted_bracket']);
+  assert.deepEqual(markers.map((m) => m.chain), ['d › pre_test', 'd › multi_attr', 'd › quoted_bracket', 'd › after_multiline_doc']);
   assert.deepEqual(errors, [
     'x.rs:2: marker sits on an #[ignore] test (RFC-0045 §5)',
     'x.rs:6: marker sits on an #[ignore] test (RFC-0045 §5)',
     'x.rs:20: marker is not above a test function',
+    'x.rs:29: marker is not above a test function',
   ]);
 });
 
@@ -576,6 +579,29 @@ issue = 275
   assert.deepEqual(rTarget.errors, [
     'target-crate/src/shared/a.rs:1: marker belongs to @ai-sdk/groq (expected under target-crate/src/anthropic/tests/), found in target-crate/src/shared/a.rs',
   ]);
+
+  // Root-level elsewhere target in a vendor-scoped crate restricts to src/tests/, not src/shared/:
+  const rootTargetTables = readLayouts([
+    {
+      rel: 'aimux-providers/layout.toml',
+      src: '[groq]\npackage = "@ai-sdk/groq"\n[[groq.files]]\nupstream = "src/a.ts"\nrust = "../target-crate/src/a.rs"\nstatus = "elsewhere"\n[groq.files.tests]\n',
+    },
+    {
+      rel: 'target-crate/layout.toml',
+      src: '[anthropic]\npackage = "@ai-sdk/anthropic"\n[[anthropic.files]]\nupstream = "src/x.ts"\nrust = "anthropic/x.rs"\nstatus = "mapped"\n[anthropic.files.tests]\n',
+    },
+  ], { ...v, '@ai-sdk/anthropic': { version: '4.0.71' } }, []);
+  const mRootOk = scanMarkers('target-crate/src/tests/a.rs', marker('@ai-sdk/groq src/a.test.ts › ok')).markers[0];
+  const mRootBad = scanMarkers('target-crate/src/shared/a.rs', marker('@ai-sdk/groq src/a.test.ts › bad')).markers[0];
+  const rRoot = check({
+    versions: { ...v, '@ai-sdk/anthropic': { version: '4.0.71' } },
+    tables: rootTargetTables,
+    markers: [mRootOk, mRootBad],
+    inventory: [pkg('@ai-sdk/groq', '4.0.52', { 'src/a.test.ts': "it('ok', f); it('bad', f);" })],
+  });
+  assert.deepEqual(rRoot.errors, [
+    'target-crate/src/shared/a.rs:1: marker belongs to @ai-sdk/groq (expected under target-crate/src/tests/), found in target-crate/src/shared/a.rs',
+  ]);
 });
 
 test('diffCases compares per-file effective versions across lock catchup and override bumps', () => {
@@ -646,5 +672,26 @@ status = "mapped"
   assert.deepEqual(oDiff, [{
     package: 'ai',
     rows: [{ file: 'src/orphan.test.ts', beforeVer: '7.0.128', afterVer: '7.0.129', added: ['o2'] }],
+  }]);
+
+  // Multi-version orphan selected at 7.0.128 and 7.0.129 in base, with 7.0.129 bumped to 7.0.130 in head:
+  const mBase = readLayouts([{
+    rel: 'aimux-core/layout.toml',
+    src: '[ai]\npackage = "ai"\n[[ai.files]]\nupstream = "src/a.ts"\nstatus = "mapped"\nversion = "7.0.128"\n[ai.files.tests]\nts-only = [{ case = "o1", reason = "r" }]\n[[ai.files]]\nupstream = "src/b.ts"\nstatus = "mapped"\nversion = "7.0.129"\n[ai.files.tests]\nts-only = [{ case = "o2", reason = "r" }]\n',
+  }], baseVersions, []);
+  const mHead = readLayouts([{
+    rel: 'aimux-core/layout.toml',
+    src: '[ai]\npackage = "ai"\n[[ai.files]]\nupstream = "src/a.ts"\nstatus = "mapped"\nversion = "7.0.128"\n[ai.files.tests]\nts-only = [{ case = "o1", reason = "r" }]\n[[ai.files]]\nupstream = "src/b.ts"\nstatus = "mapped"\nversion = "7.0.130"\n[ai.files.tests]\nts-only = [{ case = "o2", reason = "r" }]\n',
+  }], baseVersions, []);
+  const mInv = [
+    pkg('ai', '7.0.127', {}),
+    pkg('ai', '7.0.128', { 'src/orphan.test.ts': "it('o1', f);" }),
+    pkg('ai', '7.0.129', { 'src/orphan.test.ts': "it('o1', f); it('o2', f);" }),
+    pkg('ai', '7.0.130', { 'src/orphan.test.ts': "it('o1', f); it('o2', f); it('o3', f);" }),
+  ];
+  const mDiff = diffCases({ baseVersions, baseTables: mBase, versions: baseVersions, tables: mHead, markers: [], inventory: mInv });
+  assert.deepEqual(mDiff, [{
+    package: 'ai',
+    rows: [{ file: 'src/orphan.test.ts', beforeVer: '7.0.128,7.0.129', afterVer: '7.0.130', added: ['o3'] }],
   }]);
 });
