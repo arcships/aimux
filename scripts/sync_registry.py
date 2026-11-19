@@ -1262,22 +1262,20 @@ def main(argv: list[str] | None = None) -> int:
         print("--max-fetch-bytes must be positive", file=sys.stderr)
         return 2
 
-    protected_inputs = {
-        p.resolve()
-        for p in (args.registry, args.aliases, args.reconcile, args.packages_rs)
-        if p is not None
-    }
-    report_blocked_inputs = protected_inputs | ({args.snapshot.resolve()} if args.snapshot is not None else set())
+    protected_inputs = [
+        p for p in (args.registry, args.aliases, args.reconcile, args.packages_rs) if p is not None
+    ]
+    report_blocked_inputs = protected_inputs + ([args.snapshot] if args.snapshot is not None else [])
     for out_p in (args.output, args.markdown_output):
-        if out_p is not None and out_p.resolve() in report_blocked_inputs:
+        if out_p is not None and any(rs.paths_collide(out_p, inp) for inp in report_blocked_inputs):
             print(f"output path {out_p} collides with an input file", file=sys.stderr)
             return 2
+    if args.output is not None and args.markdown_output is not None and rs.paths_collide(args.output, args.markdown_output):
+        print("--output and --markdown-output collide", file=sys.stderr)
+        return 2
     if args.write_snapshot is not None:
-        ws_resolved = args.write_snapshot.resolve()
-        if ws_resolved in protected_inputs or any(
-            out_p is not None and ws_resolved == out_p.resolve()
-            for out_p in (args.output, args.markdown_output)
-        ):
+        ws_blocked = protected_inputs + [p for p in (args.output, args.markdown_output) if p is not None]
+        if any(rs.paths_collide(args.write_snapshot, other) for other in ws_blocked):
             print(f"--write-snapshot path {args.write_snapshot} collides with another file", file=sys.stderr)
             return 2
 

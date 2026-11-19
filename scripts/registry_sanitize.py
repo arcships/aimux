@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import os
 import re
+import sys
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 REDACTED = "[REDACTED]"
@@ -379,6 +382,9 @@ def is_forbidden_hostname(hostname: str) -> bool:
     return False
 
 
+_SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
 def parse_json_strict(text: str) -> object:
     """Parse JSON while rejecting duplicate object keys."""
     import json
@@ -387,15 +393,26 @@ def parse_json_strict(text: str) -> object:
         out: dict[str, object] = {}
         for k, v in pairs:
             if k in out:
-                if isinstance(k, str) and ("://" in k or "?" in k or "@" in k or "#" in k):
-                    safe_k = sanitize_url(k)["sanitized"] or REDACTED_URL
-                else:
-                    safe_k = strip_control(str(k))[:80]
+                safe_k = k[:80] if isinstance(k, str) and _SAFE_KEY_RE.fullmatch(k) else REDACTED
                 raise ValueError(f"duplicate JSON key {safe_k!r}")
             out[k] = v
         return out
 
     return json.loads(text, object_pairs_hook=_no_dups)
+
+
+def paths_collide(a: Path, b: Path) -> bool:
+    """Return True when two filesystem paths refer to the same destination (including case-insensitive FS)."""
+    if a.exists() and b.exists():
+        try:
+            if os.path.samefile(a, b):
+                return True
+        except OSError:
+            pass
+    ra, rb = str(a.resolve()), str(b.resolve())
+    if sys.platform in ("darwin", "win32"):
+        return ra.casefold() == rb.casefold()
+    return ra == rb
 
 
 def sha256_canonical_json(obj: object) -> str:

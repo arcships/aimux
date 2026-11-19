@@ -887,15 +887,18 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
-    input_paths = {
-        p.resolve()
+    input_paths = [
+        p
         for p in (args.allowlist, None if args.no_registry_check else args.registry, args.reconcile)
         if p is not None
-    }
+    ]
     for out_p in (args.output, args.markdown_output):
-        if out_p is not None and out_p.resolve() in input_paths:
+        if out_p is not None and any(rs.paths_collide(out_p, inp) for inp in input_paths):
             print(f"output path {out_p} collides with an input file", file=sys.stderr)
             return 2
+    if args.output is not None and args.markdown_output is not None and rs.paths_collide(args.output, args.markdown_output):
+        print("--output and --markdown-output collide", file=sys.stderr)
+        return 2
 
     try:
         entries = load_allowlist(args.allowlist)

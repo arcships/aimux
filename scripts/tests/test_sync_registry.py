@@ -754,13 +754,37 @@ class SyncRegistryTest(unittest.TestCase):
         )
         self.assertEqual(ws_col_code, 2)
 
-        # Duplicate URL-shaped JSON key redacts query secrets in errors
+        # Duplicate URL-shaped and templated JSON keys redact secrets in errors
         dup_sec = "dup_key_secret_777"
-        dup_url_json = self.dir / "dup_url.json"
-        dup_url_json.write_text(f'{{"https://a.invalid/?k={dup_sec}": "x", "https://a.invalid/?k={dup_sec}": "y"}}\n', encoding="utf-8")
-        with self.assertRaises(sync.RegistryInputError) as ctx:
-            sync.load_json_file(dup_url_json, "dup")
-        self.assertNotIn(dup_sec, str(ctx.exception))
+        for raw_key in (f"https://a.invalid/?k={dup_sec}", f"${{ENDPOINT}}/user:{dup_sec}"):
+            dup_url_json = self.dir / "dup_url.json"
+            dup_url_json.write_text(f'{{"{raw_key}": "x", "{raw_key}": "y"}}\n', encoding="utf-8")
+            with self.assertRaises(sync.RegistryInputError) as ctx:
+                sync.load_json_file(dup_url_json, "dup")
+            self.assertNotIn(dup_sec, str(ctx.exception))
+
+        # Case-insensitive collision check on macOS/Windows for --write-snapshot vs registry / output
+        if sys.platform in ("darwin", "win32"):
+            upper_ws = reg_p.parent / reg_p.name.upper()
+            ci_code, _, _ = _run_sync(
+                [
+                    "--check", "--source", "models-dev", "--snapshot", str(good_snap),
+                    "--write-snapshot", str(upper_ws),
+                    "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                    "--packages-rs", str(self.packages_rs),
+                ]
+            )
+            self.assertEqual(ci_code, 2)
+            ci_out_code, _, _ = _run_sync(
+                [
+                    "--report", "--source", "models-dev", "--snapshot", str(good_snap),
+                    "--write-snapshot", str(self.dir / "out_pair.json"),
+                    "--output", str(self.dir / "OUT_PAIR.JSON"),
+                    "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                    "--packages-rs", str(self.packages_rs),
+                ]
+            )
+            self.assertEqual(ci_out_code, 2)
 
         # Local uppercase HTTPS:// rejected to match preset/mod.rs:242; partial wrapper with metadata rejected
         upper_reg = _write_json(

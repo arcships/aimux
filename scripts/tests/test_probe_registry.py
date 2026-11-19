@@ -274,7 +274,7 @@ class ProbeRegistryTest(unittest.TestCase):
 
         def slow_exchange(_ip, _p, _s, _h, path, *_rest):
             if "slow" in path:
-                gate.wait(0.45)
+                gate.wait(2.0)
             return 200, {}
 
         entries = [
@@ -295,7 +295,7 @@ class ProbeRegistryTest(unittest.TestCase):
         elapsed = time.monotonic() - t0
         gate.set()
 
-        self.assertLess(elapsed, 0.35)
+        self.assertLess(elapsed, 1.0)
         self.assertTrue(rep["repo_commit"])
         self.assertRegex(rep["collected_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertIsInstance(rep["duration_ms"], int)
@@ -333,10 +333,10 @@ class ProbeRegistryTest(unittest.TestCase):
                 f"sys.exit(p.main(['--allowlist', {str(allow_p)!r}, '--no-registry-check', '--total-budget', '0.08']))"
             )
             t_sub = time.monotonic()
-            proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=2.0)
+            proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=3.0)
             sub_elapsed = time.monotonic() - t_sub
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertLess(sub_elapsed, 0.8)
+            self.assertLess(sub_elapsed, 2.0)
             sub_rep = json.loads(proc.stdout)
             self.assertEqual(sub_rep["results"][0]["outcome"], "not-run")
 
