@@ -189,7 +189,7 @@ export function listCases(src) {
     if (/\s/.test(c)) { i++; return; }
     if (src.startsWith('//', i) || src.startsWith('/*', i)) { skipSpace(); return; }
     if (c === '"' || c === "'") { skipString(c); prev = 'str'; return; }
-    if (c === '`') { skipTemplate(); prev = 'str'; return; }
+    if (c === '`') { const { open } = skipTemplate(); if (!open) prev = 'str'; return; }
     if (c === '/' && REGEX_BEFORE.has(prev)) {
       let inClass = false;
       for (i++; i < src.length; i++) {
@@ -224,7 +224,7 @@ export function listCases(src) {
       const start = i;
       const afterDot = prev === '.';
       i += word.length;
-      prev = word;
+      prev = afterDot ? 'prop' : word;
       if (afterDot || !CALLEES.has(word)) return;
       const at = line;
       for (;;) {

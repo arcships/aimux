@@ -93,13 +93,19 @@ describe('Azure', () => {
   ])('supports $name on Azure messages', () => {
     return /\\)/;
   });
-  test.runIf(/[(]/.test(v))('after regex predicate', () => {});
+  test.runIf(/[(]/.test(v))('after regex predicate', () => {
+    const ratio = record.return / 2;
+    const s = \`\${/\\)/.test(v)}\`;
+    return ratio + s.length;
+  });
+  it('following', () => {});
 });
 `;
   const parsed = listCases(src);
   assert.deepEqual(parsed.map((c) => `${c.line} ${c.chain.join(' › ')}`), [
     '3 Azure › supports $name on Azure messages',
     '8 Azure › after regex predicate',
+    '13 Azure › following',
   ]);
   assert.ok(src.slice(parsed[0].start, parsed[0].end).endsWith('})'));
 });

@@ -106,9 +106,35 @@ export function scanMarkers(rel, src) {
   const partials = [];
   const errors = [];
   const lines = src.split('\n');
+  const stripRustAttrLiterals = (s) => {
+    let out = '';
+    for (let p = 0; p < s.length; ) {
+      if (s.startsWith('//', p)) {
+        const nl = s.indexOf('\n', p);
+        if (nl < 0) break;
+        out += '\n';
+        p = nl + 1;
+      } else if (s[p] === '"') {
+        out += '""';
+        for (p++; p < s.length && s[p] !== '"'; p++) if (s[p] === '\\') p++;
+        p++;
+      } else if (s[p] === 'r' && /^r(#*)"/.test(s.slice(p, p + 16))) {
+        const hashes = /^r(#*)"/.exec(s.slice(p, p + 16))[1];
+        const end = s.indexOf(`"${hashes}`, p + 2 + hashes.length);
+        out += '""';
+        p = end < 0 ? s.length : end + 1 + hashes.length;
+      } else if (s[p] === "'" && (s[p + 1] === '\\' ? s[p + 3] === "'" : s[p + 2] === "'")) {
+        out += "''";
+        p += s[p + 1] === '\\' ? 4 : 3;
+      } else {
+        out += s[p++];
+      }
+    }
+    return out;
+  };
   const bracketDelta = (s) => {
     let d = 0;
-    for (const ch of s) if (ch === '[') d++; else if (ch === ']') d--;
+    for (const ch of stripRustAttrLiterals(s)) if (ch === '[') d++; else if (ch === ']') d--;
     return d;
   };
   for (let idx = 0; idx < lines.length; ) {
@@ -128,7 +154,7 @@ export function scanMarkers(rel, src) {
       } else break;
     }
     const blockLines = lines.slice(start, idx);
-    const attrsText = blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n');
+    const attrsText = stripRustAttrLiterals(blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n'));
     const hasTestAttr = /#\[(?:tokio::)?test(?:\s*\([\s\S]*?\))?\s*\]/.test(attrsText);
     const ignored = /#\[ignore(?:\s*=[^\]]*)?\s*\]/.test(attrsText);
     const hasPartial = blockLines.some((l) => PARTIAL.test(l));
@@ -308,7 +334,8 @@ export function check({ versions, tables, markers, inventory }) {
     list.push(t);
     pkgTables.set(t.package, list);
     for (const e of t.files)
-      if (e.upstream) for (const f of testFilesOf(e.upstream)) owners.set(`${t.package} ${f}`, e);
+      if (e.status !== 'aimux' && typeof e.upstream === 'string')
+        for (const f of testFilesOf(e.upstream)) owners.set(`${t.package} ${f}`, e);
   }
   const crateTableCounts = new Map();
   for (const t of tables) crateTableCounts.set(t.crate, (crateTableCounts.get(t.crate) ?? 0) + 1);
@@ -316,6 +343,9 @@ export function check({ versions, tables, markers, inventory }) {
   const isVendorScoped = (t) =>
     (crateTableCounts.get(t.crate) ?? 0) > 1 ||
     t.files.some((f) => typeof f.rust === 'string' && f.rust.startsWith(`${t.key}/`));
+  const crateIsVendorScoped = (crate) =>
+    (crateTableCounts.get(crate) ?? 0) > 1 ||
+    tables.some((t) => t.crate === crate && isVendorScoped(t));
   const resolveRustTarget = (t, rust) => {
     const clean = rust.replace(/\\/g, '/');
     if (clean.startsWith('../../')) return path.posix.normalize(path.posix.join(`${cratePrefixOf(t)}src`, clean));
@@ -336,9 +366,7 @@ export function check({ versions, tables, markers, inventory }) {
           const targetCrate = parts.slice(0, srcIdx).join('/');
           const targetBase = targetCrate ? `${targetCrate}/` : '';
           const afterSrc = parts.slice(srcIdx + 1);
-          const targetVendorScoped = targetCrate === (t.crate === '.' ? '' : t.crate)
-            ? vendorScoped
-            : (crateTableCounts.get(targetCrate) ?? 0) > 1;
+          const targetVendorScoped = crateIsVendorScoped(targetCrate || '.');
           out.add(targetVendorScoped && afterSrc.length > 1 ? `${targetBase}src/${afterSrc[0]}/tests/` : `${targetBase}src/`);
         }
         if (vendorScoped) out.add(`${base}src/${t.key}/tests/`);
@@ -614,13 +642,19 @@ export function diffCases({ baseVersions, baseTables, versions, tables, markers,
   const baseOwners = new Map();
   for (const t of baseTables)
     for (const e of t.files)
-      if (e.upstream) for (const f of testFilesOf(e.upstream)) baseOwners.set(`${t.package} ${f}`, e.version);
+      if (e.status !== 'aimux' && typeof e.upstream === 'string')
+        for (const f of testFilesOf(e.upstream)) baseOwners.set(`${t.package} ${f}`, e.version);
   const byPkgVer = new Map();
   for (const p of inventory) {
     const dir = `packages/${p.package.replace(/^@ai-sdk\//, '')}/`;
     byPkgVer.set(`${p.package}@${p.version}`,
       new Map(p.files.map((f) => [f.file.slice(dir.length), keyCases(f.cases)])));
   }
+  const baseVersionsUsed = new Set(neededPackages(baseVersions, baseTables, []).map((p) => `${p.name}@${p.version}`));
+  const baseInventory = inventory.filter((p) => baseVersionsUsed.has(`${p.package}@${p.version}`));
+  const baseSelected = new Map();
+  for (const p of check({ versions: baseVersions, tables: baseTables, markers: [], inventory: baseInventory }).progress)
+    for (const r of p.rows) baseSelected.set(`${p.package} ${r.file}`, r.version);
   const headVersionsUsed = new Set(neededPackages(versions, tables, markers).map((p) => `${p.name}@${p.version}`));
   const headInventory = inventory.filter((p) => headVersionsUsed.has(`${p.package}@${p.version}`));
   const { progress } = check({ versions, tables, markers, inventory: headInventory });
@@ -628,7 +662,7 @@ export function diffCases({ baseVersions, baseTables, versions, tables, markers,
   for (const p of progress) {
     const pkgAdded = [];
     for (const row of p.rows) {
-      const beforeVer = baseOwners.get(`${p.package} ${row.file}`) ?? baseVersions[p.package]?.version;
+      const beforeVer = baseSelected.get(`${p.package} ${row.file}`) ?? baseOwners.get(`${p.package} ${row.file}`) ?? baseVersions[p.package]?.version;
       if (!beforeVer || beforeVer === row.version) continue;
       const oldCases = byPkgVer.get(`${p.package}@${beforeVer}`)?.get(row.file) ?? new Map();
       const newCases = byPkgVer.get(`${p.package}@${row.version}`)?.get(row.file) ?? new Map();
@@ -660,13 +694,17 @@ function runDiff(args) {
   for (const t of tables) {
     if (baseVersions[t.package]?.version !== versions[t.package]?.version) changedPkgs.add(t.package);
     const bt = baseTables.find((b) => b.package === t.package && b.key === t.key);
-    const bMap = new Map((bt?.files ?? []).filter((e) => e.upstream).map((e) => [e.upstream, e.version]));
-    for (const e of t.files) if (e.upstream && (bMap.get(e.upstream) ?? baseVersions[t.package]?.version) !== e.version) changedPkgs.add(t.package);
+    const bMap = new Map((bt?.files ?? []).filter((e) => e.status !== 'aimux' && typeof e.upstream === 'string').map((e) => [e.upstream, e.version]));
+    for (const e of t.files)
+      if (e.status !== 'aimux' && typeof e.upstream === 'string' && (bMap.get(e.upstream) ?? baseVersions[t.package]?.version) !== e.version)
+        changedPkgs.add(t.package);
   }
   if (!changedPkgs.size) {
     console.log('no package with a layout.toml table changed version');
     return;
   }
+  for (const pkg of changedPkgs)
+    if (baseVersions[pkg]) baseSet.set(`${pkg}@${baseVersions[pkg].version}`, { name: pkg, version: baseVersions[pkg].version });
   const pairs = [...new Map([...baseSet, ...headSet].filter(([, p]) => changedPkgs.has(p.name))).values()];
   const inventory = readPackages(args.repo, pairs);
   const changes = diffCases({ baseVersions, baseTables, versions, tables, markers, inventory });
