@@ -66,6 +66,11 @@ val javadocJar by tasks.registering(Jar::class) {
     from(tasks.named("dokkaJavadoc"))
 }
 
+tasks.withType<AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
 // Publishing credentials come from Gradle properties; absent keys leave signing inert.
 val ossrhUsername = findProperty("ossrhUsername") as String?
 val ossrhPassword = findProperty("ossrhPassword") as String?

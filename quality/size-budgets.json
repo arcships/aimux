@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "description": "Glob-based release & CI size ceilings (RFC-0043). First matching rule wins.",
+  "rules": [
+    { "category": "android_arm64",    "globs": ["libaimux_ffi-android-arm64-v8a.so", "arm64-v8a/libaimux_ffi.so", "*/arm64-v8a/libaimux_ffi.so"],       "raw_bytes": { "ceiling": 13000000, "target": 9000000 } },
+    { "category": "android_armv7",    "globs": ["libaimux_ffi-android-armeabi-v7a.so", "armeabi-v7a/libaimux_ffi.so", "*/armeabi-v7a/libaimux_ffi.so"], "raw_bytes": { "ceiling": 9000000 } },
+    { "category": "android_x86_64",   "globs": ["libaimux_ffi-android-x86_64.so", "x86_64/libaimux_ffi.so", "*/x86_64/libaimux_ffi.so"],               "raw_bytes": { "ceiling": 17000000, "target": 10000000 } },
+    { "category": "staticlib",        "globs": ["libaimux_ffi*.a"],                                                                                      "raw_bytes": { "ceiling": 70000000 } },
+    { "category": "cdylib",           "globs": ["libaimux_ffi*.so", "libaimux_ffi*.dylib", "aimux_ffi*.dll"],                                            "raw_bytes": { "ceiling": 24200000 } },
+    { "category": "ios_slice",        "globs": ["aimux_ffi.xcframework/ios-*/aimux_ffi.framework/aimux_ffi", "ios-*/aimux_ffi.framework/aimux_ffi"],     "raw_bytes": { "ceiling": 67108864, "target": 32000000 } },
+    { "category": "ios_xcframework",  "globs": ["aimux_ffi.xcframework.zip", "aimux_ffi.xcframework"],                                                   "unpacked_bytes": { "ceiling": 136314880, "target": 64000000 } },
+    { "category": "node_native",      "globs": ["aimux.*.node"],                                                                                         "raw_bytes": { "ceiling": 24200000 } },
+    { "category": "npm_main",         "globs": ["arcships-aimux-[0-9]*.tgz"],                                                                            "packed_bytes": { "ceiling": 500000 }, "unpacked_bytes": { "ceiling": 2000000 } },
+    { "category": "npm_platform",     "globs": ["arcships-aimux-*.tgz"],                                                                                 "packed_bytes": { "ceiling": 10000000 }, "unpacked_bytes": { "ceiling": 24500000 } },
+    { "category": "python_wheel",     "globs": ["arcships_aimux-*.whl"],                                                                                 "raw_bytes": { "ceiling": 24200000 }, "packed_bytes": { "ceiling": 10000000 }, "unpacked_bytes": { "ceiling": 25000000 } },
+    { "category": "crate",            "globs": ["aimux-*.crate"],                                                                                        "packed_bytes": { "ceiling": 9500000 }, "unpacked_bytes": { "ceiling": 20000000 } },
+    { "category": "cli",              "globs": ["aimux-cli-*"],                                                                                          "raw_bytes": { "ceiling": 28000000 } },
+    { "category": "replay",           "globs": ["aimux-replay-*"],                                                                                       "raw_bytes": { "ceiling": 25000000 } },
+    { "category": "web",              "globs": ["aimux-web-*"],                                                                                          "raw_bytes": { "ceiling": 32000000 } },
+    { "category": "jvm_sources_jar",  "globs": ["aimux-*-sources.jar"],                                                                                  "packed_bytes": { "ceiling": 1000000 }, "unpacked_bytes": { "ceiling": 3000000 } },
+    { "category": "jvm_javadoc_jar",  "globs": ["aimux-*-javadoc.jar"],                                                                                  "packed_bytes": { "ceiling": 5000000 }, "unpacked_bytes": { "ceiling": 20000000 } },
+    { "category": "jvm_main_jar",     "globs": ["aimux-java-*.jar", "aimux-kotlin-*.jar"],                                                               "packed_bytes": { "ceiling": 2000000 }, "unpacked_bytes": { "ceiling": 5000000 } },
+    { "category": "jvm_metadata",     "globs": ["aimux-*.pom", "aimux-*.module"],                                                                        "raw_bytes": { "ceiling": 262144 } },
+    { "category": "flutter_pub",      "globs": ["aimux-[0-9]*.tar.gz", "aimux_flutter-[0-9]*.tar.gz"],                                                   "packed_bytes": { "ceiling": 39800000, "target": 25000000 }, "unpacked_bytes": { "ceiling": 134217728 } },
+    { "category": "header_or_plist",  "globs": ["aimux.h", "Info.plist"],                                                                                "raw_bytes": { "ceiling": 262144 } },
+    { "category": "release_manifest", "globs": ["assets-manifest.json"],                                                                                 "raw_bytes": { "ceiling": 65536 } }
+  ],
+  "aggregates": [
+    { "name": "android_total", "categories": ["android_arm64", "android_armv7", "android_x86_64"], "metric": "raw_bytes", "ceiling": 38600000, "target": 23100000 }
+  ],
+  "exceptions": []
+}
