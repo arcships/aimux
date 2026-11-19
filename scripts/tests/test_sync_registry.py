@@ -89,7 +89,7 @@ class SyncRegistryTest(unittest.TestCase):
     def test_endpoint_normalization_preserves_v1_and_trailing_slash(self):
         reg_p, ali_p, rec_p, snap_p = self._fixture(
             rows=[
-                {"name": "case_port", "display": "C", "base_url": "HTTPS://API.Example.COM:443/v1", "env_var": "K_KEY"},
+                {"name": "case_port", "display": "C", "base_url": "https://API.Example.COM:443/v1", "env_var": "K_KEY"},
                 {"name": "slash_diff", "display": "S", "base_url": "https://api.example.com/v1/", "env_var": "K_KEY"},
                 {"name": "v1_diff", "display": "V", "base_url": "https://api.example.com", "env_var": "K_KEY"},
                 {
@@ -101,7 +101,7 @@ class SyncRegistryTest(unittest.TestCase):
                 },
             ],
             up_providers={
-                "case_port": {"id": "case_port", "api": "https://api.example.com/v1", "env": ["K_KEY"]},
+                "case_port": {"id": "case_port", "api": "HTTPS://api.example.com/v1", "env": ["K_KEY"]},
                 "slash_diff": {"id": "slash_diff", "api": "https://api.example.com/v1", "env": ["K_KEY"]},
                 "v1_diff": {"id": "v1_diff", "api": "https://api.example.com/v1", "env": ["K_KEY"]},
                 "tpl": {"id": "tpl", "api": "${TPL_HOST}/v1", "env": ["TPL_REGION", "K_KEY"]},
@@ -735,7 +735,7 @@ class SyncRegistryTest(unittest.TestCase):
         )
         with self.assertRaises(sync.RegistryInputError):
             sync.load_local_registry(bad_reg)
-        # Output path colliding with registry input rejected (exit 2)
+        # Output path or --write-snapshot colliding with registry input rejected (exit 2)
         col_code, _, _ = _run_sync(
             [
                 "--report", "--source", "models-dev", "--snapshot", str(good_snap),
@@ -744,6 +744,60 @@ class SyncRegistryTest(unittest.TestCase):
             ]
         )
         self.assertEqual(col_code, 2)
+        ws_col_code, _, _ = _run_sync(
+            [
+                "--check", "--source", "models-dev", "--snapshot", str(good_snap),
+                "--write-snapshot", str(reg_p),
+                "--registry", str(reg_p), "--aliases", str(ali_p), "--reconcile", str(rec_p),
+                "--packages-rs", str(self.packages_rs),
+            ]
+        )
+        self.assertEqual(ws_col_code, 2)
+
+        # Duplicate URL-shaped JSON key redacts query secrets in errors
+        dup_sec = "dup_key_secret_777"
+        dup_url_json = self.dir / "dup_url.json"
+        dup_url_json.write_text(f'{{"https://a.invalid/?k={dup_sec}": "x", "https://a.invalid/?k={dup_sec}": "y"}}\n', encoding="utf-8")
+        with self.assertRaises(sync.RegistryInputError) as ctx:
+            sync.load_json_file(dup_url_json, "dup")
+        self.assertNotIn(dup_sec, str(ctx.exception))
+
+        # Local uppercase HTTPS:// rejected to match preset/mod.rs:242; partial wrapper with metadata rejected
+        upper_reg = _write_json(
+            self.dir / "upper_reg.json",
+            [{"name": "up", "display": "U", "base_url": "HTTPS://a.example/v1", "env_var": "U_KEY"}],
+        )
+        with self.assertRaises(sync.RegistryInputError):
+            sync.load_local_registry(upper_reg)
+        with self.assertRaises(sync.RegistryInputError):
+            sync.parse_models_dev({"providers": {"up": {"id": "up"}}, "metadata": {"x": 1}})
+
+        # _atomic_write_text preserves symlink and file mode (0644)
+        import stat
+
+        real_file = self.dir / "real_reg.json"
+        real_file.write_text("[]\n", encoding="utf-8")
+        os.chmod(real_file, 0o644)
+        link_file = self.dir / "link_reg.json"
+        os.symlink(real_file, link_file)
+        sync._atomic_write_text(link_file, '[{"ok": true}]\n')
+        self.assertTrue(link_file.is_symlink())
+        self.assertEqual(real_file.read_text(encoding="utf-8"), '[{"ok": true}]\n')
+        self.assertEqual(stat.S_IMODE(real_file.stat().st_mode), 0o644)
+
+        # Optional env_var is NOT cleared by --apply when upstream env only contains config_env_names (not explicit [])
+        cfg_reg, cfg_ali, cfg_rec, cfg_snap = self._fixture(
+            rows=[{"name": "opt_cfg", "display": "O", "base_url": "http://127.0.0.1:8080/v1", "auth": "none", "env_var": "OPT_KEY", "base_url_env": "OPT_BASE"}],
+            up_providers={"opt_cfg": {"id": "opt_cfg", "api": "http://127.0.0.1:8080/v1", "env": ["OPT_BASE"]}},
+        )
+        _run_sync(
+            [
+                "--apply", "--source", "models-dev", "--snapshot", str(cfg_snap),
+                "--registry", str(cfg_reg), "--aliases", str(cfg_ali), "--reconcile", str(cfg_rec),
+                "--packages-rs", str(self.packages_rs), "--output", str(self.dir / "cfg_apply.json"),
+            ]
+        )
+        self.assertEqual(json.loads(cfg_reg.read_text())[0].get("env_var"), "OPT_KEY")
 
 
 if __name__ == "__main__":

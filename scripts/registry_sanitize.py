@@ -387,7 +387,11 @@ def parse_json_strict(text: str) -> object:
         out: dict[str, object] = {}
         for k, v in pairs:
             if k in out:
-                raise ValueError(f"duplicate JSON key {strip_control(str(k))[:80]!r}")
+                if isinstance(k, str) and ("://" in k or "?" in k or "@" in k or "#" in k):
+                    safe_k = sanitize_url(k)["sanitized"] or REDACTED_URL
+                else:
+                    safe_k = strip_control(str(k))[:80]
+                raise ValueError(f"duplicate JSON key {safe_k!r}")
             out[k] = v
         return out
 

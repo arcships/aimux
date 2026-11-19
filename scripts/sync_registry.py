@@ -211,7 +211,7 @@ def _validate_registry_row(idx: int, row: object, seen_names: set[str]) -> tuple
     raw_base_url = row["base_url"]
     if (
         not raw_base_url.isascii()
-        or not raw_base_url.lower().startswith(("http://", "https://"))
+        or not raw_base_url.startswith(("http://", "https://"))
         or any(ch in raw_base_url for ch in ("<", ">", "$"))
     ):
         raise RegistryInputError(f"registry row '{name}': invalid base_url")
@@ -425,7 +425,7 @@ def fetch_models_dev(
 def _unwrap_models_dev_providers(data: object) -> dict:
     if not isinstance(data, dict):
         raise RegistryInputError("models.dev snapshot must be a JSON object")
-    if "schema_version" in data or ("providers" in data and set(data.keys()) <= {"schema_version", "source_url", "providers"}):
+    if "schema_version" in data or "providers" in data:
         if (
             set(data.keys()) - {"schema_version", "source_url", "providers"}
             or type(data.get("schema_version")) is not int
@@ -917,7 +917,12 @@ def compare_registries(
                                 "raw_new_value": up_key_envs[0],
                             }
                         )
-                    elif local_entry["auth"] == "none" and local_env_val is not None and len(up_key_envs) == 0:
+                    elif (
+                        local_entry["auth"] == "none"
+                        and local_env_val is not None
+                        and up_rec["env"] == []
+                        and len(up_key_envs) == 0
+                    ):
                         proposed_updates.append(
                             {
                                 "id": target,
@@ -1045,14 +1050,18 @@ def compare_registries(
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
+    import stat
     import tempfile
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    target = path.resolve() if path.is_symlink() else path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o644
+    fd, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=f".{target.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(content)
-        os.replace(tmp_name, path)
+        os.chmod(tmp_name, mode)
+        os.replace(tmp_name, target)
     except BaseException:
         try:
             os.unlink(tmp_name)
@@ -1253,14 +1262,23 @@ def main(argv: list[str] | None = None) -> int:
         print("--max-fetch-bytes must be positive", file=sys.stderr)
         return 2
 
-    input_paths = {
+    protected_inputs = {
         p.resolve()
-        for p in (args.registry, args.aliases, args.reconcile, args.packages_rs, args.snapshot)
+        for p in (args.registry, args.aliases, args.reconcile, args.packages_rs)
         if p is not None
     }
+    report_blocked_inputs = protected_inputs | ({args.snapshot.resolve()} if args.snapshot is not None else set())
     for out_p in (args.output, args.markdown_output):
-        if out_p is not None and out_p.resolve() in input_paths:
+        if out_p is not None and out_p.resolve() in report_blocked_inputs:
             print(f"output path {out_p} collides with an input file", file=sys.stderr)
+            return 2
+    if args.write_snapshot is not None:
+        ws_resolved = args.write_snapshot.resolve()
+        if ws_resolved in protected_inputs or any(
+            out_p is not None and ws_resolved == out_p.resolve()
+            for out_p in (args.output, args.markdown_output)
+        ):
+            print(f"--write-snapshot path {args.write_snapshot} collides with another file", file=sys.stderr)
             return 2
 
     fetch_url = args.fetch_url if args.fetch_url is not None else DEFAULT_MODELS_DEV_URL
