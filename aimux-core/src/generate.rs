@@ -26,7 +26,7 @@ use crate::download::{DownloadFunction, create_default_download_function};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::{
-    LanguageModelPrompt, convert_with_downloaded_assets, download_assets,
+    LanguageModelPrompt, convert_with_downloaded_assets, download_assets, may_need_downloads,
 };
 use crate::message::{ModelMessage, ModelPrompt};
 use crate::operation::OperationSettings;
@@ -1023,20 +1023,44 @@ async fn prepare_prompt(
     download: Option<DownloadFunction>,
     abort_signal: Option<&AbortSignal>,
     operation_timeout: timeout::OperationTimeout,
+    retain_messages: bool,
 ) -> Result<(LanguageModelPrompt, Vec<ModelMessage>), AiMuxError> {
     let (messages, instructions) = standardize_prompt(prompt, instructions)?;
-    let supported_urls = model.supported_urls().await;
-    let download =
-        download.unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
-    let assets = timeout::run(
-        download_assets(&messages, &download, &supported_urls),
-        abort_signal,
-        operation_timeout,
-    )
-    .await?;
+    // A prompt without file parts plans no download, so the default download
+    // function has nothing to do and the model's supported URLs (a map of
+    // compiled patterns, cloned per call) are not needed. A caller's own
+    // download function is still called, as before, even with nothing planned.
+    let assets = if download.is_none() && !may_need_downloads(&messages) {
+        Default::default()
+    } else {
+        let supported_urls = timeout::run(
+            async { Ok(model.supported_urls().await) },
+            abort_signal,
+            operation_timeout,
+        )
+        .await?;
+        let download = download
+            .unwrap_or_else(|| create_default_download_function(None, abort_signal.cloned()));
+        timeout::run(
+            download_assets(&messages, &download, &supported_urls),
+            abort_signal,
+            operation_timeout,
+        )
+        .await?
+    };
     let lm_prompt =
         convert_with_downloaded_assets(&messages, instructions, provider_id(model), &assets)?;
-    Ok((lm_prompt, messages))
+    // The messages are kept only as the context of a tool-call repair; without
+    // a repair function nothing reads them again, so they are released here
+    // rather than held for the whole call (a stream holds them until it ends).
+    Ok((
+        lm_prompt,
+        if retain_messages {
+            messages
+        } else {
+            Vec::new()
+        },
+    ))
 }
 
 // The operation body runs inside its settings' scope, where the model, the
@@ -1067,6 +1091,7 @@ async fn generate_in_operation(
                 options.download.clone(),
                 abort_signal.as_ref(),
                 operation_timeout,
+                repair_tool_call.is_some(),
             )
             .await?
         }
@@ -1160,16 +1185,22 @@ async fn generate_in_operation(
         let mut tool_calls = Vec::new();
         for content in &result.content {
             if let GenerateContent::ToolCall(call) = content {
-                tool_calls.push(
-                    parse_tool_call(
-                        call.clone(),
-                        tools.as_deref(),
-                        repair_tool_call.as_ref(),
-                        &messages,
-                        operation_instructions.as_deref(),
-                    )
-                    .await,
-                );
+                let parsed = timeout::run(
+                    async {
+                        Ok(parse_tool_call(
+                            call.clone(),
+                            tools.as_deref(),
+                            repair_tool_call.as_ref(),
+                            &messages,
+                            operation_instructions.as_deref(),
+                        )
+                        .await)
+                    },
+                    abort_signal.as_ref(),
+                    operation_timeout,
+                )
+                .await?;
+                tool_calls.push(parsed);
             }
         }
         if let Some(error) = tool_choice_violation(
@@ -1554,6 +1585,25 @@ pub async fn stream_text(
         .await
 }
 
+/// Convert a triggered caller abort signal into a stream `Abort` part.
+fn aborted_stream_part(abort_signal: Option<&AbortSignal>) -> TextStreamPart {
+    let error = abort_signal.map_or_else(
+        || AiMuxError::Aborted("request aborted".into()),
+        AiMuxError::from_abort_signal,
+    );
+    TextStreamPart::Abort {
+        reason: Some(error.to_string()),
+    }
+}
+
+/// Convert an expired stream/operation deadline into its `AiMuxError::Timeout`.
+fn exceeded_deadline_error(deadline: Option<timeout::TimeoutDeadline>) -> AiMuxError {
+    deadline.map_or_else(
+        || AiMuxError::Timeout("operation deadline exceeded".into()),
+        timeout::TimeoutDeadline::error,
+    )
+}
+
 // The stream setup runs inside the operation settings' scope, like
 // `generate_in_operation`. The pump task that drives the returned stream
 // calls no model and does not read them.
@@ -1580,6 +1630,7 @@ async fn stream_in_operation(
         options.download.clone(),
         options.abort_signal.as_ref(),
         operation_timeout,
+        repair_tool_call.is_some(),
     )
     .await?;
 
@@ -1867,10 +1918,7 @@ async fn stream_in_operation(
                 let next = tokio::select! {
                     biased;
                     () = timeout::wait_for_abort(abort_signal.as_ref()) => {
-                        let error = AiMuxError::from_abort_signal(
-                            abort_signal.as_ref().expect("abort future only resolves for a signal"),
-                        );
-                        yield Ok(TextStreamPart::Abort { reason: Some(error.to_string()) });
+                        yield Ok(aborted_stream_part(abort_signal.as_ref()));
                         return;
                     }
                     item = rx.recv() => item.or_else(|| {
@@ -1908,13 +1956,29 @@ async fn stream_in_operation(
                 }
                 match part.split_payload() {
                     StreamPartPayload::ToolCall(raw) => {
-                        let parsed = parse_tool_call(
-                            raw,
-                            tools.as_deref(),
-                            repair_tool_call.as_ref(),
-                            &messages,
-                            operation_instructions.as_deref(),
-                        ).await;
+                        let parsed = tokio::select! {
+                            biased;
+                            () = timeout::wait_for_abort(abort_signal.as_ref()) => {
+                                yield Ok(aborted_stream_part(abort_signal.as_ref()));
+                                return;
+                            }
+                            // Poll parse_tool_call before the deadline so an
+                            // already-ready synchronous parse is not dropped
+                            // if the consumer polls slowly after pump exit,
+                            // while a pending async repair still loses to an
+                            // expired deadline.
+                            parsed = parse_tool_call(
+                                raw,
+                                tools.as_deref(),
+                                repair_tool_call.as_ref(),
+                                &messages,
+                                operation_instructions.as_deref(),
+                            ) => parsed,
+                            () = timeout::wait_for_deadline(operation_timeout.deadline()) => {
+                                yield Err(exceeded_deadline_error(operation_timeout.deadline()));
+                                return;
+                            }
+                        };
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
                         let tool_error = invalid_tool_call_error(&parsed);
                         yield Ok(TextStreamPart::ToolCall(parsed));

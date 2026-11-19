@@ -83,6 +83,8 @@ def archive_members(data):
         if name.startswith(b"#1/"):  # BSD: the name leads the body
             length = int(name[3:])
             name, body = body[:length].rstrip(b"\0"), body[length:]
+            if name.startswith(b"__.SYMDEF"):
+                continue
         elif name.startswith(b"/"):  # GNU: offset into the long-name table
             start = int(name[1:])
             name = long_names[start : long_names.index(b"/\n", start)]

@@ -20,7 +20,6 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use chrono::{NaiveDateTime, Utc};
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, StatusCode};
@@ -134,9 +133,11 @@ fn assert_signed(seen: &Seen, access_key_id: &str) {
         .headers
         .get("x-amz-date")
         .expect("x-amz-date is signed");
-    let signed_at = NaiveDateTime::parse_from_str(amz_date, "%Y%m%dT%H%M%SZ")
+    let signed_at = jiff::fmt::strtime::parse("%Y%m%dT%H%M%SZ", amz_date)
+        .and_then(|parsed| parsed.to_datetime())
+        .and_then(|dt| jiff::tz::Offset::UTC.to_timestamp(dt))
         .expect("x-amz-date is an ISO 8601 basic timestamp");
-    let skew = (Utc::now().naive_utc() - signed_at).num_seconds().abs();
+    let skew = (jiff::Timestamp::now().as_second() - signed_at.as_second()).abs();
     assert!(
         skew < 300,
         "x-amz-date {amz_date} is not the signing time (off by {skew}s)"

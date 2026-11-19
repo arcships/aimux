@@ -57,7 +57,7 @@ use crate::openai::language_model_capabilities::{
 };
 use crate::openai::responses::convert_responses_usage::{convert_responses_usage, parse_usage};
 use crate::openai::responses::convert_to_responses_input::{
-    apply_file_id_prefixes, convert_responses_input_with_conversation,
+    EffortUpdateCheck, apply_file_id_prefixes, convert_responses_input_with_conversation,
 };
 use crate::openai::responses::map_responses_finish_reason::map_responses_finish_reason;
 use crate::openai::responses::responses_api::ResponsesUsage;
@@ -131,58 +131,14 @@ impl OpenAIResponsesModel {
             .and_then(|v| v.get("passThroughUnsupportedFiles"))
             .and_then(Value::as_bool)
             == Some(true);
-        let caps =
-            crate::openai::language_model_capabilities::get_model_capabilities(&self.model_id);
-        let provider_options = options
-            .provider_options
-            .as_ref()
-            .and_then(|v| profile.namespace.find_in(v));
-        if provider_options
-            .and_then(|v| v.get("reasoningEffortUpdate"))
-            .is_some_and(|v| {
-                !matches!(
-                    v.as_str(),
-                    Some("none" | "low" | "medium" | "high" | "xhigh" | "max")
-                )
-            })
-        {
-            return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
-        }
-        let update_incompatible = provider_options.is_some_and(|v| {
-            v.get("reasoningMode") == Some(&serde_json::json!("pro"))
-                || v.get("contextManagement").is_some()
-                || v.get("truncation") == Some(&serde_json::json!("auto"))
-        });
+        profile
+            .namespace
+            .validate(options.provider_options.as_ref())?;
         for message in &options.prompt {
             use aimux_core::language_model_message::{
                 AssistantPart, LanguageModelMessage, UserPart,
             };
             use aimux_core::shared::FileData;
-            if let LanguageModelMessage::System {
-                content,
-                provider_options,
-            } = message
-                && let Some(effort) = provider_options
-                    .as_ref()
-                    .and_then(|v| profile.namespace.find_in(v))
-                    .and_then(|v| v.get("reasoningEffortUpdate"))
-                    .and_then(Value::as_str)
-            {
-                if !matches!(effort, "none" | "low" | "medium" | "high" | "xhigh" | "max") {
-                    return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
-                }
-                if !content.is_empty()
-                    || !caps.supports_configuration_update
-                    || update_incompatible
-                    || caps
-                        .supported_reasoning_efforts
-                        .is_some_and(|values| !values.contains(&effort))
-                {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "Message-level reasoningEffortUpdate".into(),
-                    ));
-                }
-            }
             let (files, user) = match message {
                 LanguageModelMessage::User { content, .. } => (
                     content
@@ -237,7 +193,7 @@ impl OpenAIResponsesModel {
             }
         }
         let mut result =
-            build_responses_request_body_for(profile.namespace, &self.model_id, options, stream)?;
+            build_validated_request_body(profile.namespace, &self.model_id, options, stream)?;
         apply_file_id_prefixes(&mut result.body, &profile.file_id_prefixes);
         if profile.explicit_message_item_type
             && let Some(input) = result.body["input"].as_array_mut()
@@ -292,21 +248,16 @@ impl LanguageModel for OpenAIResponsesModel {
         let resp = aimux_provider_utils::post_json_to_api(
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
-            aimux_provider_utils::create_json_response_handler::<Value>(),
+            aimux_provider_utils::create_json_bytes_response_handler::<Value>(),
             crate::openai::error::openai_failed_response_handler(),
         )
         .await?;
 
         let response_headers = resp.response_headers;
-        let raw_body = resp
-            .raw_value
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_default();
-        let data = resp.value;
+        let (data, raw_body) = resp.value;
 
         build_responses_generate_result_with_tools(
-            &data,
+            data,
             &raw_body,
             request_result.warnings,
             provider_key,
@@ -887,7 +838,10 @@ fn apply_responses_reasoning_block(
 /// Build the OpenAI Responses API request body and warnings.
 ///
 /// # Errors
-/// Rejects unsupported prompt parts and invalid tool arguments.
+/// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// or `openaiResponsesSystemMessageOptionsSchema`
+/// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
+/// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -900,8 +854,26 @@ pub fn build_responses_request_body(
 /// namespace.
 ///
 /// # Errors
-/// Rejects unsupported prompt parts and invalid tool arguments.
+/// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// or `openaiResponsesSystemMessageOptionsSchema`
+/// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
+/// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body_for(
+    ns: ResponsesNamespace,
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<ResponsesRequestBodyResult, AiMuxError> {
+    ns.validate(options.provider_options.as_ref())?;
+    build_validated_request_body(ns, model_id, options, stream)
+}
+
+/// [`build_responses_request_body_for`] once
+/// [`ResponsesNamespace::validate`] has passed.
+///
+/// # Errors
+/// Rejects unsupported prompt parts and invalid tool arguments.
+fn build_validated_request_body(
     ns: ResponsesNamespace,
     model_id: &str,
     options: &CallOptions,
@@ -946,6 +918,10 @@ pub fn build_responses_request_body_for(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let has_previous_response_id = openai_option(ns, provider_opts, "previousResponseId").is_some();
+    let update_incompatible = openai_option(ns, provider_opts, "reasoningMode")
+        == Some(json!("pro"))
+        || openai_option(ns, provider_opts, "contextManagement").is_some()
+        || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"));
     let mut input_result = convert_responses_input_with_conversation(
         ns,
         &options.prompt,
@@ -954,16 +930,17 @@ pub fn build_responses_request_body_for(
         has_previous_response_id,
         openai_option(ns, provider_opts, "conversation").is_some(),
         options.tools.as_deref(),
+        Some(EffortUpdateCheck {
+            caps: &caps,
+            incompatible: update_incompatible,
+        }),
     )?;
     if let Some(effort) = openai_option(ns, provider_opts, "reasoningEffortUpdate")
         .and_then(|v| v.as_str().map(str::to_owned))
     {
         let reason = if !caps.supports_configuration_update {
             Some("reasoningEffortUpdate is only supported by GPT-6 and later models".to_string())
-        } else if openai_option(ns, provider_opts, "reasoningMode") == Some(json!("pro"))
-            || openai_option(ns, provider_opts, "contextManagement").is_some()
-            || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
-        {
+        } else if update_incompatible {
             Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
         } else {
             caps.supported_reasoning_efforts
@@ -1144,8 +1121,8 @@ pub type ResponsesEventStream = Pin<Box<dyn Stream<Item = Result<StreamPart, AiM
 /// status, `incomplete_details`) and `InvalidResponseData` when required
 /// fields such as `output` are missing.
 pub fn build_responses_generate_result(
-    data: &Value,
-    raw_body: &str,
+    data: Value,
+    raw_body: &[u8],
     request_warnings: Vec<Warning>,
     provider_key: String,
     request_url: String,
@@ -1167,8 +1144,8 @@ pub fn build_responses_generate_result(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_responses_generate_result_with_tools(
-    data: &Value,
-    raw_body: &str,
+    data: Value,
+    raw_body: &[u8],
     request_warnings: Vec<Warning>,
     provider_key: String,
     request_url: String,
@@ -1197,7 +1174,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
             // so redact before it lands in the public error.
             status_code: Some(200),
             provider_code,
-            response_body: Some(raw_body.to_string()),
+            response_body: Some(String::from_utf8_lossy(raw_body).into_owned()),
             response_headers: Some(response_headers.clone()),
             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
@@ -1242,7 +1219,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                     {
                         return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             status_code: Some(200),
-                            response_body: Some(raw_body.to_string()),
+                            response_body: Some(String::from_utf8_lossy(raw_body).into_owned()),
                             response_headers: Some(response_headers.clone()),
                             origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                             ..ApiCallError::new(
@@ -1453,7 +1430,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
             headers: Some(response_headers),
-            body: Some(data.clone()),
+            body: Some(data),
             ..aimux_provider_utils::create_language_model_response_metadata(
                 response_id,
                 model,

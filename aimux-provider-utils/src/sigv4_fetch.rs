@@ -15,8 +15,8 @@
 use std::fmt;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
+use jiff::{Timestamp, tz::Offset};
 use sha2::{Digest, Sha256};
 
 use aimux_core::SourceError;
@@ -106,7 +106,7 @@ fn sign_request(
         url,
         body.as_bytes(),
         extra_headers,
-        Utc::now(),
+        Timestamp::now(),
     )
 }
 
@@ -121,7 +121,7 @@ fn sign_request_at(
     url: &str,
     body: &[u8],
     extra_headers: &[(String, String)],
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> SignedRequest {
     sign_request_with(
         credentials,
@@ -147,7 +147,7 @@ fn sign_request_with(
     url: &str,
     body: &[u8],
     extra_headers: &[(String, String)],
-    now: DateTime<Utc>,
+    now: Timestamp,
     signing: SigV4Signing,
 ) -> SignedRequest {
     let parsed =
@@ -166,8 +166,14 @@ fn sign_request_with(
     let query = canonical_query(parsed.query().unwrap_or(""));
 
     // Timestamp:yyyyMMddTHHmmssZ and date:yyyyMMdd
-    let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-    let date_stamp = now.format("%Y%m%d").to_string();
+    let utc = Offset::UTC.to_datetime(now);
+    let date_stamp = format!("{:04}{:02}{:02}", utc.year(), utc.month(), utc.day());
+    let amz_date = format!(
+        "{date_stamp}T{:02}{:02}{:02}Z",
+        utc.hour(),
+        utc.minute(),
+        utc.second()
+    );
 
     let caller_header = |name: &str| {
         extra_headers
@@ -364,7 +370,7 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 
 /// The signing clock: a plain function, so a fixed time in tests is a named
 /// function or a non-capturing closure.
-type Clock = fn() -> DateTime<Utc>;
+type Clock = fn() -> Timestamp;
 
 /// A [`Fetch`] decorator that signs every request with SigV4 and forwards it
 /// to the wrapped transport. A request marked [`RequestCredentials::Omit`] is
@@ -419,14 +425,14 @@ impl SigV4Fetch {
             inner,
             credentials,
             service: service.into(),
-            clock: Utc::now,
+            clock: Timestamp::now,
             signing,
         }
     }
 
     /// Replace the signing clock (deterministic signatures in tests).
     #[must_use]
-    pub fn with_clock(mut self, clock: fn() -> DateTime<Utc>) -> Self {
+    pub fn with_clock(mut self, clock: fn() -> Timestamp) -> Self {
         self.clock = clock;
         self
     }
@@ -586,7 +592,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use bytes::Bytes;
-    use chrono::TimeZone;
     use http::{HeaderMap, Method, StatusCode};
 
     use super::*;
@@ -612,8 +617,14 @@ mod tests {
         assert!(printed.contains("us-east-1"));
     }
 
-    fn fixed_time() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2024, 1, 2, 3, 4, 5).unwrap()
+    fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(jiff::civil::date(year, month, day).at(hour, minute, second, 0))
+            .unwrap()
+    }
+
+    fn fixed_time() -> Timestamp {
+        utc_timestamp(2024, 1, 2, 3, 4, 5)
     }
 
     fn header(signed: &SignedRequest, name: &str) -> String {
@@ -836,7 +847,7 @@ mod tests {
                 "service",
                 SigV4Signing::Aws4Fetch,
             )
-            .with_clock(|| Utc.with_ymd_and_hms(2015, 8, 30, 12, 36, 0).unwrap());
+            .with_clock(|| utc_timestamp(2015, 8, 30, 12, 36, 0));
             let mut request = FetchRequest::new(
                 method.clone(),
                 "https://example.amazonaws.com/".parse().unwrap(),

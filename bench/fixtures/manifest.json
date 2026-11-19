@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "request-1024",
+      "kind": "request",
+      "exact_bytes": 1024,
+      "sha256": "8bbbb692fdb33cdd842e7c606f47de85c8a2acb9e27f7bb907c9116c67855d26",
+      "filename": "request-1024.json"
+    },
+    {
+      "id": "request-10240",
+      "kind": "request",
+      "exact_bytes": 10240,
+      "sha256": "329d0ebcf50f8470a3d48c16434d7a767c6d83565911ebb572538775d8d36a09",
+      "filename": "request-10240.json"
+    },
+    {
+      "id": "request-102400",
+      "kind": "request",
+      "exact_bytes": 102400,
+      "sha256": "efa89ae790cb5fb89eeb5010727cdb8f6ca4935fa2cf985f4883054e1c060c80",
+      "filename": "request-102400.json"
+    },
+    {
+      "id": "request-200000",
+      "kind": "request",
+      "exact_bytes": 200000,
+      "sha256": "2126c42c340a38b2f1bdcff7199daef17d74299400eab74462cc609782c90c40",
+      "filename": "request-200000.json"
+    },
+    {
+      "id": "response-1024",
+      "kind": "response",
+      "exact_bytes": 1024,
+      "sha256": "0969061fb574497aaa969dc5f8def6b025f9987618129a72a066b5848ba0e0df",
+      "filename": "response-1024.json"
+    },
+    {
+      "id": "response-50000",
+      "kind": "response",
+      "exact_bytes": 50000,
+      "sha256": "b1cc073949b36db4efa2c82569d8c81228709015bb7587156fe4956703b9459f",
+      "filename": "response-50000.json"
+    }
+  ]
+}

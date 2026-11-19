@@ -7,10 +7,11 @@ description = "LLM provider implementations for aimux (OpenAI, Anthropic, Mistra
 keywords = ["llm", "ai", "openai", "anthropic", "provider"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-providers"
-# Cassette recordings for the integration tests are huge (88MB); they are not
-# needed by downstream consumers, so keep them out of the published crate
-# (crates.io limit is 10MB).
-exclude = ["tests/cassettes/**", "tests/cassettes"]
+# Integration tests (including 178 MB of cassette recordings) and in-tree vendor
+# unit test suites (~14 MB) are not needed by downstream crate consumers; keep
+# them out of the published .crate (RFC-0043 §4.3 caps and crates.io 10 MiB
+# limit) while preserving `src/test_support/`.
+exclude = ["tests/**", "src/**/tests/**", "src/**/tests.rs", "src/**/*_tests.rs"]
 
 [dependencies]
 schemars = { workspace = true }
@@ -28,20 +29,25 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"
-chrono = "0.4"
+jiff = { workspace = true }
 indexmap = { workspace = true }
 url = { workspace = true }
 percent-encoding = "2"
 regex = "1"
 ring = "0.17"
+wiremock = { version = "0.6", optional = true }
 
 [features]
 default = ["realtime"]
 # Realtime (WebSocket) provider paths — RFC-0028. Disable with
 # `--no-default-features` to compile out tokio-tungstenite entirely.
 realtime = ["aimux-provider-utils/ws"]
+# Expose `test_support` (`mock_fetch`, `replay`) to integration tests and
+# downstream test suites without shipping `wiremock` in normal builds.
+test-support = ["dep:wiremock"]
 
 [dev-dependencies]
+aimux-providers = { path = ".", default-features = false, features = ["test-support"] }
 # WebSocket server side for realtime transcription integration tests.
 tokio-tungstenite = { workspace = true }
 aimux-core = { workspace = true }

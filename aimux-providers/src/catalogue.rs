@@ -9,7 +9,8 @@
 //! `get_model_specs` does **no caching, no FS writes, no TTL** — it is a pure
 //! fetch + parse. The host decides how to cache/persist the result.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use aimux_core::AiMuxError;
@@ -28,84 +29,54 @@ pub const DEFAULT_ANYA2A_URL: &str = "https://raw.githubusercontent.com/ThinkInA
 // Provider name mapping
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// anya2a provider ids whose aimux provider has another name. Each target is
-/// a name [`crate::create_provider`] accepts for the same vendor, checked by
-/// hand. The endpoint can differ (`minimax-cn` lists the Anthropic-format
-/// host, `minimax_cn` uses the OpenAI-format one). No two ids share a
-/// target, and a target that the catalogue also lists under its own id keeps
-/// that entry ([`parse_anya2a_all`]), so one id's models never overwrite
-/// another's.
-const PROVIDER_ALIASES: &[(&str, &str)] = &[
-    ("302ai", "ai302"),
-    ("abliteration-ai", "abliteration_ai"),
-    ("ai-router", "ai_router"),
-    ("aimlapi", "aiml"),
-    ("aki-io", "aki_io"),
-    ("alibaba-coding-plan", "alibaba_coding_plan"),
-    ("alibaba-coding-plan-cn", "alibaba_coding_plan_cn"),
-    ("alibaba-token-plan", "alibaba_token_plan"),
-    ("alibaba-token-plan-cn", "alibaba_token_plan_cn"),
-    ("amazon-bedrock", "amazon_bedrock"),
-    ("atomic-chat", "atomic_chat"),
-    ("cline-pass", "cline_pass"),
-    ("cloudferro-sherlock", "cloudferro_sherlock"),
-    ("cloudflare-workers-ai", "cloudflare_workers_ai"),
-    ("fireworks-ai", "fireworks"),
-    ("friendli", "friendliai"),
-    ("github-copilot", "copilot"),
-    ("google-vertex", "google_vertex"),
-    ("google-vertex-anthropic", "vertex_ai_anthropic_models"),
-    ("hpc-ai", "hpc_ai"),
-    ("inference", "inference_net"),
-    ("io-net", "io_net"),
-    ("kimi-for-coding", "kimi_for_coding"),
-    ("kuae-cloud-coding-plan", "kuae_cloud_coding_plan"),
-    ("merge-gateway", "merge_gateway"),
-    ("minimax-cn", "minimax_cn"),
-    ("minimax-cn-coding-plan", "minimax_cn_coding_plan"),
-    ("minimax-coding-plan", "minimax_coding_plan"),
-    ("model-oracle-ai", "model_oracle_ai"),
-    ("moonshot", "moonshotai"),
-    ("moonshot-ai", "kimi"),
-    ("nano-gpt", "nanogpt"),
-    ("novita-ai", "novita"),
-    ("nvidia", "nvidia_nim"),
-    ("opencode-go", "opencode_go"),
-    ("perplexity-agent", "perplexity_agent"),
-    ("privatemode-ai", "privatemode_ai"),
-    ("qihang-ai", "qihang_ai"),
-    ("qiniu-ai", "qiniu_ai"),
-    ("regolo-ai", "regolo_ai"),
-    ("routing-run", "routing_run"),
-    ("scx-ai", "scx_ai"),
-    ("snowflake-cortex", "snowflake_cortex"),
-    ("stepfun-ai-step-plan", "stepfun_ai_step_plan"),
-    ("stepfun-step-plan", "stepfun_step_plan"),
-    ("tencent-coding-plan", "tencent_coding_plan"),
-    ("tencent-token-plan", "tencent_token_plan"),
-    ("tencent-tokenhub", "tencent_tokenhub"),
-    ("the-grid-ai", "the_grid_ai"),
-    ("umans-ai", "umans_ai"),
-    ("volcengine", "volc_engine"),
-    ("wafer.ai", "wafer"),
-    ("xiaomi", "mimo"),
-    ("xiaomi-token-plan-ams", "xiaomi_token_plan_ams"),
-    ("xiaomi-token-plan-cn", "xiaomi_token_plan_cn"),
-    ("xiaomi-token-plan-sgp", "xiaomi_token_plan_sgp"),
-    ("zai-coding-plan", "zai_coding_plan"),
-    ("zhipuai", "bigmodel"),
-    ("zhipuai-coding-plan", "zhipuai_coding_plan"),
-];
+/// Embedded external provider id aliases (`provider_aliases.json`), shared with
+/// the registry sync tooling (`scripts/sync_registry.py`). Each target is a
+/// name [`crate::create_provider`] accepts for the same vendor, checked by
+/// hand. The endpoint can differ (`minimax-cn` lists the Anthropic-format host,
+/// `minimax_cn` uses the OpenAI-format one). No two ids share a target, and a
+/// target that the catalogue also lists under its own id keeps that entry
+/// ([`parse_anya2a_all`]), so one id's models never overwrite another's.
+fn parse_provider_aliases(raw_json: &str) -> Result<BTreeMap<String, &'static str>, String> {
+    let raw: BTreeMap<String, String> = serde_json::from_str(raw_json)
+        .map_err(|err| format!("failed to parse provider_aliases.json: {err}"))?;
+    if raw.is_empty() {
+        return Err("provider_aliases.json must not be empty".to_string());
+    }
+    let mut aliases = BTreeMap::new();
+    let mut targets = std::collections::HashSet::new();
+    for (from, to) in raw {
+        if from.is_empty() {
+            return Err("provider_aliases.json contains an empty alias key".to_string());
+        }
+        if crate::default_providers::provider_name(&from).is_some() {
+            return Err(format!("{from} is itself a provider name"));
+        }
+        let canonical = crate::default_providers::provider_name(&to)
+            .ok_or_else(|| format!("{from} -> {to}: not a provider name"))?;
+        if !targets.insert(canonical) {
+            return Err(format!("{to} is the target of two aliases"));
+        }
+        aliases.insert(from, canonical);
+    }
+    Ok(aliases)
+}
 
-/// The aimux provider name for an anya2a provider id: its alias, or the id
-/// itself when [`crate::create_provider`] accepts it. `None` for any other
-/// id; the name is never derived from the spelling.
+fn provider_aliases() -> &'static BTreeMap<String, &'static str> {
+    static ALIASES: OnceLock<BTreeMap<String, &'static str>> = OnceLock::new();
+    ALIASES.get_or_init(|| {
+        parse_provider_aliases(include_str!("provider_aliases.json"))
+            .unwrap_or_else(|err| panic!("invalid embedded provider_aliases.json: {err}"))
+    })
+}
+
+/// The aimux provider name for an anya2a or models.dev provider id: its alias,
+/// or the id itself when [`crate::create_provider`] accepts it. `None` for any
+/// other id; the name is never derived from the spelling.
 #[must_use]
 pub fn normalize_provider_name(anya2a_id: &str) -> Option<&'static str> {
-    PROVIDER_ALIASES
-        .iter()
-        .find(|(from, _)| *from == anya2a_id)
-        .map(|(_, to)| *to)
+    provider_aliases()
+        .get(anya2a_id)
+        .copied()
         .or_else(|| crate::default_providers::provider_name(anya2a_id))
 }
 
@@ -573,18 +544,21 @@ mod tests {
 
     #[test]
     fn every_alias_names_a_distinct_provider() {
-        let mut targets = std::collections::HashSet::new();
-        for (from, to) in PROVIDER_ALIASES {
-            assert!(
-                crate::default_providers::provider_name(to).is_some(),
-                "{from} -> {to}: not a provider name"
-            );
-            assert!(
-                crate::default_providers::provider_name(from).is_none(),
-                "{from} is itself a provider name"
-            );
-            assert!(targets.insert(to), "{to} is the target of two aliases");
-        }
+        let parsed = parse_provider_aliases(include_str!("provider_aliases.json"))
+            .expect("provider_aliases.json must validate");
+        assert_eq!(provider_aliases().len(), parsed.len());
+    }
+
+    #[test]
+    fn parse_provider_aliases_rejects_malformed_and_conflicting_inputs() {
+        assert!(parse_provider_aliases("{not json").is_err());
+        assert!(parse_provider_aliases("{}").is_err());
+        assert!(parse_provider_aliases(r#"{"": "deepseek"}"#).is_err());
+        assert!(parse_provider_aliases(r#"{"deepseek": "openai"}"#).is_err());
+        assert!(parse_provider_aliases(r#"{"x": "no_such_provider"}"#).is_err());
+        assert!(
+            parse_provider_aliases(r#"{"alias-a": "deepseek", "alias-b": "deepseek"}"#).is_err()
+        );
     }
 
     #[test]

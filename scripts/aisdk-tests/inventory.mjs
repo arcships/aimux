@@ -38,7 +38,38 @@ function parseArgs(argv) {
 const git = (repo, ...args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
 
+// In a blobless clone `git cat-file` fetches each missing blob in its own
+// request, a few hundred round trips per run; fetch them all in one instead.
+function prefetch(repo, oids) {
+  if (!oids.length) return;
+  let configOut = '';
+  try {
+    configOut = git(repo, 'config', '--get-regexp', String.raw`^remote\..*\.promisor$`);
+  } catch (err) {
+    if (err.status !== 1) throw err;
+  }
+  const remote = configOut
+    .split('\n')
+    .find((l) => l.endsWith(' true'))
+    ?.replace(/^remote\.(.*)\.promisor true$/, '$1');
+  if (!remote) return;
+  const checked = execFileSync('git', ['-C', repo, 'cat-file', '--batch-check=%(objectname)'], {
+    input: oids.join('\n') + '\n',
+    env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+    encoding: 'utf8',
+    maxBuffer: 1 << 28,
+  });
+  const missing = checked.split('\n').filter((l) => l.endsWith(' missing')).map((l) => l.split(' ')[0]);
+  if (!missing.length) return;
+  execFileSync('git', ['-C', repo, '-c', 'fetch.negotiationAlgorithm=noop', 'fetch', '--quiet', '--no-tags',
+    '--no-write-fetch-head', '--recurse-submodules=no', '--filter=blob:none', '--stdin', remote], {
+    input: missing.join('\n') + '\n',
+    stdio: ['pipe', 'ignore', 'inherit'],
+  });
+}
+
 function readBlobs(repo, specs) {
+  if (!specs.length) return [];
   const out = execFileSync('git', ['-C', repo, 'cat-file', '--batch'], {
     input: specs.join('\n') + '\n',
     maxBuffer: 1 << 30,
@@ -57,16 +88,19 @@ function readBlobs(repo, specs) {
 }
 
 const CALLEES = new Set(['describe', 'it', 'test']);
-const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequential', 'fails']);
+const MODIFIERS = new Set(['skip', 'only', 'todo', 'concurrent', 'each', 'sequential', 'fails', 'skipIf', 'runIf']);
 // A `/` after one of these starts a regular expression, otherwise it divides.
-const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
+const REGEX_BEFORE = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^', 'return', 'throw', 'case']);
 
-// Returns `{ line, chain }` for every case in a TypeScript test file. A small
+// Returns `{ line, chain, start, end }` for every case in a TypeScript test
+// file; `start` and `end` are the offsets of the call (from `it` to its
+// closing `)`). A small
 // lexer skips comments, strings, template literals and regular expressions,
 // so brackets inside them do not move the `describe` scope.
 export function listCases(src) {
   const cases = [];
   const scopes = []; // open `describe` calls: { name, depth }
+  const open = []; // cases whose call is not closed yet: { kase, depth }
   const templates = []; // bracket depth of each open `${`
   let depth = 0;
   let line = 1;
@@ -92,7 +126,7 @@ export function listCases(src) {
       if (c === '\\') { text += src[++i]; continue; }
       if (c === '\n') line++;
       if (c === '`') { i++; return { text, open: false }; }
-      if (c === '$' && src[i + 1] === '{') { i += 2; templates.push(depth); depth++; return { text, open: true }; }
+      if (c === '$' && src[i + 1] === '{') { i += 2; templates.push(depth); depth++; prev = '{'; return { text, open: true }; }
       text += c;
     }
     return { text, open: false };
@@ -129,8 +163,24 @@ export function listCases(src) {
     // From an opening `(`, skip to just after its matching `)`.
     const start = depth;
     depth++;
+    prev = '(';
     i++;
     while (i < src.length && depth > start) step();
+  };
+  const skipTypeArgs = () => {
+    let angle = 1;
+    i++;
+    while (i < src.length && angle > 0) {
+      const c = src[i];
+      if (c === '\n') { line++; i++; }
+      else if (src.startsWith('//', i) || src.startsWith('/*', i)) skipSpace();
+      else if (c === '"' || c === "'") skipString(c);
+      else if (c === '`') skipWholeTemplate();
+      else if (c === '=' && src[i + 1] === '>') i += 2;
+      else if (c === '<') { angle++; i++; }
+      else if (c === '>') { angle--; i++; }
+      else i++;
+    }
   };
 
   function step() {
@@ -139,7 +189,7 @@ export function listCases(src) {
     if (/\s/.test(c)) { i++; return; }
     if (src.startsWith('//', i) || src.startsWith('/*', i)) { skipSpace(); return; }
     if (c === '"' || c === "'") { skipString(c); prev = 'str'; return; }
-    if (c === '`') { skipTemplate(); prev = 'str'; return; }
+    if (c === '`') { const { open } = skipTemplate(); if (!open) prev = 'str'; return; }
     if (c === '/' && REGEX_BEFORE.has(prev)) {
       let inClass = false;
       for (i++; i < src.length; i++) {
@@ -163,6 +213,7 @@ export function listCases(src) {
       }
       depth--;
       while (scopes.length && scopes[scopes.length - 1].depth > depth) scopes.pop();
+      while (open.length && open[open.length - 1].depth > depth) open.pop().kase.end = i + 1;
       prev = c;
       i++;
       return;
@@ -170,12 +221,12 @@ export function listCases(src) {
     if (/[A-Za-z_$]/.test(c)) {
       const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i, i + 64));
       const word = m[0];
-      const afterDot = prev === '.';
+      const start = i;
+      const afterMember = prev === '.' || prev === '#';
       i += word.length;
-      prev = word;
-      if (afterDot || !CALLEES.has(word)) return;
+      prev = afterMember ? 'prop' : word;
+      if (afterMember || !CALLEES.has(word)) return;
       const at = line;
-      let each = false;
       for (;;) {
         skipSpace();
         if (src[i] !== '.') break;
@@ -183,23 +234,34 @@ export function listCases(src) {
         skipSpace();
         const mod = /^[A-Za-z]+/.exec(src.slice(i, i + 16))?.[0];
         if (!MODIFIERS.has(mod)) return;
-        if (mod === 'each') each = true;
         i += mod.length;
+        if (mod === 'each') {
+          skipSpace();
+          if (src[i] === '<') {
+            skipTypeArgs();
+            skipSpace();
+          }
+          if (src[i] === '`') skipWholeTemplate();
+          else if (src[i] === '(') skipBalanced();
+          else return;
+        } else if (mod === 'skipIf' || mod === 'runIf') {
+          skipSpace();
+          if (src[i] !== '(') return;
+          skipBalanced();
+        }
       }
       skipSpace();
-      if (each) {
-        if (src[i] === '`') skipWholeTemplate();
-        else if (src[i] === '(') skipBalanced();
-        else return;
-        skipSpace();
-      }
       if (src[i] !== '(') return;
       depth++;
       i++;
       const callDepth = depth;
       const name = readName() ?? '<computed>';
       if (word === 'describe') scopes.push({ name, depth: callDepth });
-      else cases.push({ line: at, chain: [...scopes.map((s) => s.name), name] });
+      else {
+        const kase = { line: at, chain: [...scopes.map((s) => s.name), name], start, end: src.length };
+        cases.push(kase);
+        open.push({ kase, depth: callDepth });
+      }
       prev = 'str';
       return;
     }
@@ -211,21 +273,46 @@ export function listCases(src) {
   return cases;
 }
 
+// Lists the test files of `packages` (`[{ name, version }]`), each read from
+// tag `<name>@<version>`. A file is its path in the vercel/ai repo, and every
+// case carries its source text in `body` (from the call to its closing `)`).
+export function readPackages(repo, packages) {
+  const listed = packages.map(({ name, version }) => {
+    const tag = `${name}@${version}`;
+    const dir = `packages/${name.replace(/^@ai-sdk\//, '')}`;
+    const files = git(repo, 'ls-tree', '-r', tag, '--', dir)
+      .split('\n')
+      .map((l) => /^\d+ blob ([0-9a-f]+)\t(.*\.test\.tsx?)$/.exec(l))
+      .filter(Boolean)
+      .map(([, oid, file]) => ({ oid, file }))
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+    return { name, version, tag, files };
+  });
+  const all = listed.flatMap((p) => p.files);
+  prefetch(repo, [...new Set(all.map((f) => f.oid))]);
+  const blobs = readBlobs(repo, all.map((f) => f.oid));
+  let k = 0;
+  return listed.map(({ name, version, tag, files }) => ({
+    package: name,
+    version,
+    tag,
+    files: files.map(({ file }) => {
+      const src = blobs[k++];
+      return { file, cases: listCases(src).map((c) => ({ ...c, body: src.slice(c.start, c.end) })) };
+    }),
+  }));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const versions = JSON.parse(fs.readFileSync(args.versions, 'utf8'));
-  const report = [];
-  for (const [name, { version }] of Object.entries(versions)) {
-    const tag = `${name}@${version}`;
-    const dir = `packages/${name.replace(/^@ai-sdk\//, '')}`;
-    const files = git(args.repo, 'ls-tree', '-r', '--name-only', tag, '--', dir)
-      .split('\n')
-      .filter((f) => /\.test\.tsx?$/.test(f))
-      .sort();
-    const blobs = readBlobs(args.repo, files.map((f) => `${tag}:${f}`));
-    const entries = files.map((file, k) => ({ file, cases: listCases(blobs[k]) }));
-    report.push({ package: name, version, tag, files: entries });
-  }
+  const report = readPackages(
+    args.repo,
+    Object.entries(versions).map(([name, { version }]) => ({ name, version })),
+  ).map((p) => ({
+    ...p,
+    files: p.files.map(({ file, cases }) => ({ file, cases: cases.map(({ line, chain }) => ({ line, chain })) })),
+  }));
 
   let totalFiles = 0;
   let totalCases = 0;
@@ -240,4 +327,6 @@ function main() {
   if (args.json) fs.writeFileSync(args.json, JSON.stringify(report, null, 1) + '\n');
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+const isMain = process.argv[1] && fs.existsSync(process.argv[1]) &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isMain) main();

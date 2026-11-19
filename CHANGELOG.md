@@ -5,6 +5,26 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- Replaced `chrono` with `jiff` across all `aimux-*` crates for
+  `RUSTSEC-2026-0543` (#523, targeting `0.7.0` under pre-1.0 SemVer):
+  - `aimux_core::Timestamp`: removed `Timestamp::from_datetime` and
+    `Timestamp::to_datetime`; use `Timestamp::from_timestamp(jiff::Timestamp) -> Option<Self>`
+    / `TryFrom<jiff::Timestamp>` (fallible because `jiff::Timestamp` extends
+    to year `-9999`, whereas `Timestamp` enforces 4-digit years
+    `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z`, capped at
+    `jiff::Timestamp::MAX`) and `Timestamp::to_timestamp(self) -> jiff::Timestamp`
+    / `From<Timestamp> for jiff::Timestamp` instead.
+  - `aimux_provider_utils::SigV4Fetch::with_clock`: changed parameter type from
+    `fn() -> chrono::DateTime<chrono::Utc>` to `fn() -> jiff::Timestamp`.
+- Removed the `aimux_providers::voyage::embedding` and
+  `aimux_providers::voyage::reranking` submodule paths; import
+  `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
+  instead (RFC-0046 §4.5).
+
 ## [0.6.1] - 2026-11-05
 
 Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,
@@ -2232,6 +2252,27 @@ detailed sections below.
   not a boolean failed, with `invalid googleVertex provider options`)
   (RFC-0046 R1).
 
+- OpenAI's completion, image, speech, transcription and files models parse
+  `providerOptions.openai` with `parse_provider_options` against the
+  upstream schemas (`openaiLanguageModelCompletionOptions` under `openai`
+  and the provider's own key, `openaiImageModelGenerationOptions` /
+  `openaiImageModelEditOptions`, `openaiSpeechModelOptionsSchema`,
+  `openAITranscriptionModelOptions`, `openaiFilesOptionsSchema`). A value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid openai provider options` and the serde error as
+  its cause, and nothing is sent. Completion, image and speech used to fail
+  with their own messages (`invalid openai provider option <key>`, `invalid
+  openai image option: <key>`, `invalid openai speech option: <key>`);
+  transcription and files dropped a value of the wrong type (transcription
+  also the non-string entries of `include` and `timestampGranularities`)
+  and forwarded an unknown `responseFormat`, `chunkingStrategy` or
+  `streaming.delay`. The requests for valid options are unchanged but for
+  two: files used to leave out an `expiresAfter` that is not a non-negative
+  integer (fractional, negative, or written with a decimal point) and now
+  send it as written, as upstream's `String(value)` does; image sends an
+  `outputCompression` written as `80.0` as `80`, as `JSON.stringify` does
+  (RFC-0046 R1).
+
 - Hugging Face's responses model parses `providerOptions.huggingface` with
   `parse_provider_options` against `huggingfaceLanguageModelResponsesOptions`:
   a value outside the schema (`metadata` with a non-string value,
@@ -2241,6 +2282,37 @@ detailed sections below.
   is sent. It used to be read key by key, so a value of the wrong type was
   dropped (or, for `metadata`, sent as given). The requests for valid options
   are unchanged (RFC-0046 R1).
+
+- Mistral's chat, embedding, transcription and speech models parse
+  `providerOptions.mistral` with `parse_provider_options` against the
+  upstream schemas (`mistralLanguageModelChatOptions`,
+  `mistralEmbeddingModelOptions`, `mistralTranscriptionModelOptions`,
+  `mistralSpeechModelOptions`), their refinements (`min(1)`, the context-bias
+  pattern, `max(100)`, `int().positive()`, the enums) included: any value
+  outside a schema fails with `Invalid argument for parameter
+  providerOptions: invalid mistral provider options` and the serde error as
+  its cause, instead of `Invalid mistral provider option <key>`,
+  `mistral.metadata must be a record` and the like. The request is
+  unchanged (RFC-0046 R1).
+
+- The OpenAI Responses model (and Azure's, and Codex's request body)
+  parses its provider options with `parse_provider_options` against
+  `openaiLanguageModelResponsesOptionsSchema`, under the first of the host's
+  namespaces present (`openai`; for Azure `azure`, then `openai`). A value
+  outside the schema (an unknown `serviceTier`, `include` entry or
+  `systemMessageMode`, `logprobs` outside 1-20, an empty
+  `allowedTools.toolNames`, a `contextManagement` entry without
+  `compactThreshold`, ...) fails with `Invalid argument for parameter
+  providerOptions: invalid <namespace> provider options` and the serde error
+  as its cause, and nothing is sent. These options used to be read key by
+  key unchecked (only `reasoningEffortUpdate` was, with the message
+  `reasoningEffortUpdate`), so such a value was dropped or sent as given.
+  A system message's options are parsed the same way against
+  `openaiResponsesSystemMessageOptionsSchema`: a message-level
+  `reasoningEffortUpdate` that is not a string, `null` included, now fails
+  with that message too instead of being ignored, and an unknown effort
+  fails with it instead of `reasoningEffortUpdate`. The requests for valid
+  options are unchanged (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq

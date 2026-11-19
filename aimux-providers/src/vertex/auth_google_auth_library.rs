@@ -216,7 +216,7 @@ impl GoogleAuth {
                     .and_then(Value::as_i64)
                     .map(|expiry| {
                         expiry
-                            .saturating_sub(chrono::Utc::now().timestamp_millis())
+                            .saturating_sub(jiff::Timestamp::now().as_millisecond())
                             .saturating_sub(threshold)
                     });
                 if remaining.is_none_or(|remaining| remaining > 0) {
@@ -336,7 +336,7 @@ impl GoogleAuth {
                         .scopes
                         .as_ref()
                         .map_or_else(|| CLOUD_SCOPE.to_string(), GoogleAuthScopes::joined);
-                    let timestamp = chrono::Utc::now().timestamp();
+                    let timestamp = jiff::Timestamp::now().as_second();
                     let claims = json!({"iss": email, "scope": scopes, "aud": audience, "iat": timestamp, "exp": timestamp + 3600});
                     let mut header = json!({"alg": "RS256", "typ": "JWT"});
                     if let Some(id) = credentials.get("private_key_id").and_then(Value::as_str) {
@@ -357,6 +357,10 @@ impl GoogleAuth {
                         message: "Invalid Google service-account private key encoding".into(),
                         cause: Some(ErrorCause::source(&error)),
                     })?;
+                    // ring's `KeyRejected` and `Unspecified` implement
+                    // `std::error::Error` only with ring's `std` feature, which
+                    // this build does not enable, and have no source to keep;
+                    // their text is the whole cause.
                     let key_pair = RsaKeyPair::from_pkcs8(&der)
                         .or_else(|_| RsaKeyPair::from_der(&der))
                         .map_err(|error| AiMuxError::InvalidArgument {
@@ -530,7 +534,7 @@ impl GoogleAuth {
             required(credentials, "project")?,
             required(credentials, "name")?
         );
-        let now = chrono::Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let lifetime = client
             .and_then(|options| options.get("lifetime"))
             .and_then(Value::as_i64)
@@ -568,6 +572,8 @@ impl GoogleAuth {
             der = der_wrap(0x30, wrapped);
         }
         let random = SystemRandom::new();
+        // As for the RSA key above, ring's errors have no `source()`: their
+        // text is the whole cause.
         let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
             &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
             &der,
@@ -869,16 +875,19 @@ impl GoogleAuth {
         )
         .await?
         .value;
-        let expiry =
-            chrono::DateTime::parse_from_rfc3339(&response.expire_time).map_err(|error| {
-                AiMuxError::InvalidResponseData {
-                    message: format!("Invalid Google impersonation expiry: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                }
-            })?;
+        let expiry = aimux_core::Timestamp::parse(&response.expire_time).map_err(|_| {
+            const REASON: &str = "expected an RFC 3339 date-time";
+            AiMuxError::InvalidResponseData {
+                message: format!("Invalid Google impersonation expiry: {REASON}"),
+                cause: Some(SourceError::from(REASON).into()),
+            }
+        })?;
         Ok(TokenResponse {
             access_token: response.access_token,
-            expires_in: Some((expiry.timestamp() - chrono::Utc::now().timestamp()).max(0) as u64),
+            expires_in: Some(
+                (expiry.to_timestamp().as_second() - jiff::Timestamp::now().as_second()).max(0)
+                    as u64,
+            ),
             refresh_token: None,
         })
     }

@@ -9,15 +9,14 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
+    TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest, TranscriptionResponse,
+    TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, audio_input_to_bytes};
 
 use super::error::groq_failed_response_handler;
 use super::transcription_model_options::parse_groq_transcription_options;
@@ -92,15 +91,7 @@ impl TranscriptionModel for GroqTranscriptionModel {
     ) -> Result<TranscriptionResult, AiMuxError> {
         // `getArgs`.
         let groq_options = parse_groq_transcription_options(options.provider_options.as_ref())?;
-        let audio = match &options.audio {
-            AudioInput::Url(_) => return Err(AudioInput::url_error()),
-            AudioInput::Binary(bytes) => bytes.clone(),
-            AudioInput::Base64(data) => aimux_provider_utils::convert_base64_to_uint8_array(data)
-                .map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid base64: {error}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?,
-        };
+        let audio = audio_input_to_bytes(&options.audio)?;
 
         let mut form = MultipartForm::new();
         form.text("model", &self.model_id)?;

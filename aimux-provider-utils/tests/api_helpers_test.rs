@@ -9,8 +9,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use aimux_core::{AbortSignal, AiMuxError};
 use aimux_provider_utils::{
     HttpBody, HttpRequest, ProviderErrorParts, create_binary_response_handler,
-    create_event_source_response_handler, create_json_error_response_handler,
-    create_json_response_handler, get_from_api, post_json_to_api, post_to_api,
+    create_event_source_response_handler, create_json_bytes_response_handler,
+    create_json_error_response_handler, create_json_response_handler, get_from_api,
+    post_json_to_api, post_to_api,
 };
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -45,6 +46,62 @@ fn failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError
                 .map(str::to_owned),
         }
     })
+}
+
+/// The bytes handler parses the body once and hands it back as it arrived
+/// (whitespace included), with no second `raw_value` parse.
+#[tokio::test]
+async fn post_json_bytes_handler_returns_the_value_and_the_wire_body() {
+    let server = MockServer::start().await;
+    let wire = "{ \"value\" : \"ok\" }";
+    Mock::given(method("POST"))
+        .and(path("/call"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-test", "yes")
+                .set_body_raw(wire, "application/json"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let output = post_json_to_api(
+        request(format!("{}/call", server.uri())),
+        json!({"prompt": "hello"}),
+        create_json_bytes_response_handler::<serde_json::Value>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+
+    let (value, body) = output.value;
+    assert_eq!(value, json!({"value": "ok"}));
+    assert_eq!(&body[..], wire.as_bytes());
+    assert_eq!(output.raw_value, None);
+    assert_eq!(output.response_headers.get("x-test"), Some(&"yes".into()));
+
+    // An invalid body is the same `ApiCall` error as the typed handler's.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/call"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("not json", "application/json"))
+        .mount(&server)
+        .await;
+    let error = post_json_to_api(
+        request(format!("{}/call", server.uri())),
+        json!({"prompt": "hello"}),
+        create_json_bytes_response_handler::<serde_json::Value>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::ApiCall(error)
+            if error.status_code == Some(200)
+                && error.response_body.as_deref() == Some("not json")
+                && error.message.starts_with("Invalid JSON response: ")),
+        "{error:?}"
+    );
 }
 
 #[tokio::test]

@@ -17,7 +17,7 @@ use serial_test::serial;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-mod common;
+use aimux_providers::test_support::replay;
 
 struct StopRecording;
 impl Drop for StopRecording {
@@ -190,7 +190,7 @@ async fn retries_share_call_id_with_distinct_attempts_and_replay_wire_exchanges(
     assert_eq!(records[0].outcome.status, OutcomeStatus::Success);
     recording::init_recording(None);
     let replay_server = MockServer::start().await;
-    common::replay::mount_recording(&replay_server, &records[0]).await;
+    replay::mount_recording(&replay_server, &records[0]).await;
     decide(model(&replay_server).as_ref(), request)
         .await
         .unwrap();
@@ -259,7 +259,7 @@ async fn recorded_native_calls_replay_offline_and_rebuild_uses_registered_endpoi
             rec.outcome.decision_result.clone().unwrap()
         );
         let server = MockServer::start().await;
-        common::replay::mount_recording(&server, &rec).await;
+        replay::mount_recording(&server, &rec).await;
         let mut config =
             JevConfig::new("test-key").with_endpoint(format!("{}/v1/systemone", server.uri()));
         config.headers.insert("X-Routing".into(), "billing".into());

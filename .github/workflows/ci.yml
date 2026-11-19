@@ -134,7 +134,9 @@ jobs:
           platforms=$everything
           if [ "$(changed .github rust-toolchain.toml .cargo aimux-ffi bindings/node \
                 bindings/go bindings/flutter bindings/swift \
-                scripts/build-ios-xcframework.sh ':(glob)**/.gitattributes' \
+                scripts/build-ios-xcframework.sh scripts/check_native_artifact.py \
+                scripts/merge_archive.py scripts/tests/test_check_native_artifact.py \
+                ':(glob)**/.gitattributes' \
                 ':(glob)**/Cargo.toml' ':(glob)**/build.rs')" = true ]; then
             platforms=true
           fi
@@ -155,7 +157,7 @@ jobs:
             $(job rust-test aimux-ffi)
             $(job node-binding bindings/node)
             $(job python-binding bindings/python)
-            $(job ffi-build aimux-ffi bindings/go)
+            $(job ffi-build aimux-ffi bindings/go scripts/check_native_artifact.py scripts/merge_archive.py scripts/tests/test_check_native_artifact.py)
             $(job ffi-linux-arm aimux-ffi)
             $(job c-abi-bindings aimux-ffi bindings/java bindings/kotlin bindings/flutter)
             $(job ffi-sanitizers aimux-ffi)
@@ -164,6 +166,8 @@ jobs:
             $(job flutter-example-build aimux-ffi bindings/flutter)
             $(job swift-contract-tests aimux-ffi bindings/swift)
             $(job web-typecheck bindings/node)
+            \"upstream-tests\": $(changed ':(glob)**/*.rs' ':(glob)*/layout.toml' \
+              fixtures/aisdk/VERSIONS.json scripts/aisdk-tests .github/workflows/ci.yml),
             \"contract-tests\": $code}"
           run=$(jq -c . <<< "$run")
           printf 'code=%s\nshared=%s\nplatforms=%s\nrun=%s\n' \
@@ -455,6 +459,7 @@ jobs:
     needs: changes
     if: fromJSON(needs.changes.outputs.run)['ffi-build']
     env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
       CARGO_PROFILE_RELEASE_LTO: "true"
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
       CARGO_PROFILE_RELEASE_OPT_LEVEL: "z"
@@ -509,12 +514,46 @@ jobs:
           rm -f target/${{ matrix.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.target }}/staticlib-release/libaimux_ffi.dylib
       # RFC-0043 §5.3 S1c (release.yml go-build does the same): one merged
-      # object rooted at the exported C API, local symbols stripped; Mach-O
-      # archives are left as they are.
+      # object rooted at the exported C API, local symbols stripped (ELF,
+      # COFF, and Mach-O).
       - name: Merge the archive into one object, strip local symbols
         if: runner.os != 'Windows'
         shell: bash
         run: python3 scripts/merge_archive.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+      # release.yml go-build also ships x86_64-apple-darwin, whose Mach-O
+      # relocations differ from arm64. Rehearse that target on macos-latest:
+      # build staticlib-release, strip bitcode, merge/strip, verify symbols,
+      # and link + run C and Go smoke binaries (under Rosetta on Apple Silicon).
+      - name: Install Rosetta for x86_64 smoke execution
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        run: /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Build, strip, merge and verify x86_64-apple-darwin archive
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rustup target add x86_64-apple-darwin
+          cargo build -p aimux-ffi --profile staticlib-release --target x86_64-apple-darwin
+          python3 scripts/check_native_artifact.py --strip-bitcode target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a
+          rm -f target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.so \
+                target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.dylib
+          python3 scripts/merge_archive.py target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a
+          nm_syms=$(nm -gU target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a | awk '{print $NF}')
+          grep -qx '_rust_eh_personality' <<< "$nm_syms"
+          for sym in $(python3 -c 'import sys; sys.path.insert(0, "scripts"); import merge_archive, pathlib; print(" ".join(sorted(merge_archive.header_exports(pathlib.Path(".")))))'); do
+            grep -qx "_$sym" <<< "$nm_syms" || { echo "Missing _$sym in x86_64 archive" >&2; exit 1; }
+          done
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          clang -arch x86_64 -std=c11 -Wall -Wextra -Werror -Oz -Wl,-dead_strip \
+            -Iaimux-ffi/include -Iaimux-ffi/tests/c aimux-ffi/tests/c/primitives.c \
+            target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a \
+            -framework CoreFoundation -o "$tmp/primitives-x64"
+          "$tmp/primitives-x64"
+          clang -arch x86_64 -std=c11 -Wall -Wextra -Werror -Oz -Wl,-dead_strip \
+            -Iaimux-ffi/include bindings/c/example.c \
+            target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a \
+            -framework CoreFoundation -o "$tmp/example-x64"
+          "$tmp/example-x64"
       # The Windows Go archive is the x86_64-pc-windows-gnu one (Go's cgo
       # links with mingw gcc), so the Windows leg rehearses release.yml
       # go-build on that target: build, strip the bitcode, merge the COFF
@@ -540,6 +579,15 @@ jobs:
             *) ARCHIVE_DIR="${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release" ;;
           esac
           export CGO_LDFLAGS="-L$ARCHIVE_DIR"
+          go vet ./...
+          go test ./...
+      - name: Vet + test Go binding (x86_64-apple-darwin cross-build)
+        if: runner.os == 'macOS'
+        working-directory: bindings/go
+        shell: bash
+        run: |
+          export GOARCH=amd64 CGO_ENABLED=1
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/x86_64-apple-darwin/staticlib-release"
           go vet ./...
           go test ./...
       - name: Race test Go binding
@@ -832,12 +880,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+      - name: Performance comparator and benchmark fixture self-tests (RFC-0043 §7)
+        run: |
+          python3 -m unittest scripts/tests/test_compare_perf.py
+          python3 scripts/quality/compare-perf.py --validate-scenarios bench/scenarios.json --environment bench/environment.json
+          python3 bench/generate_fixtures.py --check
       - name: Providers doc generator drift (docs/api/providers.md must match generator output)
         run: python3 scripts/gen_providers_doc.py --check
+      - name: Provider layout manifest (aimux-providers/layout.toml)
+        run: |
+          python3 scripts/tests/test_check_layout.py
+          python3 scripts/check_layout.py
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
       - name: Release asset list self-test (scripts/stage_release_assets.py)
         run: python3 scripts/tests/test_stage_release_assets.py
+      - name: Registry maintenance tests and offline snapshot check (RFC-0033)
+        run: |
+          python3 scripts/tests/test_sync_registry.py
+          python3 scripts/tests/test_probe_registry.py
+          python3 scripts/sync_registry.py --check --source models-dev --snapshot registry/models_dev_snapshot.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -850,7 +912,7 @@ jobs:
         with:
           node-version: 24
       - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers, upstream test inventory)
-        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs scripts/aisdk-tests/check.test.mjs
       # Web console typecheck: every @aimux/types import must still resolve.
       # The console imports the generated DTOs from bindings/node/src/generated.
       # The drift check above only compares files; this type-checks every
@@ -862,6 +924,38 @@ jobs:
         run: |
           npm ci
           npm run typecheck
+
+  # Every upstream test marker in the Rust tests and every hand-written
+  # exclusion in a layout.toml must name a case of the vercel/ai tag locked in
+  # fixtures/aisdk/VERSIONS.json (RFC-0045 §7). The progress of each upstream
+  # test file goes to the job summary. Runs when Rust code, a layout.toml, the
+  # lock or the checker changed.
+  upstream-tests:
+    name: Upstream test markers
+    runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['upstream-tests']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The npm tarballs leave the tests out, so they come from the git tags.
+      # A shallow blobless fetch of the tags is about a megabyte; check.mjs
+      # then fetches the test files it reads in one request.
+      - name: Fetch the locked vercel/ai tags
+        run: |
+          repo="$RUNNER_TEMP/vercel-ai"
+          git init -q "$repo"
+          git -C "$repo" remote add origin https://github.com/vercel/ai
+          git -C "$repo" config remote.origin.promisor true
+          git -C "$repo" config remote.origin.partialclonefilter blob:none
+          node scripts/aisdk-tests/check.mjs tags | sed 's|.*|+refs/tags/&:refs/tags/&|' \
+            | xargs git -C "$repo" fetch -q --depth=1 --filter=blob:none --no-tags origin
+      - name: Check the markers and layout.toml exclusions (scripts/aisdk-tests/check.mjs)
+        run: node scripts/aisdk-tests/check.mjs --repo "$RUNNER_TEMP/vercel-ai"
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
@@ -907,6 +1001,7 @@ jobs:
       - ffi-linux-arm
       - flutter-example-build
       - contract-tests
+      - upstream-tests
       - swift-contract-tests
     runs-on: ubuntu-latest
     steps:

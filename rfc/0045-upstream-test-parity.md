@@ -193,6 +193,14 @@ mod openai_responses_language_model {
 
 升级上游版本时，`check.mjs diff` 列出选中文件里新增的用例，由升级 PR 决定迁还是排除。
 
+实现说明：
+
+- job 是 `ci.yml` 的 `upstream-tests`，在 Rust 代码、`layout.toml`、`VERSIONS.json` 或 `scripts/aisdk-tests/` 有改动时跑。`check.mjs tags` 列出要读的 tag，job 对这些 tag 做浅的 blobless fetch（约 1 MB），`check.mjs` 再一次取回要读的测试文件。
+- 比较用例名时去掉每层名字两端的空格：上游有 `it('should extract response id metadata ', …)`，标记写不出尾随空格。
+- 第 3.2 节的手写排除不写测试文件，`case` 先在条目自己的测试文件（`foo.ts` → `foo.test.ts`）里找，找不到再到本包没有同名源文件的测试文件里找；条目自己的测试文件优先，同优先级里有多处命中时报歧义。
+- 没有同名源文件的测试文件，有标记或排除指向它才算选中；其余的列在 summary 里，不判失败。
+- 带 `/// partial:` 注释、没有标记的测试不算迁过，对应用例在 summary 里是"未处理"。
+
 ## 8. 分批
 
 | 批次 | 内容 |

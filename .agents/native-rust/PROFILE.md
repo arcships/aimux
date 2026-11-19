@@ -62,7 +62,7 @@ lint 统一写在根 `Cargo.toml` 的 `[workspace.lints]`，成员 crate 用 `[l
 - wire 跟 AI SDK 的 JSON 形态；wire 变化单独成 PR，同步所有绑定。
 - 可选方法用 `Option<Result<…>>`（§5、D22）；provider 可调用 `call(model_id)`；默认 provider 访问不可失败，显式工厂返回 `Result`。
 - 设置求值时机（工厂、取模型、请求）逐包跟上游（D10）；headers 每次请求求值。
-- 不用 provider 名字判断厂商（D8）；providerOptions 的键在各包 `options.rs` 只写一次（D9）；retry 只在调用层（D14）；core 单步，不跑 agent loop（D25）。
+- 不用 provider 名字判断厂商（D8）；providerOptions 的键在各包只写一次：有 schema 的写在 `options.rs`，没有 schema 的写成 `NAMESPACE` 常量、经 `shared::namespaced_options` 读（D9）；retry 只在调用层（D14）；core 单步，不跑 agent loop（D25）。
 - `do_generate`/`do_stream` 保持 `async_trait`（registry、FFI 要 `dyn`）。
 - 分层单向：`shared/`、`openai_compatible/` 不引用具体厂商模块。跨模块扩展点由共享层定义 trait，厂商用自己的纯数据 struct 实现；包内有限几种情况用包内 enum（`check_provider_boundaries.sh` 守）。
 - 流：每个厂商的流是一个实现 `Transformer` 的具名 struct；工具调用的累积是流 struct 自己的字段，没有共享的 tracker 类型（和上游 provider-utils 结构不同，行为照上游）。

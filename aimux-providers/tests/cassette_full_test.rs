@@ -8,9 +8,7 @@
 //! have a matching chat-completions endpoint are marked `#[ignore]` with
 //! the reason documented.
 
-mod common;
-
-use common::replay;
+use aimux_providers::test_support::replay;
 use futures::StreamExt;
 use wiremock::MockServer;
 

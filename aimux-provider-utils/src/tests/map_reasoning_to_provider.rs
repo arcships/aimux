@@ -117,8 +117,7 @@ mod is_custom_reasoning {
         assert!(is_custom_reasoning(Some(ReasoningEffort::None)));
     }
 
-    /// upstream: @ai-sdk/provider-utils src/map-reasoning-to-provider.test.ts › isCustomReasoning › returns true for all reasoning levels
-    /// partial: `max` is not an aimux reasoning level yet.
+    /// partial: @ai-sdk/provider-utils src/map-reasoning-to-provider.test.ts › isCustomReasoning › returns true for all reasoning levels (`max` is not an aimux reasoning level yet).
     #[test]
     fn returns_true_for_all_reasoning_levels() {
         for value in [

@@ -1,0 +1,162 @@
+//! Voyage AI provider factory and configuration.
+
+use std::sync::OnceLock;
+
+use aimux_core::error::AiMuxError;
+use aimux_provider_utils::{
+    Credential, FetchFunction, HeaderMapOpt, ProviderHeaders, Resolvable, validate_base_url,
+};
+
+use crate::shared::{EndpointConfig, TransformRequestBody};
+
+use super::embedding::VoyageEmbeddingModel;
+use super::reranking::VoyageRerankingModel;
+
+/// The providerOptions key, read whatever the provider is named.
+pub(crate) const NAMESPACE: &str = "voyage";
+
+pub(super) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("detail")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Voyage request failed")
+                .to_owned(),
+            provider_code: None,
+        }
+    })
+}
+
+pub(crate) const DEFAULT_BASE_URL: &str = "https://api.voyageai.com/v1";
+pub(crate) const API_KEY_ENV_VAR: &str = "VOYAGE_API_KEY";
+const DEFAULT_NAME: &str = "voyage";
+
+/// Settings of [`create_voyage`].
+///
+/// Every field is optional. Nothing here is evaluated when the provider is
+/// created except `base_url` and `name`; `api_key` and `headers` are
+/// evaluated on every request.
+#[derive(Clone, Default)]
+pub struct VoyageProviderSettings {
+    /// Base URL for the API calls. Default `https://api.voyageai.com/v1`; a
+    /// trailing slash is removed.
+    pub base_url: Option<String>,
+    /// The API key. `None` loads `VOYAGE_API_KEY` when a request is made and
+    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
+    /// explicit value is used as given, `""` included: it never falls back to
+    /// the environment. A [`Resolvable::Future`] is awaited once, an
+    /// [`Resolvable::AsyncFn`] on every request.
+    pub api_key: Option<Resolvable<String>>,
+    /// Extra headers on every request. A `None` value removes the header,
+    /// including `Authorization`. Per-call headers win over these.
+    pub headers: Option<HeaderMapOpt>,
+    /// The provider name, the prefix of the `provider()` strings
+    /// (`"{name}.embedding"`, `"{name}.reranking"`). Default `"voyage"`. The
+    /// providerOptions key stays `voyage`.
+    pub name: Option<String>,
+    /// The transport: a mock, a signing decorator, a proxy-aware client.
+    /// `None` uses the process default, resolved per request.
+    pub fetch: Option<FetchFunction>,
+    /// Rewrites every JSON request body once, after it is serialized and
+    /// before it is sent.
+    pub transform_request_body: Option<TransformRequestBody>,
+}
+
+impl std::fmt::Debug for VoyageProviderSettings {
+    /// Never prints the key or header values.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VoyageProviderSettings")
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key)
+            .field(
+                "headers",
+                &self.headers.as_ref().map(std::collections::HashMap::len),
+            )
+            .field("name", &self.name)
+            .field("fetch", &self.fetch.is_some())
+            .field(
+                "transform_request_body",
+                &self.transform_request_body.is_some(),
+            )
+            .finish()
+    }
+}
+
+/// Create a Voyage AI provider.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
+/// URL with a host. That is the only way this fails: the key is loaded per
+/// request, not here.
+pub fn create_voyage(settings: VoyageProviderSettings) -> Result<VoyageProvider, AiMuxError> {
+    let base_url = match settings.base_url.as_deref() {
+        Some(url) => validate_base_url(url)?,
+        None => DEFAULT_BASE_URL.to_string(),
+    };
+    Ok(VoyageProvider {
+        name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
+        base_url,
+        headers: ProviderHeaders::bearer(
+            Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Voyage"),
+            Vec::new(),
+            settings.headers,
+        ),
+        fetch: settings.fetch,
+        transform_request_body: settings.transform_request_body,
+    })
+}
+
+/// The default provider: `create_voyage` with default settings, created on
+/// first use. Creating it reads nothing from the environment and cannot fail;
+/// a missing key surfaces from the first request instead.
+pub fn voyage() -> &'static VoyageProvider {
+    static DEFAULT: OnceLock<VoyageProvider> = OnceLock::new();
+    DEFAULT.get_or_init(|| {
+        create_voyage(VoyageProviderSettings::default())
+            .expect("default Voyage settings are always valid")
+    })
+}
+
+/// A Voyage AI provider. Cheap to clone the models out of; it holds no HTTP
+/// client.
+pub struct VoyageProvider {
+    name: String,
+    base_url: String,
+    headers: ProviderHeaders,
+    fetch: Option<FetchFunction>,
+    transform_request_body: Option<TransformRequestBody>,
+}
+
+impl VoyageProvider {
+    fn model_config(&self, method: &str) -> EndpointConfig {
+        EndpointConfig::fixed(
+            format!("{}.{method}", self.name),
+            self.base_url.clone(),
+            self.headers.clone(),
+            self.fetch.clone(),
+            self.transform_request_body.clone(),
+        )
+    }
+
+    /// An embedding model (e.g. `"voyage-3.5"`); `provider()` is
+    /// `"{name}.embedding"`.
+    #[must_use]
+    pub fn embedding(&self, model_id: &str) -> VoyageEmbeddingModel {
+        VoyageEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
+    }
+
+    /// A reranking model (e.g. `"rerank-2.5"`); `provider()` is
+    /// `"{name}.reranking"`.
+    #[must_use]
+    pub fn reranking(&self, model_id: &str) -> VoyageRerankingModel {
+        VoyageRerankingModel::from_config(model_id.to_string(), self.model_config("reranking"))
+    }
+}
+
+crate::impl_modality_provider!(VoyageProvider {
+    embedding_model: |p, id| p.embedding(id),
+    reranking_model: |p, id| p.reranking(id),
+});

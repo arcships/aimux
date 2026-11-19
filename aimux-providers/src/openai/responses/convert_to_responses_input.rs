@@ -11,7 +11,7 @@ use aimux_core::types::Warning;
 use aimux_core::{AiMuxError, ErrorCause};
 use serde_json::{Value, json};
 
-use crate::openai::language_model_capabilities::SystemMessageMode;
+use crate::openai::language_model_capabilities::{ModelCapabilities, SystemMessageMode};
 use crate::openai::responses::responses_language_model_options::ResponsesNamespace;
 use crate::openai::responses::responses_prepare_tools::map_tool_fields;
 use crate::openai::responses::tool_args::{validate_tool_call, validate_tool_result};
@@ -20,6 +20,13 @@ use crate::openai::responses::tool_args::{validate_tool_call, validate_tool_resu
 pub struct ResponsesInputResult {
     pub input: Vec<Value>,
     pub warnings: Vec<Warning>,
+}
+
+/// Model-level compatibility checks for message-level `reasoningEffortUpdate`.
+#[derive(Clone, Copy)]
+pub(crate) struct EffortUpdateCheck<'a> {
+    pub(crate) caps: &'a ModelCapabilities,
+    pub(crate) incompatible: bool,
 }
 
 /// Convert a `LanguageModelPrompt` into the OpenAI Responses API `input` array.
@@ -37,7 +44,10 @@ pub struct ResponsesInputResult {
 /// that already carry an `itemId` are skipped (they live in the previous
 /// response chain).
 /// # Errors
-/// Rejects unsupported file data and unresolved file references.
+/// Rejects system-message provider options outside
+/// `openaiResponsesSystemMessageOptionsSchema` (`InvalidArgument`
+/// `invalid <namespace> provider options`), unsupported file data, and
+/// unresolved file references.
 pub fn convert_to_responses_input(
     ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
@@ -53,9 +63,14 @@ pub fn convert_to_responses_input(
         has_previous_response_id,
         false,
         None,
+        None,
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "internal conversion entry shared between the public converter and request builder"
+)]
 pub(crate) fn convert_responses_input_with_conversation(
     ns: ResponsesNamespace,
     prompt: &LanguageModelPrompt,
@@ -64,6 +79,7 @@ pub(crate) fn convert_responses_input_with_conversation(
     has_previous_response_id: bool,
     has_conversation: bool,
     tools: Option<&[Tool]>,
+    effort_update_check: Option<EffortUpdateCheck<'_>>,
 ) -> Result<ResponsesInputResult, AiMuxError> {
     let mut input: Vec<Value> = Vec::new();
     let mut warnings: Vec<Warning> = Vec::new();
@@ -76,10 +92,24 @@ pub(crate) fn convert_responses_input_with_conversation(
                 content,
                 provider_options,
             } => {
-                if let Some(effort) =
-                    openai_sub_option(ns, provider_options, "reasoningEffortUpdate")
-                {
-                    input.push(json!({ "type": "configuration_update", "reasoning": { "effort": effort } }));
+                if let Some(effort) = ns.system_message_effort_update(provider_options.as_ref())? {
+                    if !content.is_empty()
+                        || effort_update_check.is_some_and(|check| {
+                            !check.caps.supports_configuration_update
+                                || check.incompatible
+                                || check
+                                    .caps
+                                    .supported_reasoning_efforts
+                                    .is_some_and(|values| !values.contains(&effort))
+                        })
+                    {
+                        return Err(AiMuxError::UnsupportedFunctionality(
+                            "Message-level reasoningEffortUpdate".into(),
+                        ));
+                    }
+                    input.push(
+                        json!({ "type": "configuration_update", "reasoning": { "effort": effort } }),
+                    );
                     continue;
                 }
                 match system_message_mode {
