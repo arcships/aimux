@@ -133,7 +133,7 @@ jobs:
           fi
           platforms=$everything
           if [ "$(changed .github rust-toolchain.toml .cargo aimux-ffi bindings/node \
-                bindings/go bindings/flutter bindings/swift \
+                bindings/go bindings/flutter bindings/swift quality scripts/quality \
                 scripts/build-ios-xcframework.sh scripts/check_native_artifact.py \
                 scripts/merge_archive.py scripts/tests/test_check_native_artifact.py \
                 ':(glob)**/.gitattributes' \
@@ -383,13 +383,16 @@ jobs:
         if: matrix.settings.test && runner.os == 'Linux'
         working-directory: bindings/node
         run: git diff --exit-code -- index.js index.d.ts
-      - name: Load the shipped build, print its size
+      - name: Load the shipped build, print its size, and check ceiling
         if: matrix.settings.test && runner.os == 'Linux'
         working-directory: bindings/node
         shell: bash
         run: |
           node -e "const m = require('./index.js'); const n = Object.keys(m).length; if (!n) throw new Error('the binding loaded with no exports'); console.log(n, 'exports')"
           python3 ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
+          python3 ../../scripts/quality/check_budgets.py '${{ matrix.settings.binary }}' \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -444,6 +447,9 @@ jobs:
           maturin build --release
           pip install --force-reinstall target/wheels/*.whl
           python -c "import aimux, pathlib; so = next(pathlib.Path(aimux.__file__).parent.glob('*.so')); print('size', so, so.stat().st_size, 'bytes')"
+          python3 ../../scripts/quality/check_budgets.py target/wheels/*.whl \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
       - name: Test Python binding and shared contract vectors
         working-directory: bindings/python
         run: |
@@ -520,6 +526,20 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: python3 scripts/merge_archive.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+      - name: Check native FFI size ceilings
+        shell: bash
+        run: |
+          PY="$(command -v python3 || command -v python)"
+          "$PY" scripts/quality/check_budgets.py \
+            "target/${{ matrix.target }}/release/${{ matrix.artifact }}" \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            "$PY" scripts/quality/check_budgets.py \
+              "target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a" \
+              --source-sha "${{ github.sha }}" \
+              --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          fi
       # release.yml go-build also ships x86_64-apple-darwin, whose Mach-O
       # relocations differ from arm64. Rehearse that target on macos-latest:
       # build staticlib-release, strip bitcode, merge/strip, verify symbols,
@@ -537,6 +557,9 @@ jobs:
           rm -f target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.so \
                 target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.dylib
           python3 scripts/merge_archive.py target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a
+          python3 scripts/quality/check_budgets.py target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
           nm_syms=$(nm -gU target/x86_64-apple-darwin/staticlib-release/libaimux_ffi.a | awk '{print $NF}')
           grep -qx '_rust_eh_personality' <<< "$nm_syms"
           for sym in $(python3 -c 'import sys; sys.path.insert(0, "scripts"); import merge_archive, pathlib; print(" ".join(sorted(merge_archive.header_exports(pathlib.Path(".")))))'); do
@@ -567,6 +590,9 @@ jobs:
           python scripts/check_native_artifact.py --strip-bitcode target/x86_64-pc-windows-gnu/staticlib-release/libaimux_ffi.a
           rm -f target/x86_64-pc-windows-gnu/staticlib-release/aimux_ffi.dll
           python scripts/merge_archive.py target/x86_64-pc-windows-gnu/staticlib-release/libaimux_ffi.a
+          python scripts/quality/check_budgets.py target/x86_64-pc-windows-gnu/staticlib-release/libaimux_ffi.a \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
@@ -893,8 +919,10 @@ jobs:
           python3 scripts/check_layout.py
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
         run: bash scripts/check_provider_boundaries.sh
-      - name: Release asset list self-test (scripts/stage_release_assets.py)
-        run: python3 scripts/tests/test_stage_release_assets.py
+      - name: Size budget config validation and release staging tests (RFC-0043)
+        run: |
+          python3 scripts/quality/check_budgets.py --validate-only
+          python3 -m unittest scripts/tests/test_check_budgets.py scripts/tests/test_stage_release_assets.py
       - name: Registry maintenance tests and offline snapshot check (RFC-0033)
         run: |
           python3 scripts/tests/test_sync_registry.py

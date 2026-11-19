@@ -63,6 +63,11 @@ val javadocJar by tasks.registering(Jar::class) {
     from(tasks.named("javadoc"))
 }
 
+tasks.withType<AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
 // Supply publishing and signing credentials as Gradle properties via
 // ORG_GRADLE_PROJECT_<name> or -P<name>=<value>.
 
