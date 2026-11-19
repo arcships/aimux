@@ -918,7 +918,7 @@ mod convert_to_openai_responses_input {
                     assert_eq!(result.warnings, json!([]));
                 }
 
-                /// upstream: @ai-sdk/openai src/responses/convert-to-openai-responses-input.test.ts › convertToOpenAIResponsesInput › assistant messages › reasoning messages (store: false) › merging and sequencing › should handle reasoning across multiple assistant messages
+                /// upstream: @ai-sdk/openai src/responses/convert-to-openai-responses-input.test.ts › convertToOpenAIResponsesInput › assistant messages › reasoning messages (store: false) › merging and sequencing › should handle reasoning across multiple assistant messages #2
                 #[tokio::test]
                 async fn should_handle_reasoning_across_multiple_assistant_messages_2() {
                     let result = convert(json!({"prompt": [{"role": "user", "content": [{"type": "text", "text": "First user question"}]}, {"role": "assistant", "content": [{"type": "reasoning", "text": "First reasoning step (message 1)", "providerOptions": {"openai": {"itemId": "reasoning_001"}}}, {"type": "reasoning", "text": "Second reasoning step (message 1)", "providerOptions": {"openai": {"itemId": "reasoning_001", "reasoningEncryptedContent": "encrypted_content_001"}}}, {"type": "text", "text": "First response"}]}, {"role": "user", "content": [{"type": "text", "text": "Second user question"}]}, {"role": "assistant", "content": [{"type": "reasoning", "text": "First reasoning step (message 2)", "providerOptions": {"openai": {"itemId": "reasoning_002", "reasoningEncryptedContent": "encrypted_content_002"}}}, {"type": "text", "text": "Second response"}]}], "systemMessageMode": "system", "providerOptionsName": "openai", "store": false})).await.unwrap();
