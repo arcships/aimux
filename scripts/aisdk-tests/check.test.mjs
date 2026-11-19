@@ -460,9 +460,17 @@ test('scanMarkers handles pre-marker #[ignore]/#[test], same-line #[test] #[igno
     '/// upstream: @ai-sdk/groq src/a.test.ts › d › doc_fake_test\n#[doc = "Shows #[test] syntax."]\nfn helper() {}\n',
     '#[doc = "two\nlines"]\nfn h2() {}\n/// upstream: @ai-sdk/groq src/a.test.ts › d › after_multiline_doc\n#[test]\nfn f6() {}\n',
     '/// upstream: @ai-sdk/groq src/a.test.ts › d › block_comment_test\n#[doc = /* #[test] */ "helper"]\nfn h3() {}\n',
+    '#[doc = /*\n    /// comment ends here */\n    "Example"]\n/// upstream: @ai-sdk/groq src/a.test.ts › d › after_block_comment_slashes\n#[test]\nfn f7() {}\n',
+    '#[doc = r#"\n/// upstream: @ai-sdk/groq src/a.test.ts › d › fake_in_raw_doc\n"#]\n#[test]\nfn f8() {}\n',
   ].join('');
   const { markers, errors } = scanMarkers('x.rs', src);
-  assert.deepEqual(markers.map((m) => m.chain), ['d › pre_test', 'd › multi_attr', 'd › quoted_bracket', 'd › after_multiline_doc']);
+  assert.deepEqual(markers.map((m) => m.chain), [
+    'd › pre_test',
+    'd › multi_attr',
+    'd › quoted_bracket',
+    'd › after_multiline_doc',
+    'd › after_block_comment_slashes',
+  ]);
   assert.deepEqual(errors, [
     'x.rs:2: marker sits on an #[ignore] test (RFC-0045 §5)',
     'x.rs:6: marker sits on an #[ignore] test (RFC-0045 §5)',

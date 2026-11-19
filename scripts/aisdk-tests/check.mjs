@@ -152,62 +152,64 @@ export function scanMarkers(rel, src) {
   };
   for (let idx = 0; idx < lines.length; ) {
     if (!/^\s*(\/\/\/|#\[)/.test(lines[idx])) { idx++; continue; }
-    const start = idx;
+    const docLines = [];
+    const attrLines = [];
     let attrBuf = null;
     while (idx < lines.length) {
       const l = lines[idx];
       if (attrBuf !== null) {
         attrBuf += '\n' + l;
+        attrLines.push(l);
         idx++;
         if (!attrOpen(attrBuf)) attrBuf = null;
       } else if (/^\s*#\[/.test(l)) {
         attrBuf = l;
+        attrLines.push(l);
         idx++;
         if (!attrOpen(attrBuf)) attrBuf = null;
       } else if (/^\s*\/\/\//.test(l)) {
+        docLines.push({ k: idx, text: l });
         idx++;
       } else break;
     }
-    const blockLines = lines.slice(start, idx);
-    const attrsText = stripRustAttrLiterals(blockLines.filter((l) => !/^\s*\/\/\//.test(l)).join('\n')).text;
+    const attrsText = stripRustAttrLiterals(attrLines.join('\n')).text;
     const hasTestAttr = /#\[(?:tokio::)?test(?:\s*\([\s\S]*?\))?\s*\]/.test(attrsText);
     const ignored = /#\[ignore(?:\s*=[^\]]*)?\s*\]/.test(attrsText);
-    const hasPartial = blockLines.some((l) => PARTIAL.test(l));
+    const hasPartial = docLines.some(({ text }) => PARTIAL.test(text));
     const onFn = /^\s*(pub(\([^)]+\))?\s+)?(async\s+)?fn\s/.test(lines[idx] ?? '');
 
-    blockLines.forEach((text, offset) => {
-      const k = start + offset;
+    for (const { k, text } of docLines) {
       const m = MARKER.exec(text);
       if (!m) {
         const p = PARTIAL.exec(text);
         if (p) partials.push({ rel, where: `${rel}:${k + 1}`, text: p[1].trim() });
-        return;
+        continue;
       }
       const where = `${rel}:${k + 1}`;
       const body = MARKER_BODY.exec(m[1].replace(/\s+$/, ''));
       if (!body) {
         errors.push(`${where}: malformed marker, expected "/// upstream: <package> src/<file>.test.ts › <describe chain>"`);
-        return;
+        continue;
       }
       const [, pkg, file, chain] = body;
       if (chain.split(SEP).some((s) => s.trim() === '' || s !== s.trim())) {
         errors.push(`${where}: empty or padded describe level in the marker`);
-        return;
+        continue;
       }
       if (!onFn || !hasTestAttr) {
         errors.push(`${where}: marker is not above a test function`);
-        return;
+        continue;
       }
       if (hasPartial) {
         errors.push(`${where}: marker sits on a partial test (remove upstream: or complete the port)`);
-        return;
+        continue;
       }
       if (ignored) {
         errors.push(`${where}: marker sits on an #[ignore] test (RFC-0045 §5)`);
-        return;
+        continue;
       }
       markers.push({ rel, where, pkg, file, chain });
-    });
+    }
   }
   return { markers, partials, errors };
 }
