@@ -504,6 +504,10 @@ impl Fetch for SigV4Fetch {
         }
         self.inner.fetch(request).await
     }
+
+    fn protects_sigv4_headers(&self) -> bool {
+        true
+    }
 }
 
 /// The transport of an AI SDK AWS provider (`amazon-bedrock-sigv4-fetch.ts`,
@@ -584,6 +588,10 @@ impl Fetch for SigV4AuthFetch {
         } else {
             self.signing.fetch(request).await
         }
+    }
+
+    fn protects_sigv4_headers(&self) -> bool {
+        true
     }
 }
 

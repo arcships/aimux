@@ -205,6 +205,12 @@ pub trait Fetch: Send + Sync + 'static {
     ///
     /// Returns a [`FetchError`] when no response could be produced.
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError>;
+
+    /// Whether this transport signs requests with AWS SigV4 (so `authorization`
+    /// and `x-amz-*` headers must be protected against caller overrides).
+    fn protects_sigv4_headers(&self) -> bool {
+        false
+    }
 }
 
 impl fmt::Debug for dyn Fetch {
