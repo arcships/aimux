@@ -283,6 +283,8 @@ jobs:
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
@@ -331,13 +333,10 @@ jobs:
           rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
                 target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
-      # Merge the members into one object rooted at the 14 exported C
-      # functions and strip its local symbols (RFC-0043 §5.3 S1c): GNU ld
-      # `-r --gc-sections` keeps what a --gc-sections link of the archive
-      # would keep, so the Linux archive drops from 85 MB to 59 MB with the
-      # same linked code. ELF and COFF only; a Mach-O archive is left as it
-      # is (ld64 -r does not dead-strip, and those archives are inside the
-      # budget). The Go tests below link the merged archive.
+      # Merge the members into one object rooted at the exported C API and
+      # strip local symbols (RFC-0043 §5.3 S1c): GNU ld `-r --gc-sections`
+      # on ELF, GNU ld `-r` on COFF, and Apple `ld -r -exported_symbols_list`
+      # + `strip -S -x` on Mach-O. The Go tests below link the merged archive.
       - name: Merge the archive into one object, strip local symbols
         shell: bash
         run: |
@@ -365,6 +364,8 @@ jobs:
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
