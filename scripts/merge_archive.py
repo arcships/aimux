@@ -128,6 +128,8 @@ MACHO_PLATFORMS = {
     9: "watchos-simulator",
 }
 LC_VERSION_MIN_PLATFORMS = {0x24: 1, 0x25: 2, 0x2F: 3, 0x30: 4}
+LC_VERSION_MIN_SIM_PLATFORMS = {0x25: 7, 0x2F: 8, 0x30: 9}
+X86_CPU_TYPES = {7, 0x01000007}  # CPU_TYPE_I386, CPU_TYPE_X86_64
 
 
 def format_macho_version(ver):
@@ -144,14 +146,27 @@ def macho_platform_flags(bodies):
         if body[:4] not in check.MACHO_MAGICS:
             continue
         end, bits = check.MACHO_MAGICS[body[:4]]
-        ncmds = check.struct.unpack_from(end + "I", body, 16)[0]
-        offset = 32 if bits == 64 else 28
+        hdr_size = 32 if bits == 64 else 28
+        if len(body) < hdr_size:
+            continue
+        cputype = check.struct.unpack_from(end + "I", body, 4)[0]
+        ncmds, sizeofcmds = check.struct.unpack_from(end + "II", body, 16)
+        limit = min(len(body), hdr_size + sizeofcmds)
+        offset = hdr_size
         for _ in range(ncmds):
+            if offset + 8 > limit:
+                break
             cmd, cmdsize = check.struct.unpack_from(end + "II", body, offset)
-            if cmd == 0x32:  # LC_BUILD_VERSION
+            if cmdsize < 8 or offset + cmdsize > limit:
+                break
+            if cmd == 0x32 and cmdsize >= 24:  # LC_BUILD_VERSION
                 plat, minos, sdk = check.struct.unpack_from(end + "III", body, offset + 8)
-            elif cmd in LC_VERSION_MIN_PLATFORMS:
-                plat = LC_VERSION_MIN_PLATFORMS[cmd]
+            elif cmd in LC_VERSION_MIN_PLATFORMS and cmdsize >= 16:
+                plat = (
+                    LC_VERSION_MIN_SIM_PLATFORMS.get(cmd, LC_VERSION_MIN_PLATFORMS[cmd])
+                    if cputype in X86_CPU_TYPES
+                    else LC_VERSION_MIN_PLATFORMS[cmd]
+                )
                 minos, sdk = check.struct.unpack_from(end + "II", body, offset + 8)
             else:
                 offset += cmdsize

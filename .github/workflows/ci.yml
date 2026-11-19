@@ -135,7 +135,8 @@ jobs:
           if [ "$(changed .github rust-toolchain.toml .cargo aimux-ffi bindings/node \
                 bindings/go bindings/flutter bindings/swift \
                 scripts/build-ios-xcframework.sh scripts/check_native_artifact.py \
-                scripts/merge_archive.py ':(glob)**/.gitattributes' \
+                scripts/merge_archive.py scripts/tests/test_check_native_artifact.py \
+                ':(glob)**/.gitattributes' \
                 ':(glob)**/Cargo.toml' ':(glob)**/build.rs')" = true ]; then
             platforms=true
           fi
@@ -156,7 +157,7 @@ jobs:
             $(job rust-test aimux-ffi)
             $(job node-binding bindings/node)
             $(job python-binding bindings/python)
-            $(job ffi-build aimux-ffi bindings/go scripts/check_native_artifact.py scripts/merge_archive.py)
+            $(job ffi-build aimux-ffi bindings/go scripts/check_native_artifact.py scripts/merge_archive.py scripts/tests/test_check_native_artifact.py)
             $(job ffi-linux-arm aimux-ffi)
             $(job c-abi-bindings aimux-ffi bindings/java bindings/kotlin bindings/flutter)
             $(job ffi-sanitizers aimux-ffi)
@@ -456,6 +457,7 @@ jobs:
     needs: changes
     if: fromJSON(needs.changes.outputs.run)['ffi-build']
     env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
       CARGO_PROFILE_RELEASE_LTO: "true"
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
       CARGO_PROFILE_RELEASE_OPT_LEVEL: "z"

@@ -269,6 +269,41 @@ class CheckNativeArtifact(unittest.TestCase):
         self.assertNotIn("before bitcode strip", out)
         self.assertEqual(path.read_bytes(), before)
 
+    def test_macho_platform_flags_and_legacy_sim(self):
+        def macho_cmd(cputype, cmd_bytes, sizeofcmds=None):
+            sz = len(cmd_bytes) if sizeofcmds is None else sizeofcmds
+            return struct.pack("<IIIIIIII", 0xFEEDFACF, cputype, 0, 1, 1, sz, 0, 0) + cmd_bytes
+
+        arm64, x86_64 = 0x0100000C, 0x01000007
+        bv11 = macho_cmd(arm64, struct.pack("<IIIIII", 0x32, 24, 1, 11 << 16, 15 << 16, 0))
+        bv14 = macho_cmd(arm64, struct.pack("<IIIIII", 0x32, 24, 1, 14 << 16, (15 << 16) | (4 << 8), 0))
+        self.assertEqual(
+            merge_archive.macho_platform_flags([bv11, bv14]),
+            ["-platform_version", "macos", "14.0", "15.4"],
+        )
+
+        # Legacy LC_VERSION_MIN_IPHONEOS (0x25) maps to ios on arm64 and ios-simulator on x86_64.
+        ios_dev = macho_cmd(arm64, struct.pack("<IIII", 0x25, 16, 12 << 16, 16 << 16))
+        ios_sim = macho_cmd(x86_64, struct.pack("<IIII", 0x25, 16, 12 << 16, 16 << 16))
+        self.assertEqual(merge_archive.macho_platform_flags([ios_dev]), ["-platform_version", "ios", "12.0", "16.0"])
+        self.assertEqual(
+            merge_archive.macho_platform_flags([ios_sim]),
+            ["-platform_version", "ios-simulator", "12.0", "16.0"],
+        )
+
+        # Truncated load command must not crash or read past sizeofcmds.
+        truncated = macho_cmd(arm64, struct.pack("<III", 0x32, 24, 1), sizeofcmds=12)
+        self.assertEqual(merge_archive.macho_platform_flags([truncated]), [])
+
+    def test_macho_already_merged_with_bitcode_is_rejected(self):
+        path = Path(self.tmp.name) / "poisoned_merged.a"
+        obj = macho64_object([("__TEXT", "__text", TEXT), ("__LLVM", "__bitcode", BITCODE)])
+        path.write_bytes(bsd_archive([("__.SYMDEF SORTED", b"\x00" * 16), (merge_archive.MERGED_MEMBER, obj)]))
+        with self.assertRaises(SystemExit) as cm:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                merge_archive.main([str(path)])
+        self.assertEqual(cm.exception.code, 1)
+
     @unittest.skipUnless(sys.platform == "darwin" and shutil.which("clang"), "requires Apple toolchain")
     def test_macho_merge_archive_end_to_end(self):
         tmp = Path(self.tmp.name)

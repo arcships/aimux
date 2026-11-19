@@ -283,6 +283,8 @@ jobs:
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
@@ -362,6 +364,8 @@ jobs:
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
