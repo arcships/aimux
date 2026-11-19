@@ -4,7 +4,7 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for [327 provider names](docs/api/providers.md).**
+> **A unified LLM access layer written in Rust. One API for [328 provider names](docs/api/providers.md).**
 
 > **0.6.0 is a breaking release.** Every binding now uses the shared operations
 > ABI (ABI 1 / ops 1.0), and public JSON follows the AI SDK V4. See
@@ -13,7 +13,7 @@
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-327-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-328-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -36,7 +36,7 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
 
 ## Why aimux
 
-- **327 provider names** — 282 registry-backed OpenAI-compatible presets
+- **328 provider names** — 283 registry-backed OpenAI-compatible presets
   + 45 vendor packages, covering text and other modalities. Local engines
   such as Ollama/vLLM are presets. `provider_names()` lists the Rust names;
   the generated catalogue lives in [docs/api/providers.md](docs/api/providers.md).
@@ -324,7 +324,7 @@ let names = provider_names();
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-Rust by-name creation covers vendor packages and all 282 presets. Each vendor
+Rust by-name creation covers vendor packages and all 283 presets. Each vendor
 also has `create_xxx(XxxProviderSettings {..})` and a default instance `xxx()`.
 Bindings use `provider.create` and `provider.model` with the shared operation
 names. Runtime model listing uses `Provider::discovery()` and then

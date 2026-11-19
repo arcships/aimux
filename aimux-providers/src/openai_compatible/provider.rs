@@ -511,11 +511,11 @@ impl CompatModelConfig {
         options: &impl ExchangeContext,
     ) -> Result<HttpRequest, AiMuxError> {
         let (url, origin) = self.url(path)?;
-        Ok(self.with_transport(
-            HttpRequest::new(url, headers.list, options),
-            origin,
-            headers.fetch_user_agent,
-        ))
+        let mut request = HttpRequest::new(url, headers.list, options);
+        // A vendor that documents responses slower than the transport's hang
+        // guard declares its own bound.
+        request.response_timeout = self.chat.response_timeout;
+        Ok(self.with_transport(request, origin, headers.fetch_user_agent))
     }
 
     /// Attach the transport and the credential origin to a request. A fetch
@@ -547,6 +547,18 @@ impl CompatModelConfig {
             Some(transform) => transform(body),
             None => body,
         }
+    }
+
+    /// The successful-response handler of a non-streaming call: the JSON body
+    /// as `T`, or the error the server sent in it with a success status.
+    pub(crate) fn json_response_handler<T>(&self) -> aimux_provider_utils::ResponseHandler<T>
+    where
+        T: serde::de::DeserializeOwned + Send + 'static,
+    {
+        crate::openai_compatible::error::json_response_handler(
+            self.chat.error_structure.clone(),
+            self.chat.in_band_retryable_codes,
+        )
     }
 
     /// The failed-response handler of this provider's error structure.

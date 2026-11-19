@@ -9,7 +9,7 @@
 
 | category | count |
 |----------|-------|
-| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | 282 |
+| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | 283 |
 | Non-registry: Native protocol providers | 14 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
@@ -22,15 +22,16 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **328** |
 
-**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
+**283 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
 
-## Registry-backed (OpenAI-compatible) — 282
+## Registry-backed (OpenAI-compatible) — 283
 
 | name | display | auth | env var | base_url |
 |------|---------|------|---------|----------|
 | `abacus` | Abacus | api_key | `ABACUS_API_KEY` | `https://routellm.abacus.ai/v1` |
+| `abliteratedllm` | AbliteratedLLM | api_key | `ABLITERATEDLLM_API_KEY` | `https://api.abliteratedllm.dev/v1` |
 | `abliteration_ai` | Abliteration AI | api_key | `ABLIT_KEY` | `https://api.abliteration.ai/v1` |
 | `ai21` | AI21 Labs | api_key | `AI21_API_KEY` | `https://api.ai21.ai/v1` |
 | `ai302` | 302.AI | api_key | `AI302_API_KEY` | `https://api.302.ai/v1` |
