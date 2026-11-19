@@ -194,4 +194,54 @@ mod create_auth_token_generator {
         assert_eq!(second_claims["iss"], "second@test.iam.gserviceaccount.com");
         assert_eq!(second_claims["scope"], CLOUD_SCOPE);
     }
+
+    #[tokio::test]
+    async fn malformed_impersonation_expiry_does_not_disclose_raw_field() {
+        let keys = KeyDirectory::new("malformed-impersonation-expiry");
+        let path = keys.0.join("impersonated.json");
+        let credentials = json!({
+            "type": "impersonated_service_account",
+            "service_account_impersonation_url":
+                "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/target@test.iam.gserviceaccount.com:generateAccessToken",
+            "source_credentials": {
+                "type": "service_account",
+                "client_email": "source@test.iam.gserviceaccount.com",
+                "private_key": TEST_RSA_KEY,
+            },
+        });
+        std::fs::write(&path, credentials.to_string()).unwrap();
+
+        let marker = "marker-do-not-disclose";
+        let fetch = MockFetch::new(vec![
+            token_response("source-token"),
+            Canned::json(&json!({
+                "accessToken": "impersonated-token",
+                "expireTime": marker,
+            })),
+        ]);
+
+        let err = generator(key_file_options(&path), &fetch)
+            .access_token()
+            .await
+            .unwrap_err();
+        let aimux_core::AiMuxError::InvalidResponseData { message, cause } = &err else {
+            panic!("expected InvalidResponseData, got {err:?}");
+        };
+        assert!(
+            !message.contains(marker),
+            "message leaked raw expireTime: {message}"
+        );
+        let cause = cause
+            .as_ref()
+            .expect("expected cause on expiry parse error");
+        assert!(
+            !cause.to_string().contains(marker),
+            "cause leaked raw expireTime: {cause}"
+        );
+        let serialized = serde_json::to_string(&err).unwrap();
+        assert!(
+            !serialized.contains(marker),
+            "serialized error leaked raw expireTime: {serialized}"
+        );
+    }
 }

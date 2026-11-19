@@ -875,10 +875,11 @@ impl GoogleAuth {
         )
         .await?
         .value;
-        let expiry = aimux_core::Timestamp::parse(&response.expire_time).map_err(|error| {
+        let expiry = aimux_core::Timestamp::parse(&response.expire_time).map_err(|_| {
+            const REASON: &str = "expected an RFC 3339 date-time";
             AiMuxError::InvalidResponseData {
-                message: format!("Invalid Google impersonation expiry: {error}"),
-                cause: Some(ErrorCause::source(&error)),
+                message: format!("Invalid Google impersonation expiry: {REASON}"),
+                cause: Some(SourceError::from(REASON).into()),
             }
         })?;
         Ok(TokenResponse {

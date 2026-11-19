@@ -69,9 +69,8 @@ impl Timestamp {
 
     /// `new Date(seconds * 1000)`, the form providers use for a Unix
     /// `created` field: a fraction below a millisecond is dropped, and a
-    /// value that is not finite or is outside
-    /// `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z` is `None` (an
-    /// invalid `Date` upstream).
+    /// value that is not finite (an invalid `Date` upstream) or is outside
+    /// `0000-01-01T00:00:00.000Z..=9999-12-30T22:00:00.999Z` is `None`.
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn from_unix_seconds(seconds: f64) -> Option<Self> {
@@ -86,12 +85,12 @@ impl Timestamp {
     /// RFC 2822 reads it), or `None` when it is not one.
     #[must_use]
     pub fn from_http_date(text: &str) -> Option<Self> {
-        let trimmed = text.trim();
+        let without_comments = strip_trailing_rfc2822_comments(text.trim())?;
         let parsed = jiff::fmt::rfc2822::DateTimeParser::new()
-            .parse_timestamp(trimmed)
+            .parse_timestamp(without_comments)
             .ok()
             .and_then(Self::from_timestamp)?;
-        if rfc2822_has_leap_second(trimmed) {
+        if rfc2822_has_leap_second(without_comments) {
             parsed
                 .unix_millis()
                 .checked_add(1_000)
@@ -145,7 +144,7 @@ impl Timestamp {
     }
 }
 
-/// Validates strict RFC 3339 syntax (`YYYY-MM-DD[T|t]HH:MM:SS(\.\d+)?(Z|z|[+-]HH:MM)`)
+/// Validates strict RFC 3339 syntax (`YYYY-MM-DD[T|t| ]HH:MM:SS(\.\d+)?(Z|z|[+-]HH:MM)`)
 /// and normalizes two valid RFC 3339 constructs before `jiff::Timestamp` parsing:
 /// - `:60` leap seconds are rewritten to `:59` with `leap_second = true` so the
 ///   caller advances by 1,000 ms (matching `chrono`'s `timestamp_millis()`).
@@ -160,7 +159,7 @@ fn prepare_strict_rfc3339(text: &str) -> Option<(Cow<'_, str>, bool)> {
         || !bytes[5..7].iter().all(u8::is_ascii_digit)
         || bytes[7] != b'-'
         || !bytes[8..10].iter().all(u8::is_ascii_digit)
-        || !matches!(bytes[10], b'T' | b't')
+        || !matches!(bytes[10], b'T' | b't' | b' ')
         || !bytes[11..13].iter().all(u8::is_ascii_digit)
         || bytes[13] != b':'
         || !bytes[14..16].iter().all(u8::is_ascii_digit)
@@ -218,25 +217,51 @@ fn prepare_strict_rfc3339(text: &str) -> Option<(Cow<'_, str>, bool)> {
     Some((Cow::Owned(normalized), leap_second))
 }
 
-fn rfc2822_has_leap_second(text: &str) -> bool {
-    let mut stripped = Vec::with_capacity(text.len());
-    let mut depth = 0usize;
-    let mut escaped = false;
-    for b in text.bytes() {
-        if escaped {
-            escaped = false;
-            continue;
+/// Validates and strips one or more trailing RFC 2822 comments (`(...)`) from
+/// `text`, because `jiff::fmt::rfc2822::DateTimeParser` consumes at most one
+/// trailing comment. Returns `None` if a comment is malformed or followed by
+/// non-whitespace bytes.
+fn strip_trailing_rfc2822_comments(text: &str) -> Option<&str> {
+    let Some(first_paren) = text.find('(') else {
+        return Some(text);
+    };
+    let mut rest = &text.as_bytes()[first_paren..];
+    while let Some(after_open) = rest.strip_prefix(b"(") {
+        let mut depth = 1u32;
+        let mut escaped = false;
+        let mut consumed = 0usize;
+        for &byte in after_open {
+            consumed += 1;
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'(' {
+                depth = depth.checked_add(1)?;
+            } else if byte == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
         }
-        if b == b'\\' && depth > 0 {
-            escaped = true;
-        } else if b == b'(' {
-            depth += 1;
-        } else if b == b')' && depth > 0 {
-            depth -= 1;
-        } else if depth == 0 && !b.is_ascii_whitespace() {
-            stripped.push(b);
+        if depth != 0 {
+            return None;
+        }
+        rest = &after_open[consumed..];
+        while let Some((&b, tail)) = rest.split_first() {
+            if matches!(b, b' ' | b'\t' | b'\r' | b'\n') {
+                rest = tail;
+            } else {
+                break;
+            }
         }
     }
+    rest.is_empty().then_some(&text[..first_paren])
+}
+
+fn rfc2822_has_leap_second(text: &str) -> bool {
+    let stripped: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
     let mut colons = stripped.iter().enumerate().filter(|(_, b)| **b == b':');
     let _hour_colon = colons.next();
     if let Some((idx, _)) = colons.next() {
@@ -368,7 +393,31 @@ mod tests {
                 .to_string(),
             "2025-03-06T13:50:19.000Z"
         );
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:19 +0000 (first) (second)")
+                .unwrap()
+                .to_string(),
+            "2025-03-06T13:50:19.000Z"
+        );
+        assert_eq!(
+            Timestamp::from_http_date(r"Thu, 06 Mar 2025 13:50:19 +0000 (a (b\)c)) (second)")
+                .unwrap()
+                .to_string(),
+            "2025-03-06T13:50:19.000Z"
+        );
         assert_eq!(Timestamp::from_http_date("yesterday"), None);
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:19 +0000 (first) (unclosed"),
+            None
+        );
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:19 +0000 (first) junk"),
+            None
+        );
+        assert_eq!(
+            Timestamp::from_http_date("Thu, 06 Mar 2025 13:50:19 +0000 (first))"),
+            None
+        );
     }
 
     #[test]
@@ -488,10 +537,13 @@ mod tests {
 
     #[test]
     fn rejects_non_rfc3339_iso_extensions() {
+        // RFC 3339 §5.6 permits a space date-time separator when an offset is present.
+        let space_sep: Timestamp = serde_json::from_str("\"2025-03-06 13:50:19Z\"").unwrap();
+        assert_eq!(space_sep.to_string(), "2025-03-06T13:50:19.000Z");
+
         for invalid in [
             "2025-03-06T13:50:19Z[UTC]",
             "2025-03-06T13:50:19-05:00[America/New_York]",
-            "2025-03-06 13:50:19Z",
             "2025-03-06T13:50:19,123Z",
             "2025-03-06T13:50:19+0200",
             "2025-03-06T13:50:19+02",
