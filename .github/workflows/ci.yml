@@ -842,6 +842,11 @@ jobs:
         run: bash scripts/check_provider_boundaries.sh
       - name: Release asset list self-test (scripts/stage_release_assets.py)
         run: python3 scripts/tests/test_stage_release_assets.py
+      - name: Registry maintenance tests and offline snapshot check (RFC-0033)
+        run: |
+          python3 scripts/tests/test_sync_registry.py
+          python3 scripts/tests/test_probe_registry.py
+          python3 scripts/sync_registry.py --check --source models-dev --snapshot registry/models_dev_snapshot.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

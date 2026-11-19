@@ -1,0 +1,1445 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "abacus",
+      "origin": "https://routellm.abacus.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#abacus"
+    },
+    {
+      "id": "abliteration_ai",
+      "origin": "https://api.abliteration.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#abliteration_ai"
+    },
+    {
+      "id": "ai21",
+      "origin": "https://api.ai21.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ai21"
+    },
+    {
+      "id": "ai302",
+      "origin": "https://api.302.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ai302"
+    },
+    {
+      "id": "ai_router",
+      "origin": "https://api.ai-router.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ai_router"
+    },
+    {
+      "id": "aiand",
+      "origin": "https://api.aiand.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#aiand"
+    },
+    {
+      "id": "aibadgr",
+      "origin": "https://api.aibadgr.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#aibadgr"
+    },
+    {
+      "id": "aigc2d",
+      "origin": "https://api.aigc2d.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#aigc2d"
+    },
+    {
+      "id": "aihubmix",
+      "origin": "https://aihubmix.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#aihubmix"
+    },
+    {
+      "id": "ails",
+      "origin": "https://api.caipacity.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ails"
+    },
+    {
+      "id": "aiml",
+      "origin": "https://api.aimlapi.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#aiml"
+    },
+    {
+      "id": "aki_io",
+      "origin": "https://aki.io",
+      "base_path": "/openai/v1",
+      "source": "aimux-providers/src/provider_registry.json#aki_io"
+    },
+    {
+      "id": "albert",
+      "origin": "https://api.albert.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#albert"
+    },
+    {
+      "id": "alibaba",
+      "origin": "https://dashscope-intl.aliyuncs.com",
+      "base_path": "/compatible-mode/v1",
+      "source": "aimux-providers/src/provider_registry.json#alibaba"
+    },
+    {
+      "id": "alibaba_coding_plan",
+      "origin": "https://coding-intl.dashscope.aliyuncs.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#alibaba_coding_plan"
+    },
+    {
+      "id": "alibaba_coding_plan_cn",
+      "origin": "https://coding.dashscope.aliyuncs.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#alibaba_coding_plan_cn"
+    },
+    {
+      "id": "alibaba_token_plan",
+      "origin": "https://token-plan.ap-southeast-1.maas.aliyuncs.com",
+      "base_path": "/compatible-mode/v1",
+      "source": "aimux-providers/src/provider_registry.json#alibaba_token_plan"
+    },
+    {
+      "id": "alibaba_token_plan_cn",
+      "origin": "https://token-plan.cn-beijing.maas.aliyuncs.com",
+      "base_path": "/compatible-mode/v1",
+      "source": "aimux-providers/src/provider_registry.json#alibaba_token_plan_cn"
+    },
+    {
+      "id": "ambient",
+      "origin": "https://api.ambient.xyz",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ambient"
+    },
+    {
+      "id": "anyapi",
+      "origin": "https://api.anyapi.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#anyapi"
+    },
+    {
+      "id": "anyscale",
+      "origin": "https://api.endpoints.anyscale.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#anyscale"
+    },
+    {
+      "id": "apertis",
+      "origin": "https://api.stima.tech",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#apertis"
+    },
+    {
+      "id": "api2d",
+      "origin": "https://oa.api2d.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#api2d"
+    },
+    {
+      "id": "api2gpt",
+      "origin": "https://api.api2gpt.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#api2gpt"
+    },
+    {
+      "id": "apiserpent",
+      "origin": "https://api.apiserpent.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#apiserpent"
+    },
+    {
+      "id": "atlascloud",
+      "origin": "https://api.atlascloud.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#atlascloud"
+    },
+    {
+      "id": "auriko",
+      "origin": "https://api.auriko.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#auriko"
+    },
+    {
+      "id": "azure_ai",
+      "origin": "https://models.inference.ai.azure.com",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#azure_ai"
+    },
+    {
+      "id": "baichuan",
+      "origin": "https://api.baichuan-ai.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#baichuan"
+    },
+    {
+      "id": "baidu",
+      "origin": "https://qianfan.baidubce.com",
+      "base_path": "/v2",
+      "source": "aimux-providers/src/provider_registry.json#baidu"
+    },
+    {
+      "id": "baidu_v2",
+      "origin": "https://qianfan.baidubce.com",
+      "base_path": "/v2",
+      "source": "aimux-providers/src/provider_registry.json#baidu_v2"
+    },
+    {
+      "id": "bailing",
+      "origin": "https://api.ant-ling.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#bailing"
+    },
+    {
+      "id": "baseten",
+      "origin": "https://inference.baseten.co",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#baseten"
+    },
+    {
+      "id": "berget",
+      "origin": "https://api.berget.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#berget"
+    },
+    {
+      "id": "bigmodel",
+      "origin": "https://open.bigmodel.cn",
+      "base_path": "/api/paas/v4",
+      "source": "aimux-providers/src/provider_registry.json#bigmodel"
+    },
+    {
+      "id": "blueclaw",
+      "origin": "https://openai.blueclaw.network",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#blueclaw"
+    },
+    {
+      "id": "bytedance",
+      "origin": "https://ark.cn-beijing.volces.com",
+      "base_path": "/api/v3",
+      "source": "aimux-providers/src/provider_registry.json#bytedance"
+    },
+    {
+      "id": "byteplus",
+      "origin": "https://ark.bytepluses.com",
+      "base_path": "/api/v3",
+      "source": "aimux-providers/src/provider_registry.json#byteplus"
+    },
+    {
+      "id": "bytez",
+      "origin": "https://api.bytez.com",
+      "base_path": "/v2",
+      "source": "aimux-providers/src/provider_registry.json#bytez"
+    },
+    {
+      "id": "canopywave",
+      "origin": "https://api.canopywave.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#canopywave"
+    },
+    {
+      "id": "cerebras",
+      "origin": "https://api.cerebras.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#cerebras"
+    },
+    {
+      "id": "chatgpt",
+      "origin": "https://chatgpt.com",
+      "base_path": "/backend-api/codex",
+      "source": "aimux-providers/src/provider_registry.json#chatgpt"
+    },
+    {
+      "id": "cherryin",
+      "origin": "https://open.cherryin.net",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#cherryin"
+    },
+    {
+      "id": "chutes",
+      "origin": "https://llm.chutes.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#chutes"
+    },
+    {
+      "id": "clarifai",
+      "origin": "https://api.clarifai.com",
+      "base_path": "/v2/ext/openai/v1",
+      "source": "aimux-providers/src/provider_registry.json#clarifai"
+    },
+    {
+      "id": "claudinio",
+      "origin": "https://api.claudin.io",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#claudinio"
+    },
+    {
+      "id": "cline_pass",
+      "origin": "https://api.cline.bot",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#cline_pass"
+    },
+    {
+      "id": "closeai",
+      "origin": "https://api.closeai-proxy.xyz",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#closeai"
+    },
+    {
+      "id": "cloudferro_sherlock",
+      "origin": "https://api-sherlock.cloudferro.com",
+      "base_path": "/openai/v1",
+      "source": "aimux-providers/src/provider_registry.json#cloudferro_sherlock"
+    },
+    {
+      "id": "codestral",
+      "origin": "https://api.mistral.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#codestral"
+    },
+    {
+      "id": "cometapi",
+      "origin": "https://api.cometapi.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#cometapi"
+    },
+    {
+      "id": "commandcode",
+      "origin": "https://api.commandcode.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#commandcode"
+    },
+    {
+      "id": "compactifai",
+      "origin": "https://api.compactif.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#compactifai"
+    },
+    {
+      "id": "copilot",
+      "origin": "https://api.githubcopilot.com",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#copilot"
+    },
+    {
+      "id": "cortecs",
+      "origin": "https://api.cortecs.ai",
+      "base_path": "/v1/",
+      "source": "aimux-providers/src/provider_registry.json#cortecs"
+    },
+    {
+      "id": "coze",
+      "origin": "https://api.coze.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#coze"
+    },
+    {
+      "id": "crof",
+      "origin": "https://crof.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#crof"
+    },
+    {
+      "id": "crossmodel",
+      "origin": "https://api.crossmodel.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#crossmodel"
+    },
+    {
+      "id": "crusoe",
+      "origin": "https://api.inference.crusoecloud.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#crusoe"
+    },
+    {
+      "id": "daoxe",
+      "origin": "https://daoxe.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#daoxe"
+    },
+    {
+      "id": "darkbloom",
+      "origin": "https://api.darkbloom.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#darkbloom"
+    },
+    {
+      "id": "databricks",
+      "origin": "https://databricks.com",
+      "base_path": "/serving-endpoints",
+      "source": "aimux-providers/src/provider_registry.json#databricks"
+    },
+    {
+      "id": "datarobot",
+      "origin": "https://app.datarobot.com",
+      "base_path": "/api/v2",
+      "source": "aimux-providers/src/provider_registry.json#datarobot"
+    },
+    {
+      "id": "deepbricks",
+      "origin": "https://api.deepbricks.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#deepbricks"
+    },
+    {
+      "id": "deepinfra",
+      "origin": "https://api.deepinfra.com",
+      "base_path": "/v1/openai",
+      "source": "aimux-providers/src/provider_registry.json#deepinfra"
+    },
+    {
+      "id": "digitalocean",
+      "origin": "https://inference.do-ai.run",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#digitalocean"
+    },
+    {
+      "id": "dinference",
+      "origin": "https://api.dinference.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#dinference"
+    },
+    {
+      "id": "doubao",
+      "origin": "https://ark.cn-beijing.volces.com",
+      "base_path": "/api/v3",
+      "source": "aimux-providers/src/provider_registry.json#doubao"
+    },
+    {
+      "id": "doubleword",
+      "origin": "https://api.doubleword.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#doubleword"
+    },
+    {
+      "id": "drun",
+      "origin": "https://chat.d.run",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#drun"
+    },
+    {
+      "id": "ebcloud",
+      "origin": "https://maas-api.ebcloud.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ebcloud"
+    },
+    {
+      "id": "embercloud",
+      "origin": "https://api.embercloud.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#embercloud"
+    },
+    {
+      "id": "empiriolabs",
+      "origin": "https://api.empiriolabs.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#empiriolabs"
+    },
+    {
+      "id": "evroc",
+      "origin": "https://models.think.evroc.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#evroc"
+    },
+    {
+      "id": "fastcrw",
+      "origin": "https://fastcrw.com",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#fastcrw"
+    },
+    {
+      "id": "fastgpt",
+      "origin": "https://api.fastgpt.in",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#fastgpt"
+    },
+    {
+      "id": "fastrouter",
+      "origin": "https://api.fastrouter.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#fastrouter"
+    },
+    {
+      "id": "featherless_ai",
+      "origin": "https://api.featherless.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#featherless_ai"
+    },
+    {
+      "id": "firepass",
+      "origin": "https://api.fireworks.ai",
+      "base_path": "/inference/v1",
+      "source": "aimux-providers/src/provider_registry.json#firepass"
+    },
+    {
+      "id": "fireworks",
+      "origin": "https://api.fireworks.ai",
+      "base_path": "/inference/v1",
+      "source": "aimux-providers/src/provider_registry.json#fireworks"
+    },
+    {
+      "id": "freemodel",
+      "origin": "https://api.freemodel.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#freemodel"
+    },
+    {
+      "id": "friendliai",
+      "origin": "https://inference.friendli.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#friendliai"
+    },
+    {
+      "id": "frogbot",
+      "origin": "https://app.frogbot.ai",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#frogbot"
+    },
+    {
+      "id": "galadriel",
+      "origin": "https://api.galadriel.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#galadriel"
+    },
+    {
+      "id": "gdc",
+      "origin": "https://api.gdc.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#gdc"
+    },
+    {
+      "id": "gigachat",
+      "origin": "https://gigachat.devices.sberbank.ru",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#gigachat"
+    },
+    {
+      "id": "github",
+      "origin": "https://models.inference.ai.azure.com",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#github"
+    },
+    {
+      "id": "gmi",
+      "origin": "https://api.gmi-serving.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#gmi"
+    },
+    {
+      "id": "gmicloud",
+      "origin": "https://api.gmi-serving.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#gmicloud"
+    },
+    {
+      "id": "gonka24",
+      "origin": "https://api.gonka24.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#gonka24"
+    },
+    {
+      "id": "gradient_ai",
+      "origin": "https://inference.do-ai.run",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#gradient_ai"
+    },
+    {
+      "id": "helicone",
+      "origin": "https://api.helicone.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#helicone"
+    },
+    {
+      "id": "heroku",
+      "origin": "https://api.heroku.com",
+      "base_path": "/inference/v1",
+      "source": "aimux-providers/src/provider_registry.json#heroku"
+    },
+    {
+      "id": "hetzner",
+      "origin": "https://inference.hetzner.com",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#hetzner"
+    },
+    {
+      "id": "hosted_vllm",
+      "origin": "https://hosted-vllm-api.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#hosted_vllm"
+    },
+    {
+      "id": "hpc_ai",
+      "origin": "https://api.hpc-ai.com",
+      "base_path": "/inference/v1",
+      "source": "aimux-providers/src/provider_registry.json#hpc_ai"
+    },
+    {
+      "id": "hyperbolic",
+      "origin": "https://api.hyperbolic.xyz",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#hyperbolic"
+    },
+    {
+      "id": "iflowcn",
+      "origin": "https://apis.iflow.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#iflowcn"
+    },
+    {
+      "id": "inception",
+      "origin": "https://api.inceptionlabs.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#inception"
+    },
+    {
+      "id": "inceptron",
+      "origin": "https://api.inceptron.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#inceptron"
+    },
+    {
+      "id": "inference_net",
+      "origin": "https://api.inference.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#inference_net"
+    },
+    {
+      "id": "inferencehub",
+      "origin": "https://app.inferencehub.tech",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#inferencehub"
+    },
+    {
+      "id": "inferx",
+      "origin": "https://model.inferx.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#inferx"
+    },
+    {
+      "id": "infinity",
+      "origin": "https://infinity.ai",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#infinity"
+    },
+    {
+      "id": "io_net",
+      "origin": "https://api.intelligence.io.solutions",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#io_net"
+    },
+    {
+      "id": "jiekou",
+      "origin": "https://api.highwayapi.ai",
+      "base_path": "/openai",
+      "source": "aimux-providers/src/provider_registry.json#jiekou"
+    },
+    {
+      "id": "kenari",
+      "origin": "https://kenari.id",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kenari"
+    },
+    {
+      "id": "kilo",
+      "origin": "https://api.kilo.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kilo"
+    },
+    {
+      "id": "kimi",
+      "origin": "https://api.moonshot.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kimi"
+    },
+    {
+      "id": "kimi_for_coding",
+      "origin": "https://api.kimi.com",
+      "base_path": "/coding/v1",
+      "source": "aimux-providers/src/provider_registry.json#kimi_for_coding"
+    },
+    {
+      "id": "kiro",
+      "origin": "https://api.kiro.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kiro"
+    },
+    {
+      "id": "kluster_ai",
+      "origin": "https://api.kluster.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kluster_ai"
+    },
+    {
+      "id": "krutrim",
+      "origin": "https://api.krutrim.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#krutrim"
+    },
+    {
+      "id": "kuae_cloud_coding_plan",
+      "origin": "https://coding-plan-endpoint.kuaecloud.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#kuae_cloud_coding_plan"
+    },
+    {
+      "id": "lambda_ai",
+      "origin": "https://api.lambda.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#lambda_ai"
+    },
+    {
+      "id": "lemonfox_ai",
+      "origin": "https://api.lemonfox.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#lemonfox_ai"
+    },
+    {
+      "id": "libertai",
+      "origin": "https://api.libertai.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#libertai"
+    },
+    {
+      "id": "lilac",
+      "origin": "https://api.getlilac.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#lilac"
+    },
+    {
+      "id": "lingyiwanwu",
+      "origin": "https://api.lingyiwanwu.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#lingyiwanwu"
+    },
+    {
+      "id": "llama",
+      "origin": "https://api.llama.com",
+      "base_path": "/compat/v1/",
+      "source": "aimux-providers/src/provider_registry.json#llama"
+    },
+    {
+      "id": "llamagate",
+      "origin": "https://api.llamagate.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#llamagate"
+    },
+    {
+      "id": "llmgateway",
+      "origin": "https://api.llmgateway.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#llmgateway"
+    },
+    {
+      "id": "llmtr",
+      "origin": "https://llmtr.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#llmtr"
+    },
+    {
+      "id": "longcat",
+      "origin": "https://api.longcat.chat",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#longcat"
+    },
+    {
+      "id": "lucidquery",
+      "origin": "https://api.lucidquery.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#lucidquery"
+    },
+    {
+      "id": "matterai",
+      "origin": "https://api.matterai.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#matterai"
+    },
+    {
+      "id": "meganova",
+      "origin": "https://api.meganova.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#meganova"
+    },
+    {
+      "id": "merge_gateway",
+      "origin": "https://api-gateway.merge.dev",
+      "base_path": "/v1/openai",
+      "source": "aimux-providers/src/provider_registry.json#merge_gateway"
+    },
+    {
+      "id": "meta",
+      "origin": "https://api.meta.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#meta"
+    },
+    {
+      "id": "meta_llama",
+      "origin": "https://api.llama.com",
+      "base_path": "/compat/v1",
+      "source": "aimux-providers/src/provider_registry.json#meta_llama"
+    },
+    {
+      "id": "mimo",
+      "origin": "https://api.xiaomimimo.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#mimo"
+    },
+    {
+      "id": "minimax",
+      "origin": "https://api.minimax.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#minimax"
+    },
+    {
+      "id": "minimax_cn",
+      "origin": "https://api.minimaxi.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#minimax_cn"
+    },
+    {
+      "id": "minimax_cn_coding_plan",
+      "origin": "https://api.minimaxi.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#minimax_cn_coding_plan"
+    },
+    {
+      "id": "minimax_coding_plan",
+      "origin": "https://api.minimax.io",
+      "base_path": "/anthropic/v1",
+      "source": "aimux-providers/src/provider_registry.json#minimax_coding_plan"
+    },
+    {
+      "id": "mira",
+      "origin": "https://api.mira.so",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#mira"
+    },
+    {
+      "id": "mixlayer",
+      "origin": "https://models.mixlayer.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#mixlayer"
+    },
+    {
+      "id": "moark",
+      "origin": "https://api.moark.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#moark"
+    },
+    {
+      "id": "modal",
+      "origin": "https://modal.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#modal"
+    },
+    {
+      "id": "model_oracle_ai",
+      "origin": "https://api.modeloracle.com",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#model_oracle_ai"
+    },
+    {
+      "id": "modelscope",
+      "origin": "https://api-inference.modelscope.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#modelscope"
+    },
+    {
+      "id": "moonshotai",
+      "origin": "https://api.moonshot.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#moonshotai"
+    },
+    {
+      "id": "moonshotai_cn",
+      "origin": "https://api.moonshot.cn",
+      "base_path": "/anthropic/v1",
+      "source": "aimux-providers/src/provider_registry.json#moonshotai_cn"
+    },
+    {
+      "id": "morph",
+      "origin": "https://api.morphllm.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#morph"
+    },
+    {
+      "id": "nanogpt",
+      "origin": "https://api.nanogpt.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nanogpt"
+    },
+    {
+      "id": "ncompass",
+      "origin": "https://api.ncompass.tech",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ncompass"
+    },
+    {
+      "id": "nearai",
+      "origin": "https://cloud-api.near.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nearai"
+    },
+    {
+      "id": "nebius",
+      "origin": "https://api.studio.nebius.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nebius"
+    },
+    {
+      "id": "neuralwatt",
+      "origin": "https://api.neuralwatt.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#neuralwatt"
+    },
+    {
+      "id": "nextbit",
+      "origin": "https://api.nextbit.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nextbit"
+    },
+    {
+      "id": "nlp_cloud",
+      "origin": "https://api.nlpcloud.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nlp_cloud"
+    },
+    {
+      "id": "nous_research",
+      "origin": "https://api.nousresearch.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nous_research"
+    },
+    {
+      "id": "novita",
+      "origin": "https://api.novita.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#novita"
+    },
+    {
+      "id": "nscale",
+      "origin": "https://inference.api.nscale.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nscale"
+    },
+    {
+      "id": "nvidia_nim",
+      "origin": "https://integrate.api.nvidia.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#nvidia_nim"
+    },
+    {
+      "id": "ofox",
+      "origin": "https://api.ofox.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ofox"
+    },
+    {
+      "id": "ohmygpt",
+      "origin": "https://api.ohmygpt.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ohmygpt"
+    },
+    {
+      "id": "ollama_cloud",
+      "origin": "https://api.ollama.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ollama_cloud"
+    },
+    {
+      "id": "openaimax",
+      "origin": "https://api.openaimax.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#openaimax"
+    },
+    {
+      "id": "openaisb",
+      "origin": "https://api.openaisb.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#openaisb"
+    },
+    {
+      "id": "opencode",
+      "origin": "https://api.opencode.zen",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#opencode"
+    },
+    {
+      "id": "opencode_go",
+      "origin": "https://api.opencode.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#opencode_go"
+    },
+    {
+      "id": "opencode_zen",
+      "origin": "https://api.opencode.zen",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#opencode_zen"
+    },
+    {
+      "id": "openrouter",
+      "origin": "https://openrouter.ai",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#openrouter"
+    },
+    {
+      "id": "orcarouter",
+      "origin": "https://api.orcarouter.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#orcarouter"
+    },
+    {
+      "id": "ovhcloud",
+      "origin": "https://oai.endpoints.kepler.ai.cloud.ovh.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#ovhcloud"
+    },
+    {
+      "id": "parasail",
+      "origin": "https://api.parasail.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#parasail"
+    },
+    {
+      "id": "perfxcloud",
+      "origin": "https://api.perfxcloud.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#perfxcloud"
+    },
+    {
+      "id": "perplexity",
+      "origin": "https://api.perplexity.ai",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#perplexity"
+    },
+    {
+      "id": "perplexity_agent",
+      "origin": "https://api.perplexity.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#perplexity_agent"
+    },
+    {
+      "id": "petals",
+      "origin": "https://api.petals.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#petals"
+    },
+    {
+      "id": "pinstripes",
+      "origin": "https://api.pinstripes.io",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#pinstripes"
+    },
+    {
+      "id": "pioneer",
+      "origin": "https://api.pioneer.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#pioneer"
+    },
+    {
+      "id": "poe",
+      "origin": "https://api.poe.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#poe"
+    },
+    {
+      "id": "poolside",
+      "origin": "https://inference.poolside.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#poolside"
+    },
+    {
+      "id": "portkey",
+      "origin": "https://api.portkey.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#portkey"
+    },
+    {
+      "id": "ppinfra",
+      "origin": "https://api.ppio.com",
+      "base_path": "/openai",
+      "source": "aimux-providers/src/provider_registry.json#ppinfra"
+    },
+    {
+      "id": "predibase",
+      "origin": "https://serving.app.predibase.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#predibase"
+    },
+    {
+      "id": "publicai",
+      "origin": "https://platform.publicai.co",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#publicai"
+    },
+    {
+      "id": "qihang_ai",
+      "origin": "https://api.qhaigc.net",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#qihang_ai"
+    },
+    {
+      "id": "qihoo360",
+      "origin": "https://api.360.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#qihoo360"
+    },
+    {
+      "id": "qiniu_ai",
+      "origin": "https://api.qiniu.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#qiniu_ai"
+    },
+    {
+      "id": "regolo_ai",
+      "origin": "https://api.regolo.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#regolo_ai"
+    },
+    {
+      "id": "reka_ai",
+      "origin": "https://api.reka.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#reka_ai"
+    },
+    {
+      "id": "requesty",
+      "origin": "https://api.requesty.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#requesty"
+    },
+    {
+      "id": "reve",
+      "origin": "https://api.reve.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#reve"
+    },
+    {
+      "id": "routing_run",
+      "origin": "https://api.routing.run",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#routing_run"
+    },
+    {
+      "id": "sakana",
+      "origin": "https://api.sakana.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#sakana"
+    },
+    {
+      "id": "sambanova",
+      "origin": "https://api.sambanova.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#sambanova"
+    },
+    {
+      "id": "sarvam",
+      "origin": "https://api.sarvam.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#sarvam"
+    },
+    {
+      "id": "scaleway",
+      "origin": "https://api.scaleway.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#scaleway"
+    },
+    {
+      "id": "scx_ai",
+      "origin": "https://api.scx.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#scx_ai"
+    },
+    {
+      "id": "siliconflow",
+      "origin": "https://api.siliconflow.cn",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#siliconflow"
+    },
+    {
+      "id": "stackit",
+      "origin": "https://api.openai-compat.model-serving.eu01.onstackit.cloud",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#stackit"
+    },
+    {
+      "id": "stepfun",
+      "origin": "https://api.stepfun.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#stepfun"
+    },
+    {
+      "id": "stepfun_ai_step_plan",
+      "origin": "https://api.stepfun.ai",
+      "base_path": "/step_plan/v1",
+      "source": "aimux-providers/src/provider_registry.json#stepfun_ai_step_plan"
+    },
+    {
+      "id": "stepfun_step_plan",
+      "origin": "https://api.stepfun.com",
+      "base_path": "/step_plan/v1",
+      "source": "aimux-providers/src/provider_registry.json#stepfun_step_plan"
+    },
+    {
+      "id": "subconscious",
+      "origin": "https://api.subconscious.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#subconscious"
+    },
+    {
+      "id": "submodel",
+      "origin": "https://api.submodel.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#submodel"
+    },
+    {
+      "id": "synthetic",
+      "origin": "https://api.synthetic.new",
+      "base_path": "/openai/v1",
+      "source": "aimux-providers/src/provider_registry.json#synthetic"
+    },
+    {
+      "id": "tencent",
+      "origin": "https://api.hunyuan.cloud.tencent.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tencent"
+    },
+    {
+      "id": "tencent_coding_plan",
+      "origin": "https://api.lkeap.cloud.tencent.com",
+      "base_path": "/coding/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_coding_plan"
+    },
+    {
+      "id": "tencent_token_plan",
+      "origin": "https://api.lkeap.cloud.tencent.com",
+      "base_path": "/plan/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_token_plan"
+    },
+    {
+      "id": "tencent_token_plan_enterprise_auto",
+      "origin": "https://tokenhub.tencentmaas.com",
+      "base_path": "/plan/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_token_plan_enterprise_auto"
+    },
+    {
+      "id": "tencent_token_plan_enterprise_pro",
+      "origin": "https://tokenhub.tencentmaas.com",
+      "base_path": "/plan/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_token_plan_enterprise_pro"
+    },
+    {
+      "id": "tencent_token_plan_general_personal",
+      "origin": "https://api.lkeap.cloud.tencent.com",
+      "base_path": "/plan/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_token_plan_general_personal"
+    },
+    {
+      "id": "tencent_token_plan_hy_personal",
+      "origin": "https://api.lkeap.cloud.tencent.com",
+      "base_path": "/plan/v3",
+      "source": "aimux-providers/src/provider_registry.json#tencent_token_plan_hy_personal"
+    },
+    {
+      "id": "tencent_tokenhub",
+      "origin": "https://tokenhub.tencentmaas.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tencent_tokenhub"
+    },
+    {
+      "id": "tensormesh",
+      "origin": "https://serverless.tensormesh.ai",
+      "base_path": "",
+      "source": "aimux-providers/src/provider_registry.json#tensormesh"
+    },
+    {
+      "id": "the_grid_ai",
+      "origin": "https://api.thegrid.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#the_grid_ai"
+    },
+    {
+      "id": "thinkingmachines",
+      "origin": "https://tinker.thinkingmachines.dev",
+      "base_path": "/services/tinker-prod/oai/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#thinkingmachines"
+    },
+    {
+      "id": "tinfoil",
+      "origin": "https://inference.tinfoil.sh",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tinfoil"
+    },
+    {
+      "id": "togetherai",
+      "origin": "https://api.together.xyz",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#togetherai"
+    },
+    {
+      "id": "tokenflux",
+      "origin": "https://tokenflux.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tokenflux"
+    },
+    {
+      "id": "tokenpony",
+      "origin": "https://api.tokenpony.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tokenpony"
+    },
+    {
+      "id": "trustedrouter",
+      "origin": "https://api.trustedrouter.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#trustedrouter"
+    },
+    {
+      "id": "tundra",
+      "origin": "https://api.tundra.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#tundra"
+    },
+    {
+      "id": "umans_ai",
+      "origin": "https://api.code.umans.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#umans_ai"
+    },
+    {
+      "id": "unorouter",
+      "origin": "https://unorouter.com",
+      "base_path": "/en",
+      "source": "aimux-providers/src/provider_registry.json#unorouter"
+    },
+    {
+      "id": "upstage",
+      "origin": "https://api.upstage.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#upstage"
+    },
+    {
+      "id": "v0",
+      "origin": "https://api.v0.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#v0"
+    },
+    {
+      "id": "venice",
+      "origin": "https://api.venice.ai",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#venice"
+    },
+    {
+      "id": "vercel",
+      "origin": "https://api.v0.dev",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#vercel"
+    },
+    {
+      "id": "vivgrid",
+      "origin": "https://api.vivgrid.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#vivgrid"
+    },
+    {
+      "id": "volc_engine",
+      "origin": "https://ark.cn-beijing.volces.com",
+      "base_path": "/api/v3",
+      "source": "aimux-providers/src/provider_registry.json#volc_engine"
+    },
+    {
+      "id": "vultr",
+      "origin": "https://api.vultrinference.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#vultr"
+    },
+    {
+      "id": "wafer",
+      "origin": "https://api.wafer.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#wafer"
+    },
+    {
+      "id": "wandb",
+      "origin": "https://api.inference.wandb.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#wandb"
+    },
+    {
+      "id": "xiaomi_token_plan_ams",
+      "origin": "https://token-plan-ams.xiaomimimo.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xiaomi_token_plan_ams"
+    },
+    {
+      "id": "xiaomi_token_plan_cn",
+      "origin": "https://token-plan-cn.xiaomimimo.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xiaomi_token_plan_cn"
+    },
+    {
+      "id": "xiaomi_token_plan_sgp",
+      "origin": "https://token-plan-sgp.xiaomimimo.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xiaomi_token_plan_sgp"
+    },
+    {
+      "id": "xiaomimimo",
+      "origin": "https://mimo.xiaomi.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xiaomimimo"
+    },
+    {
+      "id": "xpersona",
+      "origin": "https://www.xpersona.co",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xpersona"
+    },
+    {
+      "id": "xunfei",
+      "origin": "https://spark-api-open.xf-yun.com",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#xunfei"
+    },
+    {
+      "id": "zai",
+      "origin": "https://api.z.ai",
+      "base_path": "/api/paas/v4",
+      "source": "aimux-providers/src/provider_registry.json#zai"
+    },
+    {
+      "id": "zai_coding_plan",
+      "origin": "https://api.z.ai",
+      "base_path": "/api/anthropic",
+      "source": "aimux-providers/src/provider_registry.json#zai_coding_plan"
+    },
+    {
+      "id": "zeldoc",
+      "origin": "https://api.zeldoc.ai",
+      "base_path": "/v1",
+      "source": "aimux-providers/src/provider_registry.json#zeldoc"
+    },
+    {
+      "id": "zenmux",
+      "origin": "https://zenmux.ai",
+      "base_path": "/api/v1",
+      "source": "aimux-providers/src/provider_registry.json#zenmux"
+    },
+    {
+      "id": "zhipu_v4",
+      "origin": "https://open.bigmodel.cn",
+      "base_path": "/api/paas/v4",
+      "source": "aimux-providers/src/provider_registry.json#zhipu_v4"
+    },
+    {
+      "id": "zhipuai_coding_plan",
+      "origin": "https://open.bigmodel.cn",
+      "base_path": "/api/coding/paas/v4",
+      "source": "aimux-providers/src/provider_registry.json#zhipuai_coding_plan"
+    }
+  ]
+}

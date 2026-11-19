@@ -1,0 +1,237 @@
+name: Registry Maintenance
+
+# Non-blocking upstream diff & credential-free reachability reports (RFC-0033).
+# Runs on schedule on the default branch or explicit workflow_dispatch; never a
+# PR required check and never pulls unreviewed PR code with issue write scope.
+on:
+  schedule:
+    # Weekly models.dev diff report (Mondays 06:15 UTC)
+    - cron: "15 6 * * 1"
+    # Monthly credential-free reachability probe (1st of month 07:15 UTC)
+    - cron: "15 7 1 * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Which maintenance check to run
+        required: true
+        default: both
+        type: choice
+        options:
+          - sync
+          - probe
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-maintenance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect registry reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      run_sync: ${{ steps.plan.outputs.run_sync }}
+      run_probe: ${{ steps.plan.outputs.run_probe }}
+      mode_key: ${{ steps.plan.outputs.mode_key }}
+      sync_exit: ${{ steps.sync.outputs.exit_code }}
+      probe_exit: ${{ steps.probe.outputs.exit_code }}
+      fingerprint: ${{ steps.summary.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine mode
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ inputs.mode }}
+        run: |
+          run_sync=false
+          run_probe=false
+          mode_key=sync
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            mode_key="$INPUT_MODE"
+            case "$INPUT_MODE" in
+              sync) run_sync=true ;;
+              probe) run_probe=true ;;
+              both) run_sync=true; run_probe=true ;;
+            esac
+          elif [ "$SCHEDULE" = "15 7 1 * *" ]; then
+            run_probe=true
+            mode_key=probe
+          else
+            run_sync=true
+            mode_key=sync
+          fi
+          printf 'run_sync=%s\nrun_probe=%s\nmode_key=%s\n' "$run_sync" "$run_probe" "$mode_key" >> "$GITHUB_OUTPUT"
+
+      - name: Run upstream models.dev diff report
+        id: sync
+        if: steps.plan.outputs.run_sync == 'true'
+        run: |
+          mkdir -p out
+          set +e
+          python3 scripts/sync_registry.py \
+            --report \
+            --source models-dev \
+            --fetch \
+            --output out/sync-report.json \
+            --markdown-output out/sync-report.md
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ -f out/sync-report.md ]; then
+            cat out/sync-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run credential-free reachability probe
+        id: probe
+        if: steps.plan.outputs.run_probe == 'true'
+        run: |
+          mkdir -p out
+          set +e
+          python3 scripts/probe_registry.py \
+            --allowlist registry/probe_allowlist.json \
+            --output out/probe-report.json \
+            --markdown-output out/probe-report.md
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ -f out/probe-report.md ]; then
+            cat out/probe-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build combined report bundle and fingerprint
+        id: summary
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_SYNC: ${{ steps.plan.outputs.run_sync }}
+          RUN_PROBE: ${{ steps.plan.outputs.run_probe }}
+          MODE_KEY: ${{ steps.plan.outputs.mode_key }}
+          SYNC_EXIT: ${{ steps.sync.outputs.exit_code }}
+          PROBE_EXIT: ${{ steps.probe.outputs.exit_code }}
+        run: |
+          mkdir -p out
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          out_dir = Path("out")
+          parts = []
+          mode_key = os.environ.get("MODE_KEY") or "sync"
+          run_sync = os.environ.get("RUN_SYNC") == "true"
+          run_probe = os.environ.get("RUN_PROBE") == "true"
+          sync_exit = os.environ.get("SYNC_EXIT", "")
+          probe_exit = os.environ.get("PROBE_EXIT", "")
+          fp_data = {"mode": mode_key, "sync_exit": sync_exit, "probe_exit": probe_exit}
+          for name, fp_key, enabled, rc in [
+              ("sync-report", "sync", run_sync, sync_exit),
+              ("probe-report", "probe", run_probe, probe_exit),
+          ]:
+              if not enabled:
+                  continue
+              jp = out_dir / f"{name}.json"
+              mp = out_dir / f"{name}.md"
+              if jp.is_file():
+                  data = json.loads(jp.read_text(encoding="utf-8"))
+                  if fp_key == "probe":
+                      rows_fp = [
+                          [
+                              r.get("id"),
+                              r.get("target"),
+                              r.get("final_target"),
+                              r.get("outcome"),
+                              r.get("http_status"),
+                              r.get("recovery_review_needed", False),
+                          ]
+                          for r in data.get("results", [])
+                      ]
+                  else:
+                      rows_fp = {
+                          k: data.get(k)
+                          for k in (
+                              "base_url_diffs",
+                              "key_env_diffs",
+                              "stale_overrides",
+                              "manual_deviations",
+                              "incomparable",
+                              "missing_upstream_providers",
+                              "tool_errors",
+                          )
+                      }
+                  fp_data[fp_key] = {
+                      "counts": data.get("counts"),
+                      "input_hash": data.get("input_hash"),
+                      "rows": rows_fp,
+                  }
+              if mp.is_file():
+                  parts.append(mp.read_text(encoding="utf-8").strip())
+              if rc != "0":
+                  parts.append(f"**Collector failure**: `{fp_key}` exited with code `{rc or 'unknown'}`.")
+
+          fp = hashlib.sha256(
+              json.dumps(fp_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          ).hexdigest()
+          header = f"<!-- aimux-registry-fingerprint:mode={mode_key}:sha256={fp} -->\nRun: {os.environ['RUN_URL']}\n"
+          if not parts:
+              parts.append(f"Registry maintenance tool failed (sync={sync_exit}, probe={probe_exit}).")
+          body = header + "\n" + "\n\n---\n\n".join(parts) + "\n"
+          (out_dir / "comment.md").write_text(body, encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"fingerprint={fp}\n")
+          PY
+
+      - name: Upload sanitized maintenance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-maintenance-reports
+          path: out/
+          retention-days: 30
+
+      - name: Surface partial or tool failure cleanly
+        if: (steps.plan.outputs.run_sync == 'true' && steps.sync.outputs.exit_code != '0') || (steps.plan.outputs.run_probe == 'true' && steps.probe.outputs.exit_code != '0')
+        run: |
+          echo "One or more registry maintenance collectors failed cleanly (check summary/artifacts)." >&2
+          exit 1
+
+  publish:
+    name: Post deduplicated tracking report
+    needs: collect
+    if: (!cancelled()) && github.ref == 'refs/heads/master' && vars.REGISTRY_TRACKING_ISSUE != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: registry-maintenance-reports
+          path: out
+
+      - name: Comment on tracking issue if fingerprint changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ vars.REGISTRY_TRACKING_ISSUE }}
+          MODE_KEY: ${{ needs.collect.outputs.mode_key }}
+          FINGERPRINT: ${{ needs.collect.outputs.fingerprint }}
+        run: |
+          marker="aimux-registry-fingerprint:mode=${MODE_KEY}:sha256="
+          comments_json=$(gh api --paginate --slurp "repos/${REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100")
+          latest_body=$(printf '%s' "$comments_json" \
+            | jq -r --arg marker "$marker" '[.[][] | select((.body // "") | contains($marker))] | last | .body // ""')
+          latest_fp=$(printf '%s\n' "$latest_body" \
+            | sed -n "s/.*${marker}\([a-f0-9]\{64\}\).*/\1/p" | head -n 1)
+          if [ -n "$latest_fp" ] && [ "$latest_fp" = "$FINGERPRINT" ]; then
+            echo "Report fingerprint unchanged ($MODE_KEY:$FINGERPRINT); skipping duplicate comment."
+            exit 0
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file out/comment.md
