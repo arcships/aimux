@@ -493,12 +493,12 @@ mod do_generate {
             ],
         )]);
 
-        let before = chrono::Utc::now().timestamp_millis();
+        let before = jiff::Timestamp::now().as_millisecond();
         let result = transcription_model(&fetch, None)
             .do_generate(&audio_call("audio/wav"))
             .await
             .expect("the call succeeds");
-        let after = chrono::Utc::now().timestamp_millis();
+        let after = jiff::Timestamp::now().as_millisecond();
 
         let timestamp = result
             .response
@@ -994,7 +994,7 @@ mod do_stream {
         let connector = MockConnector::with_socket(socket);
         let (audio, _) = Audio::new(vec![vec![1, 2, 3]], true);
 
-        let before = chrono::Utc::now().timestamp_millis();
+        let before = jiff::Timestamp::now().as_millisecond();
         let result = transcription_model_with(Arc::clone(&connector), None)
             .do_stream(stream_options(
                 audio,
@@ -1067,7 +1067,7 @@ mod do_stream {
         }));
 
         let parts = finished(collecting).await;
-        let after = chrono::Utc::now().timestamp_millis();
+        let after = jiff::Timestamp::now().as_millisecond();
         assert_eq!(
             part_values(&parts),
             vec![

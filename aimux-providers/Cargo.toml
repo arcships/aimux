@@ -29,7 +29,7 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"
-chrono = "0.4"
+jiff = { workspace = true }
 indexmap = { workspace = true }
 url = { workspace = true }
 percent-encoding = "2"

@@ -11,7 +11,6 @@ use aimux_provider_utils::{
     create_json_error_response_handler, create_json_response_handler, default_fetch,
     post_json_to_api,
 };
-use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -234,7 +233,11 @@ async fn a_same_origin_hop_is_signed_again_for_its_own_url() {
         "bedrock",
         SigV4Signing::Aws4Fetch,
     )
-    .with_clock(|| Utc.with_ymd_and_hms(2026, 10, 15, 0, 0, 0).unwrap());
+    .with_clock(|| {
+        jiff::tz::Offset::UTC
+            .to_timestamp(jiff::civil::date(2026, 10, 15).at(0, 0, 0, 0))
+            .unwrap()
+    });
 
     post(HttpRequest {
         url: format!("{}/call", provider.uri()),

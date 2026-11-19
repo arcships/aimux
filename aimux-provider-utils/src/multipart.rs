@@ -23,7 +23,7 @@ impl MultipartForm {
     pub fn new() -> Self {
         let boundary = format!(
             "----formdata-aimux-{}",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            jiff::Timestamp::now().as_nanosecond()
         );
         Self {
             boundary,
