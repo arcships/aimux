@@ -26,7 +26,14 @@ impl Emitter for Python {
             exports.push(name.clone());
             match &named.kind {
                 Kind::Struct { fields, closed } => {
-                    class(&mut out, name, named.doc.as_deref(), fields, *closed, None);
+                    class(
+                        &mut out,
+                        name,
+                        named.doc.as_deref(),
+                        fields,
+                        *closed && name != "ErrorEnvelope",
+                        None,
+                    );
                     classes.push(name.clone());
                 }
                 Kind::Tagged { tag, variants } => {

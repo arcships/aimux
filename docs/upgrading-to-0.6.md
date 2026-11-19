@@ -21,10 +21,10 @@ packages. Do not mix 0.5 and 0.6 artifacts:
 | C ABI | ABI major `1` (`AIMUX_ABI_VERSION == 65536`) |
 | Ops protocol | `1.0` (`AIMUX_OPS_VERSION`) |
 | C header | `aimux-ffi/include/aimux.h` generated from the same commit |
-| Manifest | the runtime's manifest `digest` must equal the generated `MANIFEST_DIGEST` |
-| Bindings | Node/Python/Go/Java/Kotlin/Swift/Flutter/C from the same release |
+| Manifest | runtime's manifest `digest` equals `MANIFEST_DIGEST` (fast path), or every entry in `TYPE_SCHEMA_HASHES` matches `manifest.types[].schemaHash` |
+| Bindings | Node/Python/Go/Java/Kotlin/Swift/Flutter/C from the same release (or compatible `TYPE_SCHEMA_HASHES` set) |
 
-A native load fails fast on an ABI, ops-version or manifest-digest mismatch.
+A native load fails fast on an ABI, ops-version, or incompatible manifest/`TYPE_SCHEMA_HASHES` mismatch.
 Ops calls report protocol error `302` (`UnsupportedOpsVersion`); Java and
 Kotlin surface the same failure as `IllegalStateException` while
 `Aimux.load()` validates the manifest. Rebuild native consumers against the
@@ -325,8 +325,8 @@ See [bindings/c/README.md](../bindings/c/README.md) and the
 - [ ] Update recording fixtures that stored 0.5 JSON; schema 2 itself is
       unchanged, but the business JSON inside a recording follows the new
       AI SDK shapes.
-- [ ] Run the binding's native contract tests and your own integration tests
-      against the new header and manifest digest.
+- [ ] Run the binding's native contract tests, self-verification checks, and your own
+      integration tests against the new header, `TYPE_SCHEMA_HASHES`, and manifest digest.
 
 ## Rollback
 

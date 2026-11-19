@@ -231,17 +231,34 @@ impl HandleRegistry {
         REGISTRY.get_or_init(Self::default)
     }
 
+    /// Reserve a live handle ID before performing pre-registration setup.
+    ///
+    /// Dropping the returned reservation without committing discards the unused ID
+    /// without leaking an entry or reusing IDs.
+    ///
+    /// # Errors
+    /// Returns HandleExhausted on overflow.
+    pub fn reserve(&self) -> Result<HandleReservation, OpsError> {
+        let id = allocate(&NEXT_ID)?;
+        Ok(HandleReservation { id })
+    }
+
+    /// Commit a reserved handle ID into the registry.
+    pub fn commit(&self, owner: Owner, reservation: HandleReservation, entry: Entry) -> HandleId {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(reservation.id, (owner, entry));
+        HandleId(reservation.id)
+    }
+
     /// Insert a resource, failing permanently rather than wrapping the allocator.
     ///
     /// # Errors
     /// Returns HandleExhausted on overflow.
     pub fn insert(&self, owner: Owner, entry: Entry) -> Result<HandleId, OpsError> {
-        let id = allocate(&NEXT_ID)?;
-        self.entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id, (owner, entry));
-        Ok(HandleId(id))
+        let reservation = self.reserve()?;
+        Ok(self.commit(owner, reservation, entry))
     }
 
     /// Clone a live resource after checking its owner and kind.
@@ -305,6 +322,47 @@ pub fn allocate(next: &AtomicU64) -> Result<u64, OpsError> {
             Err(current) => id = current,
         }
     }
+}
+
+/// Pre-allocated handle ID waiting to be committed into [`HandleRegistry`].
+pub struct HandleReservation {
+    id: u64,
+}
+
+static EXHAUSTION_STATE: Mutex<(usize, u64)> = Mutex::new((0, 0));
+
+/// Test-only RAII guard forcing [`HandleRegistry`] handle allocation to return
+/// [`ProtocolError::HandleExhausted`] while alive, restoring the previous ID when
+/// the last active guard drops.
+#[doc(hidden)]
+pub struct ExhaustionGuard {
+    _private: (),
+}
+
+impl Drop for ExhaustionGuard {
+    fn drop(&mut self) {
+        let mut state = EXHAUSTION_STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.0 = state.0.saturating_sub(1);
+        if state.0 == 0 {
+            NEXT_ID.store(state.1, Ordering::SeqCst);
+        }
+    }
+}
+
+/// Test hook exhausting the process-wide handle allocator until the returned guard is dropped.
+#[doc(hidden)]
+#[must_use]
+pub fn test_exhaust_handle_allocator() -> ExhaustionGuard {
+    let mut state = EXHAUSTION_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if state.0 == 0 {
+        state.1 = NEXT_ID.swap(0, Ordering::SeqCst);
+    }
+    state.0 += 1;
+    ExhaustionGuard { _private: () }
 }
 
 #[cfg(test)]

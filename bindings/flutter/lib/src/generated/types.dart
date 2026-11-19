@@ -2433,6 +2433,12 @@ final class BackendConfigRing extends BackendConfig {
   @override
   String get type => 'ring';
   factory BackendConfigRing.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'capacity', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for BackendConfigRing');
+      }
+    }
     return BackendConfigRing(
       capacity: json['capacity'] as int?,
     );
@@ -2452,6 +2458,12 @@ final class BackendConfigJsonl extends BackendConfig {
   @override
   String get type => 'jsonl';
   factory BackendConfigJsonl.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'directory', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for BackendConfigJsonl');
+      }
+    }
     return BackendConfigJsonl(
       directory: json['directory'] as String,
     );
@@ -2547,6 +2559,12 @@ final class CatalogueFetchRequest {
     this.sourceUrl,
   });
   factory CatalogueFetchRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'sourceUrl'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for CatalogueFetchRequest');
+      }
+    }
     return CatalogueFetchRequest(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -2942,6 +2960,12 @@ final class CodexRefreshRequest {
     required this.refreshToken,
   });
   factory CodexRefreshRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'clientId', 'refreshToken'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for CodexRefreshRequest');
+      }
+    }
     return CodexRefreshRequest(
       clientId: json['clientId'] as String,
       refreshToken: json['refreshToken'] as String,
@@ -4036,6 +4060,12 @@ final class CreateRecorderParams {
     required this.capturePolicy,
   });
   factory CreateRecorderParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'backend', 'capturePolicy'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for CreateRecorderParams');
+      }
+    }
     return CreateRecorderParams(
       backend: BackendConfig.fromJson(json['backend'] as Map<String, dynamic>),
       capturePolicy: CapturePolicy.fromJson(json['capturePolicy']),
@@ -4054,6 +4084,12 @@ final class CredentialParams {
     required this.kind,
   });
   factory CredentialParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for CredentialParams');
+      }
+    }
     return CredentialParams(
       kind: json['kind'] as String,
     );
@@ -4110,6 +4146,12 @@ final class DecideOptions {
     this.timeout,
   });
   factory DecideOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'headers', 'maxRetries', 'providerOptions', 'questions', 'state', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for DecideOptions');
+      }
+    }
     return DecideOptions(
       headers: json['headers'] == null
           ? null
@@ -4330,6 +4372,12 @@ final class DecisionBooleanCriteria {
     this.true_ = const Field.absent(),
   });
   factory DecisionBooleanCriteria.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'false', 'true'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for DecisionBooleanCriteria');
+      }
+    }
     return DecisionBooleanCriteria(
       false_: json.containsKey('false')
           ? Field.of(json['false'] == null
@@ -4361,6 +4409,12 @@ final class DecisionDecideRequest {
     required this.options,
   });
   factory DecisionDecideRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'options'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for DecisionDecideRequest');
+      }
+    }
     return DecisionDecideRequest(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -4569,6 +4623,12 @@ final class EmbeddingCallOptions {
     required this.values_,
   });
   factory EmbeddingCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'headers', 'maxRetries', 'providerOptions', 'timeout', 'values'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for EmbeddingCallOptions');
+      }
+    }
     return EmbeddingCallOptions(
       headers: json['headers'] == null
           ? null
@@ -4701,6 +4761,12 @@ final class EmbeddingUsage {
 final class EmptyParams {
   const EmptyParams();
   factory EmptyParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for EmptyParams');
+      }
+    }
     return EmptyParams();
   }
 
@@ -5749,6 +5815,12 @@ final class GenerateTextOptions {
     this.topP,
   });
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for GenerateTextOptions');
+      }
+    }
     return GenerateTextOptions(
       frequencyPenalty: json['frequencyPenalty'] == null
           ? null
@@ -6344,6 +6416,12 @@ final class ImageCallOptions {
     this.timeout,
   });
   factory ImageCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'aspectRatio', 'files', 'headers', 'mask', 'maxRetries', 'n', 'prompt', 'providerOptions', 'seed', 'size', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ImageCallOptions');
+      }
+    }
     return ImageCallOptions(
       aspectRatio: json['aspectRatio'] == null
           ? null
@@ -6614,6 +6692,12 @@ final class InputAudioFormat {
     this.rate,
   });
   factory InputAudioFormat.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'formatType', 'rate'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for InputAudioFormat');
+      }
+    }
     return InputAudioFormat(
       formatType: json['formatType'] as String,
       rate: json['rate'] as int?,
@@ -7355,6 +7439,12 @@ final class LiveTargetModel extends LiveTarget {
   @override
   String get kind => 'model';
   factory LiveTargetModel.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'handle', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for LiveTargetModel');
+      }
+    }
     return LiveTargetModel(
       handle: HandleIdInput.fromJson(json['handle']),
     );
@@ -7374,6 +7464,12 @@ final class LiveTargetRegistry extends LiveTarget {
   @override
   String get kind => 'registry';
   factory LiveTargetRegistry.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'handle', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for LiveTargetRegistry');
+      }
+    }
     return LiveTargetRegistry(
       handle: HandleIdInput.fromJson(json['handle']),
     );
@@ -7406,6 +7502,12 @@ final class LoggingConfig {
     required this.level,
   });
   factory LoggingConfig.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'level'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for LoggingConfig');
+      }
+    }
     return LoggingConfig(
       level: LogLevel.fromJson(json['level']),
     );
@@ -7440,6 +7542,12 @@ final class MiddlewareParams {
     this.traceStore,
   });
   factory MiddlewareParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'auditMode', 'kind', 'scopeName', 'traceStore'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for MiddlewareParams');
+      }
+    }
     return MiddlewareParams(
       auditMode: json['auditMode'] == null
           ? null
@@ -7505,6 +7613,12 @@ final class MoaParams {
     this.stripReferenceTools,
   });
   factory MoaParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'aggregator', 'aggregatorInstructions', 'failMode', 'modelId', 'providerName', 'references', 'stripReferenceTools'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for MoaParams');
+      }
+    }
     return MoaParams(
       aggregator: json['aggregator'] as String,
       aggregatorInstructions: json['aggregatorInstructions'] as String?,
@@ -7655,6 +7769,12 @@ final class ModelInfo {
 final class ModelInfoParams {
   const ModelInfoParams();
   factory ModelInfoParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ModelInfoParams');
+      }
+    }
     return ModelInfoParams();
   }
 
@@ -7916,6 +8036,12 @@ final class ModelRef {
     required this.namespace,
   });
   factory ModelRef.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'key', 'method', 'modelId', 'namespace'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ModelRef');
+      }
+    }
     return ModelRef(
       key: json['key'] as String,
       method: ModelMethod.fromJson(json['method']),
@@ -7938,6 +8064,12 @@ final class ModelResolveParams {
     required this.modelRef,
   });
   factory ModelResolveParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'modelRef'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ModelResolveParams');
+      }
+    }
     return ModelResolveParams(
       modelRef: ModelRef.fromJson(json['modelRef'] as Map<String, dynamic>),
     );
@@ -8039,6 +8171,12 @@ final class ModelWrapParams {
     required this.middleware,
   });
   factory ModelWrapParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'middleware'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ModelWrapParams');
+      }
+    }
     return ModelWrapParams(
       middleware: (json['middleware'] as List).cast<String>(),
     );
@@ -8073,6 +8211,12 @@ final class OpenAiOutputRequest {
     required this.result,
   });
   factory OpenAiOutputRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'metadataNamespace', 'result'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for OpenAiOutputRequest');
+      }
+    }
     return OpenAiOutputRequest(
       metadataNamespace: json['metadataNamespace'] as String,
       result: GenerateTextResultInput.fromJson(
@@ -8098,6 +8242,12 @@ final class OpenAiTextRequest {
     this.streamOptions,
   });
   factory OpenAiTextRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'options', 'prompt', 'streamOptions'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for OpenAiTextRequest');
+      }
+    }
     return OpenAiTextRequest(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -8154,6 +8304,12 @@ final class OperationNextParams {
     this.timeoutMs,
   });
   factory OperationNextParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'timeoutMs'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for OperationNextParams');
+      }
+    }
     return OperationNextParams(
       timeoutMs: json['timeoutMs'] as int?,
     );
@@ -8395,6 +8551,12 @@ final class Options {
     this.topP,
   });
   factory Options.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for Options');
+      }
+    }
     return Options(
       frequencyPenalty: json['frequencyPenalty'] == null
           ? null
@@ -8820,6 +8982,12 @@ final class ProviderCreateParams {
     this.settings,
   });
   factory ProviderCreateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'package', 'settings'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderCreateParams');
+      }
+    }
     return ProviderCreateParams(
       package: json['package'] as String,
       settings: json['settings'] == null
@@ -8866,6 +9034,12 @@ final class ProviderCustomParams {
     this.videoModels,
   });
   factory ProviderCustomParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'decisionModels', 'defaultMethod', 'embeddingModels', 'fallbackProvider', 'files', 'imageModelMiddleware', 'imageModels', 'languageModelMiddleware', 'languageModels', 'rerankingModels', 'searchModels', 'speechModels', 'transcriptionModels', 'videoModels'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderCustomParams');
+      }
+    }
     return ProviderCustomParams(
       decisionModels: json['decisionModels'] == null
           ? null
@@ -8969,6 +9143,12 @@ final class ProviderDefaultParams {
     required this.package,
   });
   factory ProviderDefaultParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'package'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderDefaultParams');
+      }
+    }
     return ProviderDefaultParams(
       package: json['package'] as String,
     );
@@ -8987,6 +9167,12 @@ final class ProviderInvokeParams {
     required this.method,
   });
   factory ProviderInvokeParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'method'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderInvokeParams');
+      }
+    }
     return ProviderInvokeParams(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -9008,6 +9194,12 @@ final class ProviderModelParams {
     required this.modelId,
   });
   factory ProviderModelParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'method', 'modelId'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderModelParams');
+      }
+    }
     return ProviderModelParams(
       method: json['method'] as String?,
       modelId: json['modelId'] as String,
@@ -9081,6 +9273,12 @@ final class ProviderSettings {
     this.webSocket,
   });
   factory ProviderSettings.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'apiKey', 'baseUrl', 'credentialResolver', 'endpoint', 'fetch', 'headers', 'organization', 'params', 'probabilitySource', 'project', 'webSocket'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderSettings');
+      }
+    }
     return ProviderSettings(
       apiKey: json['apiKey'] as String?,
       baseUrl: json['baseUrl'] as String?,
@@ -9178,6 +9376,12 @@ final class ProviderWrapParams {
     this.languageModelMiddleware,
   });
   factory ProviderWrapParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'imageModelMiddleware', 'languageModelMiddleware'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ProviderWrapParams');
+      }
+    }
     return ProviderWrapParams(
       imageModelMiddleware: json['imageModelMiddleware'] == null
           ? null
@@ -9779,6 +9983,12 @@ final class RegistryCreateParams {
     this.namespace,
   });
   factory RegistryCreateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'entries', 'namespace'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RegistryCreateParams');
+      }
+    }
     return RegistryCreateParams(
       entries: (json['entries'] as List)
           .map((item) => RegistryEntry.fromJson(item as Map<String, dynamic>))
@@ -9801,6 +10011,12 @@ final class RegistryEntry {
     required this.provider,
   });
   factory RegistryEntry.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'key', 'provider'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RegistryEntry');
+      }
+    }
     return RegistryEntry(
       key: json['key'] as String,
       provider: json['provider'] as String,
@@ -9819,6 +10035,12 @@ final class RegistryProviderParams {
     required this.key,
   });
   factory RegistryProviderParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'key'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RegistryProviderParams');
+      }
+    }
     return RegistryProviderParams(
       key: json['key'] as String,
     );
@@ -9883,6 +10105,12 @@ final class ReplayCreateParams {
     required this.recordingsJsonl,
   });
   factory ReplayCreateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'recordingsJsonl'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ReplayCreateParams');
+      }
+    }
     return ReplayCreateParams(
       recordingsJsonl: json['recordingsJsonl'] as String,
     );
@@ -9922,6 +10150,12 @@ final class ReplayLiveParams {
     required this.target,
   });
   factory ReplayLiveParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'callId', 'target'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ReplayLiveParams');
+      }
+    }
     return ReplayLiveParams(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -10149,6 +10383,12 @@ final class RerankingCallOptions {
     this.topN,
   });
   factory RerankingCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'documents', 'headers', 'maxRetries', 'providerOptions', 'query', 'timeout', 'topN'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RerankingCallOptions');
+      }
+    }
     return RerankingCallOptions(
       documents: RerankingDocuments.fromJson(
           json['documents'] as Map<String, dynamic>),
@@ -10527,6 +10767,12 @@ final class RouterParams {
     required this.strategy,
   });
   factory RouterParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'children', 'fallback', 'modelId', 'providerName', 'strategy'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RouterParams');
+      }
+    }
     return RouterParams(
       children: (json['children'] as List).cast<String>(),
       fallback:
@@ -10554,6 +10800,12 @@ final class RuntimeConfigureParams {
     this.proxy,
   });
   factory RuntimeConfigureParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'logging', 'proxy'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RuntimeConfigureParams');
+      }
+    }
     return RuntimeConfigureParams(
       logging: json['logging'] == null
           ? null
@@ -10573,6 +10825,12 @@ final class RuntimeConfigureParams {
 final class RuntimeDescribeParams {
   const RuntimeDescribeParams();
   factory RuntimeDescribeParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for RuntimeDescribeParams');
+      }
+    }
     return RuntimeDescribeParams();
   }
 
@@ -10676,6 +10934,12 @@ final class SearchCallOptions {
     this.timeout,
   });
   factory SearchCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'excludeDomains', 'headers', 'includeDomains', 'includeRawContent', 'maxResults', 'maxRetries', 'providerOptions', 'query', 'timeRange', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for SearchCallOptions');
+      }
+    }
     return SearchCallOptions(
       excludeDomains: json['excludeDomains'] == null
           ? null
@@ -10977,6 +11241,12 @@ final class SessionStoreCallsParams {
     required this.sessionId,
   });
   factory SessionStoreCallsParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'sessionId'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for SessionStoreCallsParams');
+      }
+    }
     return SessionStoreCallsParams(
       sessionId: json['sessionId'] as String,
     );
@@ -10993,6 +11263,12 @@ final class SessionStoreCreateParams {
     required this.infer,
   });
   factory SessionStoreCreateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'infer'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for SessionStoreCreateParams');
+      }
+    }
     return SessionStoreCreateParams(
       infer: json['infer'] as bool,
     );
@@ -11235,6 +11511,12 @@ final class SpeechCallOptions {
     this.voice,
   });
   factory SpeechCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'headers', 'instructions', 'language', 'maxRetries', 'outputFormat', 'providerOptions', 'speed', 'text', 'timeout', 'voice'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for SpeechCallOptions');
+      }
+    }
     return SpeechCallOptions(
       headers: json['headers'] == null
           ? null
@@ -11952,6 +12234,12 @@ final class StrategyRule extends Strategy {
   @override
   String get type => 'rule';
   factory StrategyRule.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StrategyRule');
+      }
+    }
     return StrategyRule();
   }
 
@@ -11968,6 +12256,12 @@ final class StrategyWeighted extends Strategy {
   @override
   String get type => 'weighted';
   factory StrategyWeighted.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'weights', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StrategyWeighted');
+      }
+    }
     return StrategyWeighted(
       weights: (json['weights'] as List)
           .map((item) => (item as num).toDouble())
@@ -12042,6 +12336,12 @@ final class StreamFrameEvent extends StreamFrame {
   @override
   String get type => 'event';
   factory StreamFrameEvent.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'event', 'seq', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StreamFrameEvent');
+      }
+    }
     return StreamFrameEvent(
       event: StreamEvent.fromJson(json['event']),
       seq: _u64String(json['seq'] as String),
@@ -12067,6 +12367,12 @@ final class StreamFrameEnd extends StreamFrame {
   @override
   String get type => 'end';
   factory StreamFrameEnd.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'error', 'outcome', 'seq', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StreamFrameEnd');
+      }
+    }
     return StreamFrameEnd(
       error: json['error'] == null
           ? null
@@ -12092,6 +12398,12 @@ final class StreamOptions {
     this.includeUsage,
   });
   factory StreamOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'includeReasoning', 'includeUsage'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for StreamOptions');
+      }
+    }
     return StreamOptions(
       includeReasoning: json['includeReasoning'] as bool?,
       includeUsage: json['includeUsage'] as bool?,
@@ -12267,6 +12579,12 @@ final class TextRequest {
     required this.prompt,
   });
   factory TextRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'options', 'prompt'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TextRequest');
+      }
+    }
     return TextRequest(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -13293,6 +13611,12 @@ final class TimeoutConfiguration {
     this.totalMs,
   });
   factory TimeoutConfiguration.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'chunkMs', 'firstChunkMs', 'stepMs', 'totalMs'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TimeoutConfiguration');
+      }
+    }
     return TimeoutConfiguration(
       chunkMs: json['chunkMs'] as int?,
       firstChunkMs: json['firstChunkMs'] as int?,
@@ -13862,6 +14186,12 @@ final class ToolCallRepairReplyRepaired extends ToolCallRepairReply {
   @override
   String get type => 'repaired';
   factory ToolCallRepairReplyRepaired.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'toolCall', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyRepaired');
+      }
+    }
     return ToolCallRepairReplyRepaired(
       toolCall:
           RepairedToolCall.fromJson(json['toolCall'] as Map<String, dynamic>),
@@ -13879,6 +14209,12 @@ final class ToolCallRepairReplyUnchanged extends ToolCallRepairReply {
   @override
   String get type => 'unchanged';
   factory ToolCallRepairReplyUnchanged.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyUnchanged');
+      }
+    }
     return ToolCallRepairReplyUnchanged();
   }
 
@@ -13895,6 +14231,12 @@ final class ToolCallRepairReplyFailed extends ToolCallRepairReply {
   @override
   String get type => 'failed';
   factory ToolCallRepairReplyFailed.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'message', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolCallRepairReplyFailed');
+      }
+    }
     return ToolCallRepairReplyFailed(
       message: json['message'] as String,
     );
@@ -14248,6 +14590,12 @@ final class ToolRepairApplyRequest {
     required this.toolCall,
   });
   factory ToolRepairApplyRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'options', 'reply', 'toolCall'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolRepairApplyRequest');
+      }
+    }
     return ToolRepairApplyRequest(
       options: json['options'] == null
           ? null
@@ -14279,6 +14627,12 @@ final class ToolRepairApplyResultRequest {
     required this.toolCallId,
   });
   factory ToolRepairApplyResultRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'options', 'reply', 'result', 'toolCallId'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolRepairApplyResultRequest');
+      }
+    }
     return ToolRepairApplyResultRequest(
       options: json['options'] == null
           ? null
@@ -14310,6 +14664,12 @@ final class ToolRepairContextRequest {
     required this.toolCall,
   });
   factory ToolRepairContextRequest.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'options', 'prompt', 'toolCall'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for ToolRepairContextRequest');
+      }
+    }
     return ToolRepairContextRequest(
       options: json['options'] == null
           ? null
@@ -15158,6 +15518,12 @@ final class TraceAggregateFilter {
     this.sinceUnixMs,
   });
   factory TraceAggregateFilter.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'model', 'provider', 'sessionId', 'sinceUnixMs'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TraceAggregateFilter');
+      }
+    }
     return TraceAggregateFilter(
       model: json['model'] as String?,
       provider: json['provider'] as String?,
@@ -15180,6 +15546,12 @@ final class TraceAggregateParams {
     this.filter,
   });
   factory TraceAggregateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'filter'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TraceAggregateParams');
+      }
+    }
     return TraceAggregateParams(
       filter: json['filter'] == null
           ? null
@@ -15215,6 +15587,12 @@ final class TraceCreateParams {
     this.perScopeCapacity,
   });
   factory TraceCreateParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'auditMode', 'capacity', 'perScopeCapacity'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TraceCreateParams');
+      }
+    }
     return TraceCreateParams(
       auditMode: json['auditMode'] == null
           ? null
@@ -15336,6 +15714,12 @@ final class TraceSessionParams {
     required this.sessionId,
   });
   factory TraceSessionParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'sessionId'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TraceSessionParams');
+      }
+    }
     return TraceSessionParams(
       sessionId: json['sessionId'] as String,
     );
@@ -15447,6 +15831,12 @@ final class TranscriptionCallOptions {
     this.timeout,
   });
   factory TranscriptionCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'audio', 'headers', 'maxRetries', 'mediaType', 'providerOptions', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TranscriptionCallOptions');
+      }
+    }
     return TranscriptionCallOptions(
       audio: AudioInput.fromJson(json['audio']),
       headers: json['headers'] == null
@@ -15657,6 +16047,12 @@ final class TranscriptionStartParams {
     this.timeout,
   });
   factory TranscriptionStartParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'headers', 'includeRawChunks', 'inputAudioFormat', 'providerOptions', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TranscriptionStartParams');
+      }
+    }
     return TranscriptionStartParams(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -16020,6 +16416,12 @@ final class TransportParamsFetch extends TransportParams {
   @override
   String get kind => 'fetch';
   factory TransportParamsFetch.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'proxy', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsFetch');
+      }
+    }
     return TransportParamsFetch(
       proxy: json['proxy'] == null
           ? null
@@ -16041,6 +16443,12 @@ final class TransportParamsWs extends TransportParams {
   @override
   String get kind => 'ws';
   factory TransportParamsWs.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'proxy', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsWs');
+      }
+    }
     return TransportParamsWs(
       proxy: json['proxy'] == null
           ? null
@@ -16062,6 +16470,12 @@ final class TransportParamsDownload extends TransportParams {
   @override
   String get kind => 'download';
   factory TransportParamsDownload.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'maxBytes', 'kind'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportParamsDownload');
+      }
+    }
     return TransportParamsDownload(
       maxBytes: json['maxBytes'] as int?,
     );
@@ -16089,6 +16503,12 @@ final class TransportProxy {
     this.noProxy,
   });
   factory TransportProxy.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'all_url', 'http_url', 'https_url', 'no_proxy'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for TransportProxy');
+      }
+    }
     return TransportProxy(
       allUrl: json['all_url'] as String?,
       httpUrl: json['http_url'] as String?,
@@ -16504,6 +16924,12 @@ final class UploadFileDataData extends UploadFileData {
   @override
   String get type => 'data';
   factory UploadFileDataData.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'data', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for UploadFileDataData');
+      }
+    }
     return UploadFileDataData(
       data: FileBytes.fromJson(json['data']),
     );
@@ -16523,6 +16949,12 @@ final class UploadFileDataText extends UploadFileData {
   @override
   String get type => 'text';
   factory UploadFileDataText.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'text', 'type'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for UploadFileDataText');
+      }
+    }
     return UploadFileDataText(
       text: json['text'] as String,
     );
@@ -16557,6 +16989,12 @@ final class UploadFileParams {
     this.providerOptions,
   });
   factory UploadFileParams.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'abort', 'data', 'filename', 'mediaType', 'providerOptions'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for UploadFileParams');
+      }
+    }
     return UploadFileParams(
       abort:
           json['abort'] == null ? null : HandleIdInput.fromJson(json['abort']),
@@ -17051,6 +17489,12 @@ final class VideoCallOptions {
     this.timeout,
   });
   factory VideoCallOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'aspectRatio', 'duration', 'fps', 'frameImages', 'generateAudio', 'headers', 'image', 'inputReferences', 'maxRetries', 'n', 'poll', 'prompt', 'providerOptions', 'resolution', 'seed', 'timeout'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for VideoCallOptions');
+      }
+    }
     return VideoCallOptions(
       aspectRatio: json['aspectRatio'] == null
           ? null
@@ -17351,6 +17795,12 @@ final class VideoPollOptions {
     this.timeoutMs,
   });
   factory VideoPollOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'intervalMs', 'timeoutMs'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for VideoPollOptions');
+      }
+    }
     return VideoPollOptions(
       intervalMs: json['intervalMs'] as int?,
       timeoutMs: json['timeoutMs'] as int?,

@@ -88,10 +88,10 @@ nonnegative. Operation failures throw exceptions. Cancel through
 Removed APIs include implicit recording helpers, lock-lending repair hooks and
 the unbounded Java Stream adapter. Use explicit recorder resources and the pure
 `ToolCallRepairs` DTO operations. Core recorder/session/infer state remains
-process-wide. Recording schema migration and business DTO schema generation are
-separate work. Replay transport capabilities and credential creation currently
-report UnsupportedFunctionality. Per-platform release asset installation is not
-verified by this binding's tests.
+process-wide. Per-type DTO schemas (`schema/types/*.json`), `TYPE_SCHEMA_HASHES`,
+and DTO vector parity checks are generated; recording schema migration and
+per-platform release asset installation remain separate work. Replay transport
+capabilities and credential creation currently report UnsupportedFunctionality.
 
 ## Tests
 

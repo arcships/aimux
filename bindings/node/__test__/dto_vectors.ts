@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dtoTags, dtoTypeNames } from '../src/generated/dto_vectors.ts'
+import { dtoTags, dtoTypeNames, validateDto } from '../src/generated/dto_vectors.ts'
 import type { DtoTypes } from '../src/generated/dto_vectors.ts'
 
 function isDtoType(type: string): type is keyof DtoTypes {
@@ -17,6 +17,7 @@ export function roundTrip<K extends keyof DtoTypes>(type: K, json: string): DtoT
       throw new Error(`Unknown ${type} tag: ${String(tag)}`)
     }
   }
+  validateDto(type, value)
   return JSON.parse(JSON.stringify(value)) as DtoTypes[K]
 }
 

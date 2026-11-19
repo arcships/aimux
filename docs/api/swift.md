@@ -102,7 +102,7 @@ delay from `error.responseHeaders`, not from a dedicated retry field.
 
 - Provider constructors such as `Model.openai(...)` and `Aimux.openai(...)` are
   removed; use `AimuxRuntime.open` / `AimuxHandle.open` with operation names.
-- The binding requires the exact ABI, ops version and manifest digest.
+- The binding checks ABI major compatibility, exact ops version, and manifest compatibility (`MANIFEST_DIGEST` fast-path or full `TYPE_SCHEMA_HASHES` `schemaHash` fallback).
 - Generated DTOs replace the 0.5 hand-written types.
 - Errors are the shared envelope with a native `cause` chain.
 

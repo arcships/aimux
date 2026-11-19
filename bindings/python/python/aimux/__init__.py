@@ -7,6 +7,7 @@ import json
 import weakref
 
 from . import ops
+from ._manifest import verify_manifest_contract
 from .aimux import (
     ABI_VERSION, OPS_VERSION, EXPECTED_ABI_VERSION, EXPECTED_OPS_VERSION,
     EXPECTED_MANIFEST_DIGEST, Abort, Client as _NativeClient, StreamIterator,
@@ -17,15 +18,19 @@ from ._errors import __all__ as _error_names, from_envelope as _from_envelope
 
 
 def verify_contract(expected_digest=EXPECTED_MANIFEST_DIGEST):
-    """Check runtime version and, when supplied, the consumer's pinned digest."""
+    """Check runtime version, explicit digest pin, or per-type schema hash compatibility."""
     description = json.loads(manifest_json())
-    if ABI_VERSION != EXPECTED_ABI_VERSION or OPS_VERSION != EXPECTED_OPS_VERSION:
-        raise ImportError("aimux ABI/ops version differs from the Python binding")
-    if description["abiVersion"] != ABI_VERSION or description["opsVersion"] != OPS_VERSION:
-        raise ImportError("aimux manifest version differs from the native module")
-    if expected_digest is not None and manifest_digest() != expected_digest:
-        raise ImportError("aimux manifest digest differs from the consumer's pinned contract")
-    return description
+    return verify_manifest_contract(
+        description,
+        actual_digest=manifest_digest(),
+        expected_abi=ABI_VERSION,
+        expected_ops=OPS_VERSION,
+        expected_digest=expected_digest,
+        compile_time_abi=EXPECTED_ABI_VERSION,
+        compile_time_ops=EXPECTED_OPS_VERSION,
+        compile_time_digest=EXPECTED_MANIFEST_DIGEST,
+        type_hashes=ops.TYPE_SCHEMA_HASHES,
+    )
 
 
 manifest = verify_contract()

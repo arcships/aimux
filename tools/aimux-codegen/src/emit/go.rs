@@ -96,9 +96,49 @@ fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
     }
 }
 
-fn structure(out: &mut String, name: &str, fields: &[Field], model: &Model) -> Result<()> {
+fn structure(
+    out: &mut String,
+    name: &str,
+    fields: &[Field],
+    closed: bool,
+    extra_key: Option<&str>,
+    model: &Model,
+) -> Result<()> {
+    let write_closed_check = |out: &mut String| {
+        let mut allowed: Vec<String> = fields
+            .iter()
+            .map(|f| format!("{:?}", f.json_name))
+            .collect();
+        if let Some(extra) = extra_key {
+            allowed.push(format!("{extra:?}"));
+        }
+        writeln!(
+            out,
+            "\tvar raw map[string]json.RawMessage\n\tif err := json.Unmarshal(data, &raw); err != nil {{\n\t\treturn err\n\t}}\n\tif raw == nil {{\n\t\treturn fmt.Errorf(\"expected object for {name}, got null\")\n\t}}"
+        )
+        .unwrap();
+        if allowed.is_empty() {
+            writeln!(
+                out,
+                "\tif len(raw) > 0 {{\n\t\treturn fmt.Errorf(\"unknown field in {name}\")\n\t}}"
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                out,
+                "\tfor key := range raw {{\n\t\tswitch key {{\n\t\tcase {}:\n\t\tdefault:\n\t\t\treturn fmt.Errorf(\"unknown field %q in {name}\", key)\n\t\t}}\n\t}}",
+                allowed.join(", ")
+            )
+            .unwrap();
+        }
+    };
     if fields.is_empty() {
         writeln!(out, "type {name} struct{{}}\n").unwrap();
+        if closed {
+            writeln!(out, "func (v *{name}) UnmarshalJSON(data []byte) error {{").unwrap();
+            write_closed_check(out);
+            out.push_str("\treturn nil\n}\n\n");
+        }
         return Ok(());
     }
     writeln!(out, "type {name} struct {{").unwrap();
@@ -136,6 +176,15 @@ fn structure(out: &mut String, name: &str, fields: &[Field], model: &Model) -> R
         }
     }
     out.push_str("}\n\n");
+    if closed {
+        writeln!(out, "func (v *{name}) UnmarshalJSON(data []byte) error {{").unwrap();
+        write_closed_check(out);
+        writeln!(
+            out,
+            "\ttype alias {name}\n\tvar tmp alias\n\tif err := json.Unmarshal(data, &tmp); err != nil {{\n\t\treturn err\n\t}}\n\t*v = {name}(tmp)\n\treturn nil\n}}\n"
+        )
+        .unwrap();
+    }
     Ok(())
 }
 
@@ -173,7 +222,14 @@ impl Emitter for Go {
             let name = ident(&named.name);
             docs(&mut out, named.doc.as_deref(), "");
             match &named.kind {
-                Kind::Struct { fields, .. } => structure(&mut out, &name, fields, model)?,
+                Kind::Struct { fields, closed } => structure(
+                    &mut out,
+                    &name,
+                    fields,
+                    *closed && named.name != "ErrorEnvelope",
+                    None,
+                    model,
+                )?,
                 Kind::Alias(value) => {
                     writeln!(out, "type {name} = {}\n", ty(value)).unwrap();
                 }
@@ -184,10 +240,16 @@ impl Emitter for Go {
                         .map(|v| format!("{name}{}", ident(if v.is_empty() { "Empty" } else { v })))
                         .collect();
                     let width = ids.iter().map(String::len).max().unwrap_or(0);
-                    for (value, id) in values.iter().zip(ids) {
+                    for (value, id) in values.iter().zip(&ids) {
                         writeln!(out, "\t{id:width$} {name} = {value:?}").unwrap();
                     }
                     out.push_str(")\n\n");
+                    writeln!(
+                        out,
+                        "func (v *{name}) UnmarshalJSON(data []byte) error {{\n\tvar s string\n\tif err := json.Unmarshal(data, &s); err != nil {{\n\t\treturn err\n\t}}\n\tswitch {name}(s) {{\n\tcase {}:\n\t\t*v = {name}(s)\n\t\treturn nil\n\tdefault:\n\t\treturn fmt.Errorf(\"invalid {name}: %q\", s)\n\t}}\n}}\n",
+                        ids.join(", ")
+                    )
+                    .unwrap();
                 }
                 Kind::Tagged { tag, variants } => {
                     union(&mut out, &name);
@@ -248,7 +310,14 @@ impl Emitter for Go {
                     .unwrap();
                     for variant in variants {
                         let vn = format!("{name}Variant{}", ident(&variant.name));
-                        structure(&mut out, &vn, &variant.fields, model)?;
+                        structure(
+                            &mut out,
+                            &vn,
+                            &variant.fields,
+                            variant.closed,
+                            Some(tag.as_str()),
+                            model,
+                        )?;
                         writeln!(out, "func ({vn}) is{name}() {{}}\n\nfunc (v {vn}) MarshalJSON() ([]byte, error) {{\n\ttype plain {vn}\n\treturn json.Marshal(struct {{\n\t\t{} string `json:{tag:?}`\n\t\tplain\n\t}}{{{}: {:?}, plain: plain(v)}})\n}}\n", ident(tag), ident(tag), variant.tag_value).unwrap();
                     }
                 }

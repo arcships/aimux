@@ -64,17 +64,24 @@ def main():
     args = parser.parse_args()
     directory = ROOT / "contract-tests/dto"
     index = json.loads((directory / "index.json").read_text())
-    expected, inputs = {}, {}
+    expected, inputs, expect_errors = {}, {}, {}
     for entry in index:
         name = entry["file"]
         path = (directory / name).resolve()
         if not path.is_relative_to(directory.resolve()) or name in expected:
             raise ValueError(f"unsafe or duplicate vector: {name}")
         inputs[name] = json.loads(path.read_text(), parse_float=Decimal)
-        want = (directory / entry.get("expect", name)).resolve()
-        if not want.is_relative_to(directory.resolve()):
-            raise ValueError(f"unsafe expected output: {entry['expect']}")
-        expected[name] = json.loads(want.read_text(), parse_float=Decimal)
+        expect_error = bool(entry.get("expectError", False))
+        expect_errors[name] = expect_error
+        if expect_error:
+            if "expect" in entry:
+                raise ValueError(f"negative vector cannot declare expect: {name}")
+            expected[name] = None
+        else:
+            want = (directory / entry.get("expect", name)).resolve()
+            if not want.is_relative_to(directory.resolve()):
+                raise ValueError(f"unsafe expected output: {entry['expect']}")
+            expected[name] = json.loads(want.read_text(), parse_float=Decimal)
     if args.list:
         print(f"{len(index)} vectors, {len({v['type'] for v in index})} types")
         return 0
@@ -91,6 +98,10 @@ def main():
             if name not in expected or name in seen:
                 raise ValueError(f"{language}: unexpected or duplicate vector: {name}")
             seen.add(name)
+            if expect_errors[name]:
+                if record.get("ok") is not False:
+                    raise ValueError(f"{language}: {name}: expected error but codec succeeded")
+                continue
             if language in INT64_NUMBERS and beyond_int64(expected[name]):
                 skipped += 1
                 continue

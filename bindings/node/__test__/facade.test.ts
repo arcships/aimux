@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import * as ops from '../src/generated/ops.ts'
 
 // Install the test transport before loading either public entrypoint.
@@ -201,6 +205,37 @@ test('manifest handshake pins every generated value and reports both sides', () 
   }
 })
 
+test('manifest handshake negotiates via per-type schema hashes when packages/digest change', () => {
+  const types = Object.entries(ops.TYPE_SCHEMA_HASHES).map(([id, schemaHash]) => ({ id, revision: '1', schemaHash }))
+  assert.ok(types.length > 0)
+  const negotiated = {
+    abiVersion: ops.ABI_VERSION,
+    opsVersion: ops.OPS_VERSION,
+    digest: 'changed-digest-from-new-package',
+    packages: ['openai', 'synthetic-extra-package'],
+    types,
+  } as unknown as rawApi.Manifest
+  rawApi.verifyManifest(negotiated)
+
+  const targetType = types[0].id
+  const brokenTypes = types.map((entry, idx) => idx === 0 ? { ...entry, schemaHash: '0'.repeat(64) } : entry)
+  assert.throws(() => rawApi.verifyManifest({ ...negotiated, types: brokenTypes }), (error: unknown) => {
+    assert.ok(error instanceof AimuxError)
+    assert.equal(error.code, 302)
+    assert.ok(error.message.includes(ops.MANIFEST_DIGEST))
+    assert.ok(error.message.includes(targetType))
+    return true
+  })
+
+  assert.throws(() => rawApi.verifyManifest({ ...negotiated, types: types.slice(1) }), (error: unknown) => {
+    assert.ok(error instanceof AimuxError)
+    assert.equal(error.code, 302)
+    assert.ok(error.message.includes(ops.MANIFEST_DIGEST))
+    assert.ok(error.message.includes(targetType))
+    return true
+  })
+})
+
 test('typed serialization failures stay in the binding error domain', async () => {
   const client = new Client()
   const cyclic: Record<string, unknown> = {}
@@ -225,4 +260,28 @@ test('raw and typed expose matching error/cancelled terminal frames as DTOs', as
 test('host callbacks are rejected instead of silently disappearing from settings', async () => {
   const client = new Client()
   await assert.rejects(client.provider({ package: 'openai', settings: { fetch: async () => {} } }), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
+})
+
+function canonicalManifestJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalManifestJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const keys = Object.keys(record).sort()
+    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalManifestJson(record[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+test('schema/manifest.json self-verifies after stripping digest and inputHash', () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+  const emitted = JSON.parse(readFileSync(resolve(repoRoot, 'schema/manifest.json'), 'utf8')) as Record<string, unknown>
+  assert.equal(emitted.digest, ops.MANIFEST_DIGEST)
+  assert.equal(emitted.inputHash, ops.MANIFEST_DIGEST)
+  const { digest: _digest, inputHash: _inputHash, ...unsigned } = emitted
+  const canonical = {
+    ...unsigned,
+    ops: [...(unsigned.ops as Array<{ name: string }>)].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+  }
+  const actual = createHash('sha256').update(canonicalManifestJson(canonical)).digest('hex')
+  assert.equal(actual, ops.MANIFEST_DIGEST)
 })
