@@ -220,7 +220,7 @@ impl ImageModel for GoogleImageModel {
                     exchange.url(&format!("/models/{}:generateContent", self.model_id)),
                     options,
                 )
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler::<GenerateContentResponse>(),
             super::google_failed_response_handler(),

@@ -29,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation(timeout)`:
+- `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation_for(options)`
+  (with `generation(timeout)` available to transport callers):
   mark a synchronous, billable generation exchange. Its hang guard defaults to
   10 minutes instead of 30s and widens to the call's `totalMs` / `stepMs` when
   that is longer; a failure after the request may have reached the server (the

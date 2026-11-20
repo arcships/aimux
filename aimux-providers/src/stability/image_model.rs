@@ -221,7 +221,7 @@ impl ImageModel for StabilityImageModel {
                     )),
                     options,
                 )
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             HttpBody::Bytes(body_bytes, content_type),
             stability_successful_response_handler(),
             stability_failed_response_handler(),

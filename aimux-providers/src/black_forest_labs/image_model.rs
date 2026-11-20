@@ -246,7 +246,7 @@ impl ImageModel for BlackForestLabsImageModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange
                 .request(exchange.url(&format!("/{}", self.model_id)), options)
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             bfl_failed_response_handler(),

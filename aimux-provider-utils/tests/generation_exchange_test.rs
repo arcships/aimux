@@ -190,6 +190,28 @@ async fn a_generation_is_replayed_only_when_the_server_cannot_have_seen_it() {
     }
 }
 
+/// Providers forward the complete context; provider-utils alone reads the
+/// Core deadline, for both image and speech generations.
+#[test]
+fn generation_context_forwards_media_operation_deadlines() {
+    let timeout = TimeoutConfiguration {
+        total_ms: Some(20 * 60_000),
+        step_ms: Some(15 * 60_000),
+        ..TimeoutConfiguration::default()
+    };
+    let mut image = aimux_core::image_model::ImageCallOptions::new("image");
+    image.timeout = Some(timeout);
+    let mut speech = aimux_core::speech_model::SpeechCallOptions::new("speech");
+    speech.timeout = Some(timeout);
+    for request in [
+        HttpRequest::default().generation_for(&image),
+        HttpRequest::default().generation_for(&speech),
+    ] {
+        assert_eq!(request.kind, ExchangeKind::Generation);
+        assert_eq!(request.response_timeout, Some(Duration::from_secs(15 * 60)));
+    }
+}
+
 /// The guard is never tighter than the operation's own deadline: a longer
 /// `totalMs` / `stepMs` widens it, a shorter one leaves the guard alone (the
 /// Core deadline ends the call first).

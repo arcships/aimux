@@ -204,7 +204,7 @@ impl ImageModel for RecraftImageModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange
                 .request(exchange.url("/images/generations"), options)
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler(),
             recraft_failed_response_handler(),

@@ -162,6 +162,11 @@ impl ExchangeKind {
 /// of the operation the call runs in ([`RecordingContext::current`]).
 pub trait ExchangeContext {
     fn abort_signal(&self) -> Option<aimux_core::AbortSignal>;
+    /// The Core deadline used only to widen a generation's exchange guard.
+    /// Providers pass the context through; Core still enforces the deadline.
+    fn operation_timeout(&self) -> Option<&aimux_core::options::TimeoutConfiguration> {
+        None
+    }
     /// Only language-model `CallOptions` participate in recording; the other
     /// modalities have no call id to correlate on.
     fn call_id(&self) -> Option<String> {
@@ -208,8 +213,6 @@ macro_rules! exchange_context_abort_only {
 
 exchange_context_abort_only!(
     aimux_core::search_model::SearchCallOptions,
-    aimux_core::speech_model::SpeechCallOptions,
-    aimux_core::image_model::ImageCallOptions,
     aimux_core::video_model::VideoCallOptions,
     aimux_core::transcription_model::TranscriptionCallOptions,
     aimux_core::embedding_model::EmbeddingCallOptions,
@@ -217,7 +220,32 @@ exchange_context_abort_only!(
     aimux_core::files_model::UploadFileCallOptions,
 );
 
+macro_rules! generation_exchange_context {
+    ($($ty:path),* $(,)?) => {
+        $(impl ExchangeContext for $ty {
+            fn abort_signal(&self) -> Option<aimux_core::AbortSignal> {
+                self.abort_signal.clone()
+            }
+            fn operation_timeout(&self) -> Option<&aimux_core::options::TimeoutConfiguration> {
+                self.timeout.as_ref()
+            }
+        })*
+    };
+}
+
+generation_exchange_context!(
+    aimux_core::image_model::ImageCallOptions,
+    aimux_core::speech_model::SpeechCallOptions,
+);
+
 impl HttpRequest {
+    /// Mark a generation using the operation context, without requiring a
+    /// provider to inspect Core's timeout settings.
+    #[must_use]
+    pub fn generation_for(self, options: &impl ExchangeContext) -> Self {
+        self.generation(options.operation_timeout())
+    }
+
     /// A plain exchange that inherits the operation's cancellation and
     /// recording context. Downloads of provider-supplied URLs set the guard
     /// fields explicitly instead.

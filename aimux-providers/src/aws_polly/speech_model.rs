@@ -94,7 +94,7 @@ impl SpeechModel for AwsPollySpeechModel {
         let resp = aimux_provider_utils::post_to_api(
             exchange
                 .request(exchange.url("/v1/speech"), options)
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_binary_response_handler(),
             aws_failed_response_handler(),

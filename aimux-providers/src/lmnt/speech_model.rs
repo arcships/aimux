@@ -56,7 +56,7 @@ impl SpeechModel for LMNTSpeechModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange
                 .request(exchange.url("/v1/ai/speech/bytes"), options)
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             lmnt_failed_response_handler(),

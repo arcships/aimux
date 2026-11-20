@@ -332,7 +332,7 @@ impl ImageModel for BedrockImageModel {
         let resp = aimux_provider_utils::post_to_api(
             exchange
                 .request(url.clone(), options)
-                .generation(options.timeout.as_ref()),
+                .generation_for(options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::error::bedrock_failed_response_handler(),
