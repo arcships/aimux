@@ -582,6 +582,69 @@ async fn gpt_image_2_5_failure_events_are_errors_and_not_replayed() {
 }
 
 #[tokio::test]
+async fn malformed_image_payloads_are_rejected_without_replay() {
+    for model_id in ["gpt-image-2", "gpt-image-2.5-flare"] {
+        for payload in ["", " \n", "not!base64"] {
+            let server = MockServer::start().await;
+            if model_id == "gpt-image-2" {
+                Mock::given(method("POST"))
+                    .and(path("/images/generations"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                        "data": [{ "b64_json": payload }]
+                    })))
+                    .mount(&server)
+                    .await;
+            } else {
+                mount_sse(
+                    &server,
+                    &[
+                        image_call_done(payload),
+                        completed(json!([{
+                            "type": "image_generation_call",
+                            "result": payload
+                        }])),
+                    ],
+                )
+                .await;
+            }
+            let model = subscription(server.uri()).image_model(model_id).unwrap();
+            let error = generate_image(model.as_ref(), ImageCallOptions::new("x"))
+                .await
+                .expect_err("invalid image must not be returned as success");
+            assert!(matches!(error, AiMuxError::InvalidResponseData { .. }));
+            assert!(!error.is_retryable());
+            assert_eq!(requests(&server).await.len(), 1, "{model_id}: not replayed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn malformed_sse_frame_is_not_hidden_by_completed_or_replayed() {
+    let server = MockServer::start().await;
+    let body = format!(
+        "data: {{invalid json\n\n{}",
+        sse(&[image_call_done(PNG_B64), completed(json!([]))])
+    );
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2.5-flare")
+        .unwrap();
+    let error = generate_image(model.as_ref(), ImageCallOptions::new("x"))
+        .await
+        .expect_err("malformed SSE frame");
+    assert!(!error.is_retryable());
+    assert_eq!(requests(&server).await.len(), 1);
+}
+
+#[tokio::test]
 async fn gpt_image_2_5_completed_without_an_image_is_invalid_response() {
     let server = MockServer::start().await;
     mount_sse(&server, &[completed(json!([]))]).await;

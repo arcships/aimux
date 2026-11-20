@@ -259,10 +259,15 @@ impl CodexImageModel {
 
         let value = response.value;
         let images = extract_image_outputs(&value);
-        if matches!(&images, ImageOutputs::Base64(images) if images.is_empty()) {
-            return Err(AiMuxError::invalid_response_data(
-                "image response contained no `data[].b64_json`",
-            ));
+        if let ImageOutputs::Base64(images) = &images {
+            if images.is_empty() {
+                return Err(AiMuxError::invalid_response_data(
+                    "image response contained no `data[].b64_json`",
+                ));
+            }
+            for image in images {
+                validate_image_result(image)?;
+            }
         }
         Ok(ImageResult {
             images,
@@ -336,15 +341,10 @@ impl CodexImageModel {
 
         // The first `image_generation_call` item that carried a result.
         let mut retained: Option<Value> = None;
-        let mut frame_error: Option<AiMuxError> = None;
         let mut completed: Option<Value> = None;
         while let Some(event) = events.next().await {
             let data = match event {
                 Ok(data) => data,
-                Err(error) if error.is_recoverable_stream_error() => {
-                    frame_error.get_or_insert(error);
-                    continue;
-                }
                 Err(error) => return Err(no_replay(error)),
             };
             match data.get("type").and_then(Value::as_str).unwrap_or("") {
@@ -366,9 +366,9 @@ impl CodexImageModel {
         }
 
         let Some(completed) = completed else {
-            return Err(no_replay(frame_error.unwrap_or_else(|| {
-                AiMuxError::invalid_response_data("image stream ended without response.completed")
-            })));
+            return Err(AiMuxError::invalid_response_data(
+                "image stream ended without response.completed",
+            ));
         };
         let response_object = &completed["response"];
         let status = response_object["status"].as_str().unwrap_or("");
@@ -399,6 +399,7 @@ impl CodexImageModel {
             .ok_or_else(|| {
                 AiMuxError::invalid_response_data("image_generation_call item has no `result`")
             })?;
+        validate_image_result(image)?;
 
         Ok(ImageResult {
             images: ImageOutputs::Base64(vec![image.to_string()]),
@@ -468,6 +469,16 @@ fn validate_size(width: u32, height: u32) -> Result<(), AiMuxError> {
         return invalid("total pixels must be between 655,360 and 8,294,400");
     }
     Ok(())
+}
+
+/// Reject empty or malformed image payloads without exposing their contents.
+fn validate_image_result(image: &str) -> Result<(), AiMuxError> {
+    match aimux_provider_utils::convert_base64_to_uint8_array(image) {
+        Ok(bytes) if !bytes.is_empty() => Ok(()),
+        _ => Err(AiMuxError::invalid_response_data(
+            "image result must contain non-empty base64 data",
+        )),
+    }
 }
 
 /// Make an error non-retryable and map the subscription 401.
