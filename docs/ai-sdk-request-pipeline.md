@@ -333,6 +333,15 @@ whole-response 上限（connect、headers、完整 body/handler parse）。它�
 connect timeout、caller abort、显式 Core total/step/first/chunk deadline 约束。这是相对 AI SDK
 fetch 无默认 exchange timeout 的有意差异，CHANGELOG 必须明确。
 
+**同步生成类 exchange（#527）**：`HttpRequest::generation(options.timeout)` 把 exchange
+标为 `ExchangeKind::Generation`，用于服务端在连接上完成计费生成的请求（同步图片接口、
+非流式 TTS）。它的默认 guard 是 10 分钟；调用方 `timeout` 的 `totalMs` / `stepMs` 更长时
+放宽到该值，因此 exchange guard 不会比 Core deadline 更紧。请求可能已经到达服务端后的失败
+（guard 超时、transport timeout、发送或读 body 时断开）是 non-retryable，Core 不会重新提交
+生成；连接被拒（请求未发出）与 HTTP status 保持原有的可重试判定。图片模型内部轮询的
+提交请求（Black Forest Labs、Luma）同样是计费提交，也标为 generation；轮询与下载仍是普通
+exchange。视频的 `do_start` 由 Core 生成 idempotency key，未在本次调整。
+
 ### 5.5 `handle_fetch_error`
 
 与 AI SDK 一致：

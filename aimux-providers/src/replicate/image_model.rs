@@ -201,6 +201,7 @@ impl ImageModel for ReplicateImageModel {
         request.response_timeout = Some(Duration::from_secs(
             max_wait.unwrap_or(DEFAULT_WAIT_SECONDS) + WAIT_TRANSPORT_MARGIN_SECONDS,
         ));
+        let request = request.generation(options.timeout.as_ref());
 
         let resp = aimux_provider_utils::post_json_to_api(
             request,

@@ -61,11 +61,16 @@ pub struct HttpRequest {
     pub abort_signal: Option<aimux_core::AbortSignal>,
     pub call_id: Option<String>,
     pub recording_context: Option<RecordingContext>,
-    /// Per-exchange whole-response hang guard. `None` uses the 30s default;
-    /// a provider whose endpoint legitimately holds the connection longer
-    /// (e.g. Replicate `prefer: wait`) declares its own bound here. Streaming
-    /// exchanges are exempt regardless.
+    /// Per-exchange whole-response hang guard. `None` uses the default of
+    /// [`HttpRequest::kind`] (30s, or 10 minutes for
+    /// [`ExchangeKind::Generation`]); a provider whose endpoint legitimately
+    /// holds the connection longer (e.g. Replicate `prefer: wait`) declares
+    /// its own bound here. Streaming exchanges are exempt regardless.
     pub response_timeout: Option<std::time::Duration>,
+    /// What the exchange does on the server: it selects the default hang
+    /// guard and whether a failure after the request may have reached the
+    /// server is retryable. See [`ExchangeKind`].
+    pub kind: ExchangeKind,
     /// Per-request override of the successful-JSON-body size cap (default 64 MiB).
     /// Only consulted by [`crate::response_handler::create_json_response_handler`];
     /// binary downloads keep the separate, larger
@@ -99,6 +104,57 @@ pub struct HttpRequest {
     /// For an exchange the AI SDK makes with a plain `fetch` call or with
     /// `downloadBlob` (google-files.ts:84-126, download-blob.ts:111-114).
     pub omit_provider_utils_user_agent: bool,
+}
+
+/// What an exchange does on the server.
+///
+/// The kind decides two things a provider cannot otherwise express: the
+/// default whole-response hang guard (when [`HttpRequest::response_timeout`]
+/// is `None`), and whether a failure is retryable once the request may have
+/// reached the server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExchangeKind {
+    /// An ordinary API call: a 30s hang guard, and transport failures and
+    /// the hang guard are retryable.
+    #[default]
+    Standard,
+    /// A synchronous generation (an image endpoint that answers when the
+    /// image is done): the server starts billable work and may legitimately
+    /// hold the connection for minutes. The hang guard defaults to 10
+    /// minutes, and once the request may have reached the server (the hang
+    /// guard tripped, the transport timed out, the connection broke while
+    /// sending or reading the body) the failure is not retryable, so a
+    /// generation the server already accepted is not submitted again. A
+    /// refused connection and an HTTP status keep their usual retryability.
+    Generation,
+}
+
+/// [`ExchangeKind::Standard`]'s default hang guard.
+pub(crate) const EXCHANGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// [`ExchangeKind::Generation`]'s default hang guard.
+pub(crate) const GENERATION_EXCHANGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+impl ExchangeKind {
+    /// The hang guard of an exchange of this kind that declares none.
+    #[must_use]
+    pub fn default_response_timeout(self) -> Duration {
+        match self {
+            Self::Standard => EXCHANGE_RESPONSE_TIMEOUT,
+            Self::Generation => GENERATION_EXCHANGE_RESPONSE_TIMEOUT,
+        }
+    }
+
+    /// A failure that may come after the request reached the server, with the
+    /// retryability this kind allows: a generation is never replayed.
+    pub(crate) fn after_send(self, error: AiMuxError) -> AiMuxError {
+        match (self, error) {
+            (Self::Generation, AiMuxError::ApiCall(mut detail)) if detail.is_retryable => {
+                detail.is_retryable = false;
+                AiMuxError::ApiCall(detail)
+            }
+            (_, error) => error,
+        }
+    }
 }
 
 /// The per-operation context of an exchange: the call options' cancellation,
@@ -180,6 +236,35 @@ impl HttpRequest {
             ..Self::default()
         }
     }
+
+    /// Mark this exchange as an [`ExchangeKind::Generation`], with a hang
+    /// guard no tighter than the operation's own deadline: when the call's
+    /// `timeout` sets `totalMs` / `stepMs` and that bound is longer than the
+    /// guard in force (the declared [`HttpRequest::response_timeout`], else
+    /// the kind's default), the guard is widened to it, so the Core deadline
+    /// rather than the exchange ends a call the caller allowed to run long.
+    #[must_use]
+    pub fn generation(
+        mut self,
+        operation_timeout: Option<&aimux_core::options::TimeoutConfiguration>,
+    ) -> Self {
+        self.kind = ExchangeKind::Generation;
+        let operation_bound = operation_timeout
+            .and_then(|timeout| match (timeout.total_ms, timeout.step_ms) {
+                (Some(total), Some(step)) => Some(total.min(step)),
+                (total, step) => total.or(step),
+            })
+            .map(Duration::from_millis);
+        let in_force = self
+            .response_timeout
+            .unwrap_or_else(|| self.kind.default_response_timeout());
+        if let Some(bound) = operation_bound
+            && bound > in_force
+        {
+            self.response_timeout = Some(bound);
+        }
+        self
+    }
 }
 
 /// SSRF guard configuration carried by a validated exchange
@@ -204,6 +289,7 @@ pub(crate) struct PreparedRequest {
     call_id: Option<String>,
     recording_context: Option<RecordingContext>,
     pub(crate) response_timeout: Option<std::time::Duration>,
+    pub(crate) kind: ExchangeKind,
     pub(crate) max_json_response_bytes: Option<usize>,
     pub(crate) validation: Option<DownloadValidation>,
     pub(crate) fetch: Option<FetchFunction>,
@@ -282,6 +368,7 @@ impl HttpRequest {
             call_id: self.call_id,
             recording_context: self.recording_context,
             response_timeout: self.response_timeout,
+            kind: self.kind,
             max_json_response_bytes: self.max_json_response_bytes,
             validation: self.validate_url.then_some(DownloadValidation {
                 trusted_origin: self.trusted_origin,
@@ -428,11 +515,19 @@ async fn send_one_request(
         None => fetch.fetch(fetch_request).await,
     };
     sent.map_err(|error| {
-        fetch_error_to_ai_mux_error(
+        // A refused connection never reached the server; a transport timeout
+        // or a connection that broke while sending may have.
+        let reached_server = !matches!(error, FetchError::Connect(_));
+        let error = fetch_error_to_ai_mux_error(
             error,
             &request.sanitized_url(),
             &crate::logging::redact_request_values(&request.body),
-        )
+        );
+        if reached_server {
+            request.kind.after_send(error)
+        } else {
+            error
+        }
     })
 }
 

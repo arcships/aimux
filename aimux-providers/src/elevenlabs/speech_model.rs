@@ -64,7 +64,9 @@ impl SpeechModel for ElevenLabsSpeechModel {
         };
 
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(url, options),
+            exchange
+                .request(url, options)
+                .generation(options.timeout.as_ref()),
             exchange.transform_body(Value::Object(body.clone())),
             aimux_provider_utils::create_binary_response_handler(),
             elevenlabs_failed_response_handler(),

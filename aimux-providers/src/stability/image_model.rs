@@ -213,13 +213,15 @@ impl ImageModel for StabilityImageModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_to_api(
-            exchange.request(
-                exchange.url(&format!(
-                    "/v2beta/stable-image/generate/{}",
-                    model_id_to_subpath(&self.model_id)
-                )),
-                options,
-            ),
+            exchange
+                .request(
+                    exchange.url(&format!(
+                        "/v2beta/stable-image/generate/{}",
+                        model_id_to_subpath(&self.model_id)
+                    )),
+                    options,
+                )
+                .generation(options.timeout.as_ref()),
             HttpBody::Bytes(body_bytes, content_type),
             stability_successful_response_handler(),
             stability_failed_response_handler(),

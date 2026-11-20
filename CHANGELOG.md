@@ -24,6 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aimux_providers::voyage::reranking` submodule paths; import
   `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
   instead (RFC-0046 §4.5).
+- `aimux_provider_utils::HttpRequest` gains `kind: ExchangeKind`; a struct
+  literal of `HttpRequest` must set it or use `..Default::default()` (#527).
+
+### Added
+
+- `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation(timeout)`:
+  mark a synchronous, billable generation exchange. Its hang guard defaults to
+  10 minutes instead of 30s and widens to the call's `totalMs` / `stepMs` when
+  that is longer; a failure after the request may have reached the server (the
+  guard, a transport timeout, a connection broken while sending or reading the
+  body) is not retryable. A refused connection and HTTP statuses keep their
+  retryability (#527).
+
+### Fixed
+
+- Synchronous image and speech generations are no longer cut at 30s and
+  resubmitted by the default retries, which billed a slow generation up to
+  three times: OpenAI, OpenAI-compatible, Google, Vertex, Bedrock, Stability,
+  Recraft, Prodia, fal, Replicate (`prefer: wait`), and the Black Forest Labs
+  and Luma submit requests for images; OpenAI, Google, xAI, ElevenLabs, Hume,
+  Cartesia, LMNT, Mistral and AWS Polly for speech (#527).
 
 ## [0.6.1] - 2026-11-05
 

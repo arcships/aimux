@@ -257,10 +257,12 @@ impl SpeechModel for GoogleSpeechModel {
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let response = aimux_provider_utils::post_json_to_api(
-            exchange.request(
-                exchange.url(&format!("/models/{}:generateContent", self.model_id)),
-                options,
-            ),
+            exchange
+                .request(
+                    exchange.url(&format!("/models/{}:generateContent", self.model_id)),
+                    options,
+                )
+                .generation(options.timeout.as_ref()),
             exchange.transform_body(body.clone()),
             aimux_provider_utils::create_json_response_handler::<SpeechResponseBody>(),
             super::google_failed_response_handler(),

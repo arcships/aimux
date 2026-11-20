@@ -83,7 +83,9 @@ impl SpeechModel for HumeSpeechModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url("/v0/tts/file"), options),
+            exchange
+                .request(exchange.url("/v0/tts/file"), options)
+                .generation(options.timeout.as_ref()),
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             hume_failed_response_handler(),
