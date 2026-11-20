@@ -7,6 +7,10 @@ pub(crate) use super::config::{
     BaseUrlInfo, OpenAIModelConfig, OpenAIUrl, UrlRules, set_query_param, supported_urls,
 };
 pub(crate) use super::error::openai_failed_response_handler;
+pub(crate) use super::image::image_model::{
+    extract_images as extract_image_outputs, extract_provider_metadata as extract_image_metadata,
+    extract_usage as extract_image_usage,
+};
 pub(crate) use super::provider::list_models_once;
 pub(crate) use super::responses::responses_convert::{
     build_responses_event_stream_with_raw, build_responses_generate_result,
