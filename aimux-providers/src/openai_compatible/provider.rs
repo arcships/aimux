@@ -34,7 +34,7 @@ use super::chat::{ChatSettings, ConvertUsage, MetadataExtractor, SupportedUrlsFn
 use super::request_rewrite::CompatibleBodyRewrite;
 use super::{
     OpenAICompatibleChatModel, OpenAICompatibleCompletionModel, OpenAICompatibleEmbeddingModel,
-    OpenAICompatibleImageModel, TransformRequestBody,
+    OpenAICompatibleImageModel, OpenAICompatibleVideoModel, TransformRequestBody,
 };
 
 /// Settings of [`create_openai_compatible`] (the AI SDK's
@@ -300,6 +300,12 @@ impl OpenAICompatibleProvider {
         OpenAICompatibleImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 
+    /// An asynchronous video model; `provider()` is `"{name}.video"`.
+    #[must_use]
+    pub fn video(&self, model_id: &str) -> OpenAICompatibleVideoModel {
+        OpenAICompatibleVideoModel::from_config(model_id.to_string(), self.model_config("video"))
+    }
+
     /// The provider as a function: the default language model for an id, the
     /// chat model. The AI SDK's callable provider.
     #[must_use]
@@ -323,6 +329,13 @@ impl Provider for OpenAICompatibleProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn video_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn aimux_core::video_model::VideoModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.video(model_id))))
     }
 
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
