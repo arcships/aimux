@@ -71,7 +71,7 @@ pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
-pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
+pub use http::{ExchangeContext, ExchangeKind, HttpBody, HttpRequest, sleep_or_abort};
 pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
 pub use is_valid_hostname_part::is_valid_hostname_part;
 pub use logging::{init_logging, redact_error_context};

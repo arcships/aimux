@@ -146,7 +146,9 @@ impl ImageModel for ProdiaImageModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url("/job?price=true"), options),
+            exchange
+                .request(exchange.url("/job?price=true"), options)
+                .generation_for(options),
             body,
             aimux_provider_utils::create_binary_response_handler(),
             prodia_failed_response_handler(),
