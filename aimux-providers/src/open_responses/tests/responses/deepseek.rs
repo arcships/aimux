@@ -1,0 +1,256 @@
+//! DeepSeek Responses extension contracts (#525), using the real endpoint with
+//! an injected transport. No network or API credential is needed.
+use std::sync::Arc;
+
+use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model_message::LanguageModelMessage;
+use aimux_core::options::CallOptions;
+use aimux_core::result::{GenerateContent, Source};
+use aimux_core::stream_part::StreamPart;
+use futures::StreamExt;
+use serde_json::{Value, json};
+
+use crate::open_responses::{
+    OpenResponsesModel, OpenResponsesProviderSettings, create_open_responses,
+};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+fn model(endpoint: &str, id: &str, replies: Vec<Canned>) -> (OpenResponsesModel, Arc<MockFetch>) {
+    let mock = MockFetch::new(replies);
+    let mut settings = OpenResponsesProviderSettings::new("deepseek", endpoint);
+    settings.fetch = Some(mock.transport());
+    (create_open_responses(settings).unwrap().responses(id), mock)
+}
+
+fn options(search: Option<bool>) -> CallOptions {
+    let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("搜索火星")]);
+    options.provider_options = search.map(|enabled| {
+        serde_json::from_value(json!({
+            "deepseek": {"deepseekWebSearch": enabled}
+        }))
+        .unwrap()
+    });
+    options
+}
+
+fn sse(events: &[Value]) -> Canned {
+    Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>()
+            .into_bytes(),
+    }
+}
+
+fn response(output: Value) -> Value {
+    json!({"id":"r1", "model":"deepseek-flash", "status":"completed", "output": output})
+}
+
+#[tokio::test]
+async fn interleaved_search_citations_and_fresh_instance_replay() {
+    let reasoning = json!({"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text","text":"查找"}], "summary":[], "signature":"reason-sig", "kind":"opaque"});
+    let search_a = json!({"id":"a", "type":"web_search_call", "status":"completed", "kind":"search", "signature":"sig-a", "action":{"type":"search","query":"火星","sources":[{"url":"https://example.com/a"}]}});
+    let search_b = json!({"id":"b", "type":"web_search_call", "status":"failed", "kind":"page", "signature":"sig-b", "action":{"type":"open_page","url":"https://example.com/b"}, "page":{"title":"页面"}, "error":{"message":"unavailable"}});
+    let citation = json!({"type":"url_citation", "url":"https://example.com/a", "title":"火星", "start_index":2, "end_index":4});
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"前言", "annotations":[]}, {"type":"output_text", "text":"🌍看火星", "annotations":[citation.clone()]}]});
+    let function = json!({"id":"f", "type":"function_call", "call_id":"local-call", "name":"weather", "arguments":"{}", "signature":"function-sig"});
+    let ordered = json!([reasoning, search_a, message, search_b, function]);
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"web_search_call","id":"a"}}),
+        json!({"type":"response.output_item.added", "output_index":3, "item":{"type":"web_search_call","id":"b"}}),
+        // Deliberately complete the later search first.
+        json!({"type":"response.output_item.done", "output_index":3, "item":search_b}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.added", "output_index":2, "item":{"type":"message", "id":"m"}}),
+        json!({"type":"response.output_text.delta", "item_id":"m", "output_index":2, "content_index":1, "delta":"🌍看火星"}),
+        json!({"type":"response.output_text.annotation.added", "item_id":"m", "output_index":2, "content_index":1, "annotation_index":0, "annotation":citation}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":search_a}),
+        json!({"type":"response.output_item.done", "output_index":2, "item":message}),
+        json!({"type":"response.output_item.done", "output_index":4, "item":function}),
+        json!({"type":"response.completed", "response":response(json!([]))}),
+    ];
+    let (first, transport) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = first
+        .do_stream(&options(Some(true)))
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let sent = &transport.seen()[0];
+    assert_eq!(sent.method, "POST");
+    assert_eq!(sent.url, "https://api.deepseek.com/responses");
+    assert_eq!(sent.json_body()["model"], "deepseek-flash");
+    assert_eq!(
+        sent.json_body()["tools"],
+        json!([{"type":"deepseek_web_search"}])
+    );
+    let searches = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolCall(call) if call.tool_name == "deepseek_web_search" => Some(call),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(searches.len(), 2);
+    assert!(
+        searches
+            .iter()
+            .all(|call| call.provider_executed == Some(true))
+    );
+    assert_eq!(searches[0].tool_call_id, "b");
+    assert_eq!(searches[1].tool_call_id, "a");
+    let results = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolResult(result) => Some(result),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(results[0].result, search_b);
+    assert_eq!(results[0].is_error, Some(true));
+    assert_eq!(results[1].result, search_a);
+    let source = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Source(Source::Url {
+                url,
+                title,
+                provider_metadata,
+                ..
+            }) => Some((url, title, provider_metadata)),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(source.0, "https://example.com/a");
+    assert_eq!(source.1.as_deref(), Some("火星"));
+    let citation_meta = &source.2.as_ref().unwrap()["deepseek"];
+    assert_eq!(citation_meta["itemId"], "m");
+    assert_eq!(citation_meta["contentIndex"], 1);
+    assert_eq!(citation_meta["startIndex"], 2);
+    assert_eq!(citation_meta["endIndex"], 4);
+    assert_eq!(citation_meta["offsetUnit"], "unicode-code-point");
+    let metadata = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Finish {
+                provider_metadata, ..
+            } => provider_metadata.clone(),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(metadata["deepseek"]["responseOutput"]["items"], ordered);
+    // Persist via JSON and replay in a fresh provider, without enabling search.
+    let saved = serde_json::to_string(&metadata).unwrap();
+    let mut next = options(None);
+    next.prompt.push(LanguageModelMessage::Assistant {
+        content: vec![],
+        provider_options: Some(serde_json::from_str(&saved).unwrap()),
+    });
+    next.prompt.push(serde_json::from_value(json!({"role":"tool", "content":[{"type":"tool-result","toolCallId":"local-call","toolName":"weather","output":{"type":"text","value":"sunny"}}]})).unwrap());
+    next.prompt.push(LanguageModelMessage::user_text("继续"));
+    let (second, transport) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![Canned::json(&response(json!([])))],
+    );
+    second.do_generate(&next).await.unwrap();
+    let body = transport.seen()[0].json_body();
+    assert!(body.get("tools").is_none());
+    assert!(body.get("previous_response_id").is_none());
+    let input = body["input"].as_array().unwrap();
+    assert_eq!(&input[1..6], ordered.as_array().unwrap());
+    assert_eq!(input[6]["type"], "function_call_output");
+    assert_eq!(input[7]["content"][0]["text"], "继续");
+}
+
+#[tokio::test]
+async fn search_off_retains_ordinary_request_shape() {
+    let (model, transport) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![
+            Canned::json(&response(json!([]))),
+            Canned::json(&response(json!([]))),
+        ],
+    );
+    model.do_generate(&options(None)).await.unwrap();
+    model.do_generate(&options(Some(false))).await.unwrap();
+    let requests = transport.seen();
+    assert_eq!(requests[0].json_body(), requests[1].json_body());
+    assert!(requests[0].json_body().get("tools").is_none());
+}
+
+#[tokio::test]
+async fn rejects_legacy_search_and_incompatible_routes_before_fetch() {
+    for (endpoint, id) in [
+        ("https://relay.example/v1", "deepseek-flash"),
+        ("https://api.deepseek.com", "other-model"),
+    ] {
+        let (model, transport) = model(endpoint, id, vec![]);
+        assert!(model.do_generate(&options(Some(true))).await.is_err());
+        assert!(transport.seen().is_empty());
+    }
+    let (model, transport) = model("https://api.deepseek.com", "deepseek-flash", vec![]);
+    let mut call = options(Some(true));
+    call.tools = Some(
+        serde_json::from_value(
+            json!([{"type":"provider", "id":"openai.web_search", "name":"web_search", "args":{}}]),
+        )
+        .unwrap(),
+    );
+    assert!(model.do_generate(&call).await.is_err());
+    assert!(transport.seen().is_empty());
+}
+
+#[tokio::test]
+async fn nonstream_search_is_provider_executed_and_preserves_replay() {
+    let item = json!({"type":"web_search_call","id":"s","status":"completed","signature":"keep", "action":{"sources":[{"url":"https://example.com"}]}});
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![Canned::json(&response(json!([item])))],
+    );
+    let result = model.do_generate(&options(Some(true))).await.unwrap();
+    assert!(
+        matches!(&result.content[0], GenerateContent::ToolCall(call) if call.provider_executed == Some(true))
+    );
+    assert!(
+        matches!(&result.content[1], GenerateContent::ToolResult(result) if result.result == item)
+    );
+    assert_eq!(
+        result.provider_metadata.unwrap()["deepseek"]["responseOutput"]["items"],
+        json!([item])
+    );
+}
+
+#[tokio::test]
+async fn replay_is_validated_when_search_is_absent() {
+    for replay in [
+        json!({"modelId":"wrong","endpoint":"https://api.deepseek.com/responses","items":[]}),
+        json!({"modelId":"deepseek-flash","endpoint":"https://api.deepseek.com/responses","items":[{"type":"message","role":"system","content":[]}]}),
+        json!({"modelId":"deepseek-flash","endpoint":"https://api.deepseek.com/responses","items":{}}),
+    ] {
+        let (model, transport) = model("https://api.deepseek.com", "deepseek-flash", vec![]);
+        let mut call = options(None);
+        call.prompt.push(LanguageModelMessage::Assistant {
+            content: vec![],
+            provider_options: Some(
+                serde_json::from_value(json!({"deepseek":{"responseOutput":replay}})).unwrap(),
+            ),
+        });
+        assert!(model.do_generate(&call).await.is_err());
+        assert!(transport.seen().is_empty());
+    }
+}
