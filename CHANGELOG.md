@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
   instead (RFC-0046 §4.5).
 
+### Added
+
+- MiniMax H3 media models (#528): `create_minimax` / `minimax()` with
+  `MiniMaxProvider::video` (`MiniMax-H3`, `-Highspeed`, `-Lite`, `-Max`,
+  `/v2/video_generation` + `/v2/query/video_generation/{task_id}`) and
+  `MiniMaxProvider::image` (`MiniMax-H3-Image`, `-Image-Highspeed`,
+  `/v1/images/generations`). A chat base URL is accepted (trailing
+  `/anthropic`, `/anthropic/v1`, `/v1`, `/v2` removed; `api.minimaxi.com`
+  normalized to `https://api.minimax.cn`). A failed create or image
+  generation is not retried except after an HTTP 429. `create_provider`
+  adds these media models to the four existing `minimax*` presets while
+  preserving their chat, embedding, and discovery behavior.
+
 ## [0.6.1] - 2026-11-05
 
 Patch release for issues found against 0.6.0. ABI 1 / ops 1.0 are unchanged,
