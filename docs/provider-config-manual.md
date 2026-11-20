@@ -51,6 +51,36 @@ await generateText(model, p, {
 
 > 当前 DeepSeek 包中，未显式指定 `thinking.type` 时，`reasoning: 'none'` 会关闭思考，其他显式档位会开启思考；`thinking.type` 优先。`reasoningEffort` 是该包的 option key，不能用 wire 字段名 `reasoning_effort` 替代。
 
+### DeepSeek Responses 原生搜索与回放
+
+使用 `create_open_responses(OpenResponsesProviderSettings::new("deepseek", "https://api.deepseek.com"))` 创建 provider（通过 settings 的 `api_key` 配置凭据），再取 `responses("deepseek-flash")`。这条路径与现有 DeepSeek Chat Completions 模型分开。
+
+调用级 `providerOptions.deepseek.deepseekWebSearch: true` 在 `tools` 中增加 `{"type":"deepseek_web_search"}`；未传或 `false` 不声明搜索。开关必须是布尔值，不能与 legacy `openai.web_search` / `web_search_preview` provider tool 同传，启用时只允许官方 `/responses` 路由和 `deepseek-flash`。
+
+搜索完成后返回 `providerExecuted: true` 的 `deepseek_web_search` tool call 及对应 tool result。result 保留整个原始 `web_search_call`，包括 status、action.sources、page、error 等字段；宿主不能将此调用当成本地函数执行。流式 URL citation 通过 `Source::Url` 返回，provider metadata 包含 `itemId`、`outputIndex`、`contentIndex`、`annotationIndex`、`startIndex`、`endIndex` 和 `offsetUnit: "unicode-code-point"`。偏移保留服务端的 Unicode 码点单位，不转换成 UTF-8 字节或 UTF-16 下标。
+
+生成结果的 `providerMetadata.deepseek.responseOutput`（流式则在 `Finish` 的 provider metadata）是 `{modelId, endpoint, items}` 的可持久化回放记录。将它放到后续 prompt 中**对应 assistant 消息**的 `providerOptions.deepseek.responseOutput`：
+
+```json
+{
+  "role": "assistant",
+  "content": [],
+  "providerOptions": {
+    "deepseek": {
+      "responseOutput": {
+        "modelId": "deepseek-flash",
+        "endpoint": "https://api.deepseek.com/responses",
+        "items": [{"type": "web_search_call", "id": "search_1", "status": "completed", "action": {"type": "search", "query": "火星"}}]
+      }
+    }
+  }
+}
+```
+
+上例的 `items` 仅示意形状；实际必须复制返回的完整数组。此记录替代该 assistant 消息的 content 序列化，完整原序写入 `input`，保留 reasoning、搜索、assistant message、function call 的相对位置及 `kind`、`signature` 等可选字段。函数执行结果仍放在随后的普通 tool 消息中。新的请求不需要再次打开搜索。模型和 endpoint 不兼容或回放条目形状非法会在发请求前报错。若使用其他 provider name，以上 `deepseek` 命名空间替换为该 name 的首段。
+
+离线测试证明请求与输出的 wire 回放；是否恢复服务端搜索上下文仍需 live API 验证。官方 [Responses input guide](https://api-docs.deepseek.com/guides/responses_api/#input-items) 和 [Web Tools 多轮说明](https://api-docs.deepseek.com/guides/web_tools/#multi-turn-conversations) 对搜索结果与 URL 页面恢复有不同说明，本实现不承诺服务端保留未回放内容。
+
 ## 3. 思考开关配置示例（按调研，来源见各 batch 文件）
 
 配置示例写在 `provider_options.<key>` 里。OpenAI-compatible 的 `<key>` 接受 provider 名及其 camelCase 形式（`zhipu_v4` → `zhipuV4`），原名含下划线时会收到 deprecation warning；原生包的 namespace 和 option key 按各包 schema 定义。

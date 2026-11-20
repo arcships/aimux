@@ -2927,6 +2927,11 @@ reason = "VERSION is the package version string; aimux pins it in shared/aisdk_p
 package = "@ai-sdk/open-responses"
 
 [[open_responses.files]]
+rust = "open_responses/responses/deepseek.rs"
+status = "aimux"
+reason = "DeepSeek native search, citation metadata and stateless raw output replay (#525)."
+
+[[open_responses.files]]
 upstream = "src/index.ts"
 rust = "open_responses/mod.rs"
 status = "mapped"

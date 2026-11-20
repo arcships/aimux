@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- DeepSeek `deepseek-flash` native web search on the official Responses route:
+  explicit `deepseekWebSearch` opt-in, provider-executed search results, URL
+  citations with Unicode code-point offsets, and ordered stateless output
+  replay through message-level `responseOutput` provider options (#525).
+
 ### Breaking
 
 - Replaced `chrono` with `jiff` across all `aimux-*` crates for
