@@ -106,6 +106,20 @@ let model = provider.responses("gpt-5.2-codex");
 let result = generate_text(model, "Hello", GenerateTextOptions::default()).await?;
 ```
 
+#### 图片模型（仅订阅模式）
+
+`provider.image(id)` / `Provider::image_model(id)`，`provider()` 为 `"codex.image"`：
+
+| 模型 | 路由 | 说明 |
+|---|---|---|
+| `gpt-image-2` | `POST /images/generations`、`POST /images/edits`（均为 JSON，编辑用 `images: [{image_url: "data:..."}]`） | 不接受 `size` |
+| `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 及 `-2026-09-08` 快照 | `POST /responses` 流式，`image_generation` 工具（外层模型 `gpt-5.6-luna`） | `size` 可选：16 的倍数、边长 ≤ 3840、长短边比 ≤ 3、总像素 655,360–8,294,400 |
+
+- 只发探测确认过的字段：`quality`、`outputFormat` 等 provider options 一律报错；不支持 `mask`；编辑至少一张输入图；每次一张图（`n` 必须为 1）。
+- **失败不重放**：超时、连接重置、5xx、格式异常都可能已被服务端接受并计费，这些模型返回的错误都不可重试，`generate_image` 不会自动重发。直接接口的交换超时放宽到 600 秒，外层上限用 `ImageCallOptions.timeout`。
+- 401 → `TokenExpired`（同语言模型）；403 表示账号无图片权限。
+- API key 模式不提供图片模型（返回 `NoSuchModel`），公开 Image API 请用 `openai` 包。
+
 ### 4.3 刷新编排（集成方）
 
 ```rust

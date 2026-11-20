@@ -18,6 +18,7 @@ use aimux_provider_utils::{
 use crate::openai::internal::{OpenAIModelConfig, list_models_once, supported_urls};
 use crate::shared::TransformRequestBody;
 
+use super::image_model::CodexImageModel;
 use super::responses_model::CodexModel;
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
@@ -220,6 +221,23 @@ impl CodexProvider {
         )
     }
 
+    /// An image model on the ChatGPT subscription channel; `provider()` is
+    /// `"{name}.image"`. `gpt-image-2` uses the direct image endpoints;
+    /// `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` and their
+    /// `-2026-09-08` snapshots use the Responses `image_generation` tool.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::NoSuchModel` for any other id, and for every id
+    /// in `ApiKey` mode: the public Image API there is the `openai` package's.
+    pub fn image(&self, model_id: &str) -> Result<CodexImageModel, AiMuxError> {
+        if self.channel != Channel::ChatGptAccount {
+            return Err(AiMuxError::no_such_model(model_id, "imageModel"));
+        }
+        CodexImageModel::subscription(model_id, self.model_config("image"))
+            .ok_or_else(|| AiMuxError::no_such_model(model_id, "imageModel"))
+    }
+
     /// The provider as a function: the default language model for an id. The
     /// same model as [`responses`](Self::responses) and
     /// [`language_model`](Provider::language_model).
@@ -242,8 +260,9 @@ impl Provider for CodexProvider {
         Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
     }
 
+    /// The subscription-channel image models ([`image`](CodexProvider::image)).
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "imageModel"))
+        Ok(Arc::new(self.image(model_id)?))
     }
 }
 

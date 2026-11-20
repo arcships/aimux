@@ -271,8 +271,8 @@ pub use voyage::{
 
 pub use codex::{
     CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_OAUTH_TOKEN_URL, CODEX_SUBSCRIPTION_BASE_URL,
-    CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
-    codex_refresh_at, create_codex,
+    CodexImageModel, CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens,
+    codex, codex_refresh, codex_refresh_at, create_codex,
 };
 pub use xai::{
     XAIProvider, XAIProviderSettings, XaiResponsesModel, XaiSpeechModel, XaiTranscriptionModel,
