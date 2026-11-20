@@ -216,6 +216,9 @@ pub mod replicate;
 // Video-only providers.
 pub mod klingai;
 
+// Image and video media providers (text models stay on the registry rows).
+pub mod minimax;
+
 // Generic Responses API wrapper.
 pub mod open_responses;
 
@@ -319,6 +322,10 @@ pub use klingai::{
     KlingAIProvider, KlingAIProviderSettings, KlingAIVideoModel, create_klingai, klingai,
 };
 pub use luma::{LumaImageModel, LumaProvider, LumaProviderSettings, create_luma, luma};
+pub use minimax::{
+    MiniMaxImageModel, MiniMaxProvider, MiniMaxProviderSettings, MiniMaxVideoModel, create_minimax,
+    minimax,
+};
 pub use prodia::{
     ProdiaImageModel, ProdiaProvider, ProdiaProviderSettings, ProdiaVideoModel, create_prodia,
     prodia,

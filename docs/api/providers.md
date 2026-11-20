@@ -15,6 +15,7 @@
 | Non-registry: Transcription-only providers (STT) | 5 |
 | Non-registry: Image-only providers | 4 |
 | Non-registry: Video-only providers | 1 |
+| Non-registry: Image and video media providers (text models stay on the registry rows) | 1 |
 | Non-registry: Generic Responses API wrapper | 1 |
 | Non-registry: Modality-specific providers (non-language, e.g. rerank-only) | 1 |
 | Non-registry: AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only | 1 |
@@ -22,9 +23,9 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **328** |
 
-**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
+**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **46 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 282
 
@@ -369,6 +370,12 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | module | typed entry points |
 |--------|--------------------|
 | `klingai` | `KlingAIProvider` / `KlingAIProviderSettings` / `create_klingai` |
+
+### Image and video media providers (text models stay on the registry rows) — 1
+
+| module | typed entry points |
+|--------|--------------------|
+| `minimax` | `MiniMaxProvider` / `MiniMaxProviderSettings` / `create_minimax` |
 
 ### Generic Responses API wrapper — 1
 
