@@ -133,8 +133,8 @@ fn build_body(
     let mut warnings = Vec::new();
 
     let prompt = options.prompt.as_deref().unwrap_or_default();
-    let prompt_chars = prompt.trim().chars().count();
-    if prompt_chars == 0 || prompt_chars > MAX_PROMPT_CHARS {
+    let prompt_chars = prompt.chars().count();
+    if prompt.trim().is_empty() || prompt_chars > MAX_PROMPT_CHARS {
         return Err(AiMuxError::invalid_argument(format!(
             "MiniMax image prompt must be 1 to {MAX_PROMPT_CHARS} characters, got {prompt_chars}"
         )));

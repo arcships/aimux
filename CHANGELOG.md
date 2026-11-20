@@ -35,7 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/anthropic`, `/anthropic/v1`, `/v1`, `/v2` removed; `api.minimaxi.com`
   normalized to `https://api.minimax.cn`). A failed create or image
   generation is not retried except after an HTTP 429. `create_provider`
-  does not route `minimax*` to this package; those names stay text presets.
+  adds these media models to the four existing `minimax*` presets while
+  preserving their chat, embedding, and discovery behavior.
 
 ## [0.6.1] - 2026-11-05
 

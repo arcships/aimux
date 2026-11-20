@@ -561,6 +561,161 @@ async fn invalid_image_options_send_nothing() {
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
+#[tokio::test]
+async fn prompt_limits_count_whitespace_sent_on_the_wire() {
+    let server = MockServer::start().await;
+    let provider = provider(&server.uri());
+    for prompt in [
+        format!(" {}", "猫".repeat(7000)),
+        format!("{} ", "猫".repeat(7000)),
+    ] {
+        let error = provider
+            .video("MiniMax-H3")
+            .do_start(&VideoCallOptions::new(prompt))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
+    }
+    for prompt in [
+        format!(" {}", "猫".repeat(32000)),
+        format!("{} ", "猫".repeat(32000)),
+    ] {
+        let error = provider
+            .image("MiniMax-H3-Image")
+            .do_generate(&ImageCallOptions::new(prompt))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn named_minimax_presets_keep_chat_and_serve_media_on_the_regional_endpoint() {
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::options::CallOptions;
+    use aimux_providers::preset::PresetSettings;
+    use aimux_providers::test_support::mock_fetch::{Canned, MockFetch};
+
+    for (name, chat_url, media_url) in [
+        (
+            "minimax",
+            "https://api.minimax.io/v1/chat/completions",
+            "https://api.minimax.io",
+        ),
+        (
+            "minimax_cn",
+            "https://api.minimaxi.com/v1/chat/completions",
+            "https://api.minimax.cn",
+        ),
+        (
+            "minimax_coding_plan",
+            "https://api.minimax.io/anthropic/v1/chat/completions",
+            "https://api.minimax.io",
+        ),
+        (
+            "minimax_cn_coding_plan",
+            "https://api.minimaxi.com/v1/chat/completions",
+            "https://api.minimax.cn",
+        ),
+    ] {
+        let fetch = MockFetch::new(vec![
+            Canned::json(
+                &json!({"choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]}),
+            ),
+            Canned::json(&json!({"task_id": TASK_ID})),
+            // An empty image response avoids any download: the assertion below
+            // checks that the media generation endpoint was reached.
+            Canned::json(&json!({"data": []})),
+        ]);
+        let provider = aimux_providers::create_provider(
+            name,
+            PresetSettings {
+                api_key: Some(Resolvable::Value("test-key".into())),
+                fetch: Some(fetch.transport()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        provider
+            .language_model("MiniMax-M2")
+            .unwrap()
+            .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+                "hi",
+            )]))
+            .await
+            .unwrap();
+        provider
+            .video_model("MiniMax-H3")
+            .unwrap()
+            .unwrap()
+            .do_start(&VideoCallOptions::new("hi"))
+            .await
+            .unwrap();
+        assert!(
+            provider
+                .image_model("MiniMax-H3-Image")
+                .unwrap()
+                .do_generate(&ImageCallOptions::new("hi"))
+                .await
+                .is_err()
+        );
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 3, "{name}");
+        assert_eq!(seen[0].url, chat_url, "{name}");
+        assert_eq!(
+            seen[1].url,
+            format!("{media_url}/v2/video_generation"),
+            "{name}"
+        );
+        assert_eq!(
+            seen[2].url,
+            format!("{media_url}/v1/images/generations"),
+            "{name}"
+        );
+        assert!(
+            seen.iter()
+                .all(|r| r.headers.get("authorization").map(String::as_str)
+                    == Some("Bearer test-key"))
+        );
+    }
+}
+
+#[tokio::test]
+async fn named_minimax_media_keeps_relay_prefix_and_custom_headers() {
+    use aimux_providers::preset::PresetSettings;
+    use aimux_providers::test_support::mock_fetch::{Canned, MockFetch};
+    let fetch = MockFetch::new(vec![Canned::json(&json!({"task_id": TASK_ID}))]);
+    let provider = aimux_providers::create_provider(
+        "minimax_cn",
+        PresetSettings {
+            api_key: Some(Resolvable::Value("test-key".into())),
+            base_url: Some("https://relay.example/minimax/anthropic/v1".into()),
+            headers: Some(std::collections::HashMap::from([(
+                "x-relay".into(),
+                Some("custom".into()),
+            )])),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    provider
+        .video_model("MiniMax-H3")
+        .unwrap()
+        .unwrap()
+        .do_start(&VideoCallOptions::new("hi"))
+        .await
+        .unwrap();
+    let seen = fetch.seen();
+    assert_eq!(
+        seen[0].url,
+        "https://relay.example/minimax/v2/video_generation"
+    );
+    assert_eq!(seen[0].headers["x-relay"], "custom");
+    assert_eq!(seen[0].headers["authorization"], "Bearer test-key");
+}
+
 #[test]
 fn the_provider_serves_video_and_image_models() {
     use aimux_core::provider::Provider;

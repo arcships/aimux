@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
+use aimux_core::provider::ProviderDiscovery;
 use aimux_core::{
     AiMuxError, DecisionModel, EmbeddingModel, Files, ImageModel, LanguageModel, Provider,
-    ProviderDiscovery, RerankingModel, SearchModel, Skills, SpeechModel, TranscriptionModel,
-    VideoModel,
+    RerankingModel, SearchModel, Skills, SpeechModel, TranscriptionModel, VideoModel,
 };
 
 pub(crate) struct MediaOverlay {

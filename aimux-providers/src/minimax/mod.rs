@@ -10,8 +10,13 @@
 //! - [image generation](https://platform.minimax.cn/docs/api-reference/image-generation-h3-generations):
 //!   `MiniMax-H3-Image`, `MiniMax-H3-Image-Highspeed`.
 //!
-//! The text models of MiniMax stay on the `minimax*` OpenAI-compatible
-//! registry rows; this package offers only the media models.
+//! This package offers the media models. [`crate::create_provider`] combines
+//! them with the existing OpenAI-compatible text preset for `minimax`,
+//! `minimax_cn`, `minimax_coding_plan`, and `minimax_cn_coding_plan`. Chat,
+//! embeddings, and discovery keep the preset behavior; images and videos use
+//! this package. The preset's regional base URL, explicit key, extra headers,
+//! and custom transport also configure the media requests. The optional
+//! `transform_request_body` setting applies only to the text preset.
 //!
 //! Both generation requests are billable and not idempotent, so a failed
 //! create (video) or generate (image) request is never sent again
