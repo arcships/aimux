@@ -111,7 +111,23 @@ pub fn create_provider(
                 available_providers: provider_names().into_iter().map(str::to_owned).collect(),
             });
         }
-        return Ok(Arc::new(preset::create(name, settings)?));
+        let base = Arc::new(preset::create(name, settings.clone())?);
+        if name == "bytedance" {
+            let media =
+                crate::bytedance::create_bytedance(crate::bytedance::ByteDanceProviderSettings {
+                    api_key: settings.api_key,
+                    base_url: settings.base_url,
+                    headers: settings.headers,
+                    fetch: settings.fetch,
+                    transform_request_body: settings.transform_request_body,
+                    ..Default::default()
+                })?;
+            return Ok(Arc::new(crate::shared::media_overlay::MediaOverlay::new(
+                base,
+                Arc::new(media),
+            )));
+        }
+        return Ok(base);
     }
     let PresetSettings {
         api_key,
