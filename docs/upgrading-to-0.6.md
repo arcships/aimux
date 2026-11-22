@@ -50,9 +50,11 @@ provider.create  ->  provider.model  ->  text.generate / text.stream / ...
   `settings.organization` (accepted only by `openai`) and `settings.project`
   (accepted only by `openai` and `google_vertex`) are now rejected with
   `InvalidArgument` on preset and other packages rather than injecting
-  `OpenAI-Organization` / `OpenAI-Project` headers; pass custom headers
-  explicitly via `settings.headers`. `settings.params` is likewise accepted only
-  by preset packages that declare `templateParams`.
+  `OpenAI-Organization` / `OpenAI-Project` headers, and on `google_vertex`
+  `settings.project` configures the GCP Vertex project rather than injecting an
+  `OpenAI-Project` header; pass custom headers explicitly via
+  `settings.headers`. `settings.params` is likewise accepted only by preset
+  packages that declare `templateParams`.
 - `provider.create` and `registry.fromConfig` are trusted-caller operations:
   `envAllowlist` restricts `{ "env": "VAR" }` config interpolation only and
   does not suppress implicit per-provider default environment variable

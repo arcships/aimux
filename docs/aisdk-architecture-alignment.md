@@ -582,8 +582,8 @@ pub fn providers_from_config_with_policy(
 `aimux_core::provider_registry::ProviderRegistry` 内部以 `std::sync::RwLock<BTreeMap<String, Arc<dyn Provider>>>` 保存注册条目，同时支持：
 
 - 只读查询与解析：`provider`、`provider_ids`、`contains_provider`、`len`、`is_empty`、`separator`、`language_model_with_api`，以及标准模态模型解析；
-- 原地更新：`register`、`unregister`、`extend_providers`、`replace_providers`；
-- 派生新注册表：`with_provider`、`without_provider`、`with_providers`、`with_replaced_providers`。
+- 原地更新：`register`、`unregister`、`extend_providers`、`replace_providers`、`update_providers`；
+- 派生新注册表：`with_provider`、`without_provider`、`with_providers`、`with_replaced_providers`、`with_updated_providers`。
 
 registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩余内容原样传递。方法不编码进字符串 ID，也不靠注册 `openai.chat` 等自动别名反解。
 

@@ -1998,4 +1998,45 @@ mod tests {
         ));
         HandleRegistry::global().release_owner(owner);
     }
+
+    #[tokio::test]
+    async fn create_rejects_preset_organization_and_project_in_favor_of_headers() {
+        let owner = owner();
+        for field in ["organization", "project"] {
+            let err = call(
+                owner,
+                HandleId(0),
+                "provider.create",
+                json!({
+                    "package": "ollama",
+                    "settings": { (field): "org-or-proj" }
+                }),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err.code(), 5, "preset must reject {field}");
+            assert!(matches!(
+                err,
+                OpsError::AiMux(AiMuxError::InvalidArgument { .. })
+            ));
+        }
+
+        let allowed = call(
+            owner,
+            HandleId(0),
+            "provider.create",
+            json!({
+                "package": "ollama",
+                "settings": {
+                    "headers": {
+                        "OpenAI-Organization": "org-1",
+                        "OpenAI-Project": "proj-1"
+                    }
+                }
+            }),
+        )
+        .await;
+        assert!(allowed.is_ok());
+        HandleRegistry::global().release_owner(owner);
+    }
 }

@@ -129,6 +129,7 @@ environment variable fallbacks when credential or `baseUrl` settings are
 omitted (do not allow untrusted callers to pass arbitrary `baseUrl` values with
 omitted credentials). `provider.create` also validates `settings` strictly
 against each package's `PackageDescriptor.settings`, so `organization` (accepted
-only by `openai`) and `project` (accepted only by `openai` and `google_vertex`)
-are rejected on preset and other packages rather than injecting
-`OpenAI-Organization` / `OpenAI-Project` headers.
+only by `openai`) and `project` (accepted only by `openai` and `google_vertex`,
+where `google_vertex` configures the GCP Vertex project) are rejected on preset
+and other packages rather than injecting `OpenAI-Organization` /
+`OpenAI-Project` headers (use `settings.headers` for custom headers).

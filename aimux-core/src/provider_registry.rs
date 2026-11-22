@@ -154,19 +154,31 @@ impl ProviderRegistry {
 
     /// Insert or replace multiple providers in place.
     pub fn extend_providers(&self, entries: impl IntoIterator<Item = (String, Arc<dyn Provider>)>) {
-        self.providers
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .extend(entries);
+        let mut displaced = Vec::new();
+        {
+            let mut guard = self
+                .providers
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for (id, provider) in entries {
+                if let Some(prev) = guard.insert(id, provider) {
+                    displaced.push(prev);
+                }
+            }
+        }
+        drop(displaced);
     }
 
     /// Atomically replace the entire provider map in place.
     pub fn replace_providers(&self, providers: BTreeMap<String, Arc<dyn Provider>>) {
-        let mut guard = self
-            .providers
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *guard = providers;
+        let prev = {
+            let mut guard = self
+                .providers
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            std::mem::replace(&mut *guard, providers)
+        };
+        drop(prev);
     }
 
     /// Atomically apply removals and insertions (or replace all providers)
@@ -177,19 +189,32 @@ impl ProviderRegistry {
         set: BTreeMap<String, Arc<dyn Provider>>,
         replace: bool,
     ) -> Vec<String> {
-        let mut guard = self
-            .providers
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if replace {
-            *guard = set;
-        } else {
-            for key in remove {
-                guard.remove(key);
+        let mut displaced_map = BTreeMap::new();
+        let mut displaced_vec = Vec::new();
+        let keys = {
+            let mut guard = self
+                .providers
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if replace {
+                displaced_map = std::mem::replace(&mut *guard, set);
+            } else {
+                for key in remove {
+                    if let Some(prev) = guard.remove(key) {
+                        displaced_vec.push(prev);
+                    }
+                }
+                for (key, provider) in set {
+                    if let Some(prev) = guard.insert(key, provider) {
+                        displaced_vec.push(prev);
+                    }
+                }
             }
-            guard.extend(set);
-        }
-        guard.keys().cloned().collect()
+            guard.keys().cloned().collect()
+        };
+        drop(displaced_map);
+        drop(displaced_vec);
+        keys
     }
 
     fn derive_with(&self, mutate: impl FnOnce(&mut BTreeMap<String, Arc<dyn Provider>>)) -> Self {
@@ -448,4 +473,81 @@ fn offered<T: ?Sized>(
     model_type: &str,
 ) -> Result<Arc<T>, AiMuxError> {
     model.unwrap_or_else(|| Err(AiMuxError::no_such_model(id, model_type)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    struct DropObserverProvider {
+        registry: Weak<ProviderRegistry>,
+        observed_len_on_drop: Arc<AtomicUsize>,
+    }
+
+    impl Provider for DropObserverProvider {
+        fn language_model(&self, id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+            Err(AiMuxError::no_such_model(id, "languageModel"))
+        }
+
+        fn embedding_model(&self, id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
+            Err(AiMuxError::no_such_model(id, "embeddingModel"))
+        }
+
+        fn image_model(&self, id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
+            Err(AiMuxError::no_such_model(id, "imageModel"))
+        }
+    }
+
+    impl Drop for DropObserverProvider {
+        fn drop(&mut self) {
+            if let Some(registry) = self.registry.upgrade() {
+                self.observed_len_on_drop
+                    .store(registry.provider_ids().len(), Ordering::SeqCst);
+            }
+        }
+    }
+
+    #[test]
+    fn in_place_mutations_drop_displaced_providers_outside_write_lock() {
+        let registry = Arc::new(create_provider_registry(
+            BTreeMap::new(),
+            ProviderRegistryOptions::default(),
+        ));
+        let observed = Arc::new(AtomicUsize::new(usize::MAX));
+        let make = || -> Arc<dyn Provider> {
+            Arc::new(DropObserverProvider {
+                registry: Arc::downgrade(&registry),
+                observed_len_on_drop: observed.clone(),
+            })
+        };
+
+        registry.register("a", make());
+        let keys = registry.update_providers(
+            &["a".to_string()],
+            BTreeMap::from([("b".to_string(), make())]),
+            false,
+        );
+        assert_eq!(keys, vec!["b"]);
+        assert_eq!(observed.load(Ordering::SeqCst), 1);
+
+        observed.store(usize::MAX, Ordering::SeqCst);
+        let keys = registry.update_providers(
+            &[],
+            BTreeMap::from([("c".to_string(), make()), ("d".to_string(), make())]),
+            true,
+        );
+        assert_eq!(keys, vec!["c", "d"]);
+        assert_eq!(observed.load(Ordering::SeqCst), 2);
+
+        observed.store(usize::MAX, Ordering::SeqCst);
+        registry.extend_providers([("c".to_string(), make())]);
+        assert_eq!(observed.load(Ordering::SeqCst), 2);
+
+        observed.store(usize::MAX, Ordering::SeqCst);
+        registry.replace_providers(BTreeMap::new());
+        assert_eq!(observed.load(Ordering::SeqCst), 0);
+    }
 }

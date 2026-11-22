@@ -666,3 +666,25 @@ fn packages_list_every_provider_create_package_once() {
         assert!(packages.contains(&name), "{name}");
     }
 }
+
+#[test]
+fn trusted_caller_and_env_allowlist_boundaries_are_published_in_manifest_schemas() {
+    let manifest = manifest();
+    for type_name in ["ProviderCreateParams", "RegistryFromConfigParams"] {
+        let schema = &manifest["typeDefs"]["input"][type_name];
+        let desc = schema["description"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{type_name} missing description"));
+        assert!(
+            desc.contains("Trusted-caller") && desc.contains("baseUrl"),
+            "{type_name} description must document trusted-caller boundary: {desc}"
+        );
+        let allowlist_desc = schema["properties"]["envAllowlist"]["description"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{type_name}.envAllowlist missing description"));
+        assert!(
+            allowlist_desc.contains("Does not restrict implicit per-provider"),
+            "{type_name}.envAllowlist must clarify default env fallback boundary: {allowlist_desc}"
+        );
+    }
+}
