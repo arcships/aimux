@@ -1877,6 +1877,7 @@ async fn security_sigv4_auto_protects_authorization_and_all_x_amz_headers() {
 
     for spoofed in [
         "authorization",
+        "host",
         "x-amz-date",
         "x-amz-security-token",
         "x-amz-content-sha256",
@@ -1963,4 +1964,337 @@ async fn security_sigv4_auto_protects_authorization_and_all_x_amz_headers() {
     .unwrap();
     assert_eq!(drain_body(resp.body).await.unwrap().as_ref(), b"signed-ok");
     assert_eq!(wire_calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn regression_sigv4_auth_fetch_protects_custom_api_key_header_and_host() {
+    let (inner_capture, wire_calls) = MockFetch::new(|req| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            req.url,
+            Bytes::from_static(b"ok"),
+        ))
+    });
+
+    let creds = AwsCredentials {
+        access_key_id: "AKIAEXAMPLE".to_string(),
+        secret_access_key: "secret-aws-key".to_string(),
+        session_token: None,
+        region: "us-east-1".to_string(),
+    };
+    let sigv4_auth: FetchFunction = Arc::new(SigV4AuthFetch::new(
+        SigV4Fetch::new(
+            inner_capture.clone(),
+            Resolvable::Value(creds),
+            "bedrock",
+            SigV4Signing::Aws4Fetch,
+        ),
+        inner_capture,
+        HeaderName::from_static("x-api-key"),
+    ));
+    let ua_wrapped: FetchFunction = Arc::new(aimux_provider_utils::UserAgentFetch {
+        inner: Some(sigv4_auth.clone()),
+        provider_utils: Some("ai-sdk-provider-utils/test"),
+        suffix: Some("ai-sdk-anthropic-aws/test".to_string()),
+    });
+
+    for ep in [
+        NativeEndpoint::unauthenticated("https://bedrock-runtime.us-east-1.amazonaws.com")
+            .unwrap()
+            .with_fetch(sigv4_auth.clone()),
+        NativeEndpoint::with_sigv4(
+            "https://bedrock-runtime.us-east-1.amazonaws.com",
+            sigv4_auth.clone(),
+        )
+        .unwrap(),
+        NativeEndpoint::unauthenticated("https://bedrock-runtime.us-east-1.amazonaws.com")
+            .unwrap()
+            .with_fetch(ua_wrapped),
+    ] {
+        for (hdr, val) in [
+            ("X-API-Key", "caller-bypass"),
+            ("Host", "evil.example.com"),
+            ("x-amz-date", "20260101T000000Z"),
+        ] {
+            let mut h = HeaderMap::new();
+            h.insert(
+                HeaderName::try_from(hdr).unwrap(),
+                HeaderValue::from_static(val),
+            );
+            let err = native_request(
+                &ep,
+                NativeRequest::new(Method::POST, "v1/messages").with_headers(h),
+                NativeContext::new(),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                matches!(err, NativeError::InvalidHeader { .. }),
+                "expected InvalidHeader for `{hdr}`, got {err:?}"
+            );
+        }
+    }
+    assert_eq!(wire_calls.lock().unwrap().len(), 0);
+
+    // Retry idempotency_key cannot smuggle x-api-key to bypass SigV4 signing.
+    let ep_idem =
+        NativeEndpoint::unauthenticated("https://bedrock-runtime.us-east-1.amazonaws.com")
+            .unwrap()
+            .try_with_idempotency_header("x-api-key")
+            .unwrap()
+            .with_fetch(sigv4_auth.clone());
+    let err_idem = native_request(
+        &ep_idem,
+        NativeRequest::new(Method::POST, "v1/messages").with_retry(NativeRetryPolicy::Safe(
+            SafeRetryOptions::default().with_idempotency_key(
+                HeaderName::from_static("x-api-key"),
+                HeaderValue::from_static("bypass"),
+            ),
+        )),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err_idem, NativeError::InvalidHeader { .. }));
+    assert_eq!(wire_calls.lock().unwrap().len(), 0);
+
+    // Legitimate endpoint-owned ProviderHeaders x-api-key still flows through unsigned.
+    let ep_owned_key = NativeEndpoint::with_provider_headers(
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+        ProviderHeaders::new(
+            Credential::Explicit(Resolvable::Value("endpoint-owned-key".to_string())),
+            AuthScheme::Header("x-api-key"),
+            vec![],
+            None,
+        ),
+    )
+    .unwrap()
+    .with_fetch(sigv4_auth);
+    let resp = native_request(
+        &ep_owned_key,
+        NativeRequest::new(Method::POST, "v1/messages"),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(drain_body(resp.body).await.unwrap().as_ref(), b"ok");
+    let calls = wire_calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].headers.get("x-api-key").unwrap(),
+        "endpoint-owned-key"
+    );
+    assert!(!calls[0].headers.contains_key("authorization"));
+}
+
+#[tokio::test]
+async fn regression_high_cardinality_headers_mid_poll_abort_fragment_and_u32_max_retry() {
+    // 1. Response with >24_576 duplicate header values + sensitive header must redact without panicking.
+    let (many_headers_mock, _) = MockFetch::new(|req| async move {
+        let mut h = HeaderMap::new();
+        for _ in 0..25_000 {
+            h.append("x-dup", HeaderValue::from_static("v"));
+        }
+        h.insert("set-cookie", HeaderValue::from_static("sid=top-secret"));
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            h,
+            req.url,
+            Bytes::from_static(b"ok"),
+        ))
+    });
+    let ep_many = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .with_fetch(many_headers_mock);
+    let obs_many = RecordingObserver::new();
+    let resp_many = native_request(
+        &ep_many,
+        NativeRequest::new(Method::GET, "many"),
+        NativeContext::new().with_observer(obs_many.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resp_many.headers.get("set-cookie").unwrap(),
+        "sid=top-secret"
+    );
+    assert_eq!(drain_body(resp_many.body).await.unwrap().as_ref(), b"ok");
+    {
+        let heads = obs_many.heads.lock().unwrap();
+        assert_eq!(heads.len(), 1);
+        assert_eq!(heads[0].2.get("set-cookie").unwrap(), "[REDACTED]");
+        assert_eq!(heads[0].2.get_all("x-dup").iter().count(), 25_000);
+    }
+
+    // 2. Mid-poll AbortSignal trigger before returning Ready(Some(Ok(bytes))) or Ready(None)
+    //    must surface NativeError::Aborted and deliver 0 post-abort bytes.
+    struct AbortDuringPollStream {
+        signal: AbortSignal,
+        step: usize,
+        emit_empty_first: bool,
+        end_with_eof: bool,
+    }
+    impl Stream for AbortDuringPollStream {
+        type Item = Result<Bytes, FetchError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.as_mut().get_mut();
+            let current = this.step;
+            this.step += 1;
+            if this.emit_empty_first && current == 0 {
+                return Poll::Ready(Some(Ok(Bytes::new())));
+            }
+            this.signal.abort();
+            if this.end_with_eof {
+                Poll::Ready(None)
+            } else {
+                Poll::Ready(Some(Ok(Bytes::from_static(b"post-abort-bytes"))))
+            }
+        }
+    }
+
+    for (emit_empty_first, end_with_eof) in [(false, false), (true, false), (true, true)] {
+        let sig = AbortSignal::new();
+        let sig_for_stream = sig.clone();
+        let (abort_mock, _) = MockFetch::new(move |req| {
+            let sig_for_stream = sig_for_stream.clone();
+            async move {
+                let body: BoxStream<'static, Result<Bytes, FetchError>> =
+                    Box::pin(AbortDuringPollStream {
+                        signal: sig_for_stream,
+                        step: 0,
+                        emit_empty_first,
+                        end_with_eof,
+                    });
+                Ok(FetchResponse {
+                    status: StatusCode::OK,
+                    headers: HeaderMap::new(),
+                    url: req.url,
+                    body,
+                })
+            }
+        });
+        let ep_abort = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+            .unwrap()
+            .with_fetch(abort_mock);
+        let obs_abort = RecordingObserver::new();
+        let mut resp = native_request(
+            &ep_abort,
+            NativeRequest::new(Method::GET, "stream"),
+            NativeContext::new()
+                .with_abort_signal(sig)
+                .with_observer(obs_abort.clone()),
+        )
+        .await
+        .unwrap();
+        let err = resp.body.next().await.unwrap().unwrap_err();
+        assert!(
+            matches!(err, NativeError::Aborted(_)),
+            "expected Aborted for (empty={emit_empty_first}, eof={end_with_eof}), got {err:?}"
+        );
+        assert!(resp.body.next().await.is_none());
+        assert_eq!(obs_abort.chunk_count(), 0);
+        let fin = obs_abort.finished_events();
+        assert_eq!(fin.len(), 1);
+        assert_eq!(fin[0].outcome, NativeExchangeOutcome::Aborted);
+        assert!(!fin[0].recording_complete);
+    }
+
+    // 3. Fragment secrets on response.url never leak in Debug, observer head, or cross-origin errors.
+    let (frag_same_mock, _) = MockFetch::new(|_| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            Url::parse("https://api.example.com/v1/models?tok=q-secret#access_token=frag-secret")
+                .unwrap(),
+            Bytes::from_static(b"ok"),
+        ))
+    });
+    let ep_frag = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .with_fetch(frag_same_mock);
+    let obs_frag = RecordingObserver::new();
+    let resp_frag = native_request(
+        &ep_frag,
+        NativeRequest::new(Method::GET, "models"),
+        NativeContext::new().with_observer(obs_frag.clone()),
+    )
+    .await
+    .unwrap();
+    let resp_dbg = format!("{resp_frag:?}");
+    assert!(!resp_dbg.contains("frag-secret"));
+    assert!(!resp_dbg.contains("q-secret"));
+    assert_eq!(drain_body(resp_frag.body).await.unwrap().as_ref(), b"ok");
+    {
+        let heads = obs_frag.heads.lock().unwrap();
+        assert_eq!(heads.len(), 1);
+        assert!(!heads[0].3.contains("frag-secret"));
+        assert!(!heads[0].3.contains("q-secret"));
+    }
+
+    let (frag_cross_mock, _) = MockFetch::new(|_| async move {
+        Ok(FetchResponse::from_bytes(
+            StatusCode::OK,
+            HeaderMap::new(),
+            Url::parse("https://evil.test/cb?tok=q-secret#access_token=frag-secret").unwrap(),
+            Bytes::from_static(b"evil"),
+        ))
+    });
+    let ep_frag_cross = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .with_fetch(frag_cross_mock);
+    let err_cross = native_request(
+        &ep_frag_cross,
+        NativeRequest::new(Method::GET, "models"),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(!err_cross.to_string().contains("frag-secret"));
+    assert!(!format!("{err_cross:?}").contains("frag-secret"));
+
+    // 4. SafeRetryOptions with max_retries = u32::MAX retries cleanly without overflow.
+    let retry_calls = Arc::new(AtomicUsize::new(0));
+    let retry_calls_ref = retry_calls.clone();
+    let (retry_mock, _) = MockFetch::new(move |req| {
+        let retry_calls_ref = retry_calls_ref.clone();
+        async move {
+            let n = retry_calls_ref.fetch_add(1, Ordering::SeqCst) + 1;
+            if n < 3 {
+                Ok(FetchResponse::from_bytes(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    HeaderMap::new(),
+                    req.url,
+                    Bytes::from_static(b"busy"),
+                ))
+            } else {
+                Ok(FetchResponse::from_bytes(
+                    StatusCode::OK,
+                    HeaderMap::new(),
+                    req.url,
+                    Bytes::from_static(b"recovered"),
+                ))
+            }
+        }
+    });
+    let ep_u32_max = NativeEndpoint::unauthenticated("https://api.example.com/v1")
+        .unwrap()
+        .with_fetch(retry_mock);
+    let resp_u32_max = native_request(
+        &ep_u32_max,
+        NativeRequest::new(Method::GET, "models").with_retry(NativeRetryPolicy::Safe(
+            SafeRetryOptions::default()
+                .with_max_retries(u32::MAX)
+                .with_initial_backoff(Duration::ZERO),
+        )),
+        NativeContext::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        drain_body(resp_u32_max.body).await.unwrap().as_ref(),
+        b"recovered"
+    );
+    assert_eq!(retry_calls.load(Ordering::SeqCst), 3);
 }

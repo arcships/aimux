@@ -56,13 +56,17 @@ pub const DEFAULT_MAX_RECORDED_BYTES: usize = 6 * 1024 * 1024;
 ///
 /// Endpoints created with [`NativeEndpoint::with_sigv4`], or bound via
 /// [`NativeEndpoint::with_fetch`] to [`crate::SigV4Fetch`] / [`crate::SigV4AuthFetch`],
-/// automatically protect these headers and the `x-amz-*` prefix. Custom `Fetch` wrappers
-/// around a SigV4 signer must use [`NativeEndpoint::with_sigv4`] or explicitly protect
-/// both `SIGV4_PROTECTED_HEADERS` and `"x-amz-"` via
+/// automatically protect these headers (`authorization`, `host`, `x-amz-date`,
+/// `x-amz-security-token`, `x-amz-content-sha256`), the `x-amz-*` prefix, and any
+/// transport-declared auth/dispatch header (such as `SigV4AuthFetch`'s `api_key_header`,
+/// e.g. `x-api-key`). Custom `Fetch` wrappers around a SigV4 signer must use
+/// [`NativeEndpoint::with_sigv4`] or explicitly protect `SIGV4_PROTECTED_HEADERS`,
+/// `"x-amz-"`, and any custom dispatch headers via
 /// [`NativeEndpoint::try_with_protected_headers`] /
 /// [`NativeEndpoint::try_with_protected_header_prefixes`].
 pub const SIGV4_PROTECTED_HEADERS: &[&str] = &[
     "authorization",
+    "host",
     "x-amz-date",
     "x-amz-security-token",
     "x-amz-content-sha256",
@@ -142,9 +146,11 @@ impl NativeEndpoint {
 
     /// Construct a SigV4-authenticated endpoint pinned to `base_url` using `sigv4_fetch`.
     ///
-    /// Automatically protects [`SIGV4_PROTECTED_HEADERS`] (`authorization`, `x-amz-date`,
-    /// `x-amz-security-token`, `x-amz-content-sha256`) and all `x-amz-*` headers so callers
-    /// cannot supply or spoof AWS signing headers.
+    /// Automatically protects [`SIGV4_PROTECTED_HEADERS`] (`authorization`, `host`,
+    /// `x-amz-date`, `x-amz-security-token`, `x-amz-content-sha256`), all `x-amz-*`
+    /// headers, and any transport-declared headers from [`crate::Fetch::protected_header_names`]
+    /// (such as [`crate::SigV4AuthFetch`]'s `api_key_header`) so callers cannot spoof
+    /// AWS signing headers or bypass SigV4 signing.
     ///
     /// # Errors
     ///
@@ -153,6 +159,7 @@ impl NativeEndpoint {
     pub fn with_sigv4(base_url: &str, sigv4_fetch: FetchFunction) -> Result<Self, NativeError> {
         let mut endpoint = Self::unauthenticated(base_url)?;
         endpoint.enable_sigv4_protection();
+        endpoint.register_fetch_protected_headers(sigv4_fetch.as_ref());
         endpoint.fetch = Some(sigv4_fetch);
         Ok(endpoint)
     }
@@ -244,17 +251,27 @@ impl NativeEndpoint {
             .insert(SIGV4_PROTECTED_PREFIX.to_string());
     }
 
+    fn register_fetch_protected_headers(&mut self, fetch: &dyn crate::fetch::Fetch) {
+        for name in fetch.protected_header_names() {
+            self.protected_headers
+                .insert(name.as_str().to_ascii_lowercase());
+        }
+    }
+
     /// Bind an explicit [`FetchFunction`] (such as a proxy transport or [`crate::SigV4Fetch`]).
     ///
     /// If `fetch` reports SigV4 signing ([`crate::SigV4Fetch`] / [`crate::SigV4AuthFetch`]),
-    /// [`SIGV4_PROTECTED_HEADERS`] and the `x-amz-*` prefix are protected automatically.
-    /// If wrapping a SigV4 signer inside a custom `Fetch`, use [`Self::with_sigv4`] or
-    /// declare protected headers/prefixes explicitly.
+    /// [`SIGV4_PROTECTED_HEADERS`] (`authorization`, `host`, `x-amz-date`,
+    /// `x-amz-security-token`, `x-amz-content-sha256`), the `x-amz-*` prefix, and any
+    /// transport-declared headers from [`crate::Fetch::protected_header_names`] are
+    /// protected automatically. If wrapping a SigV4 signer inside a custom `Fetch`, use
+    /// [`Self::with_sigv4`] or declare protected headers/prefixes explicitly.
     #[must_use]
     pub fn with_fetch(mut self, fetch: FetchFunction) -> Self {
         if fetch.protects_sigv4_headers() {
             self.enable_sigv4_protection();
         }
+        self.register_fetch_protected_headers(fetch.as_ref());
         self.fetch = Some(fetch);
         self
     }
@@ -835,7 +852,7 @@ impl NativeBodyStream {
         outcome: NativeExchangeOutcome,
     ) -> Poll<Option<Result<Bytes, NativeError>>> {
         self.terminated = true;
-        self.buffered.clear();
+        self.buffered = Bytes::new();
         self.inner = None;
         self.abort_fut = None;
         self.deadline_sleep = None;
@@ -845,12 +862,36 @@ impl NativeBodyStream {
 
     fn finish_eof(&mut self) -> Poll<Option<Result<Bytes, NativeError>>> {
         self.terminated = true;
-        self.buffered.clear();
+        self.buffered = Bytes::new();
         self.inner = None;
         self.abort_fut = None;
         self.deadline_sleep = None;
         self.finisher.finish(NativeExchangeOutcome::Completed, true);
         Poll::Ready(None)
+    }
+
+    fn check_active_bounds(&mut self) -> Option<Poll<Option<Result<Bytes, NativeError>>>> {
+        if let Some(signal) = &self.abort_signal
+            && signal.is_aborted()
+        {
+            return Some(self.terminate_err(
+                NativeError::Aborted("request aborted".to_string()),
+                NativeExchangeOutcome::Aborted,
+            ));
+        }
+        if let Some(deadline) = self.deadline
+            && Instant::now() >= deadline
+        {
+            let msg = self
+                .timeout_label
+                .clone()
+                .unwrap_or_else(|| "request timed out".to_string());
+            return Some(self.terminate_err(
+                NativeError::Timeout(msg.clone()),
+                NativeExchangeOutcome::Failed(msg),
+            ));
+        }
+        None
     }
 
     fn poll_next_slice_from_buffer(&mut self) -> Option<Bytes> {
@@ -871,13 +912,8 @@ impl Stream for NativeBodyStream {
             return Poll::Ready(None);
         }
 
-        if let Some(signal) = &this.abort_signal
-            && signal.is_aborted()
-        {
-            return this.terminate_err(
-                NativeError::Aborted("request aborted".to_string()),
-                NativeExchangeOutcome::Aborted,
-            );
+        if let Some(done) = this.check_active_bounds() {
+            return done;
         }
         if let Some(abort_fut) = this.abort_fut.as_mut()
             && abort_fut.as_mut().poll(cx).is_ready()
@@ -885,19 +921,6 @@ impl Stream for NativeBodyStream {
             return this.terminate_err(
                 NativeError::Aborted("request aborted".to_string()),
                 NativeExchangeOutcome::Aborted,
-            );
-        }
-
-        if let Some(deadline) = this.deadline
-            && Instant::now() >= deadline
-        {
-            let msg = this
-                .timeout_label
-                .clone()
-                .unwrap_or_else(|| "request timed out".to_string());
-            return this.terminate_err(
-                NativeError::Timeout(msg.clone()),
-                NativeExchangeOutcome::Failed(msg),
             );
         }
         if let Some(sleep) = this.deadline_sleep.as_mut()
@@ -926,24 +949,30 @@ impl Stream for NativeBodyStream {
             };
             match poll {
                 Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => return this.finish_eof(),
+                Poll::Ready(None) => {
+                    if let Some(done) = this.check_active_bounds() {
+                        return done;
+                    }
+                    return this.finish_eof();
+                }
                 Poll::Ready(Some(Err(fetch_err))) => {
-                    if matches!(fetch_err, FetchError::Aborted)
-                        || this
-                            .abort_signal
-                            .as_ref()
-                            .is_some_and(AbortSignal::is_aborted)
-                    {
+                    if matches!(fetch_err, FetchError::Aborted) {
                         return this.terminate_err(
                             NativeError::Aborted("request aborted".to_string()),
                             NativeExchangeOutcome::Aborted,
                         );
+                    }
+                    if let Some(done) = this.check_active_bounds() {
+                        return done;
                     }
                     let err = NativeError::Transport(fetch_err);
                     let msg = err.to_string();
                     return this.terminate_err(err, NativeExchangeOutcome::Failed(msg));
                 }
                 Poll::Ready(Some(Ok(bytes))) => {
+                    if let Some(done) = this.check_active_bounds() {
+                        return done;
+                    }
                     if bytes.is_empty() {
                         continue;
                     }
@@ -969,7 +998,7 @@ impl Drop for NativeBodyStream {
         // Release the underlying transport stream before finalizing observation so no
         // background consumption continues after consumer drop (RFC-0040 §5.3).
         self.inner = None;
-        self.buffered.clear();
+        self.buffered = Bytes::new();
         self.abort_fut = None;
         self.deadline_sleep = None;
         if !self.terminated {
@@ -1083,14 +1112,15 @@ pub async fn native_request(
     let (max_retries, initial_backoff, retryable_statuses) =
         effective_retry_plan(endpoint, &request.method, &request.retry);
 
-    let mut attempt: u32 = 1;
+    let mut attempt: u64 = 1;
     loop {
         check_pre_bounds(
             context.abort_signal.as_ref(),
             deadline,
             timeout_label.as_deref(),
         )?;
-        let can_retry = attempt <= max_retries;
+        let can_retry = can_retry_attempt(attempt, max_retries);
+        let reported_attempt = u32::try_from(attempt).unwrap_or(u32::MAX);
         let attempt_result = execute_attempt(
             fetch.as_ref(),
             &request.method,
@@ -1103,7 +1133,7 @@ pub async fn native_request(
             &request.body,
             endpoint.max_buffer_bytes,
             context.max_recorded_bytes,
-            attempt,
+            reported_attempt,
             can_retry,
             retryable_statuses,
             context.abort_signal.as_ref(),
@@ -1743,7 +1773,7 @@ fn redact_response_headers<'a>(
     {
         return std::borrow::Cow::Borrowed(headers);
     }
-    let mut redacted = HeaderMap::with_capacity(headers.len());
+    let mut redacted = HeaderMap::try_with_capacity(headers.keys_len()).unwrap_or_default();
     for (name, value) in headers {
         if is_redacted_header(name, protected, prefixes) {
             redacted.append(name.clone(), HeaderValue::from_static("[REDACTED]"));
@@ -1795,6 +1825,7 @@ fn sanitize_url(url: &Url) -> String {
     let mut sanitized = url.clone();
     let _ = sanitized.set_username("");
     let _ = sanitized.set_password(None);
+    sanitized.set_fragment(None);
     if let Some(q) = url.query() {
         let redacted = redact_query_values(q);
         sanitized.set_query(Some(&redacted));
@@ -1833,14 +1864,18 @@ fn effective_retry_plan<'a>(
     }
 }
 
+fn can_retry_attempt(attempt: u64, max_retries: u32) -> bool {
+    attempt <= u64::from(max_retries)
+}
+
 async fn wait_retry_backoff(
     initial_backoff: Duration,
-    attempt: u32,
+    attempt: u64,
     abort_signal: Option<&AbortSignal>,
     deadline: Option<Instant>,
     timeout_label: Option<&str>,
 ) -> Result<(), NativeError> {
-    let shift = attempt.saturating_sub(1).min(31);
+    let shift = u32::try_from(attempt.saturating_sub(1).min(31)).unwrap_or(31);
     let multiplier = 1u32 << shift;
     let delay = initial_backoff.saturating_mul(multiplier);
     if delay.is_zero() {
@@ -1857,4 +1892,22 @@ async fn wait_retry_backoff(
     )
     .await
     .map_err(|(err, _)| err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u32_max_retry_attempt_bound_never_overflows() {
+        assert!(!can_retry_attempt(1, 0));
+        assert!(can_retry_attempt(1, 2));
+        assert!(can_retry_attempt(2, 2));
+        assert!(!can_retry_attempt(3, 2));
+
+        let penultimate = u64::from(u32::MAX);
+        assert!(can_retry_attempt(penultimate, u32::MAX));
+        let final_attempt = penultimate + 1;
+        assert!(!can_retry_attempt(final_attempt, u32::MAX));
+    }
 }

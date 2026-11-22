@@ -37,6 +37,12 @@ impl crate::Fetch for UserAgentFetch {
             .as_ref()
             .is_some_and(|inner| inner.protects_sigv4_headers())
     }
+
+    fn protected_header_names(&self) -> Vec<http::HeaderName> {
+        self.inner
+            .as_ref()
+            .map_or_else(Vec::new, |inner| inner.protected_header_names())
+    }
 }
 
 /// Rewrite the last `ai-sdk-provider-utils/<v>` part of the `user-agent` to
