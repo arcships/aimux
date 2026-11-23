@@ -224,8 +224,12 @@ class RealProviderRoundTrips(unittest.TestCase):
                     self.assertEqual(result['choices'][0]['message']['content'],
                                      'Rust is a systems programming language.')
                 else:
-                    self.assertEqual(result['text'], 'Hello world' if op == ops.OP_TEXT_CONSUME
+                    from aimux.wrapper import GenerateTextResult
+                    typed = GenerateTextResult.model_validate(result)
+                    self.assertEqual(typed.text, 'Hello world' if op == ops.OP_TEXT_CONSUME
                                      else 'Rust is a systems programming language.')
+                    self.assertEqual(typed.output, typed.text)
+                    self.assertEqual(set(result), {'steps', 'totalUsage'})
 
     def test_video_and_decision(self):
         from gil_ops import video, decision

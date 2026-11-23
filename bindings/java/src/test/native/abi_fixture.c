@@ -81,7 +81,7 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
     } else if (!strcmp(op, "test.protocol")) {
         return failure(300, "{\"kind\":\"protocol\",\"code\":300,\"message\":\"unknown op\",\"error\":{\"name\":\"InvalidOp\"}}");
     } else if (!strcmp(op, AIMUX_OP_TEXT_GENERATE) || !strcmp(op, AIMUX_OP_TEXT_CONSUME)) {
-        *out = owned("{\"text\":\"你好 🌏\",\"content\":[],\"files\":[],\"finishReason\":\"stop\",\"reasoning\":[],\"request\":{},\"response\":{\"id\":\"fixture\",\"timestamp\":\"2025-01-01T00:00:00Z\",\"modelId\":\"fixture\",\"messages\":[]},\"responseMessages\":[],\"sources\":[],\"steps\":[],\"toolCalls\":[],\"toolResults\":[],\"totalUsage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"usage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"warnings\":[]}");
+        *out = owned("{\"steps\":[{\"callId\":\"fixture\",\"stepNumber\":0,\"model\":{\"provider\":\"fixture\",\"modelId\":\"fixture\"},\"content\":[{\"type\":\"text\",\"text\":\"你好 🌏\"}],\"finishReason\":\"stop\",\"usage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"performance\":{\"effectiveOutputTokensPerSecond\":0,\"effectiveTotalTokensPerSecond\":0,\"responseTimeMs\":0,\"stepTimeMs\":0,\"toolExecutionMs\":{}},\"request\":{},\"response\":{\"id\":\"fixture\",\"timestamp\":\"2025-01-01T00:00:00Z\",\"modelId\":\"fixture\",\"messages\":[]},\"warnings\":[]}],\"totalUsage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}}}");
     } else {
         *out = owned(params);
     }

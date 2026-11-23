@@ -135,3 +135,136 @@ test('accepted native streams preserve one terminal and support return during ne
     assert.equal((await pending).done, true)
   } finally { await Promise.all([model.close(), provider.close()]) }
 })
+
+test('omitted bodies stay available to trace and recording', async (t) => {
+  const { Client } = await import('../src/index.ts')
+  const { createServer } = await import('node:http')
+  const { once } = await import('node:events')
+  const requests: string[] = []
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = Buffer.concat(chunks).toString()
+    requests.push(body)
+    if (JSON.parse(body).stream === true) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.end('data: ' + JSON.stringify({
+        id: 'local', model: 'test-model',
+        choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }],
+      }) + '\n\ndata: [DONE]\n\n')
+      return
+    }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({
+      id: 'local', model: 'test-model',
+      choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }))
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => { server.close(); server.closeAllConnections() })
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+
+  const client = new Client()
+  const provider = await client.provider({
+    package: 'deepseek',
+    settings: { apiKey: 'local-test-key', baseUrl: `http://127.0.0.1:${address.port}` },
+  })
+  const model = await provider.model('test-model', 'languageModel')
+  const trace = await client.trace({ capacity: 16 })
+  const middleware = await client.middleware({ kind: 'trace', traceStore: trace.handle })
+  const wrapped = await model.wrap([middleware])
+  const recorder = await client.recorder({ backend: { type: 'ring', capacity: 16 }, capturePolicy: 'full' })
+  try {
+    await recorder.attach()
+    const prompt = 'x'.repeat(1024)
+    const compact = await wrapped.generate(prompt)
+    assert.equal(compact.text, 'ok')
+    assert.equal(compact.output, 'ok')
+    assert.equal(Object.hasOwn(compact.request, 'body'), false)
+    assert.equal(Object.hasOwn(compact.response, 'body'), false)
+    assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(compact))).sort(), ['steps', 'totalUsage'])
+
+    const full = await wrapped.generate(prompt, { include: { requestBody: true, responseBody: true } })
+    assert.deepEqual(full.request.body, JSON.parse(requests[1]!))
+    assert.equal((full.response.body as { id: string }).id, 'local')
+
+    const streamed = await wrapped.consume({ prompt })
+    assert.equal(streamed.text, 'ok')
+    assert.equal(streamed.output, 'ok')
+    assert.equal(Object.hasOwn(streamed.request, 'body'), false)
+    assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(streamed))).sort(), ['steps', 'totalUsage'])
+    const completion = await client.call(wrapped.handle, ops.OP_OUTPUT_TO_OPEN_AI, {
+      result: compact, metadataNamespace: 'deepseek',
+    }) as { choices: Array<{ message: { content: string } }> }
+    assert.equal(completion.choices[0]?.message.content, 'ok')
+
+    const traceJsonl = await trace.export() as string
+    const records = traceJsonl.trim().split('\n').map(line => JSON.parse(line))
+    assert.equal(records.length, 3)
+    const fingerprints = [compact, full, streamed].map(result =>
+      records.find(record => record.callId === result.finalStep.callId).fingerprint)
+    assert.ok(fingerprints.every(fingerprint => fingerprint.lenBytes > 1024))
+    assert.equal(fingerprints[0].bodyHash, fingerprints[1].bodyHash)
+
+    await recorder.flush()
+    const { jsonl } = await recorder.export() as { jsonl: string }
+    const recordings = jsonl.trim().split('\n').map(line => JSON.parse(line))
+    assert.equal(recordings.length, 3)
+    for (const [result, request] of [[compact, requests[0]], [streamed, requests[2]]] as const) {
+      assert.equal(recordings.find(record => record.callId === result.finalStep.callId)
+        .exchanges[0].request.body, request)
+    }
+  } finally {
+    await recorder.stop()
+    for (const resource of [recorder, wrapped, middleware, trace, model, provider]) resource.close()
+  }
+})
+
+test('unparsed tool-call generation sets outputParsed=false and exposes undefined output', async (t) => {
+  const { Client } = await import('../src/index.ts')
+  const { createServer } = await import('node:http')
+  const { once } = await import('node:events')
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({
+      id: 'local-tool', model: 'test-model',
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: 'Calling tool',
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'ping', arguments: '{}' } }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }))
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => { server.close(); server.closeAllConnections() })
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+
+  const client = new Client()
+  const provider = await client.provider({
+    package: 'deepseek',
+    settings: { apiKey: 'local-test-key', baseUrl: `http://127.0.0.1:${address.port}` },
+  })
+  const model = await provider.model('test-model', 'languageModel')
+  try {
+    const result = await model.generate('call ping', {
+      tools: [{ type: 'function', name: 'ping', inputSchema: { type: 'object', properties: {} } }],
+    })
+    assert.equal(result.finishReason, 'tool-calls')
+    assert.equal(result.text, 'Calling tool')
+    assert.equal(result.outputParsed, false)
+    assert.equal(result.output, undefined)
+    assert.equal(Object.hasOwn(result, 'output'), false)
+    assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(result))).sort(), ['outputParsed', 'steps', 'totalUsage'])
+  } finally {
+    await Promise.all([model.close(), provider.close()])
+  }
+})

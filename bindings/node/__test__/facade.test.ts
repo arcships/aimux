@@ -24,11 +24,31 @@ test('raw and typed preserve the same DTO, null, nested provider options and 64-
   const params = { prompt: '你好 🚀', options: { providerOptions: { openai: { nested: [null, { enabled: true }] } }, toolChoice: 'required' as const } }
   const raw = JSON.parse(await client.raw.call(model.handle, ops.OP_TEXT_GENERATE, JSON.stringify(params)))
   const typed = await (model as InstanceType<typeof LanguageModel>).generate(params.prompt, params.options)
-  assert.deepEqual(typed, raw)
+  assert.equal(typed.text, params.prompt)
+  assert.deepEqual(typed.request.body, { nested: params.options, raw: null })
+  assert.deepEqual(JSON.parse(JSON.stringify(typed)), raw)
   const embedding = await provider.model('embed', 'embeddingModel')
   assert.ok(embedding instanceof EmbeddingModel)
   await (embedding as InstanceType<typeof EmbeddingModel>).embedMany({ values: ['one', 'two', '三'] })
   await Promise.all([model.close(), embedding.close(), provider.close()])
+})
+
+test('language replay results stay compact when nested in a repair request', async () => {
+  const client = new Client()
+  const replay = await client.replay({})
+  const recorded = require('../../../contract-tests/dto/GenerateTextResult/001.json')
+  try {
+    const replayed = await replay.live({ recorded })
+    assert.ok('steps' in replayed)
+    assert.equal(replayed.text, recorded.steps[0].content[0].text)
+    assert.deepEqual(JSON.parse(JSON.stringify(replayed)), recorded)
+
+    const repaired = await client.call<typeof replayed>('0', ops.OP_TOOL_REPAIR_APPLY_RESULT, { result: replayed })
+    assert.equal(repaired.text, replayed.text)
+    assert.deepEqual(JSON.parse(JSON.stringify(repaired)), recorded)
+  } finally {
+    await replay.close()
+  }
 })
 
 test('error properties and prototype match for both layers, including response headers', async () => {

@@ -21,6 +21,17 @@
         "null"
       ]
     },
+    "include": {
+      "anyOf": [
+        {
+          "$ref": "IncludeOptions.json"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Controls the raw bodies exposed in the result. Both default to `false`."
+    },
     "includeRawChunks": {
       "description": "Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).",
       "type": [

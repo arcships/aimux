@@ -577,18 +577,11 @@ fn standalone_tool_calls_and_sources_are_tagged() {
     }))
     .unwrap();
     let written = serde_json::to_value(&generated).unwrap();
-    assert_eq!(written["toolCalls"], json!([call]));
-    assert_eq!(written["sources"], json!([url, document]));
-    // The tag comes first, as in the AI SDK's objects.
-    let text = serde_json::to_string(&generated).unwrap();
-    assert!(
-        text.contains(r#""toolCalls":[{"type":"tool-call","toolCallId":"call-1""#),
-        "{text}"
-    );
-    assert!(
-        text.contains(r#""sources":[{"type":"source","sourceType":"url","id":"s1""#),
-        "{text}"
-    );
+    assert_eq!(written["steps"][0]["content"], json!([call, url, document]));
+    assert!(written.get("toolCalls").is_none());
+    assert!(written.get("sources").is_none());
+    assert_eq!(generated.tool_calls().len(), 1);
+    assert_eq!(generated.sources().len(), 2);
 
     // An approval request's call is tagged, standalone and in `content`.
     assert_json_back::<ToolApprovalRequestOutput>(json!({ "approvalId": "a1", "toolCall": call }));
@@ -688,12 +681,14 @@ fn steps_usage_and_tool_outputs_are_the_ai_sdk_json() {
     }))
     .unwrap();
     let written = serde_json::to_value(&generated).unwrap();
-    assert_eq!(written["toolResults"], json!([result]));
+    assert_eq!(written["steps"][0]["content"][1], result);
+    assert!(written.get("toolResults").is_none());
+    assert_eq!(generated.tool_results().len(), 1);
     assert_eq!(
         written["totalUsage"],
         json!({ "inputTokenDetails": {}, "outputTokenDetails": {} })
     );
-    assert_eq!(written["response"]["modelId"], "model");
+    assert_eq!(written["steps"][0]["response"]["modelId"], "model");
     assert!(written.get("rawFinishReason").is_none());
 
     assert_json_back::<ContentPart>(json!({

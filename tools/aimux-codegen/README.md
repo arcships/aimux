@@ -59,6 +59,11 @@ upper bound. The inventory lives at
 The TypeScript emitter also writes the console wire types to
 `tools/aimux-web/web/src/types/generated/`.
 
+For `GenerateTextResult`, the DTO codecs use the facts in the manifest.
+The emitters add derived accessors from `src/emit/text_result/`. Kotlin
+uses the same generated JavaBean getters as Java. Node attaches its generated
+accessors when the typed client parses a result, leaving the wire JSON compact.
+
 Drift is guarded by `cargo run -p aimux-codegen -- --check` (CI step "Ops manifest
 and generated artifact drift") and by the DTO vectors:
 `python3 scripts/check_dto_vectors.py <languages>` round-trips

@@ -40,7 +40,14 @@ class Runtime {
       case ops.OP_REPLAY_CREATE: return JSON.stringify({ handle: this.create('ReplaySession').handle })
       case ops.OP_MIDDLEWARE_CREATE: return JSON.stringify(this.create('Middleware'))
       case ops.OP_TRANSCRIPTION_START: return JSON.stringify(this.create('Operation').handle)
-      case ops.OP_TEXT_GENERATE: return JSON.stringify({ text: params.prompt, nested: params.options, raw: null })
+      case ops.OP_TEXT_GENERATE: {
+        const facts = structuredClone(require('../../../../contract-tests/dto/GenerateTextResult/001.json'))
+        facts.steps[0].content[0].text = params.prompt
+        facts.steps[0].request.body = { nested: params.options, raw: null }
+        return JSON.stringify(facts)
+      }
+      case ops.OP_REPLAY_LIVE: return JSON.stringify(params.recorded)
+      case ops.OP_TOOL_REPAIR_APPLY_RESULT: return JSON.stringify(params.result)
       case ops.OP_OPERATION_NEXT: return JSON.stringify({ type: 'ended' })
       case 'fixture.cause': throw envelope('aimux', 11, 'AI_APICallError', 'Cannot connect to API: error sending request', { cause: { message: 'error sending request', cause: { message: 'Connection refused (os error 111)' } } })
       case 'fixture.error': throw Object.assign(envelope('aimux', 1, 'AI_APICallError', 'rate limit', { statusCode: 429, isRetryable: true, responseHeaders: { 'retry-after': '0' }, data: { unicode: '你好' } }))

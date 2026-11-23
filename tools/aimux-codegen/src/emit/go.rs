@@ -180,7 +180,11 @@ fn structure(
             .iter()
             .map(|f| {
                 Ok((
-                    ident(&f.json_name),
+                    if name == "GenerateTextResult" && f.json_name == "output" {
+                        "OutputValue".into()
+                    } else {
+                        ident(&f.json_name)
+                    },
                     field_ty(f, model).map_err(|e| {
                         format!("{name} #/properties/{}: {e}", escape(&f.json_name))
                     })?,
@@ -209,7 +213,10 @@ fn structure(
         }
     }
     out.push_str("}\n\n");
-    if closed {
+    if name == "GenerateTextResult" {
+        out.push_str(include_str!("text_result/go.inc"));
+        out.push('\n');
+    } else if closed {
         writeln!(out, "func (v *{name}) UnmarshalJSON(data []byte) error {{").unwrap();
         write_closed_check(out);
         writeln!(

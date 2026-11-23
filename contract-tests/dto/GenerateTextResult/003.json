@@ -1,0 +1,84 @@
+{
+  "steps": [
+    {
+      "callId": "call-dto-3",
+      "stepNumber": 0,
+      "model": {
+        "provider": "openai.chat",
+        "modelId": "gpt-4o"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Calling weather tool"
+        },
+        {
+          "type": "tool-call",
+          "toolCallId": "call_1",
+          "toolName": "get_weather",
+          "input": {
+            "location": "Tokyo"
+          }
+        }
+      ],
+      "finishReason": "tool-calls",
+      "rawFinishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 12,
+        "inputTokenDetails": {
+          "noCacheTokens": 12
+        },
+        "outputTokens": 5,
+        "outputTokenDetails": {
+          "textTokens": 5
+        },
+        "totalTokens": 17
+      },
+      "performance": {
+        "effectiveOutputTokensPerSecond": 12.0,
+        "effectiveTotalTokensPerSecond": 60.0,
+        "stepTimeMs": 260.0,
+        "responseTimeMs": 250.0,
+        "toolExecutionMs": {}
+      },
+      "warnings": [],
+      "request": {},
+      "response": {
+        "id": "resp-dto-3",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "modelId": "gpt-4o",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Calling weather tool"
+              },
+              {
+                "type": "tool-call",
+                "toolCallId": "call_1",
+                "toolName": "get_weather",
+                "input": {
+                  "location": "Tokyo"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "totalUsage": {
+    "inputTokens": 12,
+    "inputTokenDetails": {
+      "noCacheTokens": 12
+    },
+    "outputTokens": 5,
+    "outputTokenDetails": {
+      "textTokens": 5
+    },
+    "totalTokens": 17
+  },
+  "outputParsed": false
+}

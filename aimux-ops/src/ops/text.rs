@@ -669,7 +669,7 @@ mod tests {
         .await
         .unwrap();
         let result: Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(result["text"], "你好 🌏");
+        assert_eq!(result["steps"][0]["content"][0]["text"], "你好 🌏");
         assert_eq!(result["steps"].as_array().unwrap().len(), 1);
         let seen = model.seen.lock().unwrap().clone().unwrap();
         assert_eq!(seen.max_output_tokens, Some(7));
@@ -679,7 +679,7 @@ mod tests {
             .await
             .unwrap();
         let result: Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(result["text"], "你好 🌏");
+        assert_eq!(result["steps"][0]["content"][0]["text"], "你好 🌏");
         let result = generate_openai(ctx(), model.entry(), request().into())
             .await
             .unwrap();
@@ -1026,7 +1026,7 @@ mod tests {
                     assert_eq!(result["object"], "chat.completion");
                     assert_eq!(result["choices"][0]["message"]["content"], model.text);
                 }
-                _ => assert_eq!(result["text"], model.text),
+                _ => assert_eq!(result["steps"][0]["content"][0]["text"], model.text),
             }
         }
         for name in ["text.stream", "text.streamOpenAI"] {

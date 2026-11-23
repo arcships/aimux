@@ -26,7 +26,7 @@ result, err := aimux.CallInto[aimux.GenerateTextResult](ctx, model, "text.genera
     "prompt": "Hello", "options": aimux.GenerateTextOptions{},
 })
 if err != nil { return err }
-fmt.Println(result.Text)
+fmt.Println(result.Text())
 ```
 
 `Call` invokes a global operation; `Handle.Call` invokes one on an owned

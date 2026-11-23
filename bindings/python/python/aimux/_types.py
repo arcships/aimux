@@ -9,7 +9,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Unio
 
 from pydantic import (
     BaseModel, BeforeValidator, ConfigDict, Discriminator, Field, Tag,
-    model_serializer,
+    model_serializer, model_validator,
 )
 from typing_extensions import TypeAliasType
 
@@ -1768,6 +1768,8 @@ class GenerateTextOptions(_Wire):
     model_config = ConfigDict(extra="forbid")
     frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
+    #: Controls the raw bodies exposed in the result. Both default to `false`.
+    include: Optional["_dto.IncludeOptions"] = Field(default=None, alias="include")
     #: Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     include_raw_chunks: Optional[bool] = Field(default=None, alias="includeRawChunks")
     #: System instructions prepended to the prompt.
@@ -1806,7 +1808,7 @@ class GenerateTextOptions(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 #: Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -1814,41 +1816,119 @@ class GenerateTextOptions(_Wire):
 #:
 #: It stores the steps, the usage summed over them and the parsed output, as
 #: `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-#: other value is derived from the steps by an accessor. The serialized form
-#: is a snapshot that writes the derived values next to the stored ones, so
-#: a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-#: `steps`, `total_usage` and `output` are read back.
+#: other value is derived from the steps by an accessor. The wire form carries
+#: `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+#: optional `outputParsed: false` (when no output was generated).
 class GenerateTextResult(_Wire):
-    content: List["_dto.ContentPart"] = Field(alias="content")
-    files: List["_dto.GeneratedFile"] = Field(alias="files")
-    finish_reason: "_dto.FinishReasonUnified" = Field(alias="finishReason")
-    #: Absent when the output was not parsed.
-    output: Optional[Any] = Field(default=None, alias="output")
-    #: Deprecated upstream: the last step's provider metadata.
-    provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
-    raw_finish_reason: Optional[str] = Field(default=None, alias="rawFinishReason")
-    #: Deprecated upstream: the last step's reasoning.
-    reasoning: List["_dto.ReasoningPart"] = Field(alias="reasoning")
-    #: Deprecated upstream: the last step's reasoning text.
-    reasoning_text: Optional[str] = Field(default=None, alias="reasoningText")
-    #: Deprecated upstream: the last step's request.
-    request: "_dto.RequestInfo" = Field(alias="request")
-    #: Deprecated upstream: the last step's response.
-    response: "_dto.StepResponse" = Field(alias="response")
-    response_messages: List["_dto.ModelMessage"] = Field(alias="responseMessages")
-    #: Each with its `type` tag (`generate-text-result.ts:73`).
-    sources: List["_dto.TypedSource"] = Field(alias="sources")
-    steps: List["_dto.StepResult"] = Field(alias="steps")
-    text: str = Field(alias="text")
-    #: Each with its `type` tag (`generate-text-result.ts:78`).
-    tool_calls: List["_dto.TypedToolCall"] = Field(alias="toolCalls")
-    #: Each with its `type` tag (`generate-text-result.ts:93`).
-    tool_results: List["_dto.TaggedToolResult"] = Field(alias="toolResults")
-    #: Deprecated upstream: equal to `usage`.
+    #: An explicit parsed output, including JSON `null`. When absent and
+    #: `outputParsed` is not `false`, bindings expose the final step's text.
+    output_value: Optional[Any] = Field(default=None, alias="output")
+    #: Present and `false` when no output was generated (for example, a final
+    #: `tool-calls` step without an output spec). Omitted when an output was
+    #: produced.
+    output_parsed: Optional[bool] = Field(default=None, alias="outputParsed")
+    steps: List["_dto.StepResult"] = Field(min_length=1, alias="steps")
     total_usage: "_dto.LanguageModelUsage" = Field(alias="totalUsage")
-    usage: "_dto.LanguageModelUsage" = Field(alias="usage")
-    warnings: List["_dto.Warning"] = Field(alias="warnings")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["provider_metadata", "raw_finish_reason", "reasoning_text"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["output_parsed"])
+
+    @property
+    def final_step(self) -> StepResult:
+        return self.steps[-1]
+
+    @property
+    def text(self) -> str:
+        return "".join(part.text for part in self.final_step.content if isinstance(part, ContentPartText))
+
+    @property
+    def content(self) -> list[ContentPart]:
+        return [part for step in self.steps for part in step.content]
+
+    @property
+    def reasoning(self) -> list[ContentPartReasoning | ContentPartReasoningFile]:
+        return [part for part in self.final_step.content
+                if isinstance(part, (ContentPartReasoning, ContentPartReasoningFile))]
+
+    @property
+    def reasoning_text(self) -> Optional[str]:
+        return "".join(part.text for part in self.reasoning if isinstance(part, ContentPartReasoning)) or None
+
+    @property
+    def files(self) -> list[GeneratedFile]:
+        return [part.file for part in self.content if isinstance(part, ContentPartFile)]
+
+    @property
+    def sources(self) -> list[ContentPartSourceUrl | ContentPartSourceDocument]:
+        return [part for part in self.content if isinstance(part, (ContentPartSourceUrl, ContentPartSourceDocument))]
+
+    @property
+    def tool_calls(self) -> list[ContentPartToolCall]:
+        return [part for part in self.content if isinstance(part, ContentPartToolCall)]
+
+    @property
+    def static_tool_calls(self) -> list[ContentPartToolCall]:
+        return [part for part in self.tool_calls if part.dynamic is not True]
+
+    @property
+    def dynamic_tool_calls(self) -> list[ContentPartToolCall]:
+        return [part for part in self.tool_calls if part.dynamic is True]
+
+    @property
+    def tool_results(self) -> list[ContentPartToolResult]:
+        return [part for part in self.content if isinstance(part, ContentPartToolResult)]
+
+    @property
+    def static_tool_results(self) -> list[ContentPartToolResult]:
+        return [part for part in self.tool_results if part.dynamic is not True]
+
+    @property
+    def dynamic_tool_results(self) -> list[ContentPartToolResult]:
+        return [part for part in self.tool_results if part.dynamic is True]
+
+    @property
+    def finish_reason(self) -> FinishReasonUnified:
+        return self.final_step.finish_reason
+
+    @property
+    def raw_finish_reason(self) -> Optional[str]:
+        return self.final_step.raw_finish_reason
+
+    @property
+    def usage(self) -> LanguageModelUsage:
+        return self.total_usage
+
+    @property
+    def warnings(self) -> list[Warning]:
+        return [warning for step in self.steps for warning in step.warnings]
+
+    @property
+    def request(self) -> RequestInfo:
+        return self.final_step.request
+
+    @property
+    def response(self) -> StepResponse:
+        return self.final_step.response
+
+    @property
+    def provider_metadata(self) -> Optional[dict[str, dict[str, Any]]]:
+        return self.final_step.provider_metadata
+
+    @property
+    def response_messages(self) -> list[ModelMessage]:
+        return [message for step in self.steps for message in step.response.messages]
+
+    @model_validator(mode="after")
+    def _validate_output_state(self) -> "GenerateTextResult":
+        if "output_value" in self.model_fields_set and self.output_parsed is False:
+            raise ValueError("GenerateTextResult cannot carry output when outputParsed is false")
+        return self
+
+    @property
+    def output(self) -> Any:
+        if "output_value" in self.model_fields_set:
+            return self.output_value
+        if self.output_parsed is False:
+            return None
+        return self.text
 
 
 #: Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -1856,14 +1936,20 @@ class GenerateTextResult(_Wire):
 #:
 #: It stores the steps, the usage summed over them and the parsed output, as
 #: `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-#: other value is derived from the steps by an accessor. The serialized form
-#: is a snapshot that writes the derived values next to the stored ones, so
-#: a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-#: `steps`, `total_usage` and `output` are read back.
+#: other value is derived from the steps by an accessor. The wire form carries
+#: `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+#: optional `outputParsed: false` (when no output was generated).
 class GenerateTextResultInput(_Wire):
+    #: An explicit parsed output, including JSON `null`. When absent and
+    #: `outputParsed` is not `false`, bindings expose the final step's text.
     output: Optional[Any] = Field(default=None, alias="output")
+    #: Present and `false` when no output was generated (for example, a final
+    #: `tool-calls` step without an output spec). Omitted when an output was
+    #: produced.
+    output_parsed: Optional[bool] = Field(default=None, alias="outputParsed")
     steps: List["_dto.StepResultInput"] = Field(alias="steps")
     total_usage: "_dto.LanguageModelUsageInput" = Field(alias="totalUsage")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["output_parsed"])
 
 
 #: A generated file (`ai` `generate-text/generated-file.ts:10-32`), the
@@ -2060,6 +2146,16 @@ class ImageUsage(_Wire):
     #: Total tokens as reported by the provider.
     total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
     _omit_null: ClassVar[frozenset[str]] = frozenset(["input_tokens", "output_tokens", "total_tokens"])
+
+
+#: Controls which raw body fields are exposed in generation results.
+class IncludeOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
+    #: Whether to return the request body. Defaults to false.
+    request_body: Optional[bool] = Field(default=None, alias="requestBody")
+    #: Whether to return the response body. Defaults to false.
+    response_body: Optional[bool] = Field(default=None, alias="responseBody")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["request_body", "response_body"])
 
 
 #: The input audio format for a streaming transcription request.
@@ -2562,6 +2658,8 @@ class Options(_Wire):
     model_config = ConfigDict(extra="forbid")
     frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
+    #: Controls the raw bodies exposed in the result. Both default to `false`.
+    include: Optional["_dto.IncludeOptions"] = Field(default=None, alias="include")
     #: Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     include_raw_chunks: Optional[bool] = Field(default=None, alias="includeRawChunks")
     #: System instructions prepended to the prompt.
@@ -2600,7 +2698,7 @@ class Options(_Wire):
     tools: Optional[List["_dto.Tool"]] = Field(default=None, alias="tools")
     top_k: Optional[float] = Field(default=None, alias="topK")
     top_p: Optional[float] = Field(default=None, alias="topP")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["frequency_penalty", "headers", "include", "include_raw_chunks", "instructions", "max_output_tokens", "max_retries", "output", "presence_penalty", "provider_options", "reasoning", "seed", "session_id", "stop_sequences", "strict_stream", "temperature", "timeout", "tool_choice", "tools", "top_k", "top_p"])
 
 
 Outcome = TypeAliasType("Outcome", Literal["success", "error", "cancelled"])
@@ -5655,6 +5753,7 @@ ImageFileUrl.model_rebuild(_types_namespace=globals())
 ImageResponse.model_rebuild(_types_namespace=globals())
 ImageResult.model_rebuild(_types_namespace=globals())
 ImageUsage.model_rebuild(_types_namespace=globals())
+IncludeOptions.model_rebuild(_types_namespace=globals())
 InputAudioFormat.model_rebuild(_types_namespace=globals())
 InputRecord.model_rebuild(_types_namespace=globals())
 InputTokenDetails.model_rebuild(_types_namespace=globals())
@@ -6032,6 +6131,7 @@ DTO_TYPES = {
     "ImageResponse": ImageResponse,
     "ImageResult": ImageResult,
     "ImageUsage": ImageUsage,
+    "IncludeOptions": IncludeOptions,
     "InputAudioFormat": InputAudioFormat,
     "InputRecord": InputRecord,
     "InputTokenDetails": InputTokenDetails,
@@ -6469,6 +6569,7 @@ __all__ = [
     "ImageResponse",
     "ImageResult",
     "ImageUsage",
+    "IncludeOptions",
     "InputAudioFormat",
     "InputRecord",
     "InputTokenDetails",

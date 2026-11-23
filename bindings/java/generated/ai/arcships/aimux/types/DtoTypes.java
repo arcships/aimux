@@ -189,6 +189,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageResult.class));
             case "ImageUsage":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageUsage.class));
+            case "IncludeOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, IncludeOptions.class));
             case "InputAudioFormat":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputAudioFormat.class));
             case "InputRecord":

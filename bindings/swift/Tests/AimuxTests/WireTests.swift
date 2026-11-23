@@ -151,55 +151,42 @@ struct WireTests {
     static func testGenerateTextResultRoundTrip() throws {
         let json = """
         {
-          "content": [
-            {"type":"text","text":"hello"},
-            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
-          ],
-          "text": "hello",
-          "reasoning": [{"type":"reasoning","text":"hmm"}],
-          "reasoningText": "hmm",
-          "files": [],
-          "sources": [{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}],
-          "toolCalls": [
-            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
-          ],
-          "toolResults": [],
-          "finishReason": "tool-calls",
-          "rawFinishReason": "tool_calls",
-          "usage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
           "totalUsage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
-          "warnings": [{"type":"other","message":"careful"}],
-          "request": {},
-          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","modelId":"gpt-4o","messages":[]},
-          "responseMessages": [
-            {"role":"assistant","content":[
-              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
-            ]},
-            {"role":"tool","content":[
-              {"type":"tool-result","toolCallId":"call_1","toolName":"get_weather",
-               "output":{"type":"json","value":{"temp":22}}}
-            ]}
-          ],
           "steps": [{
-            "callId":"c1", "stepNumber":0, "content":[], "finishReason":"stop",
+            "callId":"c1", "stepNumber":0, "content":[
+              {"type":"text","text":"hello"},
+              {"type":"reasoning","text":"hmm"},
+              {"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},
+              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+            ], "finishReason":"tool-calls", "rawFinishReason":"tool_calls",
             "model":{"modelId":"gpt-4o","provider":"openai"},
             "performance":{"effectiveOutputTokensPerSecond":0,"effectiveTotalTokensPerSecond":0,
                            "responseTimeMs":0,"stepTimeMs":0,"toolExecutionMs":{}},
             "request":{},
-            "response":{"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","modelId":"gpt-4o","messages":[]},
-            "usage":{"inputTokenDetails":{},"outputTokenDetails":{}}, "warnings":[]
-          }]
+            "response":{"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","modelId":"gpt-4o","messages":[
+              {"role":"assistant","content":"hello"},
+              {"role":"tool","content":[
+                {"type":"tool-result","toolCallId":"call_1","toolName":"get_weather",
+                 "output":{"type":"json","value":{"temp":22}}}
+              ]}
+            ]},
+            "usage":{"inputTokenDetails":{},"outputTokenDetails":{}},
+            "warnings":[{"type":"other","message":"careful"}]
+          }],
+          "outputParsed": false
         }
         """
         let original = try JSONDecoder().decode(GenerateTextResult.self,
                                                 from: json.data(using: .utf8)!)
         try assertEqual(original.text, "hello")
-        try assertEqual(original.toolCalls[0].toolName, "get_weather")
+        try assertEqual(original.staticToolCalls[0].toolName, "get_weather")
         try assertEqual(original.finishReason, .toolCalls)
         try assertEqual(original.rawFinishReason, "tool_calls")
         try assertEqual(original.usage.totalTokens, 5)
         try assertEqual(original.reasoningText, "hmm")
         try assertEqual(original.output, .missing)
+        try assertEqual(original.outputValue, .missing)
+        try assertEqual(original.outputParsed, false)
         try assertEqual(original.response.id, "resp_1")
         try assertEqual(original.response.modelId, "gpt-4o")
         try assertEqual(original.warnings, [.other(message: "careful")])
@@ -213,6 +200,29 @@ struct WireTests {
 
         // Encode → decode yields an equal value.
         let reencoded = try JSONEncoder().encode(original)
+        let encoded = try JSONDecoder().decode([String: JSONValue].self, from: reencoded)
+        try assertEqual(Set(encoded.keys), ["steps", "totalUsage", "outputParsed"])
+
+        var plainText = encoded
+        plainText.removeValue(forKey: "outputParsed")
+        let plain = try JSONDecoder().decode(GenerateTextResult.self, from: try JSONEncoder().encode(plainText))
+        try assertEqual(plain.output, .value(.string("hello")))
+        try assertEqual(plain.outputValue, .missing)
+
+        var parsedNull = plainText
+        parsedNull["output"] = .null
+        let withNull = try JSONDecoder().decode(GenerateTextResult.self, from: try JSONEncoder().encode(parsedNull))
+        try assertEqual(withNull.output, .null)
+        try assertEqual(withNull.outputValue, .null)
+
+        var contradictory = encoded
+        contradictory["output"] = .null
+        try assertThrows(JSONDecoder().decode(GenerateTextResult.self, from: try JSONEncoder().encode(contradictory)))
+
+        var empty = encoded
+        empty["steps"] = .array([])
+        let malformed = try JSONEncoder().encode(empty)
+        try assertThrows(JSONDecoder().decode(GenerateTextResult.self, from: malformed))
         let decoded = try JSONDecoder().decode(GenerateTextResult.self, from: reencoded)
         try assertEqual(original, decoded)
     }

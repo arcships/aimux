@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::generate::{GenerateTextOptions, stream_text};
+use aimux_core::generate::{GenerateTextOptions, IncludeOptions, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
@@ -13,7 +13,6 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::trace::{RingTraceStore, TraceLayer, TraceRecord};
 use aimux_core::types::{FinishReason, FinishReasonUnified, InputTokenUsage, Usage};
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde_json::json;
 
 /// Streams one delta and `Finish` for a request body of over two 4 KiB blocks.
@@ -43,9 +42,17 @@ impl LanguageModel for Streaming {
         };
         let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
             Ok(StreamPart::StreamStart { warnings: vec![] }),
+            Ok(StreamPart::TextStart {
+                id: "t".into(),
+                provider_metadata: None,
+            }),
             Ok(StreamPart::TextDelta {
                 id: "t".into(),
                 delta: "ok".into(),
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::TextEnd {
+                id: "t".into(),
                 provider_metadata: None,
             }),
             Ok(StreamPart::Finish {
@@ -88,11 +95,28 @@ fn records(store: &RingTraceStore) -> Vec<TraceRecord> {
 async fn a_completed_stream_text_call_is_traced_as_completed() {
     let store = Arc::new(RingTraceStore::new());
     let layer = TraceLayer::new(Arc::new(Streaming), store.clone());
-    for _ in 0..2 {
-        let result = stream_text(&layer, "hi", GenerateTextOptions::default())
-            .await
-            .unwrap();
-        result.stream.collect::<Vec<_>>().await;
+    for include in [
+        None,
+        Some(IncludeOptions {
+            request_body: Some(true),
+            response_body: None,
+        }),
+    ] {
+        let result = stream_text(
+            &layer,
+            "hi",
+            GenerateTextOptions {
+                include,
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+        let result = result.consume().await.unwrap();
+        assert_eq!(
+            result.final_step().request.body.is_some(),
+            include.is_some()
+        );
     }
     // The pump task, not the consumer, lets go of the provider stream.
     for _ in 0..100 {
@@ -104,6 +128,8 @@ async fn a_completed_stream_text_call_is_traced_as_completed() {
 
     let recs = records(&store);
     assert_eq!(recs.len(), 2);
+    assert_eq!(recs[0].fingerprint.body_hash, recs[1].fingerprint.body_hash);
+    assert!(recs[0].fingerprint.len_bytes > 8400);
     for rec in &recs {
         assert_eq!(rec.error, None, "{rec:?}");
     }

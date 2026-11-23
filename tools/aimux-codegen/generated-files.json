@@ -102,6 +102,7 @@
     "bindings/java/generated/ai/arcships/aimux/types/ImageResponse.java",
     "bindings/java/generated/ai/arcships/aimux/types/ImageResult.java",
     "bindings/java/generated/ai/arcships/aimux/types/ImageUsage.java",
+    "bindings/java/generated/ai/arcships/aimux/types/IncludeOptions.java",
     "bindings/java/generated/ai/arcships/aimux/types/InputAudioFormat.java",
     "bindings/java/generated/ai/arcships/aimux/types/InputRecord.java",
     "bindings/java/generated/ai/arcships/aimux/types/InputTokenDetails.java",
@@ -335,6 +336,7 @@
     "bindings/kotlin/generated/AimuxOps.kt",
     "bindings/node/src/generated/dto_vectors.ts",
     "bindings/node/src/generated/ops.ts",
+    "bindings/node/src/generated/text_result.ts",
     "bindings/node/src/generated/types.ts",
     "bindings/python/python/aimux/_error_payloads.py",
     "bindings/python/python/aimux/_types.py",
@@ -436,6 +438,7 @@
     "schema/types/ImageResponse.json",
     "schema/types/ImageResult.json",
     "schema/types/ImageUsage.json",
+    "schema/types/IncludeOptions.json",
     "schema/types/InputAudioFormat.json",
     "schema/types/InputRecord.json",
     "schema/types/InputTokenDetails.json",
@@ -678,5 +681,5 @@
     "tools/aimux-web/web/src/types/generated/WireOptions.ts",
     "tools/aimux-web/web/src/types/generated/WireTool.ts"
   ],
-  "manifestDigest": "cd147fa9595ede3951744fa261da98cc18c204e65b4081073ad3a3c1b68bfd92"
+  "manifestDigest": "6914772fdc03df08cba497def41cb354fe52e40eba49844a66938b4cd38c5d83"
 }

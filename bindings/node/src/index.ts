@@ -1,3 +1,4 @@
+import { attachGenerateTextResult } from './generated/text_result.ts'
 import * as ops from './generated/ops.ts'
 import { Runtime } from './native.ts'
 import type { Abort as RawAbort, Manifest } from './native.ts'
@@ -10,6 +11,8 @@ import type {
   GenerateObjectResult,
   GenerateTextOptions,
   GenerateTextResult,
+  GenerateTextResultWire,
+  ReplayLiveResult,
   HandleKind,
   HandleResult,
   ImageCallOptions,
@@ -74,7 +77,18 @@ export class Client {
 
   async call<T = unknown>(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<T> {
     const abort = this.bridge(options)
-    return JSON.parse(await this.raw.call(handle, op, json(params), abort)) as T
+    const result = JSON.parse(await this.raw.call(handle, op, json(params), abort))
+    switch (op) {
+      case ops.OP_TEXT_GENERATE:
+      case ops.OP_TEXT_CONSUME:
+      case ops.OP_TOOL_REPAIR_APPLY_RESULT:
+        return attachGenerateTextResult(result as GenerateTextResultWire) as T
+      case ops.OP_REPLAY_LIVE:
+        if (Object.prototype.hasOwnProperty.call(result, 'steps')) {
+          return attachGenerateTextResult(result as GenerateTextResultWire) as T
+        }
+    }
+    return result as T
   }
 
   async stream(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<AsyncIterableIterator<StreamFrame>> {
@@ -270,7 +284,7 @@ export class ReplaySession extends Resource {
   async capabilities(): Promise<unknown> { return this.call(ops.OP_REPLAY_CAPABILITIES) }
   async inspect(): Promise<unknown> { return this.call(ops.OP_REPLAY_INSPECT) }
   async dryRun(params: unknown = {}): Promise<unknown> { return this.call(ops.OP_REPLAY_DRY_RUN, params) }
-  async live(params: unknown): Promise<unknown> { return this.call(ops.OP_REPLAY_LIVE, params) }
+  async live(params: unknown): Promise<ReplayLiveResult> { return this.call(ops.OP_REPLAY_LIVE, params) }
 }
 
 function mapIterator<A, B>(inner: AsyncIterableIterator<A>, map: (value: A) => B, cancel: () => void): AsyncIterableIterator<B> {

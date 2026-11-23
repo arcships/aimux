@@ -1129,6 +1129,7 @@ fn generate_options_from_call_options(
         presence_penalty: o.presence_penalty,
         frequency_penalty: o.frequency_penalty,
         output: o.response_format.map(output_for_response_format),
+        include: None,
         seed: o.seed,
         tools: o.tools,
         tool_choice: o.tool_choice.map(user_tool_choice),

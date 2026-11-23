@@ -414,8 +414,20 @@
     "file": "GenerateTextOptions/001.json"
   },
   {
+    "type": "GenerateTextOptions",
+    "file": "GenerateTextOptions/002.json"
+  },
+  {
     "type": "GenerateTextResult",
     "file": "GenerateTextResult/001.json"
+  },
+  {
+    "type": "GenerateTextResult",
+    "file": "GenerateTextResult/002.json"
+  },
+  {
+    "type": "GenerateTextResult",
+    "file": "GenerateTextResult/003.json"
   },
   {
     "type": "GeneratedFile",

@@ -3135,6 +3135,8 @@ public struct GenerateObjectResult: Codable, Equatable, Sendable {
 public struct GenerateTextOptions: Codable, Equatable, Sendable {
     public var frequencyPenalty: Double?
     public var headers: [String: String]?
+    /// Controls the raw bodies exposed in the result. Both default to `false`.
+    public var include: IncludeOptions?
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     public var includeRawChunks: Bool?
     /// System instructions prepended to the prompt.
@@ -3174,9 +3176,10 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
     public var topK: Double?
     public var topP: Double?
 
-    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
+    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, include: IncludeOptions? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
         self.frequencyPenalty = frequencyPenalty
         self.headers = headers
+        self.include = include
         self.includeRawChunks = includeRawChunks
         self.instructions = instructions
         self.maxOutputTokens = maxOutputTokens
@@ -3199,6 +3202,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case frequencyPenalty = "frequencyPenalty"
         case headers = "headers"
+        case include = "include"
         case includeRawChunks = "includeRawChunks"
         case instructions = "instructions"
         case maxOutputTokens = "maxOutputTokens"
@@ -3228,6 +3232,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.frequencyPenalty = try c.decodeIfPresent(Double.self, forKey: .frequencyPenalty)
         self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.include = try c.decodeIfPresent(IncludeOptions.self, forKey: .include)
         self.includeRawChunks = try c.decodeIfPresent(Bool.self, forKey: .includeRawChunks)
         self.instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
         self.maxOutputTokens = try c.decodeIfPresent(UInt32.self, forKey: .maxOutputTokens)
@@ -3251,6 +3256,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(self.frequencyPenalty, forKey: .frequencyPenalty)
         try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.include, forKey: .include)
         try c.encodeIfPresent(self.includeRawChunks, forKey: .includeRawChunks)
         try c.encodeIfPresent(self.instructions, forKey: .instructions)
         try c.encodeIfPresent(self.maxOutputTokens, forKey: .maxOutputTokens)
@@ -3277,126 +3283,135 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
 ///
 /// It stores the steps, the usage summed over them and the parsed output, as
 /// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-/// other value is derived from the steps by an accessor. The serialized form
-/// is a snapshot that writes the derived values next to the stored ones, so
-/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-/// `steps`, `total_usage` and `output` are read back.
+/// other value is derived from the steps by an accessor. The wire form carries
+/// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+/// optional `outputParsed: false` (when no output was generated).
 public struct GenerateTextResult: Codable, Equatable, Sendable {
-    public var content: [ContentPart]
-    public var files: [GeneratedFile]
-    public var finishReason: FinishReasonUnified
-    /// Absent when the output was not parsed.
-    public var output: FieldPresence<JSONValue>
-    /// Deprecated upstream: the last step's provider metadata.
-    public var providerMetadata: [String: [String: JSONValue]]?
-    public var rawFinishReason: String?
-    /// Deprecated upstream: the last step's reasoning.
-    public var reasoning: [ReasoningPart]
-    /// Deprecated upstream: the last step's reasoning text.
-    public var reasoningText: String?
-    /// Deprecated upstream: the last step's request.
-    public var request: RequestInfo
-    /// Deprecated upstream: the last step's response.
-    public var response: StepResponse
-    public var responseMessages: [ModelMessage]
-    /// Each with its `type` tag (`generate-text-result.ts:73`).
-    public var sources: [TypedSource]
+    /// An explicit parsed output, including JSON `null`. When absent and
+    /// `outputParsed` is not `false`, bindings expose the final step's text.
+    public var outputValue: FieldPresence<JSONValue>
+    /// Present and `false` when no output was generated (for example, a final
+    /// `tool-calls` step without an output spec). Omitted when an output was
+    /// produced.
+    public var outputParsed: Bool?
     public var steps: [StepResult]
-    public var text: String
-    /// Each with its `type` tag (`generate-text-result.ts:78`).
-    public var toolCalls: [TypedToolCall]
-    /// Each with its `type` tag (`generate-text-result.ts:93`).
-    public var toolResults: [TaggedToolResult]
-    /// Deprecated upstream: equal to `usage`.
     public var totalUsage: LanguageModelUsage
-    public var usage: LanguageModelUsage
-    public var warnings: [Warning]
 
-    public init(content: [ContentPart], files: [GeneratedFile], finishReason: FinishReasonUnified, output: FieldPresence<JSONValue> = .missing, providerMetadata: [String: [String: JSONValue]]? = nil, rawFinishReason: String? = nil, reasoning: [ReasoningPart], reasoningText: String? = nil, request: RequestInfo, response: StepResponse, responseMessages: [ModelMessage], sources: [TypedSource], steps: [StepResult], text: String, toolCalls: [TypedToolCall], toolResults: [TaggedToolResult], totalUsage: LanguageModelUsage, usage: LanguageModelUsage, warnings: [Warning]) {
-        self.content = content
-        self.files = files
-        self.finishReason = finishReason
-        self.output = output
-        self.providerMetadata = providerMetadata
-        self.rawFinishReason = rawFinishReason
-        self.reasoning = reasoning
-        self.reasoningText = reasoningText
-        self.request = request
-        self.response = response
-        self.responseMessages = responseMessages
-        self.sources = sources
+    public init(output: FieldPresence<JSONValue> = .missing, outputParsed: Bool? = nil, steps: [StepResult], totalUsage: LanguageModelUsage) {
+        self.outputValue = output
+        self.outputParsed = outputParsed
         self.steps = steps
-        self.text = text
-        self.toolCalls = toolCalls
-        self.toolResults = toolResults
         self.totalUsage = totalUsage
-        self.usage = usage
-        self.warnings = warnings
     }
     private enum CodingKeys: String, CodingKey {
-        case content = "content"
-        case files = "files"
-        case finishReason = "finishReason"
         case output = "output"
-        case providerMetadata = "providerMetadata"
-        case rawFinishReason = "rawFinishReason"
-        case reasoning = "reasoning"
-        case reasoningText = "reasoningText"
-        case request = "request"
-        case response = "response"
-        case responseMessages = "responseMessages"
-        case sources = "sources"
+        case outputParsed = "outputParsed"
         case steps = "steps"
-        case text = "text"
-        case toolCalls = "toolCalls"
-        case toolResults = "toolResults"
         case totalUsage = "totalUsage"
-        case usage = "usage"
-        case warnings = "warnings"
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.content = try c.decode([ContentPart].self, forKey: .content)
-        self.files = try c.decode([GeneratedFile].self, forKey: .files)
-        self.finishReason = try c.decode(FinishReasonUnified.self, forKey: .finishReason)
-        self.output = try c.decodePresence(JSONValue.self, forKey: .output)
-        self.providerMetadata = try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerMetadata)
-        self.rawFinishReason = try c.decodeIfPresent(String.self, forKey: .rawFinishReason)
-        self.reasoning = try c.decode([ReasoningPart].self, forKey: .reasoning)
-        self.reasoningText = try c.decodeIfPresent(String.self, forKey: .reasoningText)
-        self.request = try c.decode(RequestInfo.self, forKey: .request)
-        self.response = try c.decode(StepResponse.self, forKey: .response)
-        self.responseMessages = try c.decode([ModelMessage].self, forKey: .responseMessages)
-        self.sources = try c.decode([TypedSource].self, forKey: .sources)
+        self.outputValue = try c.decodePresence(JSONValue.self, forKey: .output)
+        self.outputParsed = try c.decodeIfPresent(Bool.self, forKey: .outputParsed)
         self.steps = try c.decode([StepResult].self, forKey: .steps)
-        self.text = try c.decode(String.self, forKey: .text)
-        self.toolCalls = try c.decode([TypedToolCall].self, forKey: .toolCalls)
-        self.toolResults = try c.decode([TaggedToolResult].self, forKey: .toolResults)
         self.totalUsage = try c.decode(LanguageModelUsage.self, forKey: .totalUsage)
-        self.usage = try c.decode(LanguageModelUsage.self, forKey: .usage)
-        self.warnings = try c.decode([Warning].self, forKey: .warnings)
+        guard !steps.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .steps, in: c, debugDescription: "GenerateTextResult requires at least one step")
+        }
+        if case .missing = outputValue {} else if outputParsed == false {
+            throw DecodingError.dataCorruptedError(forKey: .outputParsed, in: c, debugDescription: "GenerateTextResult cannot carry output when outputParsed is false")
+        }
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(self.content, forKey: .content)
-        try c.encode(self.files, forKey: .files)
-        try c.encode(self.finishReason, forKey: .finishReason)
-        try c.encodePresence(self.output, forKey: .output)
-        try c.encodeIfPresent(self.providerMetadata, forKey: .providerMetadata)
-        try c.encodeIfPresent(self.rawFinishReason, forKey: .rawFinishReason)
-        try c.encode(self.reasoning, forKey: .reasoning)
-        try c.encodeIfPresent(self.reasoningText, forKey: .reasoningText)
-        try c.encode(self.request, forKey: .request)
-        try c.encode(self.response, forKey: .response)
-        try c.encode(self.responseMessages, forKey: .responseMessages)
-        try c.encode(self.sources, forKey: .sources)
+        try c.encodePresence(self.outputValue, forKey: .output)
+        try c.encodeIfPresent(self.outputParsed, forKey: .outputParsed)
         try c.encode(self.steps, forKey: .steps)
-        try c.encode(self.text, forKey: .text)
-        try c.encode(self.toolCalls, forKey: .toolCalls)
-        try c.encode(self.toolResults, forKey: .toolResults)
         try c.encode(self.totalUsage, forKey: .totalUsage)
-        try c.encode(self.usage, forKey: .usage)
-        try c.encode(self.warnings, forKey: .warnings)
+    }
+}
+
+// Computed result properties are excluded from Codable.
+extension GenerateTextResult {
+    public var finalStep: StepResult { steps[steps.count - 1] }
+    public var text: String {
+        finalStep.content.compactMap { part in
+            if case let .text(_, text) = part { return text }
+            return nil
+        }.joined()
+    }
+    public var content: [ContentPart] { steps.flatMap(\.content) }
+    public var reasoning: [ReasoningPart] {
+        finalStep.content.compactMap {
+            switch $0 {
+            case let .reasoning(metadata, text): .reasoning(providerMetadata: metadata, text: text)
+            case let .reasoningFile(file, metadata): .reasoningFile(file: file, providerMetadata: metadata)
+            default: nil
+            }
+        }
+    }
+    public var reasoningText: String? {
+        let text = reasoning.compactMap { part in
+            if case let .reasoning(_, text) = part { return text }
+            return nil
+        }.joined()
+        return text.isEmpty ? nil : text
+    }
+    public var files: [GeneratedFile] {
+        content.compactMap {
+            if case let .file(file, _) = $0 { return file }
+            return nil
+        }
+    }
+    public var sources: [TypedSource] {
+        content.compactMap {
+            switch $0 {
+            case let .sourceUrl(id, metadata, _, title, url):
+                .url(id: id, providerMetadata: metadata, title: title, type: "source", url: url)
+            case let .sourceDocument(filename, id, mediaType, metadata, _, title):
+                .document(filename: filename, id: id, mediaType: mediaType,
+                          providerMetadata: metadata, title: title, type: "source")
+            default: nil
+            }
+        }
+    }
+    public var toolCalls: [TypedToolCall] {
+        content.compactMap {
+            guard case let .toolCall(dynamic, error, input, invalid, executed, metadata, id, name) = $0 else {
+                return nil
+            }
+            return TypedToolCall(dynamic: dynamic, error: error, input: input, invalid: invalid,
+                                 providerExecuted: executed, providerMetadata: metadata,
+                                 toolCallId: id, toolName: name, type: "tool-call")
+        }
+    }
+    public var staticToolCalls: [TypedToolCall] { toolCalls.filter { $0.dynamic != true } }
+    public var dynamicToolCalls: [TypedToolCall] { toolCalls.filter { $0.dynamic == true } }
+    public var toolResults: [TaggedToolResult] {
+        content.compactMap {
+            guard case let .toolResult(dynamic, input, output, preliminary, executed, metadata, id, name) = $0 else {
+                return nil
+            }
+            return TaggedToolResult(dynamic: dynamic, input: input, output: output, preliminary: preliminary,
+                                    providerExecuted: executed, providerMetadata: metadata,
+                                    toolCallId: id, toolName: name, type: "tool-result")
+        }
+    }
+    public var staticToolResults: [TaggedToolResult] { toolResults.filter { $0.dynamic != true } }
+    public var dynamicToolResults: [TaggedToolResult] { toolResults.filter { $0.dynamic == true } }
+    public var finishReason: FinishReasonUnified { finalStep.finishReason }
+    public var rawFinishReason: String? { finalStep.rawFinishReason }
+    public var usage: LanguageModelUsage { totalUsage }
+    public var warnings: [Warning] { steps.flatMap(\.warnings) }
+    public var request: RequestInfo { finalStep.request }
+    public var response: StepResponse { finalStep.response }
+    public var providerMetadata: [String: [String: JSONValue]]? { finalStep.providerMetadata }
+    public var responseMessages: [ModelMessage] { steps.flatMap { $0.response.messages } }
+    public var output: FieldPresence<JSONValue> {
+        if case .missing = outputValue {
+            return outputParsed == false ? .missing : .value(.string(text))
+        }
+        return outputValue
     }
 }
 
@@ -3405,34 +3420,43 @@ public struct GenerateTextResult: Codable, Equatable, Sendable {
 ///
 /// It stores the steps, the usage summed over them and the parsed output, as
 /// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-/// other value is derived from the steps by an accessor. The serialized form
-/// is a snapshot that writes the derived values next to the stored ones, so
-/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-/// `steps`, `total_usage` and `output` are read back.
+/// other value is derived from the steps by an accessor. The wire form carries
+/// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+/// optional `outputParsed: false` (when no output was generated).
 public struct GenerateTextResultInput: Codable, Equatable, Sendable {
+    /// An explicit parsed output, including JSON `null`. When absent and
+    /// `outputParsed` is not `false`, bindings expose the final step's text.
     public var output: FieldPresence<JSONValue>
+    /// Present and `false` when no output was generated (for example, a final
+    /// `tool-calls` step without an output spec). Omitted when an output was
+    /// produced.
+    public var outputParsed: Bool?
     public var steps: [StepResultInput]
     public var totalUsage: LanguageModelUsageInput
 
-    public init(output: FieldPresence<JSONValue> = .missing, steps: [StepResultInput], totalUsage: LanguageModelUsageInput) {
+    public init(output: FieldPresence<JSONValue> = .missing, outputParsed: Bool? = nil, steps: [StepResultInput], totalUsage: LanguageModelUsageInput) {
         self.output = output
+        self.outputParsed = outputParsed
         self.steps = steps
         self.totalUsage = totalUsage
     }
     private enum CodingKeys: String, CodingKey {
         case output = "output"
+        case outputParsed = "outputParsed"
         case steps = "steps"
         case totalUsage = "totalUsage"
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.output = try c.decodePresence(JSONValue.self, forKey: .output)
+        self.outputParsed = try c.decodeIfPresent(Bool.self, forKey: .outputParsed)
         self.steps = try c.decode([StepResultInput].self, forKey: .steps)
         self.totalUsage = try c.decode(LanguageModelUsageInput.self, forKey: .totalUsage)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodePresence(self.output, forKey: .output)
+        try c.encodeIfPresent(self.outputParsed, forKey: .outputParsed)
         try c.encode(self.steps, forKey: .steps)
         try c.encode(self.totalUsage, forKey: .totalUsage)
     }
@@ -3806,6 +3830,39 @@ public struct ImageUsage: Codable, Equatable, Sendable {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
         self.totalTokens = totalTokens
+    }
+}
+
+/// Controls which raw body fields are exposed in generation results.
+public struct IncludeOptions: Codable, Equatable, Sendable {
+    /// Whether to return the request body. Defaults to false.
+    public var requestBody: Bool?
+    /// Whether to return the response body. Defaults to false.
+    public var responseBody: Bool?
+
+    public init(requestBody: Bool? = nil, responseBody: Bool? = nil) {
+        self.requestBody = requestBody
+        self.responseBody = responseBody
+    }
+    private enum CodingKeys: String, CodingKey {
+        case requestBody = "requestBody"
+        case responseBody = "responseBody"
+    }
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.container(keyedBy: WireKey.self)
+        for key in raw.allKeys {
+            if CodingKeys(stringValue: key.stringValue) == nil {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: "Unknown field \(key.stringValue)"))
+            }
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.requestBody = try c.decodeIfPresent(Bool.self, forKey: .requestBody)
+        self.responseBody = try c.decodeIfPresent(Bool.self, forKey: .responseBody)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.requestBody, forKey: .requestBody)
+        try c.encodeIfPresent(self.responseBody, forKey: .responseBody)
     }
 }
 
@@ -4920,6 +4977,8 @@ public struct OperationStatus: Codable, Equatable, Sendable {
 public struct Options: Codable, Equatable, Sendable {
     public var frequencyPenalty: Double?
     public var headers: [String: String]?
+    /// Controls the raw bodies exposed in the result. Both default to `false`.
+    public var include: IncludeOptions?
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     public var includeRawChunks: Bool?
     /// System instructions prepended to the prompt.
@@ -4959,9 +5018,10 @@ public struct Options: Codable, Equatable, Sendable {
     public var topK: Double?
     public var topP: Double?
 
-    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
+    public init(frequencyPenalty: Double? = nil, headers: [String: String]? = nil, include: IncludeOptions? = nil, includeRawChunks: Bool? = nil, instructions: String? = nil, maxOutputTokens: UInt32? = nil, maxRetries: UInt32? = nil, output: Output? = nil, presencePenalty: Double? = nil, providerOptions: [String: [String: JSONValue]]? = nil, reasoning: ReasoningEffort? = nil, seed: UInt64? = nil, sessionId: String? = nil, stopSequences: [String]? = nil, strictStream: Bool? = nil, temperature: Double? = nil, timeout: TimeoutConfiguration? = nil, toolChoice: ToolChoice? = nil, tools: [Tool]? = nil, topK: Double? = nil, topP: Double? = nil) {
         self.frequencyPenalty = frequencyPenalty
         self.headers = headers
+        self.include = include
         self.includeRawChunks = includeRawChunks
         self.instructions = instructions
         self.maxOutputTokens = maxOutputTokens
@@ -4984,6 +5044,7 @@ public struct Options: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case frequencyPenalty = "frequencyPenalty"
         case headers = "headers"
+        case include = "include"
         case includeRawChunks = "includeRawChunks"
         case instructions = "instructions"
         case maxOutputTokens = "maxOutputTokens"
@@ -5013,6 +5074,7 @@ public struct Options: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.frequencyPenalty = try c.decodeIfPresent(Double.self, forKey: .frequencyPenalty)
         self.headers = try c.decodeIfPresent([String: String].self, forKey: .headers)
+        self.include = try c.decodeIfPresent(IncludeOptions.self, forKey: .include)
         self.includeRawChunks = try c.decodeIfPresent(Bool.self, forKey: .includeRawChunks)
         self.instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
         self.maxOutputTokens = try c.decodeIfPresent(UInt32.self, forKey: .maxOutputTokens)
@@ -5036,6 +5098,7 @@ public struct Options: Codable, Equatable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(self.frequencyPenalty, forKey: .frequencyPenalty)
         try c.encodeIfPresent(self.headers, forKey: .headers)
+        try c.encodeIfPresent(self.include, forKey: .include)
         try c.encodeIfPresent(self.includeRawChunks, forKey: .includeRawChunks)
         try c.encodeIfPresent(self.instructions, forKey: .instructions)
         try c.encodeIfPresent(self.maxOutputTokens, forKey: .maxOutputTokens)

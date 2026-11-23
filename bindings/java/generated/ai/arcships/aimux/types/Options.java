@@ -26,6 +26,11 @@ public final class Options {
     @JsonProperty("headers")
     private final Map<String, String> headers;
     /**
+     * Controls the raw bodies exposed in the result. Both default to `false`.
+     */
+    @JsonProperty("include")
+    private final IncludeOptions include;
+    /**
      * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
      */
     @JsonProperty("includeRawChunks")
@@ -102,6 +107,7 @@ public final class Options {
     public Options(
         @JsonProperty(value = "frequencyPenalty") BigDecimal frequencyPenalty,
         @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "include") IncludeOptions include,
         @JsonProperty(value = "includeRawChunks") Boolean includeRawChunks,
         @JsonProperty(value = "instructions") String instructions,
         @JsonProperty(value = "maxOutputTokens") Long maxOutputTokens,
@@ -122,6 +128,7 @@ public final class Options {
         @JsonProperty(value = "topP") BigDecimal topP) {
         this.frequencyPenalty = frequencyPenalty;
         this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.include = include;
         this.includeRawChunks = includeRawChunks;
         this.instructions = instructions;
         this.maxOutputTokens = maxOutputTokens;
@@ -145,6 +152,7 @@ public final class Options {
     public static Builder builder() { return new Builder(); }
     public BigDecimal getFrequencyPenalty() { return frequencyPenalty; }
     public Map<String, String> getHeaders() { return headers; }
+    public IncludeOptions getInclude() { return include; }
     public Boolean getIncludeRawChunks() { return includeRawChunks; }
     public String getInstructions() { return instructions; }
     public Long getMaxOutputTokens() { return maxOutputTokens; }
@@ -167,6 +175,7 @@ public final class Options {
     public static final class Builder {
         private BigDecimal frequencyPenalty;
         private Map<String, String> headers;
+        private IncludeOptions include;
         private Boolean includeRawChunks;
         private String instructions;
         private Long maxOutputTokens;
@@ -193,6 +202,11 @@ public final class Options {
 
         public Builder headers(Map<String, String> value) {
             this.headers = value;
+            return this;
+        }
+
+        public Builder include(IncludeOptions value) {
+            this.include = value;
             return this;
         }
 
@@ -286,6 +300,6 @@ public final class Options {
             return this;
         }
 
-        public Options build() { return new Options(frequencyPenalty, headers, includeRawChunks, instructions, maxOutputTokens, maxRetries, output, presencePenalty, providerOptions, reasoning, seed, sessionId, stopSequences, strictStream, temperature, timeout, toolChoice, tools, topK, topP); }
+        public Options build() { return new Options(frequencyPenalty, headers, include, includeRawChunks, instructions, maxOutputTokens, maxRetries, output, presencePenalty, providerOptions, reasoning, seed, sessionId, stopSequences, strictStream, temperature, timeout, toolChoice, tools, topK, topP); }
     }
 }

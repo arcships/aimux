@@ -4478,6 +4478,8 @@ type GenerateObjectResult struct {
 type GenerateTextOptions struct {
 	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
 	Headers          map[string]string `json:"headers,omitzero"`
+	// Controls the raw bodies exposed in the result. Both default to `false`.
+	Include *IncludeOptions `json:"include,omitzero"`
 	// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
 	IncludeRawChunks *bool `json:"includeRawChunks,omitzero"`
 	// System instructions prepended to the prompt.
@@ -4528,7 +4530,7 @@ func (v *GenerateTextOptions) UnmarshalJSON(data []byte) error {
 	}
 	for key := range raw {
 		switch key {
-		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		case "frequencyPenalty", "headers", "include", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
 		default:
 			return fmt.Errorf("unknown field %q in GenerateTextOptions", key)
 		}
@@ -4547,40 +4549,193 @@ func (v *GenerateTextOptions) UnmarshalJSON(data []byte) error {
 //
 // It stores the steps, the usage summed over them and the parsed output, as
 // `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-// other value is derived from the steps by an accessor. The serialized form
-// is a snapshot that writes the derived values next to the stored ones, so
-// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-// `steps`, `total_usage` and `output` are read back.
+// other value is derived from the steps by an accessor. The wire form carries
+// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+// optional `outputParsed: false` (when no output was generated).
 type GenerateTextResult struct {
-	Content      []ContentPart       `json:"content"`
-	Files        []GeneratedFile     `json:"files"`
-	FinishReason FinishReasonUnified `json:"finishReason"`
-	// Absent when the output was not parsed.
-	Output Field[json.RawMessage] `json:"output,omitzero"`
-	// Deprecated upstream: the last step's provider metadata.
-	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
-	RawFinishReason  *string                               `json:"rawFinishReason,omitzero"`
-	// Deprecated upstream: the last step's reasoning.
-	Reasoning []ReasoningPart `json:"reasoning"`
-	// Deprecated upstream: the last step's reasoning text.
-	ReasoningText *string `json:"reasoningText,omitzero"`
-	// Deprecated upstream: the last step's request.
-	Request RequestInfo `json:"request"`
-	// Deprecated upstream: the last step's response.
-	Response         StepResponse   `json:"response"`
-	ResponseMessages []ModelMessage `json:"responseMessages"`
-	// Each with its `type` tag (`generate-text-result.ts:73`).
-	Sources []TypedSource `json:"sources"`
-	Steps   []StepResult  `json:"steps"`
-	Text    string        `json:"text"`
-	// Each with its `type` tag (`generate-text-result.ts:78`).
-	ToolCalls []TypedToolCall `json:"toolCalls"`
-	// Each with its `type` tag (`generate-text-result.ts:93`).
-	ToolResults []TaggedToolResult `json:"toolResults"`
-	// Deprecated upstream: equal to `usage`.
-	TotalUsage LanguageModelUsage `json:"totalUsage"`
-	Usage      LanguageModelUsage `json:"usage"`
-	Warnings   []Warning          `json:"warnings"`
+	// An explicit parsed output, including JSON `null`. When absent and
+	// `outputParsed` is not `false`, bindings expose the final step's text.
+	OutputValue Field[json.RawMessage] `json:"output,omitzero"`
+	// Present and `false` when no output was generated (for example, a final
+	// `tool-calls` step without an output spec). Omitted when an output was
+	// produced.
+	OutputParsed *bool              `json:"outputParsed,omitzero"`
+	Steps        []StepResult       `json:"steps"`
+	TotalUsage   LanguageModelUsage `json:"totalUsage"`
+}
+
+func (v *GenerateTextResult) UnmarshalJSON(data []byte) error {
+	type facts GenerateTextResult
+	var result facts
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	if len(result.Steps) == 0 {
+		return fmt.Errorf("GenerateTextResult requires at least one step")
+	}
+	if result.OutputValue.Present && result.OutputParsed != nil && !*result.OutputParsed {
+		return fmt.Errorf("GenerateTextResult cannot carry output when outputParsed is false")
+	}
+	*v = GenerateTextResult(result)
+	return nil
+}
+
+// FinalStep is the last model call in the result.
+func (v GenerateTextResult) FinalStep() StepResult { return v.Steps[len(v.Steps)-1] }
+
+func (v GenerateTextResult) Text() string {
+	text := ""
+	for _, part := range v.FinalStep().Content {
+		if part, ok := part.Value.(ContentPartVariantText); ok {
+			text += part.Text
+		}
+	}
+	return text
+}
+
+func (v GenerateTextResult) Content() []ContentPart {
+	out := []ContentPart{}
+	for _, step := range v.Steps {
+		out = append(out, step.Content...)
+	}
+	return out
+}
+
+// resultParts selects payloads directly from ordered content.
+func resultParts[T ContentPartVariant](content []ContentPart) []T {
+	out := []T{}
+	for _, part := range content {
+		if value, ok := part.Value.(T); ok {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func (v GenerateTextResult) Reasoning() []ContentPart {
+	out := []ContentPart{}
+	for _, part := range v.FinalStep().Content {
+		switch part.Value.(type) {
+		case ContentPartVariantReasoning, ContentPartVariantReasoningFile:
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func (v GenerateTextResult) ReasoningText() *string {
+	text := ""
+	for _, part := range resultParts[ContentPartVariantReasoning](v.FinalStep().Content) {
+		text += part.Text
+	}
+	if text == "" {
+		return nil
+	}
+	return &text
+}
+
+func (v GenerateTextResult) Files() []GeneratedFile {
+	out := []GeneratedFile{}
+	for _, part := range resultParts[ContentPartVariantFile](v.Content()) {
+		out = append(out, part.File)
+	}
+	return out
+}
+
+func (v GenerateTextResult) Sources() []ContentPart {
+	out := []ContentPart{}
+	for _, part := range v.Content() {
+		switch part.Value.(type) {
+		case ContentPartVariantSourceURL, ContentPartVariantSourceDocument:
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func (v GenerateTextResult) ToolCalls() []ContentPartVariantToolCall {
+	return resultParts[ContentPartVariantToolCall](v.Content())
+}
+
+func (v GenerateTextResult) toolCallsByDynamic(dynamic bool) []ContentPartVariantToolCall {
+	out := []ContentPartVariantToolCall{}
+	for _, part := range v.ToolCalls() {
+		if (part.Dynamic != nil && *part.Dynamic) == dynamic {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func (v GenerateTextResult) StaticToolCalls() []ContentPartVariantToolCall {
+	return v.toolCallsByDynamic(false)
+}
+
+func (v GenerateTextResult) DynamicToolCalls() []ContentPartVariantToolCall {
+	return v.toolCallsByDynamic(true)
+}
+
+func (v GenerateTextResult) ToolResults() []ContentPartVariantToolResult {
+	return resultParts[ContentPartVariantToolResult](v.Content())
+}
+
+func (v GenerateTextResult) toolResultsByDynamic(dynamic bool) []ContentPartVariantToolResult {
+	out := []ContentPartVariantToolResult{}
+	for _, part := range v.ToolResults() {
+		if (part.Dynamic != nil && *part.Dynamic) == dynamic {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func (v GenerateTextResult) StaticToolResults() []ContentPartVariantToolResult {
+	return v.toolResultsByDynamic(false)
+}
+
+func (v GenerateTextResult) DynamicToolResults() []ContentPartVariantToolResult {
+	return v.toolResultsByDynamic(true)
+}
+
+func (v GenerateTextResult) FinishReason() FinishReasonUnified { return v.FinalStep().FinishReason }
+func (v GenerateTextResult) RawFinishReason() *string          { return v.FinalStep().RawFinishReason }
+func (v GenerateTextResult) Usage() LanguageModelUsage         { return v.TotalUsage }
+func (v GenerateTextResult) Request() RequestInfo              { return v.FinalStep().Request }
+func (v GenerateTextResult) Response() StepResponse            { return v.FinalStep().Response }
+func (v GenerateTextResult) ProviderMetadata() map[string]map[string]json.RawMessage {
+	return v.FinalStep().ProviderMetadata
+}
+
+func (v GenerateTextResult) Warnings() []Warning {
+	out := []Warning{}
+	for _, step := range v.Steps {
+		out = append(out, step.Warnings...)
+	}
+	return out
+}
+
+func (v GenerateTextResult) ResponseMessages() []ModelMessage {
+	out := []ModelMessage{}
+	for _, step := range v.Steps {
+		out = append(out, step.Response.Messages...)
+	}
+	return out
+}
+
+// Output returns the parsed JSON value, the final step's text as a JSON string
+// when parsed as plain text, or nil when no output was generated.
+func (v GenerateTextResult) Output() json.RawMessage {
+	if v.OutputValue.Present {
+		if v.OutputValue.Null {
+			return json.RawMessage("null")
+		}
+		return v.OutputValue.Value
+	}
+	if v.OutputParsed != nil && !*v.OutputParsed {
+		return nil
+	}
+	value, _ := json.Marshal(v.Text())
+	return value
 }
 
 // Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -4588,14 +4743,19 @@ type GenerateTextResult struct {
 //
 // It stores the steps, the usage summed over them and the parsed output, as
 // `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-// other value is derived from the steps by an accessor. The serialized form
-// is a snapshot that writes the derived values next to the stored ones, so
-// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-// `steps`, `total_usage` and `output` are read back.
+// other value is derived from the steps by an accessor. The wire form carries
+// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+// optional `outputParsed: false` (when no output was generated).
 type GenerateTextResultInput struct {
-	Output     Field[json.RawMessage]  `json:"output,omitzero"`
-	Steps      []StepResultInput       `json:"steps"`
-	TotalUsage LanguageModelUsageInput `json:"totalUsage"`
+	// An explicit parsed output, including JSON `null`. When absent and
+	// `outputParsed` is not `false`, bindings expose the final step's text.
+	Output Field[json.RawMessage] `json:"output,omitzero"`
+	// Present and `false` when no output was generated (for example, a final
+	// `tool-calls` step without an output spec). Omitted when an output was
+	// produced.
+	OutputParsed *bool                   `json:"outputParsed,omitzero"`
+	Steps        []StepResultInput       `json:"steps"`
+	TotalUsage   LanguageModelUsageInput `json:"totalUsage"`
 }
 
 // A generated file (`ai` `generate-text/generated-file.ts:10-32`), the
@@ -4958,6 +5118,38 @@ type ImageUsage struct {
 	OutputTokens *uint32 `json:"outputTokens,omitzero"`
 	// Total tokens as reported by the provider.
 	TotalTokens *uint32 `json:"totalTokens,omitzero"`
+}
+
+// Controls which raw body fields are exposed in generation results.
+type IncludeOptions struct {
+	// Whether to return the request body. Defaults to false.
+	RequestBody *bool `json:"requestBody,omitzero"`
+	// Whether to return the response body. Defaults to false.
+	ResponseBody *bool `json:"responseBody,omitzero"`
+}
+
+func (v *IncludeOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for IncludeOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "requestBody", "responseBody":
+		default:
+			return fmt.Errorf("unknown field %q in IncludeOptions", key)
+		}
+	}
+	type alias IncludeOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = IncludeOptions(tmp)
+	return nil
 }
 
 // The input audio format for a streaming transcription request.
@@ -6575,6 +6767,8 @@ type OperationStatus struct {
 type Options struct {
 	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
 	Headers          map[string]string `json:"headers,omitzero"`
+	// Controls the raw bodies exposed in the result. Both default to `false`.
+	Include *IncludeOptions `json:"include,omitzero"`
 	// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
 	IncludeRawChunks *bool `json:"includeRawChunks,omitzero"`
 	// System instructions prepended to the prompt.
@@ -6625,7 +6819,7 @@ func (v *Options) UnmarshalJSON(data []byte) error {
 	}
 	for key := range raw {
 		switch key {
-		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		case "frequencyPenalty", "headers", "include", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
 		default:
 			return fmt.Errorf("unknown field %q in Options", key)
 		}
@@ -8206,7 +8400,7 @@ func (v *ReplayLiveResult) UnmarshalJSON(data []byte) error {
 	var err error
 	{
 		var next GenerateTextResult
-		if err = decodeUnionBranch(data, &next, false, "content", "files", "finishReason", "reasoning", "request", "response", "responseMessages", "sources", "steps", "text", "toolCalls", "toolResults", "totalUsage", "usage", "warnings"); err == nil {
+		if err = decodeUnionBranch(data, &next, false, "steps", "totalUsage"); err == nil {
 			v.Value = ReplayLiveResultBranchGenerateTextResult{Value: next}
 			return nil
 		}
@@ -13932,6 +14126,8 @@ func NewDTO(name string) (any, error) {
 		return new(ImageResult), nil
 	case "ImageUsage":
 		return new(ImageUsage), nil
+	case "IncludeOptions":
+		return new(IncludeOptions), nil
 	case "InputAudioFormat":
 		return new(InputAudioFormat), nil
 	case "InputRecord":

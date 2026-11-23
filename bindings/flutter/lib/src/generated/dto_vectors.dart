@@ -204,6 +204,8 @@ Object? roundTripDto(String type, Object? value) {
       return ImageResult.fromJson(value as Map<String, dynamic>).toJson();
     case 'ImageUsage':
       return ImageUsage.fromJson(value as Map<String, dynamic>).toJson();
+    case 'IncludeOptions':
+      return IncludeOptions.fromJson(value as Map<String, dynamic>).toJson();
     case 'InputAudioFormat':
       return InputAudioFormat.fromJson(value as Map<String, dynamic>).toJson();
     case 'InputRecord':

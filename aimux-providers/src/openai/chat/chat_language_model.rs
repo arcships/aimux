@@ -176,7 +176,9 @@ pub(crate) async fn execute_generate(
         http,
         header_layers,
         aimux_provider_utils::HttpBody::Json(body.clone()),
-        aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
+        aimux_provider_utils::create_json_response_handler_with_body::<ChatCompletionResponse>(
+            aimux_core::generate::provider_response_body_preference().unwrap_or(true),
+        ),
         crate::openai::error::openai_failed_response_handler(),
     )
     .await?;
@@ -386,6 +388,7 @@ pub(crate) async fn execute_stream(
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
             response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
+                body: None,
             }),
         },
         options,

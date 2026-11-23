@@ -179,7 +179,9 @@ impl LanguageModel for GoogleModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(url, options),
             body.clone(),
-            aimux_provider_utils::create_json_response_handler(),
+            aimux_provider_utils::create_json_response_handler_with_body(
+                aimux_core::generate::provider_response_body_preference().unwrap_or(true),
+            ),
             super::google_failed_response_handler(),
         )
         .await?;
@@ -291,6 +293,7 @@ impl LanguageModel for GoogleModel {
                 request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
                 response: Some(aimux_core::shared::StreamResponseInfo {
                     headers: Some(response_headers),
+                    body: None,
                 }),
             },
             options,

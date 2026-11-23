@@ -39,3 +39,86 @@ test('DTO vectors reject strict unknown keys, bad enums, non-objects, and invali
   assert.equal(roundTrip('HandleId', '"0001"'), '0001')
   assert.deepEqual(roundTrip('BackendConfig', '{"type":"ring","capacity":1}'), { type: 'ring', capacity: 1 })
 })
+
+test('GenerateTextResult getters derive ordered values without expanding JSON', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { attachGenerateTextResult } = await import('../src/generated/text_result.ts')
+  const fixture = JSON.parse(readFileSync(new URL(
+    '../../../contract-tests/dto/GenerateTextResult/001.json', import.meta.url), 'utf8'))
+  assert.throws(() => attachGenerateTextResult({ ...fixture, steps: [] }), TypeError)
+  const first = fixture.steps[0]
+  const toolCall = (toolCallId: string, dynamic?: boolean) =>
+    ({ type: 'tool-call', toolCallId, toolName: 'tool', input: {}, ...(dynamic === undefined ? {} : { dynamic }) })
+  const toolResult = (toolCallId: string, dynamic?: boolean) =>
+    ({ type: 'tool-result', toolCallId, toolName: 'tool', output: null, ...(dynamic === undefined ? {} : { dynamic }) })
+  const file = { base64: 'aGk=', mediaType: 'text/plain' }
+  const source = { type: 'source', sourceType: 'url', id: 'source', url: 'https://example.com' }
+  const earlyWarning = { type: 'other', message: 'first' }
+  const finalWarning = { type: 'other', message: 'second' }
+  first.content.push({ type: 'reasoning', text: 'ignored' }, source, toolCall('a'), toolResult('a', false))
+  first.warnings = [earlyWarning]
+  const last = {
+    ...first,
+    stepNumber: 1,
+    finishReason: 'length',
+    rawFinishReason: 'max_tokens',
+    content: [
+      { type: 'text', text: 'Final ' },
+      { type: 'reasoning', text: 'think ' },
+      { type: 'reasoning-file', file },
+      { type: 'reasoning', text: 'more' },
+      { type: 'text', text: 'answer' },
+      { type: 'file', file },
+      toolCall('b', true), toolResult('b', true), toolCall('c', false), toolResult('c'),
+      { type: 'tool-error', toolCallId: 'd', toolName: 'tool', error: 'error' },
+    ],
+    warnings: [finalWarning],
+    request: { body: { prompt: 'final' } },
+    response: { ...first.response, messages: [{ role: 'assistant', content: 'Final answer' }] },
+    providerMetadata: { last: { key: 1 } },
+  }
+  fixture.steps.push(last)
+  const wire = JSON.stringify(fixture)
+  const result = attachGenerateTextResult(fixture)
+  assert.equal(result.finalStep, last)
+  assert.equal(result.text, 'Final answer')
+  assert.equal(result.output, result.text)
+  assert.deepEqual(result.content, [...first.content, ...last.content])
+  assert.deepEqual(result.reasoning, last.content.slice(1, 4))
+  assert.equal(result.reasoningText, 'think more')
+  assert.deepEqual(result.files, [file])
+  assert.deepEqual(result.sources, [source])
+  assert.deepEqual(result.toolCalls.map(part => part.toolCallId), ['a', 'b', 'c'])
+  assert.deepEqual(result.staticToolCalls.map(part => part.toolCallId), ['a', 'c'])
+  assert.deepEqual(result.dynamicToolCalls.map(part => part.toolCallId), ['b'])
+  assert.deepEqual(result.toolResults.map(part => part.toolCallId), ['a', 'b', 'c'])
+  assert.deepEqual(result.staticToolResults.map(part => part.toolCallId), ['a', 'c'])
+  assert.deepEqual(result.dynamicToolResults.map(part => part.toolCallId), ['b'])
+  assert.equal(result.finishReason, 'length')
+  assert.equal(result.rawFinishReason, 'max_tokens')
+  assert.equal(result.request, last.request)
+  assert.equal(result.response, last.response)
+  assert.equal(result.providerMetadata, last.providerMetadata)
+  assert.equal(result.usage, fixture.totalUsage)
+  assert.deepEqual(result.warnings, [earlyWarning, finalWarning])
+  assert.deepEqual(result.responseMessages, [...first.response.messages, ...last.response.messages])
+  assert.equal(JSON.stringify(result), wire)
+  assert.deepEqual({ ...result }, fixture)
+  assert.deepEqual(structuredClone(result), JSON.parse(wire))
+  assert.deepEqual(Object.keys(result).sort(), ['steps', 'totalUsage'])
+
+  const explicitNull = { ...JSON.parse(wire), output: null }
+  const explicitWire = JSON.stringify(explicitNull)
+  assert.equal(attachGenerateTextResult(explicitNull).output, null)
+  assert.equal(JSON.stringify(explicitNull), explicitWire)
+
+  const notParsed = { ...JSON.parse(wire), outputParsed: false }
+  const notParsedWire = JSON.stringify(notParsed)
+  const unparsedResult = attachGenerateTextResult(notParsed)
+  assert.equal(unparsedResult.output, undefined)
+  assert.equal(Object.hasOwn(unparsedResult, 'output'), false)
+  assert.equal(unparsedResult.outputParsed, false)
+  assert.equal(JSON.stringify(unparsedResult), notParsedWire)
+
+  assert.throws(() => attachGenerateTextResult({ ...JSON.parse(wire), output: null, outputParsed: false }), TypeError)
+})

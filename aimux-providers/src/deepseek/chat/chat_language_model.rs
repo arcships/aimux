@@ -507,6 +507,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 request: Some(RequestInfo { body: Some(body) }),
                 response: Some(StreamResponseInfo {
                     headers: Some(response_headers),
+                    body: None,
                 }),
             },
             options,

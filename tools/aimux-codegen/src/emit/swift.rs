@@ -247,6 +247,13 @@ fn storage(field: &Field) -> String {
 }
 
 fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
+    let member = |field: &Field| {
+        if name == "GenerateTextResult" && field.json_name == "output" {
+            "outputValue".into()
+        } else {
+            camel(&field.json_name)
+        }
+    };
     writeln!(
         out,
         "public struct {}: Codable, Equatable, Sendable {{",
@@ -255,7 +262,7 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
     .unwrap();
     for field in fields {
         docs(out, field.doc.as_deref(), "    ");
-        let key = camel(&field.json_name);
+        let key = member(field);
         if boxed(name, field) {
             let storage = storage(field);
             writeln!(
@@ -291,7 +298,7 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
     }
     out.push_str(") {\n");
     for field in fields {
-        let key = camel(&field.json_name);
+        let key = member(field);
         if boxed(name, field) {
             writeln!(
                 out,
@@ -300,7 +307,7 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
             )
             .unwrap();
         } else {
-            writeln!(out, "        self.{key} = {key}").unwrap();
+            writeln!(out, "        self.{key} = {}", camel(&field.json_name)).unwrap();
         }
     }
     out.push_str("    }\n");
@@ -315,7 +322,7 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
     {
         if fields
             .iter()
-            .any(|field| camel(&field.json_name).trim_matches('`') != field.json_name)
+            .any(|field| member(field).trim_matches('`') != field.json_name)
         {
             keys(out, fields, None);
         }
@@ -348,15 +355,12 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
                 )
                 .unwrap();
             } else {
-                writeln!(
-                    out,
-                    "        self.{} = {}",
-                    camel(&field.json_name),
-                    decode(field)
-                )
-                .unwrap();
+                writeln!(out, "        self.{} = {}", member(field), decode(field)).unwrap();
             }
         }
+    }
+    if name == "GenerateTextResult" {
+        out.push_str("        guard !steps.isEmpty else {\n            throw DecodingError.dataCorruptedError(forKey: .steps, in: c, debugDescription: \"GenerateTextResult requires at least one step\")\n        }\n        if case .missing = outputValue {} else if outputParsed == false {\n            throw DecodingError.dataCorruptedError(forKey: .outputParsed, in: c, debugDescription: \"GenerateTextResult cannot carry output when outputParsed is false\")\n        }\n");
     }
     out.push_str("    }\n    public func encode(to encoder: any Encoder) throws {\n");
     if fields.is_empty() {
@@ -364,15 +368,14 @@ fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
     } else {
         out.push_str("        var c = encoder.container(keyedBy: CodingKeys.self)\n");
         for field in fields {
-            encode(
-                out,
-                field,
-                &format!("self.{}", camel(&field.json_name)),
-                "        ",
-            );
+            encode(out, field, &format!("self.{}", member(field)), "        ");
         }
     }
     out.push_str("    }\n}\n\n");
+    if name == "GenerateTextResult" {
+        out.push_str(include_str!("text_result/swift.inc"));
+        out.push('\n');
+    }
 }
 
 impl Emitter for Swift {

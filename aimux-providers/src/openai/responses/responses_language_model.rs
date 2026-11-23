@@ -323,6 +323,7 @@ impl LanguageModel for OpenAIResponsesModel {
                 request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
                 response: Some(aimux_core::shared::StreamResponseInfo {
                     headers: Some(response_headers),
+                    body: None,
                 }),
             },
             options,

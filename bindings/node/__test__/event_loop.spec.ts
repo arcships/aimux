@@ -169,7 +169,7 @@ test('event loop: timers advance with bounded drift during a native call', async
   try {
     const result = await bounded(api.call(model), 'generate call')
     gaps.push(performance.now() - previous)
-    assert.equal(result.text, 'ok')
+    assert.equal(result.steps[0].content[0].text, 'ok')
     assert.ok(gaps.length >= 15, `Only ${gaps.length} timer samples during the delayed call`)
     assert.ok(Math.max(...gaps) < 250, `Maximum timer gap: ${Math.max(...gaps)}ms`)
   } finally {
