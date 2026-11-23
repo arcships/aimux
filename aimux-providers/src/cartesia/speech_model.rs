@@ -44,7 +44,9 @@ impl SpeechModel for CartesiaSpeechModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url("/tts/bytes"), options),
+            exchange
+                .request(exchange.url("/tts/bytes"), options)
+                .generation_for(options),
             Value::Object(body.clone()),
             aimux_provider_utils::create_binary_response_handler(),
             cartesia_failed_response_handler(),

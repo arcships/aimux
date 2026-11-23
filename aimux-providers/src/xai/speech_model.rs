@@ -163,7 +163,7 @@ impl SpeechModel for XaiSpeechModel {
         // raw audio bytes.
         let (audio, headers, raw, envelope) = if with_timestamps {
             let resp = aimux_provider_utils::post_json_to_api(
-                exchange.request(url, options),
+                exchange.request(url, options).generation_for(options),
                 body.clone(),
                 aimux_provider_utils::create_json_response_handler::<TimestampsResponse>(),
                 super::error::xai_failed_response_handler(),
@@ -183,7 +183,7 @@ impl SpeechModel for XaiSpeechModel {
             (audio, resp.response_headers, resp.raw_value, Some(envelope))
         } else {
             let resp = aimux_provider_utils::post_json_to_api(
-                exchange.request(url, options),
+                exchange.request(url, options).generation_for(options),
                 body.clone(),
                 aimux_provider_utils::create_binary_response_handler(),
                 super::error::xai_failed_response_handler(),
