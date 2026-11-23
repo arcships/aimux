@@ -20,7 +20,10 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
 # Match aimux.podspec's s.platform = :ios, '12.0' so cc-rs (ring) and rustc
 # target the declared minimum iOS version instead of the host runner's SDK.
+# Apple Silicon iOS Simulator (arm64-apple-ios-sim) was introduced in iOS 14.0,
+# so rustc/ld64 clamp the simulator slice's LC_BUILD_VERSION minos to >= 14.0.
 IOS_MIN="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
+SIM_MIN="$(printf '%s\n14.0\n' "$IOS_MIN" | sort -V | tail -n 1)"
 INSTALL_NAME="@rpath/aimux_ffi.framework/aimux_ffi"
 # Fat-LTO + -Oz + strip dynamic slices land near ~8-11 MiB; fail loudly on
 # any profile/LTO/strip regression well before pub.dev's package limit.
@@ -44,11 +47,13 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
       slice=ios
       supported_platform=iPhoneOS
       macho_platform=ios
+      slice_min="$IOS_MIN"
       ;;
     aarch64-apple-ios-sim)
       slice=sim
       supported_platform=iPhoneSimulator
       macho_platform=ios-simulator
+      slice_min="$SIM_MIN"
       ;;
   esac
 
@@ -95,7 +100,7 @@ EOF
     <string>$supported_platform</string>
   </array>
   <key>CFBundleVersion</key><string>1</string>
-  <key>MinimumOSVersion</key><string>$IOS_MIN</string>
+  <key>MinimumOSVersion</key><string>$slice_min</string>
   <key>UIDeviceFamily</key>
   <array>
     <integer>1</integer>
@@ -108,7 +113,7 @@ EOF
     --expect-macho-dylib \
     --expect-arch arm64 \
     --expect-platform "$macho_platform" \
-    --expect-min-os "$IOS_MIN" \
+    --expect-min-os "$slice_min" \
     --expect-install-name "$INSTALL_NAME" \
     --expect-header-exports \
     --max-bytes "$MAX_SLICE_BYTES" \
@@ -136,9 +141,9 @@ done
 # Dynamic link-smoke both packaged slices: CI's Flutter example only links the
 # simulator slice, so verify device + simulator dynamic linkage, LC_LOAD_DYLIB
 # install_name, and all 14 exported C ABI symbols before shipping.
-for entry in "iphoneos:ios-arm64:ios:-miphoneos-version-min=$IOS_MIN" \
-             "iphonesimulator:ios-arm64-simulator:ios-simulator:-mios-simulator-version-min=$IOS_MIN"; do
-  IFS=: read -r sdk slice_dir macho_platform min_flag <<< "$entry"
+for entry in "iphoneos:ios-arm64:ios:$IOS_MIN:-miphoneos-version-min=$IOS_MIN" \
+             "iphonesimulator:ios-arm64-simulator:ios-simulator:$SIM_MIN:-mios-simulator-version-min=$SIM_MIN"; do
+  IFS=: read -r sdk slice_dir macho_platform slice_min min_flag <<< "$entry"
   sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
   slice_bin="$OUT/$slice_dir/aimux_ffi.framework/aimux_ffi"
   smoke_out="$TMP/smoke-$slice_dir"
@@ -147,7 +152,7 @@ for entry in "iphoneos:ios-arm64:ios:-miphoneos-version-min=$IOS_MIN" \
     --expect-macho-dylib \
     --expect-arch arm64 \
     --expect-platform "$macho_platform" \
-    --expect-min-os "$IOS_MIN" \
+    --expect-min-os "$slice_min" \
     --expect-install-name "$INSTALL_NAME" \
     --expect-header-exports \
     --max-bytes "$MAX_SLICE_BYTES" \

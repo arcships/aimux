@@ -856,7 +856,7 @@ jobs:
             --expect-macho-dylib \
             --expect-arch arm64 \
             --expect-platform ios-simulator \
-            --expect-min-os 12.0 \
+            --expect-min-os 14.0 \
             --expect-install-name @rpath/aimux_ffi.framework/aimux_ffi \
             --expect-header-exports \
             build/ios/iphonesimulator/Runner.app/Frameworks/aimux_ffi.framework/aimux_ffi
