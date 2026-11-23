@@ -273,7 +273,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: publish
-          args: --no-sdist
+          args: --no-sdist --compression-method deflated --compression-level 9
           working-directory: bindings/python
 
   # ── Go binding: build libaimux_ffi.a per platform, ship on GitHub Release

@@ -17,7 +17,7 @@ aimux-core = { path = "../../aimux-core" }
 aimux-ops = { path = "../../aimux-ops" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 futures = "0.3"
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 

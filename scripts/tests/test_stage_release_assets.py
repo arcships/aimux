@@ -86,6 +86,9 @@ class StageReleaseAssetsTest(unittest.TestCase):
             names = [n for n in z.namelist() if not n.endswith("/")]
             self.assertEqual(sorted(names), sorted(XCFRAMEWORK_FILES))
             self.assertEqual(z.read(XCFRAMEWORK_FILES[1]).decode(), XCFRAMEWORK_FILES[1])
+            for info in z.infolist():
+                if not info.is_dir():
+                    self.assertEqual(info.compress_type, zipfile.ZIP_DEFLATED)
 
     def test_the_header_the_go_downloader_fetches_is_staged(self):
         download(self.src)

@@ -12,16 +12,28 @@ exclude = [
     "src/dto_vectors.rs",
 ]
 
+[features]
+default = []
+# Live schemars-based manifest generation for aimux-codegen and schema tests.
+# Default builds read the precomputed compressed snapshot instead so release
+# binaries drop schemars' JsonSchema machinery.
+runtime-manifest = []
+
 [dependencies]
 schemars = { workspace = true }
 aimux-core = { workspace = true }
 aimux-providers = { workspace = true }
 aimux-provider-utils = { workspace = true, features = ["ws"] }
+miniz_oxide = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true }
 futures = { workspace = true }
 sha2 = "0.10"
+
+[[test]]
+name = "type_schemas"
+required-features = ["runtime-manifest"]
 
 [lints]
 workspace = true

@@ -15,10 +15,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err(format!("unknown argument: {arg}").into()),
         }
     }
-    let artifacts = aimux_codegen::generate(
-        &aimux_ops::manifest::manifest(),
-        &aimux_ops::manifest::manifest_digest(),
-    )?;
+    let (manifest_json, digest) = aimux_ops::manifest::generate_manifest();
+    let manifest_value: serde_json::Value = serde_json::from_str(&manifest_json)?;
+    let artifacts = aimux_codegen::generate(&manifest_value, &digest)?;
     if check {
         aimux_codegen::check(&root, &artifacts)?;
         println!("generated files and manifest digest match");

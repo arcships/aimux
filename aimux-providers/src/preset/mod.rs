@@ -380,7 +380,12 @@ pub fn entries() -> impl Iterator<Item = &'static PresetEntry> {
     TABLE
         .get_or_init(|| {
             DESCRIPTORS
-                .get_or_init(|| parse_registry(include_str!("../provider_registry.json")))
+                .get_or_init(|| {
+                    parse_registry(include_str!(concat!(
+                        env!("OUT_DIR"),
+                        "/provider_registry.min.json"
+                    )))
+                })
                 .iter()
                 .map(|descriptor| PresetEntry { descriptor })
                 .collect()
@@ -665,6 +670,18 @@ mod tests {
     /// The registry is parsed once: every lookup hands out the same
     /// descriptor, owned by the process-wide table (nothing is leaked per
     /// call).
+    #[test]
+    fn minified_registry_matches_source_json() {
+        let source: Value =
+            serde_json::from_str(include_str!("../provider_registry.json")).unwrap();
+        let compact: Value = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/provider_registry.min.json"
+        )))
+        .unwrap();
+        assert_eq!(compact, source);
+    }
+
     #[test]
     fn the_table_is_parsed_once_and_shared() {
         let first = lookup("abacus").expect("abacus is a registry row");

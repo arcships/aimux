@@ -129,7 +129,7 @@ pub extern "C" fn aimux_abi_version() -> u32 {
 pub extern "C" fn aimux_manifest_json(out_json: *mut *mut c_char) -> *mut aimux_error_t {
     finish((|| {
         unsafe { clear_string(out_json, "out_json")? };
-        let json = json_string(&aimux_ops::manifest::manifest())?;
+        let json = CString::new(aimux_ops::manifest::manifest_json()).map_err(serialization)?;
         unsafe { *out_json = json.into_raw() };
         Ok(())
     })())

@@ -64,8 +64,11 @@ fn parse_provider_aliases(raw_json: &str) -> Result<BTreeMap<String, &'static st
 fn provider_aliases() -> &'static BTreeMap<String, &'static str> {
     static ALIASES: OnceLock<BTreeMap<String, &'static str>> = OnceLock::new();
     ALIASES.get_or_init(|| {
-        parse_provider_aliases(include_str!("provider_aliases.json"))
-            .unwrap_or_else(|err| panic!("invalid embedded provider_aliases.json: {err}"))
+        parse_provider_aliases(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/provider_aliases.min.json"
+        )))
+        .unwrap_or_else(|err| panic!("invalid embedded provider_aliases.json: {err}"))
     })
 }
 
@@ -712,5 +715,16 @@ mod tests {
         let cat = parse_anya2a_all(&raw).unwrap();
         let r = cat.lookup("deepseek", "m1").unwrap().reasoning.unwrap();
         assert_eq!(r.budget_min, Some(1024));
+    }
+
+    #[test]
+    fn minified_aliases_match_source_json() {
+        let source: Value = serde_json::from_str(include_str!("provider_aliases.json")).unwrap();
+        let compact: Value = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/provider_aliases.min.json"
+        )))
+        .unwrap();
+        assert_eq!(compact, source);
     }
 }
