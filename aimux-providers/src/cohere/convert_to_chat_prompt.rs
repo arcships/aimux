@@ -7,6 +7,7 @@ use aimux_core::language_model_message::{
     ToolResultPart, UserPart,
 };
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
+use aimux_core::types::Warning;
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
@@ -31,6 +32,7 @@ pub struct ConvertedPrompt {
 /// Rejects provider references, non-image file URLs and invalid image options.
 pub fn convert_prompt_to_cohere(
     prompt: &LanguageModelPrompt,
+    warnings: &mut Vec<Warning>,
 ) -> Result<ConvertedPrompt, AiMuxError> {
     let mut messages = Vec::new();
     let mut documents = Vec::new();
@@ -173,6 +175,7 @@ pub fn convert_prompt_to_cohere(
                     else {
                         continue;
                     };
+                    aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
                     let content = aimux_provider_utils::tool_result_to_content(output);
                     messages.push(json!({
                         "role": "tool",

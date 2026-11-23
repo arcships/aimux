@@ -477,8 +477,8 @@ pub fn build_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> Result<RequestBodyResult, AiMuxError> {
-    let converted = convert_prompt_to_cohere(&options.prompt)?;
     let mut warnings: Vec<Warning> = Vec::new();
+    let converted = convert_prompt_to_cohere(&options.prompt, &mut warnings)?;
 
     let mut body = json!({
         "model": model_id,

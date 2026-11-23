@@ -918,4 +918,52 @@ mod convert_to_xai_responses_input {
             );
         }
     }
+
+    /// aimux #470: `Content { is_error: Some(true) }` cannot carry `isError` on
+    /// xAI Responses; pure-text and text+image tool results warn once per result
+    /// and emit the same wire input as `is_error: None`.
+    #[test]
+    fn warns_once_and_keeps_wire_input_for_content_tool_result_error_flag() {
+        for (case, content) in [
+            ("text-only", json!([{ "type": "text", "text": "boom" }])),
+            (
+                "text-and-image",
+                json!([
+                    { "type": "text", "text": "screenshot" },
+                    {
+                        "type": "file",
+                        "data": { "type": "url", "url": "https://example.com/err.png" },
+                        "mediaType": "image/png",
+                    },
+                ]),
+            ),
+        ] {
+            let make_prompt = |is_error: Value| {
+                parse_prompt(json!([{
+                    "role": "tool",
+                    "content": [{
+                        "type": "tool-result",
+                        "toolCallId": "call_1",
+                        "toolName": "inspect",
+                        "output": {
+                            "type": "content",
+                            "value": content,
+                            "isError": is_error,
+                        },
+                    }],
+                }]))
+            };
+            let (plain_input, plain_warnings) = convert(&make_prompt(Value::Null));
+            let (flagged_input, flagged_warnings) = convert(&make_prompt(json!(true)));
+
+            assert!(plain_warnings.is_empty(), "{case}");
+            assert_eq!(flagged_input, plain_input, "{case}");
+            assert!(flagged_input[0].get("isError").is_none(), "{case}");
+            assert_eq!(flagged_warnings.len(), 1, "{case}");
+            assert!(
+                matches!(&flagged_warnings[0], Warning::Other { message } if message.contains("isError")),
+                "{case}: {flagged_warnings:?}"
+            );
+        }
+    }
 }

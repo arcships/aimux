@@ -18,7 +18,9 @@ fn json_prompt(value: Value) -> LanguageModelPrompt {
 
 /// The Mistral messages of a prompt, as the upstream array.
 fn messages(prompt: &LanguageModelPrompt) -> Value {
-    Value::Array(convert_prompt_to_mistral_messages(prompt).expect("prompt converts"))
+    Value::Array(
+        convert_prompt_to_mistral_messages(prompt, &mut Vec::new()).expect("prompt converts"),
+    )
 }
 
 mod user_messages {
@@ -554,7 +556,7 @@ mod top_level_only_media_type_resolution {
             }
         ]));
 
-        let err = convert_prompt_to_mistral_messages(&prompt)
+        let err = convert_prompt_to_mistral_messages(&prompt, &mut Vec::new())
             .expect_err("application file parts with a URL are rejected");
         assert!(
             err.to_string()

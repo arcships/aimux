@@ -1078,8 +1078,11 @@ pub(crate) fn build_request_body_with_chat_options(
             });
         }
     }
-    let messages =
-        convert_prompt_to_openai_messages_with_mode_fallible(&options.prompt, system_message_mode)?;
+    let messages = convert_prompt_to_openai_messages_with_mode_fallible(
+        &options.prompt,
+        system_message_mode,
+        &mut warnings,
+    )?;
 
     let mut body = json!({
         "model": model_id,
