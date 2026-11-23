@@ -31,7 +31,7 @@ flutter:
       ios:
         # Both pluginClass and dartPluginClass: the (empty) native class makes
         # Flutter add the plugin to the Podfile, which is what installs the
-        # podspec with its vendored xcframework + force_load. Without it,
+        # podspec and embeds its vendored dynamic xcframework. Without it,
         # dartPluginClass-only plugins never reach pod install.
         pluginClass: AimuxPlugin
         dartPluginClass: AimuxPlugin

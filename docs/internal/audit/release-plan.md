@@ -421,7 +421,7 @@ dart:ffi 是纯 Dart，但 pub.dev 上的纯 Dart 包**不携带 native 二进�
 
 - `pubspec.yaml` 声明 `flutter.plugin.platforms`（iOS + Android，`dartPluginClass: AimuxPlugin`——纯 Dart 插件，无 platform channel）。
 - **Android**：`android/src/main/jniLibs/<abi>/libaimux_ffi.so`（arm64-v8a / armeabi-v7a / x86_64），Dart 侧 `DynamicLibrary.open('libaimux_ffi.so')`。
-- **iOS**：`ios/aimux_ffi.xcframework`（真机 arm64 + 模拟器 arm64 双 slice，静态 framework 型）。✅ 2026-08-04 修复（#25/#26）：podspec `user_target_xcconfig` 的 `-force_load` 指向 `script_phase`（`embed-xcframework.sh`）暂存的 slice（`PODS_XCFRAMEWORKS_BUILD_DIR/aimux/`），符号进 app 主二进制（debug 构建为 `Runner.debug.dylib`），Dart `DynamicLibrary.process()` 解析。CI `flutter-example-build`(iOS) 阻塞 + 符号扫描验证。
+- **iOS**：`ios/aimux_ffi.xcframework`（真机 arm64 + 模拟器 arm64 双 slice，动态 `cdylib` framework 型，`@rpath/aimux_ffi.framework/aimux_ffi`，fat-LTO + `-Oz`）。CocoaPods 通过 `s.vendored_frameworks` 自动暂存并嵌入到 `Runner.app/Frameworks/aimux_ffi.framework`，Dart 通过 `DynamicLibrary.open('aimux_ffi.framework/aimux_ffi')` 加载（保留 `DynamicLibrary.process()` 回退）；`aimux_dart_*` C 桥接随静态 `aimux` pod 留在 app 主二进制中。CI `flutter-example-build`(iOS) 阻塞并校验嵌入的动态 framework（`MH_DYLIB`、`arm64`、`install_name`、零 bitcode、14 个 C ABI 导出符号）与全部桥接符号。
 - **iOS 已知限制**：① Flutter 3.44 SPM 集成不支持插件 binaryTarget（`Package.swift` 方案不可行，走 CocoaPods fallback，会提示 SPM 警告但不影响构建）；② 仅 arm64 真机 + arm64 模拟器 slice（Intel x86_64 模拟器暂不支持）；③ 真机发布前建议 `flutter build ios --no-codesign` 验证一次。
 - **隐私清单**：`ios/PrivacyInfo.xcprivacy`（空声明，podspec `resource_bundles` 打包，App Store 2024-05+ 要求）。
 - **桌面端**（Linux/macOS/Windows）：开发/测试用，从平台库路径加载（非插件打包）。

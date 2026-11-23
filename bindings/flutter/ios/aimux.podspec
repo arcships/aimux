@@ -4,8 +4,8 @@ Pod::Spec.new do |s|
   s.summary          = 'Flutter binding for aimux — unified LLM service layer (Rust core, 327 providers, dart:ffi C ABI)'
   s.description      = <<-DESC
 Aimux is a Rust alternative to the Vercel AI SDK: a unified provider
-interface for LLM applications. This package ships the aimux-ffi static
-library (`aimux_ffi.xcframework`) and calls it directly from Dart via
+interface for LLM applications. This package ships the aimux-ffi dynamic
+framework (`aimux_ffi.xcframework`) and calls it directly from Dart via
 dart:ffi.
   DESC
   s.homepage         = 'https://github.com/arcships/aimux'
@@ -15,11 +15,13 @@ dart:ffi.
   s.source_files     = 'Classes/**/*'
   s.preserve_paths   = '../native/aimux_dart.c'
   s.swift_version    = '5.0'
+  # Keep the aimux plugin pod itself static so the small aimux_dart_* C bridge
+  # compiles into the host app binary and resolves via DynamicLibrary.process().
   s.static_framework = true
   s.dependency       'Flutter'
   s.platform         = :ios, '12.0'
 
-  # Static framework slices (device arm64 + simulator arm64), produced by
+  # Dynamic framework slices (device arm64 + simulator arm64), produced by
   # scripts/build-ios-xcframework.sh and vendored here before
   # `dart pub publish`.
   #
@@ -28,37 +30,19 @@ dart:ffi.
   # official fallback. Flutter automatically uses it for podspec-only
   # plugins.
   #
-  # Dart resolves symbols via DynamicLibrary.process(), so the static
-  # archive must be force-loaded — otherwise the linker drops unreferenced
-  # objects and lookupFunction fails at runtime.
+  # Because aimux_ffi.xcframework contains genuine MH_DYLIB slices, CocoaPods
+  # stages the matching slice via `[CP] Copy XCFrameworks`, embeds and signs
+  # `aimux_ffi.framework` into `Runner.app/Frameworks/` via `[CP] Embed Pods
+  # Frameworks`, and Dart loads it via
+  # `DynamicLibrary.open('aimux_ffi.framework/aimux_ffi')`.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
 
-  # CocoaPods' own xcframework script is not mounted in Flutter projects
-  # (base configuration conflict — see issue #25), so the selected slice is
-  # staged into PODS_XCFRAMEWORKS_BUILD_DIR/aimux by this script_phase,
-  # which runs as part of the pod target build.
-  s.script_phase = {
-    :name => 'Stage aimux_ffi xcframework slice',
-    :script => 'bash "$PODS_TARGET_SRCROOT/embed-xcframework.sh"',
-    :execution_position => :before_compile,
-    :input_files => ['${PODS_TARGET_SRCROOT}/aimux_ffi.xcframework/Info.plist'],
-    :output_files => ['${PODS_XCFRAMEWORKS_BUILD_DIR}/aimux/aimux_ffi.framework/aimux_ffi'],
-  }
-
-  # Symbol placement (consulted gpt-5.6-sol + glm-5.2, issue #25):
-  # aimux is a DYNAMIC framework under use_frameworks, and its link happens
-  # in the pod target — pod_target_xcconfig's force_load put the Rust
-  # symbols into aimux.framework, which is never embedded into the app
-  # (Runner.app/Frameworks is empty), so nothing is visible at runtime.
-  # Dart resolves via DynamicLibrary.process() (dlsym RTLD_DEFAULT): symbols
-  # must live in the MAIN executable. user_target_xcconfig reaches Runner's
-  # link (Pods xcconfig is consumed — OTHER_LDFLAGS shows -framework aimux).
-  # No -framework aimux_ffi here: force_load with an absolute path is
-  # self-sufficient, and avoids duplicate definitions if the pod link also
-  # picked it up.
+  # Ensure the host app searches Runner.app/Frameworks at runtime and retains
+  # the aimux_dart_* C bridge symbols in the main executable for
+  # DynamicLibrary.process().
   s.user_target_xcconfig = {
+    'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/Frameworks',
     'OTHER_LDFLAGS' => [
-      '-force_load', '$(PODS_XCFRAMEWORKS_BUILD_DIR)/aimux/aimux_ffi.framework/aimux_ffi',
       '-Wl,-u,_aimux_dart_finalize', '-Wl,-u,_aimux_dart_token_new',
       '-Wl,-u,_aimux_dart_token_dispose', '-Wl,-u,_aimux_dart_bridge_new',
       '-Wl,-u,_aimux_dart_bridge_event', '-Wl,-u,_aimux_dart_bridge_ack',

@@ -1,23 +1,78 @@
 #!/usr/bin/env bash
-# Check defined global symbols across every executable in an iOS app bundle.
+# Verify the embedded dynamic aimux_ffi.framework (all C ABI exports, MH_DYLIB,
+# arm64, @rpath install_name) and the host app's aimux_dart_* bridge symbols
+# and @executable_path/Frameworks rpath inside an iOS Runner.app bundle.
 set -euo pipefail
+
 app=${1:?usage: check_symbols.sh path/to/Runner.app}
 native=$(cd "$(dirname "$0")/../native" && pwd)
-# The ABI is what the generated header declares plus the transport's EXPORTs.
-required=($(sed -n 's/.*\(aimux_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_ops.h"
-  sed -n '/^EXPORT/s/.*\(aimux_dart_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_dart.c"))
-symbols=$(mktemp)
-trap 'rm -f "$symbols" "$symbols.names"' EXIT
-while IFS= read -r -d '' file; do
-  # Undefined imports do not establish that force_load retained the ABI.
-  nm -gU "$file" >> "$symbols" 2>/dev/null || true
-done < <(find "$app" -type f -perm -111 -print0)
-# Keep only the names, so grep -q reads a file and no pipe writer sees SIGPIPE.
-awk '{print $NF}' "$symbols" > "$symbols.names"
-for symbol in "${required[@]}"; do
-  if ! grep -qx "_\{0,1\}$symbol" "$symbols.names"; then
-    echo "FAIL: defined symbol $symbol missing from $app" >&2
+
+fw_dir="$app/Frameworks/aimux_ffi.framework"
+fw_bin="$fw_dir/aimux_ffi"
+fw_plist="$fw_dir/Info.plist"
+expected_install_name="@rpath/aimux_ffi.framework/aimux_ffi"
+
+test -f "$fw_bin" || {
+  echo "FAIL: embedded dynamic framework binary missing: $fw_bin" >&2
+  ls -la "$app/Frameworks" >&2 || true
+  exit 1
+}
+test -f "$fw_plist" || {
+  echo "FAIL: embedded dynamic framework Info.plist missing: $fw_plist" >&2
+  exit 1
+}
+
+hdr="$(otool -hv "$fw_bin")"
+grep -q 'DYLIB' <<< "$hdr" || {
+  echo "FAIL: $fw_bin is not a Mach-O MH_DYLIB:" >&2
+  echo "$hdr" >&2
+  exit 1
+}
+grep -q 'ARM64' <<< "$hdr" || {
+  echo "FAIL: $fw_bin is not ARM64:" >&2
+  echo "$hdr" >&2
+  exit 1
+}
+
+install_name="$(otool -D "$fw_bin" | tail -n +2 | head -n 1 | xargs)"
+if [ "$install_name" != "$expected_install_name" ]; then
+  echo "FAIL: $fw_bin install_name is '$install_name', expected '$expected_install_name'" >&2
+  exit 1
+fi
+
+abi_required=($(sed -n 's/.*\(aimux_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_ops.h"))
+bridge_required=($(sed -n '/^EXPORT/s/.*\(aimux_dart_[a-z0-9_]*\)(.*/\1/p' "$native/aimux_dart.c"))
+
+fw_symbols=$(mktemp)
+app_symbols=$(mktemp)
+trap 'rm -f "$fw_symbols" "$app_symbols"' EXIT
+
+nm -gU "$fw_bin" | awk '{print $NF}' > "$fw_symbols"
+for symbol in "${abi_required[@]}"; do
+  if ! grep -qx "_\{0,1\}$symbol" "$fw_symbols"; then
+    echo "FAIL: defined C ABI symbol $symbol missing from $fw_bin" >&2
     exit 1
   fi
 done
-echo "OK: all ${#required[@]} required aimux symbols present"
+
+has_rpath=0
+while IFS= read -r -d '' file; do
+  nm -gU "$file" 2>/dev/null | awk '{print $NF}' >> "$app_symbols" || true
+  if otool -l "$file" 2>/dev/null | grep -Fq "@executable_path/Frameworks"; then
+    has_rpath=1
+  fi
+done < <(find "$app" -path "$fw_dir" -prune -o -type f -perm -111 -print0)
+
+for symbol in "${bridge_required[@]}"; do
+  if ! grep -qx "_\{0,1\}$symbol" "$app_symbols"; then
+    echo "FAIL: defined Dart bridge symbol $symbol missing from host app binaries in $app" >&2
+    exit 1
+  fi
+done
+
+if [ "$has_rpath" -ne 1 ]; then
+  echo "FAIL: @executable_path/Frameworks rpath missing from host app binaries in $app" >&2
+  exit 1
+fi
+
+echo "OK: embedded dynamic aimux_ffi.framework verified (${#abi_required[@]} ABI exports, ${#bridge_required[@]} bridge symbols)"

@@ -768,8 +768,9 @@ jobs:
         run: cargo build -p aimux-ffi --release --target aarch64-unknown-linux-gnu
 
   # ── Flutter example: real iOS/Android builds validate plugin integration ──
-  # iOS build uses the default SwiftPM integration (Flutter 3.44+) and checks
-  # the Rust symbols actually made it into the app binary (-all_load path).
+  # iOS build uses CocoaPods and verifies that the dynamic aimux_ffi.framework
+  # is embedded in Runner.app/Frameworks with all 14 C ABI exports while the
+  # aimux_dart_* C bridge symbols stay in the host app binary.
   # Android build verifies the .so files reach the APK per ABI.
   flutter-example-build:
     name: Flutter example (${{ matrix.platform }})
@@ -820,6 +821,12 @@ jobs:
         if: matrix.platform == 'android'
       - name: Build iOS xcframework
         if: matrix.platform == 'ios'
+        env:
+          # Restore the shipping release profile (workflow env pins fast CI
+          # values for test-only builds; match release.yml's fat-LTO -Oz dylib).
+          CARGO_PROFILE_RELEASE_LTO: "true"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "z"
         run: |
           bash scripts/build-ios-xcframework.sh bindings/flutter/ios/aimux_ffi.xcframework
       - name: Build Android .so per ABI
@@ -845,6 +852,14 @@ jobs:
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
           bash ../tool/check_symbols.sh build/ios/iphonesimulator/Runner.app
+          python3 ../../../scripts/check_native_artifact.py \
+            --expect-macho-dylib \
+            --expect-arch arm64 \
+            --expect-platform ios-simulator \
+            --expect-min-os 12.0 \
+            --expect-install-name @rpath/aimux_ffi.framework/aimux_ffi \
+            --expect-header-exports \
+            build/ios/iphonesimulator/Runner.app/Frameworks/aimux_ffi.framework/aimux_ffi
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example

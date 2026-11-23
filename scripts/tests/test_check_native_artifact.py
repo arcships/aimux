@@ -136,6 +136,82 @@ def macho64_object(sections):
     return header + seg_cmd + sect_headers + b"".join(blobs)
 
 
+def macho64_dylib(
+    sections,
+    *,
+    cputype=0x0100000C,
+    filetype=6,
+    install_name="@rpath/aimux_ffi.framework/aimux_ffi",
+    platform=2,
+    minos=(12 << 16),
+    sdk=(18 << 16),
+):
+    """A minimal 64-bit little-endian Mach-O MH_DYLIB with LC_SEGMENT_64,
+    LC_ID_DYLIB, and LC_BUILD_VERSION."""
+    cmds = []
+    seg_cmdsize = 72 + 80 * len(sections)
+
+    if install_name is not None:
+        raw_name = install_name.encode("utf-8") + b"\0"
+        pad = (-len(raw_name)) % 8
+        id_cmdsize = 24 + len(raw_name) + pad
+        cmds.append(
+            struct.pack("<IIIIII", 0x0D, id_cmdsize, 24, 0, 0x00010000, 0x00010000)
+            + raw_name
+            + b"\0" * pad
+        )
+    if platform is not None:
+        cmds.append(struct.pack("<IIIIII", 0x32, 24, platform, minos, sdk, 0))
+
+    sizeofcmds = seg_cmdsize + sum(len(c) for c in cmds)
+    header = struct.pack(
+        "<IIIIIIII",
+        0xFEEDFACF,  # MH_MAGIC_64
+        cputype,
+        0,
+        filetype,
+        1 + len(cmds),
+        sizeofcmds,
+        0,
+        0,
+    )
+    data_offset = len(header) + sizeofcmds
+    blobs = []
+    sect_headers = b""
+    for seg, sect, blob in sections:
+        sect_headers += struct.pack(
+            "<16s16sQQIIIIIIII",
+            sect.encode("ascii"),
+            seg.encode("ascii"),
+            0,
+            len(blob),
+            data_offset + sum(len(b) for b in blobs),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        blobs.append(blob)
+    seg_cmd = struct.pack(
+        "<II16sQQQQIIII",
+        0x19,
+        seg_cmdsize,
+        b"__TEXT",
+        0,
+        sum(len(b) for b in blobs),
+        data_offset,
+        sum(len(b) for b in blobs),
+        5,
+        5,
+        len(sections),
+        0,
+    )
+    return header + seg_cmd + sect_headers + b"".join(cmds) + b"".join(blobs)
+
+
 TEXT = b"\x90" * 64
 BITCODE = b"BC\xc0\xde" + b"\x01" * 60
 
@@ -361,6 +437,136 @@ class CheckNativeArtifact(unittest.TestCase):
             exe = tmp / f"test_{label}"
             subprocess.run(["clang", str(c_main), *link_flags, "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
+
+    def test_macho_dylib_valid_ios_and_simulator(self):
+        for name, plat_id, plat_name in [("ios.dylib", 2, "ios"), ("sim.dylib", 7, "ios-simulator")]:
+            path = Path(self.tmp.name) / name
+            path.write_bytes(macho64_dylib([("__TEXT", "__text", TEXT)], platform=plat_id))
+            code, out, err = run_main(
+                [
+                    "--expect-macho-dylib",
+                    "--expect-arch",
+                    "arm64",
+                    "--expect-install-name",
+                    "@rpath/aimux_ffi.framework/aimux_ffi",
+                    "--expect-platform",
+                    plat_name,
+                    "--expect-min-os",
+                    "12.0",
+                    "--max-bytes",
+                    "4096",
+                    str(path),
+                ]
+            )
+            self.assertEqual(code, 0, err)
+            self.assertIn(f"MH_DYLIB arm64, install_name @rpath/aimux_ffi.framework/aimux_ffi, platforms {plat_name} 12.0", out)
+
+    def test_macho_dylib_rejects_archive_object_bitcode_and_mismatches(self):
+        # Static archive must fail --expect-macho-dylib.
+        arch_path = self.write("static.a", [("aimux_ffi-1.o", elf_object([(".text", TEXT)]))])
+        code, _, err = run_main(["--expect-macho-dylib", str(arch_path)])
+        self.assertEqual(code, 1)
+        self.assertIn("not a single-arch Mach-O binary", err)
+
+        # MH_OBJECT must fail --expect-macho-dylib.
+        obj_path = Path(self.tmp.name) / "obj.o"
+        obj_path.write_bytes(macho64_object([("__TEXT", "__text", TEXT)]))
+        code, _, err = run_main(["--expect-macho-dylib", str(obj_path)])
+        self.assertEqual(code, 1)
+        self.assertIn("expected Mach-O MH_DYLIB (6), got MH_OBJECT (1)", err)
+
+        # Bitcode inside MH_DYLIB must fail.
+        bc_path = Path(self.tmp.name) / "bitcode.dylib"
+        bc_path.write_bytes(macho64_dylib([("__TEXT", "__text", TEXT), ("__LLVM", "__bitcode", BITCODE)]))
+        code, _, err = run_main(["--expect-macho-dylib", str(bc_path)])
+        self.assertEqual(code, 1)
+        self.assertIn("carries 64 bytes of LLVM bitcode", err)
+
+        # Wrong install_name, arch, platform, min-os, and max-bytes must each fail.
+        bad = Path(self.tmp.name) / "bad.dylib"
+        bad.write_bytes(
+            macho64_dylib(
+                [("__TEXT", "__text", TEXT)],
+                cputype=0x01000007,  # x86_64
+                install_name="/usr/local/lib/libaimux_ffi.dylib",
+                platform=1,  # macos
+                minos=(14 << 16),
+            )
+        )
+        code, _, err = run_main(
+            [
+                "--expect-macho-dylib",
+                "--expect-arch",
+                "arm64",
+                "--expect-install-name",
+                "@rpath/aimux_ffi.framework/aimux_ffi",
+                "--expect-platform",
+                "ios",
+                "--expect-min-os",
+                "12.0",
+                "--max-bytes",
+                "10",
+                str(bad),
+            ]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("exceeds max 10 bytes", err)
+        self.assertIn("expected arch arm64, got x86_64", err)
+        self.assertIn("expected install_name", err)
+        self.assertIn("expected platform 'ios'", err)
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("clang"), "requires Apple toolchain")
+    def test_macho_dylib_exports_end_to_end(self):
+        tmp = Path(self.tmp.name)
+        exports = sorted(check.header_exports(ROOT))
+        self.assertEqual(len(exports), 14)
+
+        full_c = tmp / "full.c"
+        full_c.write_text("\n".join(f"int {name}(void) {{ return 0; }}" for name in exports) + "\n", encoding="utf-8")
+        full_dylib = tmp / "aimux_ffi"
+        subprocess.run(
+            [
+                "clang",
+                "-dynamiclib",
+                "-Wl,-install_name,@rpath/aimux_ffi.framework/aimux_ffi",
+                str(full_c),
+                "-o",
+                str(full_dylib),
+            ],
+            check=True,
+        )
+        code, out, err = run_main(
+            [
+                "--expect-macho-dylib",
+                "--expect-install-name",
+                "@rpath/aimux_ffi.framework/aimux_ffi",
+                "--expect-header-exports",
+                str(full_dylib),
+            ]
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("14 required C ABI exports present", out)
+
+        missing_c = tmp / "missing.c"
+        missing_c.write_text(
+            "\n".join(f"int {name}(void) {{ return 0; }}" for name in exports[1:]) + "\n",
+            encoding="utf-8",
+        )
+        missing_dylib = tmp / "aimux_ffi_missing"
+        subprocess.run(
+            [
+                "clang",
+                "-dynamiclib",
+                "-Wl,-install_name,@rpath/aimux_ffi.framework/aimux_ffi",
+                str(missing_c),
+                "-o",
+                str(missing_dylib),
+            ],
+            check=True,
+        )
+        code, _, err = run_main(["--expect-macho-dylib", "--expect-header-exports", str(missing_dylib)])
+        self.assertEqual(code, 1)
+        self.assertIn(f"missing exported C ABI symbols: {exports[0]}", err)
 
 
 if __name__ == "__main__":

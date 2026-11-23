@@ -1,39 +1,38 @@
 #!/usr/bin/env bash
-# Build the aimux-ffi iOS static framework xcframework.
+# Build the aimux-ffi iOS dynamic framework xcframework (cdylib).
 #
-# Framework-type slices (not bare .a) so Xcode/SPM and CocoaPods link the
-# Rust static library reliably. The xcframework is produced by
-# xcodebuild -create-xcframework (hand-written Info.plists are rejected by
-# Xcode's framework resolution). Slice names follow xcodebuild's convention
-# (ios-arm64 / ios-arm64-simulator) — ios/aimux.podspec's force_load paths
-# depend on them.
+# Each slice packages target/<triple>/release/libaimux_ffi.dylib (fat-LTO,
+# opt-level="z", panic="abort", stripped) as a standard dynamic Apple framework
+# (`aimux_ffi.framework`) with install_name `@rpath/aimux_ffi.framework/aimux_ffi`,
+# public C header, modulemap, and App Store-compliant Info.plist.
+# The xcframework is produced by `xcodebuild -create-xcframework` with slices
+# `ios-arm64` and `ios-arm64-simulator`.
 #
 # Usage: scripts/build-ios-xcframework.sh <output-dir>
 set -euo pipefail
 
 OUT="${1:?usage: build-ios-xcframework.sh <output-dir>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')"
+VERSION="$(grep -m1 '^version = ' "$ROOT/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')"
 cd "$ROOT"
 
-# A staticlib is never linked here — the consumer's Xcode link step runs
-# after LTO stops mattering — so the workspace's fat-LTO only bloats the
-# archive: cargo passes -C embed-bitcode=yes and every codegen unit carries
-# its full LLVM bitcode (~80% of each slice, ~256MB uncompressed past
-# pub.dev's package limit since 0.5.0). The staticlib-release profile turns
-# LTO off for this build only; the bitcode check and the size gate below
-# fail loudly if that regresses. rustup's own sysroot objects still carry
-# their bitcode (~9.7 MB per slice, RFC-0043 §15.7); rust-objcopy from the
-# llvm-tools component strips those sections before the slice is packed.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-rustup component add llvm-tools
-# Match aimux.podspec's s.platform = :ios, '12.0' so cc-rs (ring) compiles for
-# the declared minimum iOS version instead of the host runner's latest SDK.
+
+# Match aimux.podspec's s.platform = :ios, '12.0' so cc-rs (ring) and rustc
+# target the declared minimum iOS version instead of the host runner's SDK.
 IOS_MIN="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
-# One cargo invocation builds both slices in parallel (each crate is one
-# codegen unit, so two sequential builds leave most cores idle).
+INSTALL_NAME="@rpath/aimux_ffi.framework/aimux_ffi"
+# Fat-LTO + -Oz + strip dynamic slices land near ~8-11 MiB; fail loudly on
+# any profile/LTO/strip regression well before pub.dev's package limit.
+MAX_SLICE_BYTES=20971520
+
+# One cargo invocation builds both slices in parallel. Target-scoped RUSTFLAGS
+# apply only to target artifacts (never host build scripts/proc-macros) and
+# rustc forwards link-arg only when linking the cdylib.
 IPHONEOS_DEPLOYMENT_TARGET="$IOS_MIN" \
-  cargo build -p aimux-ffi --profile staticlib-release \
+  CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS="${CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS:+${CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS} }-C link-arg=-Wl,-install_name,$INSTALL_NAME" \
+  CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS="${CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS:+${CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS} }-C link-arg=-Wl,-install_name,$INSTALL_NAME" \
+  cargo build -p aimux-ffi --release \
     --target aarch64-apple-ios --target aarch64-apple-ios-sim
 
 TMP="$(mktemp -d)"
@@ -41,40 +40,83 @@ trap 'rm -rf "$TMP"' EXIT
 
 for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
   case "$triple" in
-    aarch64-apple-ios) slice=ios ;;
-    aarch64-apple-ios-sim) slice=sim ;;
+    aarch64-apple-ios)
+      slice=ios
+      supported_platform=iPhoneOS
+      macho_platform=ios
+      ;;
+    aarch64-apple-ios-sim)
+      slice=sim
+      supported_platform=iPhoneSimulator
+      macho_platform=ios-simulator
+      ;;
   esac
-  mkdir -p "$TMP/$slice/aimux_ffi.framework"
-  python3 scripts/check_native_artifact.py --strip-bitcode "target/$triple/staticlib-release/libaimux_ffi.a"
-  # Merge into one object rooted at the C API (+ _rust_eh_personality) and
-  # strip debug + local symbols; global C ABI symbols stay for aimux.podspec's
-  # force_load.
-  python3 scripts/merge_archive.py "target/$triple/staticlib-release/libaimux_ffi.a" \
-    --out "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
-  # Fail loudly on a size regression instead of letting a fat slice slip
-  # through and blow pub.dev's 256MiB package limit again: a healthy slice
-  # is ~15-30MB; an LTO/bitcode regression lands near 128MB.
-  SLICE_BYTES=$(stat -f%z "$TMP/$slice/aimux_ffi.framework/aimux_ffi")
-  # The byte count is the RFC-0043 measurement of this slice (§3.1 raw_bytes).
-  echo "size $triple aimux_ffi.framework/aimux_ffi $SLICE_BYTES bytes"
-  if [ "$SLICE_BYTES" -gt 67108864 ]; then
-    echo "slice $triple is $SLICE_BYTES bytes (> 64MiB) — bitcode/LTO regression?" >&2
+
+  fw_dir="$TMP/$slice/aimux_ffi.framework"
+  fw_bin="$fw_dir/aimux_ffi"
+  mkdir -p "$fw_dir/Headers" "$fw_dir/Modules"
+
+  src_dylib="target/$triple/release/libaimux_ffi.dylib"
+  test -f "$src_dylib" || {
+    echo "error: expected dynamic library not found at $src_dylib" >&2
     exit 1
+  }
+  cp "$src_dylib" "$fw_bin"
+  chmod 755 "$fw_bin"
+
+  # Fallback if caller's global RUSTFLAGS shadowed CARGO_TARGET_*_RUSTFLAGS.
+  current_id="$(otool -D "$fw_bin" | tail -n +2 | head -n 1 | xargs)"
+  if [ "$current_id" != "$INSTALL_NAME" ]; then
+    install_name_tool -id "$INSTALL_NAME" "$fw_bin"
   fi
-  cat > "$TMP/$slice/aimux_ffi.framework/Info.plist" <<EOF
+
+  cp "$ROOT/aimux-ffi/include/aimux.h" "$fw_dir/Headers/aimux.h"
+  cat > "$fw_dir/Modules/module.modulemap" <<'EOF'
+framework module aimux_ffi {
+    umbrella header "aimux.h"
+    export *
+    module * { export * }
+}
+EOF
+
+  cat > "$fw_dir/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>aimux_ffi</string>
-  <key>CFBundleIdentifier</key><string>ai.arcships.aimux.aimux_ffi</string>
+  <key>CFBundleIdentifier</key><string>ai.arcships.aimux.aimux-ffi</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>aimux_ffi</string>
   <key>CFBundlePackageType</key><string>FMWK</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>$supported_platform</string>
+  </array>
   <key>CFBundleVersion</key><string>1</string>
+  <key>MinimumOSVersion</key><string>$IOS_MIN</string>
+  <key>UIDeviceFamily</key>
+  <array>
+    <integer>1</integer>
+    <integer>2</integer>
+  </array>
 </dict></plist>
 EOF
+
+  python3 scripts/check_native_artifact.py \
+    --expect-macho-dylib \
+    --expect-arch arm64 \
+    --expect-platform "$macho_platform" \
+    --expect-min-os "$IOS_MIN" \
+    --expect-install-name "$INSTALL_NAME" \
+    --expect-header-exports \
+    --max-bytes "$MAX_SLICE_BYTES" \
+    "$fw_bin"
+
+  SLICE_BYTES=$(stat -f%z "$fw_bin")
+  # The byte count is the RFC-0043 measurement of this slice (§3.1 raw_bytes).
+  echo "size $triple aimux_ffi.framework/aimux_ffi $SLICE_BYTES bytes"
 done
 
 rm -rf "$OUT"
@@ -83,31 +125,47 @@ xcodebuild -create-xcframework \
   -framework "$TMP/sim/aimux_ffi.framework" \
   -output "$OUT" >/dev/null
 
-# Slice layout must match the podspec force_load paths.
-test -f "$OUT/ios-arm64/aimux_ffi.framework/aimux_ffi"
-test -f "$OUT/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi"
+# Verify expected slice layout inside the packaged xcframework.
+for slice_dir in ios-arm64 ios-arm64-simulator; do
+  test -f "$OUT/$slice_dir/aimux_ffi.framework/aimux_ffi"
+  test -f "$OUT/$slice_dir/aimux_ffi.framework/Info.plist"
+  test -f "$OUT/$slice_dir/aimux_ffi.framework/Headers/aimux.h"
+  test -f "$OUT/$slice_dir/aimux_ffi.framework/Modules/module.modulemap"
+done
 
-# Link-smoke both packaged slices (RFC-0043 §5.3: CI's Flutter example only
-# final-links the simulator slice, so verify device + simulator relocations and
-# all 14 exported C ABI symbols against the packaged binaries before shipping).
-EXPORTS="$(python3 -c 'import sys, pathlib; sys.path.insert(0, "scripts"); import merge_archive; print(" ".join(sorted(merge_archive.header_exports(pathlib.Path(".")))))')"
-for entry in "iphoneos:ios-arm64:-miphoneos-version-min=$IOS_MIN" \
-             "iphonesimulator:ios-arm64-simulator:-mios-simulator-version-min=$IOS_MIN"; do
-  IFS=: read -r sdk slice_dir min_flag <<< "$entry"
+# Dynamic link-smoke both packaged slices: CI's Flutter example only links the
+# simulator slice, so verify device + simulator dynamic linkage, LC_LOAD_DYLIB
+# install_name, and all 14 exported C ABI symbols before shipping.
+for entry in "iphoneos:ios-arm64:ios:-miphoneos-version-min=$IOS_MIN" \
+             "iphonesimulator:ios-arm64-simulator:ios-simulator:-mios-simulator-version-min=$IOS_MIN"; do
+  IFS=: read -r sdk slice_dir macho_platform min_flag <<< "$entry"
   sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
   slice_bin="$OUT/$slice_dir/aimux_ffi.framework/aimux_ffi"
   smoke_out="$TMP/smoke-$slice_dir"
+
+  python3 scripts/check_native_artifact.py \
+    --expect-macho-dylib \
+    --expect-arch arm64 \
+    --expect-platform "$macho_platform" \
+    --expect-min-os "$IOS_MIN" \
+    --expect-install-name "$INSTALL_NAME" \
+    --expect-header-exports \
+    --max-bytes "$MAX_SLICE_BYTES" \
+    "$slice_bin"
+
   xcrun --sdk "$sdk" clang -isysroot "$sdk_path" -arch arm64 "$min_flag" \
     -std=c11 -Wall -Wextra -Werror -Oz -Wl,-dead_strip \
     -I"$ROOT/aimux-ffi/include" -I"$ROOT/aimux-ffi/tests/c" \
     "$ROOT/aimux-ffi/tests/c/primitives.c" \
-    -Xlinker -force_load -Xlinker "$slice_bin" -framework CoreFoundation -o "$smoke_out"
-  nm_syms="$(nm -gU "$smoke_out" | awk '{print $NF}')"
-  for sym in $EXPORTS; do
-    grep -qx "_$sym" <<< "$nm_syms" || {
-      echo "FAIL: defined symbol _$sym missing from $slice_dir link smoke" >&2
-      exit 1
-    }
-  done
+    -F "$OUT/$slice_dir" -framework aimux_ffi \
+    -Wl,-rpath,@executable_path/Frameworks \
+    -framework CoreFoundation -o "$smoke_out"
+
+  otool -L "$smoke_out" | grep -Fq "$INSTALL_NAME" || {
+    echo "FAIL: $smoke_out does not dynamically link $INSTALL_NAME" >&2
+    otool -L "$smoke_out" >&2
+    exit 1
+  }
 done
+
 echo "xcframework written to $OUT"

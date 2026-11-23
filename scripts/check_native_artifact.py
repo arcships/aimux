@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Measure a shipped native library and, for a static archive, check its
-members for LLVM bitcode (RFC-0043 §3.1, §5.2).
+"""Measure a shipped native library, check static archives for LLVM bitcode,
+and validate Mach-O dynamic framework binaries (RFC-0043 §3.1, §5.2).
 
-    check_native_artifact.py [--strip-bitcode] <file>...
+    check_native_artifact.py [--strip-bitcode] [--expect-macho-dylib]
+        [--expect-arch ARCH] [--expect-install-name NAME]
+        [--expect-platform PLATFORM] [--expect-min-os VER]
+        [--expect-header-exports] [--max-bytes N] <file>...
 
 Every file gets one line, `size <path> <bytes> bytes`: the raw_bytes
 measurement of RFC-0043 §3.1, so the CI log of each artifact job carries the
@@ -30,10 +33,17 @@ which doubles the archive (RFC-0043 §5.1, §15.1). The sysroot's own objects
 (std, alloc, core, ...) always carry bitcode, because rustup ships them that
 way, so without `--strip-bitcode` they are only counted and reported.
 
+When `--expect-macho-dylib` (or any Mach-O `--expect-*` option) is passed,
+each file must be a Mach-O `MH_DYLIB` carrying zero LLVM bitcode, matching
+the requested architecture, `LC_ID_DYLIB` install name, platform/min-OS,
+size ceiling, and exported C ABI symbols from `aimux-ffi/include/aimux.h`.
+
 The archive, ELF, Mach-O and COFF headers are read directly, so the check
-is the same on the Linux, macOS and Windows runners and needs no binutils.
+is the same on the Linux, macOS and Windows runners and needs no binutils
+(except `nm -gU` when `--expect-header-exports` is requested).
 """
 
+import argparse
 import os
 import re
 import shutil
@@ -51,6 +61,53 @@ MACHO_MAGICS = {
     b"\xfe\xed\xfa\xcf": (">", 64),
     b"\xcf\xfa\xed\xfe": ("<", 64),
 }
+MACHO_FILETYPES = {
+    1: "MH_OBJECT",
+    2: "MH_EXECUTE",
+    6: "MH_DYLIB",
+    8: "MH_BUNDLE",
+}
+MACHO_ARCHS = {
+    7: "i386",
+    12: "arm",
+    0x01000007: "x86_64",
+    0x0100000C: "arm64",
+}
+MACHO_PLATFORMS = {
+    1: "macos",
+    2: "ios",
+    3: "tvos",
+    4: "watchos",
+    7: "ios-simulator",
+    8: "tvos-simulator",
+    9: "watchos-simulator",
+}
+LC_VERSION_MIN_PLATFORMS = {0x24: 1, 0x25: 2, 0x2F: 3, 0x30: 4}
+LC_VERSION_MIN_SIM_PLATFORMS = {0x25: 7, 0x2F: 8, 0x30: 9}
+X86_CPU_TYPES = {7, 0x01000007}
+
+
+def header_exports(root):
+    """`aimux_*` functions declared in aimux.h, comments removed first so a
+    name mentioned in a `/* ... */` or `//` comment is not taken for one."""
+    text = (root / "aimux-ffi" / "include" / "aimux.h").read_text(encoding="utf-8")
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", " ", text)
+    return set(re.findall(r"(?<![\w(])(aimux_\w+)\s*\(", text))
+
+
+def format_macho_version(ver):
+    major, minor, patch = (ver >> 16) & 0xFFFF, (ver >> 8) & 0xFF, ver & 0xFF
+    return f"{major}.{minor}.{patch}" if patch else f"{major}.{minor}"
+
+
+def normalize_version(ver):
+    parts = [int(p) for p in ver.strip().split(".")]
+    while len(parts) > 2 and parts[-1] == 0:
+        parts.pop()
+    if len(parts) == 1:
+        parts.append(0)
+    return ".".join(str(p) for p in parts)
 
 
 def workspace_crates(root):
@@ -300,18 +357,211 @@ def check_archive(path, data, crates, expect_no_bitcode=False):
     return True
 
 
-def main(argv):
-    strip = "--strip-bitcode" in argv
-    files = [a for a in argv if a != "--strip-bitcode"]
-    if not files:
-        sys.exit(__doc__)
-    crates = workspace_crates(Path(__file__).resolve().parent.parent)
+def macho_info(body):
+    """Parse Mach-O header, install name, build platforms and section sizes.
+
+    Returns None when `body` is not a single-arch Mach-O binary.
+    """
+    if len(body) < 28 or body[:4] not in MACHO_MAGICS:
+        return None
+    end, bits = MACHO_MAGICS[body[:4]]
+    hdr_size = 32 if bits == 64 else 28
+    if len(body) < hdr_size:
+        return None
+    cputype, _cpusubtype, filetype, ncmds, sizeofcmds = struct.unpack_from(end + "IIIII", body, 4)
+    limit = min(len(body), hdr_size + sizeofcmds)
+    offset = hdr_size
+    install_name = None
+    platforms = []
+    text_bytes = 0
+    bitcode_bytes = 0
+    for _ in range(ncmds):
+        if offset + 8 > limit:
+            break
+        cmd, cmdsize = struct.unpack_from(end + "II", body, offset)
+        if cmdsize < 8 or offset + cmdsize > limit:
+            break
+        if cmd in (0x19, 0x1):  # LC_SEGMENT_64, LC_SEGMENT
+            if cmd == 0x19 and cmdsize >= 72:
+                nsects = struct.unpack_from(end + "I", body, offset + 64)[0]
+                sect, step, size_fmt, size_off = offset + 72, 80, "Q", 40
+            elif cmd == 0x1 and cmdsize >= 56:
+                nsects = struct.unpack_from(end + "I", body, offset + 48)[0]
+                sect, step, size_fmt, size_off = offset + 56, 68, "I", 36
+            else:
+                nsects = 0
+                sect = step = size_off = 0
+                size_fmt = "I"
+            for _ in range(nsects):
+                if sect + step > offset + cmdsize:
+                    break
+                sectname = body[sect : sect + 16].rstrip(b"\0").decode("utf-8", "replace")
+                segname = body[sect + 16 : sect + 32].rstrip(b"\0").decode("utf-8", "replace")
+                size = struct.unpack_from(end + size_fmt, body, sect + size_off)[0]
+                if (segname, sectname) in MACHO_BITCODE:
+                    bitcode_bytes += size
+                elif segname == "__TEXT" and sectname == "__text":
+                    text_bytes += size
+                sect += step
+        elif cmd == 0x0D and cmdsize >= 24:  # LC_ID_DYLIB
+            name_off = struct.unpack_from(end + "I", body, offset + 8)[0]
+            if 24 <= name_off < cmdsize:
+                raw = body[offset + name_off : offset + cmdsize]
+                install_name = raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+        elif cmd == 0x32 and cmdsize >= 24:  # LC_BUILD_VERSION
+            plat, minos, sdk = struct.unpack_from(end + "III", body, offset + 8)
+            platforms.append(
+                (
+                    MACHO_PLATFORMS.get(plat, f"platform-{plat}"),
+                    format_macho_version(minos),
+                    format_macho_version(sdk),
+                )
+            )
+        elif cmd in LC_VERSION_MIN_PLATFORMS and cmdsize >= 16:
+            plat = (
+                LC_VERSION_MIN_SIM_PLATFORMS.get(cmd, LC_VERSION_MIN_PLATFORMS[cmd])
+                if cputype in X86_CPU_TYPES
+                else LC_VERSION_MIN_PLATFORMS[cmd]
+            )
+            minos, sdk = struct.unpack_from(end + "II", body, offset + 8)
+            platforms.append(
+                (
+                    MACHO_PLATFORMS.get(plat, f"platform-{plat}"),
+                    format_macho_version(minos),
+                    format_macho_version(sdk),
+                )
+            )
+        offset += cmdsize
+    return {
+        "cputype": cputype,
+        "arch": MACHO_ARCHS.get(cputype, f"0x{cputype:x}"),
+        "filetype": filetype,
+        "filetype_name": MACHO_FILETYPES.get(filetype, f"0x{filetype:x}"),
+        "install_name": install_name,
+        "platforms": platforms,
+        "text_bytes": text_bytes,
+        "bitcode_bytes": bitcode_bytes,
+    }
+
+
+def defined_exports_macho(path):
+    """Return defined global `aimux_*` symbol names (without leading `_`) in `path`."""
+    nm = os.environ.get("AIMUX_NM") or shutil.which("nm") or find_llvm_tool("nm")
+    out = subprocess.run([nm, "-gU", str(path)], check=True, capture_output=True, text=True).stdout
+    names = set()
+    for line in out.splitlines():
+        parts = line.split()
+        if parts and re.fullmatch(r"_?aimux_\w+", parts[-1]):
+            sym = parts[-1]
+            names.add(sym[1:] if sym.startswith("_aimux_") else sym)
+    return names
+
+
+def check_macho_dylib(
+    path,
+    data,
+    root,
+    *,
+    expect_arch=None,
+    expect_install_name=None,
+    expect_platform=None,
+    expect_min_os=None,
+    expect_header_exports=False,
+):
+    info = macho_info(data)
+    if info is None:
+        print(f"{path}: expected a Mach-O MH_DYLIB, but file is not a single-arch Mach-O binary", file=sys.stderr)
+        return False
+    plat_summary = ", ".join(f"{p} {m}" for p, m, _ in info["platforms"]) or "none"
+    print(
+        f"  {info['filetype_name']} {info['arch']}, install_name {info['install_name']}, "
+        f"platforms {plat_summary}, .text {info['text_bytes']} bytes, bitcode {info['bitcode_bytes']} bytes"
+    )
     ok = True
-    for arg in files:
+    if info["filetype"] != 6:
+        print(f"{path}: expected Mach-O MH_DYLIB (6), got {info['filetype_name']} ({info['filetype']})", file=sys.stderr)
+        ok = False
+    if info["bitcode_bytes"] != 0:
+        print(f"{path}: carries {info['bitcode_bytes']} bytes of LLVM bitcode (expected 0)", file=sys.stderr)
+        ok = False
+    if expect_arch and info["arch"] != expect_arch:
+        print(f"{path}: expected arch {expect_arch}, got {info['arch']}", file=sys.stderr)
+        ok = False
+    if expect_install_name and info["install_name"] != expect_install_name:
+        print(
+            f"{path}: expected install_name {expect_install_name!r}, got {info['install_name']!r}",
+            file=sys.stderr,
+        )
+        ok = False
+    if expect_platform:
+        matching = [m for p, m, _ in info["platforms"] if p == expect_platform]
+        if not matching:
+            print(
+                f"{path}: expected platform {expect_platform!r}, got {[p for p, _, _ in info['platforms']]}",
+                file=sys.stderr,
+            )
+            ok = False
+        elif expect_min_os and normalize_version(matching[0]) != normalize_version(expect_min_os):
+            print(
+                f"{path}: expected min-os {expect_min_os!r} for {expect_platform}, got {matching[0]!r}",
+                file=sys.stderr,
+            )
+            ok = False
+    elif expect_min_os:
+        if not any(normalize_version(m) == normalize_version(expect_min_os) for _, m, _ in info["platforms"]):
+            print(
+                f"{path}: expected min-os {expect_min_os!r}, got {[m for _, m, _ in info['platforms']]}",
+                file=sys.stderr,
+            )
+            ok = False
+    if expect_header_exports:
+        declared = header_exports(root)
+        defined = defined_exports_macho(path)
+        missing = sorted(declared - defined)
+        if missing:
+            print(f"{path}: missing exported C ABI symbols: {', '.join(missing)}", file=sys.stderr)
+            ok = False
+        else:
+            print(f"  {len(declared)} required C ABI exports present")
+    return ok
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--strip-bitcode", action="store_true")
+    parser.add_argument("--expect-macho-dylib", action="store_true")
+    parser.add_argument("--expect-arch")
+    parser.add_argument("--expect-install-name")
+    parser.add_argument("--expect-platform")
+    parser.add_argument("--expect-min-os")
+    parser.add_argument("--expect-header-exports", action="store_true")
+    parser.add_argument("--max-bytes", type=int)
+    parser.add_argument("-h", "--help", action="store_true")
+    parser.add_argument("files", nargs="*")
+    args = parser.parse_args(argv)
+    if args.help or not args.files:
+        sys.exit(__doc__)
+    return args
+
+
+def main(argv):
+    args = parse_args(argv)
+    root = Path(__file__).resolve().parent.parent
+    crates = workspace_crates(root)
+    check_dylib = bool(
+        args.expect_macho_dylib
+        or args.expect_arch
+        or args.expect_install_name
+        or args.expect_platform
+        or args.expect_min_os
+        or args.expect_header_exports
+    )
+    ok = True
+    for arg in args.files:
         path = Path(arg)
         data = path.read_bytes()
         is_archive = data.startswith(b"!<arch>\n")
-        if strip and is_archive:
+        if args.strip_bitcode and is_archive:
             # The fat-LTO guard reads the members as built. Stripping first
             # would remove the very bitcode that betrays a workspace object
             # compiled under fat LTO, so the archive is judged before the
@@ -322,8 +572,25 @@ def main(argv):
                 continue
             data = strip_bitcode(path, data)
         print(f"size {path} {len(data)} bytes")
+        if args.max_bytes is not None and len(data) > args.max_bytes:
+            print(f"{path}: {len(data)} bytes exceeds max {args.max_bytes} bytes", file=sys.stderr)
+            ok = False
         if is_archive:
-            ok = check_archive(path, data, crates, expect_no_bitcode=strip) and ok
+            ok = check_archive(path, data, crates, expect_no_bitcode=args.strip_bitcode) and ok
+        if check_dylib:
+            ok = (
+                check_macho_dylib(
+                    path,
+                    data,
+                    root,
+                    expect_arch=args.expect_arch,
+                    expect_install_name=args.expect_install_name,
+                    expect_platform=args.expect_platform,
+                    expect_min_os=args.expect_min_os,
+                    expect_header_exports=args.expect_header_exports,
+                )
+                and ok
+            )
     sys.exit(0 if ok else 1)
 
 
