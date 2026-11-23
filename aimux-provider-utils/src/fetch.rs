@@ -205,6 +205,19 @@ pub trait Fetch: Send + Sync + 'static {
     ///
     /// Returns a [`FetchError`] when no response could be produced.
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError>;
+
+    /// Whether this transport signs requests with AWS SigV4 (so `authorization`,
+    /// `host`, and `x-amz-*` headers must be protected against caller overrides).
+    fn protects_sigv4_headers(&self) -> bool {
+        false
+    }
+
+    /// Additional transport-owned authentication or dispatch headers (such as
+    /// `SigV4AuthFetch`'s `api_key_header`, e.g. `x-api-key`) that callers must
+    /// not override on a [`crate::NativeEndpoint`].
+    fn protected_header_names(&self) -> Vec<http::HeaderName> {
+        Vec::new()
+    }
 }
 
 impl fmt::Debug for dyn Fetch {

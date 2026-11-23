@@ -32,6 +32,7 @@ pub mod map_reasoning_to_provider;
 pub mod media_type;
 pub mod multipart;
 pub mod parse_provider_options;
+pub mod passthrough;
 pub mod post_to_api;
 pub mod provider_headers;
 pub mod read_response_with_size_limit;
@@ -86,6 +87,12 @@ pub use media_type::{
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use parse_provider_options::{
     nullish_positive, optional_field, parse_option_fields, parse_provider_options,
+};
+pub use passthrough::{
+    DEFAULT_MAX_BUFFER_BYTES, DEFAULT_MAX_RECORDED_BYTES, MAX_ALLOWED_BUFFER_BYTES,
+    NativeBodyStream, NativeContext, NativeEndpoint, NativeError, NativeExchangeFinished,
+    NativeExchangeObserver, NativeExchangeOutcome, NativeExchangeStarted, NativeRequest,
+    NativeResponse, NativeRetryPolicy, SIGV4_PROTECTED_HEADERS, SafeRetryOptions, native_request,
 };
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
