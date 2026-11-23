@@ -1,9 +1,11 @@
 # RFC-0039 implementation
 
-This document describes the implementation in this tree. The runtime manifest
-contains 76 operations, 23 resource kinds and 321 referenced type entries. ABI v1
-is `65536` (`1 << 16`) and ops is `1.0`. Capability registration is not evidence
-that a live provider or every supported platform has been tested. See the
+This document describes the implementation in this tree. The ops manifest
+(precomputed at build time as a compressed snapshot and served at runtime via
+`aimux_ops::manifest`) contains 76 operations, 23 resource kinds and 321
+referenced type entries. ABI v1 is `65536` (`1 << 16`) and ops is `1.0`.
+Capability registration is not evidence that a live provider or every supported
+platform has been tested. See the
 [conformance matrix](rfc-0039-conformance.md) and
 [coverage ledger](rfc-0039-coverage-ledger.md) for evidence and its limits.
 
@@ -20,10 +22,13 @@ bindings/python (PyO3) ──┘         ├──────> aimux-provider-u
                                  └──────> aimux-core
 aimux-providers ──> aimux-core, aimux-provider-utils
 aimux-provider-utils ──> aimux-core
-tools/aimux-codegen ──> aimux-ops
+tools/aimux-codegen ──> aimux-ops (feature: runtime-manifest)
 ```
 
-`aimux-ops/Cargo.toml` also declares serde, serde_json, Tokio, futures and SHA-256.
+`aimux-ops/Cargo.toml` also declares `miniz_oxide` (to decompress the embedded
+manifest snapshot), `serde`, `serde_json`, Tokio, futures, SHA-256, and
+`schemars` (whose schema-generation path is gated behind the opt-in
+`runtime-manifest` feature so production binaries do not link it).
 Ops does not depend on FFI, napi or PyO3. Canonical business DTOs stay in core;
 ops owns control DTOs, registration, handle lifting, error projection, framing
 and Operation admission. Providers retain protocol conversion and factories;
@@ -320,11 +325,12 @@ Recorder I/O uses spawn_blocking, and registry locks do not cross await/join.
 
 ```text
 ① family descriptors + register → dispatch::registrations (sorted by name)
-② manifest::manifest → descriptors + kind/code/type catalogue + control schemas
-③ manifest_digest → compact JSON, recursively sorted object keys, SHA-256
-④ aimux-codegen → C header + seven language constant files + schema/ops/*.json
+② manifest::generate_manifest (feature `runtime-manifest`) → descriptors + kind/code/type catalogue + `schemars` schemas
+③ aimux-codegen → aimux-ops/src/manifest.json.zlib (zlib-9 snapshot) + aimux-ops/src/manifest.digest (SHA-256)
+                    + C header + seven language constant files + schema/ops/*.json
                     + business schemas (schema/types/*.json) and every binding's DTOs
                     + tools/aimux-codegen/generated-files.json
+④ default runtime builds: manifest::{manifest_json, manifest, manifest_digest} decompress/read the embedded snapshot without linking `schemars`
 ⑤ language loaders/bridges + handwritten facades consume shared dispatch/ABI
 ```
 
@@ -332,10 +338,17 @@ The digest excludes its own digest field; array order is preserved. Each type
 entry has an ID and Rust path; ops-owned controls/wrappers carry schemas and
 embedded business fields have x-aimux-type references. Schema IDs use JSON Schema
 2020-12 with local resolvable refs. Strict controls reject unknown keys while
-providerOptions/metadata/explicit JSON stay open. `--check` builds temporary
-outputs and compares complete managed file sets and bytes without rewriting.
-Business types come from the Rust types through `schemars` into the manifest's
-`typeDefs`; the generator emits `schema/types/*.json` and the DTOs and codecs of
+providerOptions/metadata/explicit JSON stay open.
+
+Live schema generation from Rust types via `schemars` lives behind the opt-in
+`aimux-ops/runtime-manifest` feature (`aimux_ops::manifest::generate_manifest`
+and `TypeRef::schema`). Default builds omit `TypeRef::schema` and serve the
+precomputed compressed snapshot (`aimux-ops/src/manifest.json.zlib`, decompressed
+once via `miniz_oxide`, plus `aimux-ops/src/manifest.digest`) with byte-for-byte
+identical JSON and digest. `aimux-codegen` enables `runtime-manifest` and always
+runs the live generator, so `--check` compares freshly generated outputs against
+both the committed snapshot and every managed binding/schema file without
+rewriting. The generator emits `schema/types/*.json` and the DTOs and codecs of
 every binding (RFC-0042 D8, G-d). It does not generate language facades, the
 operation registration code, this document or the complete eight-language vector
 corpus; the last remains G-i rather than an implicit claim.
@@ -343,7 +356,7 @@ Separately, `bindings/flutter/tool/generate_ffi.py` consumes the C header to gen
 FFI declarations and packaged header; Java's JNA declarations are handwritten
 and tested against the primitive signatures, not emitted by aimux-codegen.
 
-The generated file set is checked against the current manifest by the commands below;
+The generated file set is checked against the live manifest by the commands below;
 this documentation audit does not claim a successful generator run.
 Every adapter requires the exact generated ABI version, ops version and manifest
 digest at load. No adapter can claim per-consumed-business-type hash validation
@@ -357,7 +370,7 @@ documentation change or that their existence establishes release readiness.
 
 | Gate | Existing command / evidence |
 |---|---|
-| Dispatch, ownership, stream, error and manifest | `cargo test -p aimux-ops` (including ops_matrix, handle_lifecycle, stream_terminal, error_envelope_golden, manifest_contract) |
+| Dispatch, ownership, stream, error and manifest | `cargo test -p aimux-ops --no-default-features` (production snapshot-only path) and `cargo test -p aimux-ops --features runtime-manifest` (live `schemars` parity + `type_schemas`; including ops_matrix, handle_lifecycle, stream_terminal, error_envelope_golden, manifest_contract) |
 | Native ABI and deletion | `cargo build -p aimux-ffi` then `cargo test -p aimux-ffi`; exports_smoke_test compares actual cdylib symbols |
 | Generated outputs and schemas | `cargo test -p aimux-codegen`; `cargo run -p aimux-codegen -- --check` (CI step "Ops manifest and generated artifact drift") |
 | Generated DTOs | `python3 scripts/check_dto_vectors.py <languages>` round-trips `contract-tests/dto` through each binding's generated codecs (CI runs it per binding) |
