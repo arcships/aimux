@@ -147,7 +147,7 @@ typedef void (*aimux_event_cb)(const char *frame_json, void *context);
  * Fallible calls return NULL on success or an owned error on failure.
  * Outputs are reset to NULL/0 before validation, including on failure.
  * All output JSON and error getter strings are owned: aimux_free_string.
- * Release errors with aimux_error_free. Do not free callback JSON.
+ * Release errors with aimux_error_free. Do not free borrowed callback JSON.
  * Blocking calls cannot be reentered from a callback (ReentrantCall). */
 uint32_t aimux_abi_version(void);
 aimux_error_t *aimux_manifest_json(char **out_json);
@@ -174,6 +174,33 @@ void aimux_error_free(aimux_error_t *error);
 int32_t aimux_error_code(const aimux_error_t *error);
 char *aimux_error_message(const aimux_error_t *error);
 char *aimux_error_json(const aimux_error_t *error);
+
+/* Exactly one of result_json and error is non-NULL. The callback owns that
+ * allocation and releases it with aimux_free_string or aimux_error_free. */
+typedef void (*aimux_call_callback_t)(char *result_json, aimux_error_t *error,
+                                      void *user_data);
+
+/* The array and its NUL-terminated frames are borrowed until the callback
+ * returns. Copy any data you want to retain. count is between 1 and 64. */
+typedef void (*aimux_event_batch_callback_t)(const char *const *frames,
+                                             size_t count, void *user_data);
+
+/* Async submissions consume/copy both input strings before returning.
+ * NULL means accepted. An owned submission error means zero callbacks.
+ * Callbacks may start before submission returns and run on runtime threads.
+ * Keep user_data valid through the final callback. aimux_abort is callback-safe.
+ * aimux_call_async calls on_complete once with the dispatch result or error.
+ * Return promptly from on_complete so the runtime worker can resume dispatch.
+ * On builds with panic=abort, an internal Rust panic terminates the process.
+ * aimux_stream_async validates stream acceptance before returning. Accepted
+ * streams deliver ordered data batches and one standalone End frame last. */
+aimux_error_t *aimux_call_async(uint64_t handle, const char *op,
+                               const char *params_json, uint64_t abort,
+                               aimux_call_callback_t on_complete, void *user_data);
+aimux_error_t *aimux_stream_async(uint64_t handle, const char *op,
+                                 const char *params_json, uint64_t abort,
+                                 aimux_event_batch_callback_t on_batch,
+                                 void *user_data);
 
 #ifdef __cplusplus
 }

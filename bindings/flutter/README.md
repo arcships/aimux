@@ -47,9 +47,9 @@ Each stream owns its bridge and creates an abort handle unless the request
 provides `abort` as a decimal handle string. Supplied abort handles remain
 caller-owned; cancellation signals the same handle. The native C callback copies a frame and
 posts through `NativeCallable.listener` to its owning isolate; it never invokes
-a Dart function on a Rust thread. A callback waits for an ack after consumer
-delivery. The C bridge holds at most one frame and the isolate transport grants one
-event credit (each frame is at most 1 MiB), plus an independent terminal slot.
+a Dart function on a Rust thread. The C listener can hold three frames and the isolate transport grants four
+event credits. Including the producer's current frame, the window holds at
+most eight 1 MiB frames. Terminal delivery to the consumer has its own slot.
 Pause withholds event credit. Cancel wakes the producer
 without needing credit. The bridge and listener remain alive until both native
 return and the final queued notification have completed. Single-subscription

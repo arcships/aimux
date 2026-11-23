@@ -699,7 +699,7 @@ pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
             details: Some("This model does not support reasoning configuration.".into()),
         });
     }
-    for tool in options.tools.iter().flatten() {
+    for tool in options.tools.as_deref().unwrap_or_default() {
         if let Tool::Provider(tool) = tool {
             warnings.push(Warning::Unsupported {
                 feature: format!("provider-defined tool {}", tool.id),

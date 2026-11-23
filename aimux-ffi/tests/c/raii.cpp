@@ -1,7 +1,35 @@
 #include "test_support.h"
 #include "aimux_raii.hpp"
 #include <cstring>
+#include <future>
 #include <type_traits>
+
+using Completion = std::promise<std::pair<aimux::String, aimux::Error>>;
+
+extern "C" void complete_cpp_call(char *result, aimux_error_t *error, void *data) noexcept {
+    std::unique_ptr<Completion> completion(static_cast<Completion *>(data));
+    assert((result == nullptr) != (error == nullptr));
+    completion->set_value({aimux::String(result), aimux::Error(error)});
+}
+
+static void async_ownership() {
+    for (const char *op : {"runtime.describe", "not.an.op"}) {
+        auto completion = new Completion;
+        auto future = completion->get_future();
+        aimux::Error submission(aimux_call_async(0, op, "{}", 0, complete_cpp_call, completion));
+        if (submission) {
+            delete completion;
+            assert(!submission);
+        }
+        assert(future.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+        auto [result, error] = future.get();
+        if (std::strcmp(op, "runtime.describe") == 0) {
+            assert(result && !error && std::strstr(result.get(), "\"abiVersion\":65536"));
+        } else {
+            assert(!result && error && aimux_error_code(error.get()) == 300);
+        }
+    }
+}
 
 int main() {
     static_assert(!std::is_copy_constructible<aimux::Handle>::value, "unique handle ownership");
@@ -59,6 +87,7 @@ int main() {
     try { std::rethrow_exception(ctx.failure); }
     catch (const std::runtime_error &e) { caught = std::string(e.what()) == "consumer failure"; }
     assert(caught);
+    async_ownership();
     puts("PASS C++17 RAII / moves / exception latch (direct trampoline test)");
     return 0;
 }

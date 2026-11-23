@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -14,7 +16,7 @@ pub struct ChatCompletionResponse {
     #[serde(default)]
     pub created: Option<u64>,
     pub choices: Vec<Choice>,
-    pub usage: Option<UsageResponse>,
+    pub usage: Option<UsageWithRaw>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +70,22 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
+/// Keep vendor extensions from the usage subtree even when the full body
+/// is omitted. Non-streaming usage retains its strict schema validation.
+#[derive(Debug)]
+pub struct UsageWithRaw {
+    pub typed: UsageResponse,
+    pub raw: Value,
+}
+
+impl<'de> Deserialize<'de> for UsageWithRaw {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Value::deserialize(deserializer)?;
+        let typed = UsageResponse::deserialize(&raw).map_err(serde::de::Error::custom)?;
+        Ok(Self { typed, raw })
+    }
+}
+
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]
 pub struct UsageResponse {
     #[serde(default)]
@@ -106,70 +124,117 @@ pub struct CompletionTokensDetails {
 // ── Streaming response ──
 
 #[derive(Debug, Deserialize)]
-pub struct StreamChunk {
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
+pub struct StreamChunk<'a> {
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub id: Option<Cow<'a, str>>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub model: Option<Cow<'a, str>>,
     #[serde(default)]
     pub created: Option<u64>,
+    #[serde(default, borrow)]
+    pub choices: Vec<StreamChoice<'a>>,
     #[serde(default)]
-    pub choices: Vec<StreamChoice>,
+    pub usage: Option<Value>,
     #[serde(default)]
-    pub usage: Option<UsageResponse>,
+    pub error: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct StreamChoice {
-    #[serde(default)]
-    pub delta: Delta,
-    #[serde(default)]
-    pub finish_reason: Option<String>,
+pub struct StreamChoice<'a> {
+    #[serde(default, borrow)]
+    pub delta: Delta<'a>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub finish_reason: Option<Cow<'a, str>>,
     /// Logprobs returned when `logprobs` is requested.
     #[serde(default)]
     pub logprobs: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct Delta {
-    #[serde(default)]
-    pub content: Option<String>,
+pub struct Delta<'a> {
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub content: Option<Cow<'a, str>>,
     /// Refusal text delta, visible output like `content` (#461).
-    #[serde(default)]
-    pub refusal: Option<String>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub refusal: Option<Cow<'a, str>>,
     /// Reasoning text delta (`reasoning` field of OpenAI-shaped servers).
-    #[serde(default)]
-    pub reasoning: Option<String>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub reasoning: Option<Cow<'a, str>>,
     /// `reasoning_content` delta of OpenAI-shaped servers (DashScope and others).
     /// 优先于 `reasoning`。
-    #[serde(default)]
-    pub reasoning_content: Option<String>,
-    #[serde(default)]
-    pub tool_calls: Option<Vec<DeltaToolCall>>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub reasoning_content: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub tool_calls: Option<Vec<DeltaToolCall<'a>>>,
     /// Annotations (e.g. URL citations) carried by a streaming delta.
     #[serde(default)]
     pub annotations: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DeltaToolCall {
+pub struct DeltaToolCall<'a> {
     /// Required, as in `@ai-sdk/openai` (`index: z.number()`); a chunk without
     /// it fails to parse. Servers that omit it go through `openai_compatible`.
     pub index: usize,
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default, rename = "type")]
-    pub r#type: Option<String>,
-    #[serde(default)]
-    pub function: Option<DeltaFunction>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub id: Option<Cow<'a, str>>,
+    #[serde(
+        default,
+        borrow,
+        rename = "type",
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub r#type: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub function: Option<DeltaFunction<'a>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct DeltaFunction {
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub arguments: Option<String>,
+pub struct DeltaFunction<'a> {
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub name: Option<Cow<'a, str>>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub arguments: Option<Cow<'a, str>>,
 }
 
 // Suppress unused warning for Value import (used in convert.rs).

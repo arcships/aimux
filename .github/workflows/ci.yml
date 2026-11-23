@@ -375,6 +375,12 @@ jobs:
       - name: DTO vector codecs
         if: matrix.settings.test && runner.os == 'Linux'
         run: python3 scripts/check_dto_vectors.py node
+      - name: Check burst stream contract
+        if: matrix.settings.test && runner.os == 'Linux'
+        env:
+          TOKIO_WORKER_THREADS: 2
+        run: |
+          node bindings/node/bench/bench_data_plane.cjs bindings/node stream-burst 1 1 0
       # index.js / index.d.ts are tracked (they ship to npm) but produced by the
       # napi build above — fail if the committed copies have drifted from it.
       # One leg suffices (both files are platform-independent); the Linux test

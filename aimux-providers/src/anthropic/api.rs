@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -224,7 +226,7 @@ pub struct AnthropicUsage(pub Value);
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum StreamEvent {
+pub enum StreamEvent<'a> {
     #[serde(rename = "message_start")]
     MessageStart { message: MessageStartData },
     #[serde(rename = "content_block_start")]
@@ -233,7 +235,11 @@ pub enum StreamEvent {
         content_block: ContentBlock,
     },
     #[serde(rename = "content_block_delta")]
-    ContentBlockDelta { index: usize, delta: DeltaBlock },
+    ContentBlockDelta {
+        index: usize,
+        #[serde(borrow)]
+        delta: DeltaBlock<'a>,
+    },
     #[serde(rename = "content_block_stop")]
     ContentBlockStop { index: usize },
     #[serde(rename = "message_delta")]
@@ -310,19 +316,39 @@ pub struct MessageStartData {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DeltaBlock {
-    #[serde(default)]
-    pub text: Option<String>,
-    #[serde(default)]
-    pub partial_json: Option<String>,
+pub struct DeltaBlock<'a> {
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub text: Option<Cow<'a, str>>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub partial_json: Option<Cow<'a, str>>,
     /// `thinking_delta` payload — incremental reasoning text.
-    #[serde(default)]
-    pub thinking: Option<String>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub thinking: Option<Cow<'a, str>>,
     /// `signature_delta` payload — incremental signature text.
-    #[serde(default)]
-    pub signature: Option<String>,
-    #[serde(default)]
-    pub content: Option<String>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub signature: Option<Cow<'a, str>>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub content: Option<Cow<'a, str>>,
     #[serde(default)]
     pub citation: Option<Value>,
 }

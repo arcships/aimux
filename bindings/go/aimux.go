@@ -107,14 +107,14 @@ func Manifest() (json.RawMessage, error) {
 // Call invokes a global operation. Pass an explicit object, e.g. struct{}{},
 // for no parameters. Nil encodes JSON null and is never normalized to {}.
 func Call(ctx context.Context, op string, params any) (json.RawMessage, error) {
-	return call(ctx, nil, op, params)
+	return validateResult(call(ctx, nil, op, params))
 }
 
 func (h *Handle) Call(ctx context.Context, op string, params any) (json.RawMessage, error) {
 	if h == nil {
 		return nil, ErrClosed
 	}
-	return call(ctx, h, op, params)
+	return validateResult(call(ctx, h, op, params))
 }
 
 func call(ctx context.Context, h *Handle, op string, params any) (json.RawMessage, error) {
@@ -154,7 +154,7 @@ func CallInto[T any](ctx context.Context, h *Handle, op string, params any) (*T,
 		return nil, err
 	}
 	var result T
-	if err := json.Unmarshal(raw, &result); err != nil {
+	if err := decodeJSON("result", raw, &result); err != nil {
 		return nil, localError("binding", 205, "ResultSerialization", err.Error())
 	}
 	return &result, nil
@@ -178,9 +178,9 @@ func handleFromResult(raw []byte) (*Handle, error) {
 	var result RecorderHandleResult
 	var err error
 	if len(raw) > 0 && raw[0] == '"' {
-		err = json.Unmarshal(raw, &result.Handle)
+		err = decodeJSON("result", raw, &result.Handle)
 	} else {
-		err = json.Unmarshal(raw, &result)
+		err = decodeJSON("result", raw, &result)
 	}
 	if err != nil {
 		return nil, localError("binding", 205, "ResultSerialization", err.Error())
@@ -192,7 +192,7 @@ func handleFromResult(raw []byte) (*Handle, error) {
 }
 
 func createAbort() (*Handle, error) {
-	raw, err := nativeCall(0, generated.OP_ABORT_CREATE, []byte(`{}`), 0)
+	raw, err := nativeCallSync(0, generated.OP_ABORT_CREATE, []byte(`{}`), 0)
 	if err != nil {
 		return nil, err
 	}

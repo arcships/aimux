@@ -19,6 +19,19 @@ class RealOps(unittest.TestCase):
         self.assertEqual(aimux.manifest_digest(), aimux.EXPECTED_MANIFEST_DIGEST)
         self.assertIsInstance(client.call(ops.OP_RUNTIME_DESCRIBE), dict)
 
+    def test_manifest_attribute_is_lazy_and_cached(self):
+        import subprocess
+        import sys
+
+        subprocess.run([sys.executable, '-c', """
+import aimux
+assert 'manifest' not in vars(aimux)
+assert 'manifest' in dir(aimux)
+from aimux import manifest
+assert manifest is aimux.manifest
+assert manifest == aimux.verify_contract()
+"""], check=True)
+
     def test_unknown_op_is_protocol_error(self):
         with self.assertRaises(aimux.ProtocolError) as error:
             aimux.Client().call('not.a.registered.operation')

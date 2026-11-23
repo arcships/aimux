@@ -313,6 +313,7 @@ pub(crate) struct PreparedRequest {
     /// an `Err` here and is reported when the request is sent, as before.
     parsed_url: Result<url::Url, url::ParseError>,
     headers: Vec<(String, String)>,
+    pub(crate) header_layers: Option<std::sync::Arc<[crate::HeaderMapOpt]>>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
     call_id: Option<String>,
     recording_context: Option<RecordingContext>,
@@ -392,6 +393,7 @@ impl HttpRequest {
             parsed_url: url::Url::parse(&self.url),
             url: self.url,
             headers,
+            header_layers: None,
             abort_signal: self.abort_signal,
             call_id: self.call_id,
             recording_context: self.recording_context,
@@ -483,7 +485,7 @@ pub(crate) async fn send_request_once(
         url = %request.sanitized_url(),
         host = %request.host_str(),
         body_size = request_body_size(request),
-        header_count = request.headers.len(),
+        header_count = request.headers.len() + request.header_layers.as_deref().unwrap_or_default().iter().map(crate::HeaderMapOpt::len).sum::<usize>(),
         call_id = request.call_id.as_deref().unwrap_or(""),
         "request"
     );
@@ -742,34 +744,27 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             message: format!("invalid request URL: {error}"),
             cause: Some(ErrorCause::source(&error)),
         })?;
-    let mut headers = http::HeaderMap::new();
+    let mut headers = if let Some(layers) = &request.header_layers {
+        crate::headers::merge_header_layers(layers, |name| {
+            (request.credentials != RequestCredentials::Omit
+                || name.eq_ignore_ascii_case("user-agent"))
+                && (request.validation.is_none()
+                    || aimux_core::download_guard::is_download_header_allowed(name))
+        })?
+    } else {
+        http::HeaderMap::new()
+    };
     for (name, value) in &request.headers {
-        let header_name =
-            http::HeaderName::try_from(name).map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid header name: {name}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?;
-        // The value is never echoed: it is commonly a credential.
-        let header_value =
-            http::HeaderValue::try_from(value).map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid header value for {name}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?;
-        headers.insert(header_name, header_value);
+        crate::headers::insert_header(&mut headers, name, value)?;
     }
     if request.provider_utils_user_agent {
         let suffix = format!(
             "ai-sdk-provider-utils/{}",
             crate::aisdk_pins::PROVIDER_UTILS
         );
-        let current = request
-            .headers
-            .iter()
-            .rev()
-            .find_map(|(name, value)| {
-                name.eq_ignore_ascii_case("user-agent")
-                    .then_some(value.as_str())
-            })
+        let current = headers
+            .get(http::header::USER_AGENT)
+            .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
             .unwrap_or_default();
         let user_agent = crate::headers::user_agent_value(current, &suffix);
         headers.insert(
@@ -1048,9 +1043,21 @@ impl ByteAccumulator {
 
 fn to_http_record(request: &PreparedRequest) -> HttpRecord {
     use aimux_core::recording::is_sensitive_key;
-    let headers = request
-        .headers
+    // The wire fast path keeps provider layers separate from explicit
+    // headers. Reconstruct the pre-transport header list for the recording,
+    // including failed exchanges where no wire HeaderMap was built.
+    let layered = request
+        .header_layers
+        .as_deref()
+        .map(|layers| {
+            let layers: Vec<_> = layers.iter().collect();
+            crate::normalize_headers(crate::combine_headers(&layers))
+        })
+        .unwrap_or_default();
+    let headers = layered
         .iter()
+        .filter(|(name, _)| request.credentials != RequestCredentials::Omit || name == "user-agent")
+        .chain(&request.headers)
         .map(|(name, value)| {
             (
                 name.clone(),

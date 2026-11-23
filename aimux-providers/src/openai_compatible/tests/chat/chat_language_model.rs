@@ -4911,9 +4911,7 @@ mod upstream_e2e {
         let schema = json!({"type":"object","properties":{"flight":{"type":"string"}},
             "required":["flight"],"additionalProperties":false,"$schema":"http://json-schema.org/draft-07/schema#"});
         let mut opts = options();
-        opts.tools = Some(vec![
-            FunctionTool::new("check_flight", schema.clone()).into(),
-        ]);
+        opts.tools = Some(vec![FunctionTool::new("check_flight", schema.clone()).into()].into());
         let result = provider(&fetch)
             .chat("test-model")
             .do_generate(&opts)

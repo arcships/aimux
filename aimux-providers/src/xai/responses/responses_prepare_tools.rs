@@ -23,7 +23,14 @@ pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> Result<PreparedResponsesTools, AiMuxError> {
-    let non_empty = tools.as_ref().filter(|t| !t.is_empty());
+    prepare_responses_tools_slice(tools.as_deref(), tool_choice)
+}
+
+pub(super) fn prepare_responses_tools_slice(
+    tools: Option<&[Tool]>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+) -> Result<PreparedResponsesTools, AiMuxError> {
+    let non_empty = tools.filter(|t| !t.is_empty());
     for tool in non_empty.into_iter().flatten() {
         if let Tool::Provider(tool) = tool {
             validate_provider_tool(tool)?;

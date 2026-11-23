@@ -60,7 +60,7 @@ pin-project-lite = "0.2"
 
 # Serialization
 schemars = { version = "=1.2.2", features = ["indexmap2"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 # HTTP client

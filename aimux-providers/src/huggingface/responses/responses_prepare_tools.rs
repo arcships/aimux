@@ -15,6 +15,13 @@ pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
+    prepare_responses_tools_slice(tools.as_deref(), tool_choice)
+}
+
+pub(super) fn prepare_responses_tools_slice(
+    tools: Option<&[Tool]>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
     let tools = match tools {
         Some(t) if !t.is_empty() => t,
         _ => return (None, None, vec![]),

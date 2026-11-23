@@ -357,14 +357,17 @@ async fn generate_text_derives_its_result_from_the_step() {
         FinishReasonUnified::ToolCalls,
     ));
     let options = GenerateTextOptions {
-        tools: Some(vec![Tool::Function(crate::tool::FunctionTool::new(
-            "weather",
-            json!({
-                "type": "object",
-                "properties": { "city": { "type": "string" } },
-                "required": ["city"],
-            }),
-        ))]),
+        tools: Some(
+            vec![Tool::Function(crate::tool::FunctionTool::new(
+                "weather",
+                json!({
+                    "type": "object",
+                    "properties": { "city": { "type": "string" } },
+                    "required": ["city"],
+                }),
+            ))]
+            .into(),
+        ),
         ..GenerateTextOptions::default()
     };
     let result = generate_text(&model, "hi", options).await.unwrap();
@@ -832,7 +835,7 @@ async fn generate_text_rejects_a_tool_result_without_its_call() {
         ));
         async move {
             let options = GenerateTextOptions {
-                tools,
+                tools: tools.map(Into::into),
                 ..GenerateTextOptions::default()
             };
             generate_text(&model, "hi", options).await
@@ -1925,7 +1928,7 @@ async fn assert_aborted_during_tool_input_deltas(
         &model,
         "hi",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             abort_signal: Some(signal.clone()),
             ..GenerateTextOptions::default()
         },
@@ -2207,7 +2210,7 @@ async fn hung_repair_abort_cancels_generate_text_and_drops_repair_future() {
     let signal = AbortSignal::new();
     let (repair, entered, dropped) = hung_repair();
     let options = GenerateTextOptions {
-        tools: Some(vec![weather_tool()]),
+        tools: Some(vec![weather_tool()].into()),
         repair_tool_call: Some(repair),
         abort_signal: Some(signal.clone()),
         ..GenerateTextOptions::default()
@@ -2243,7 +2246,7 @@ async fn hung_repair_abort_cancels_stream_text_and_drops_repair_future() {
         &model,
         "hi",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             repair_tool_call: Some(repair),
             abort_signal: Some(signal.clone()),
             ..GenerateTextOptions::default()
@@ -2290,7 +2293,7 @@ async fn hung_repair_abort_cancels_stream_text_and_drops_repair_future() {
         &model,
         "hi",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             repair_tool_call: Some(repair),
             abort_signal: Some(signal.clone()),
             ..GenerateTextOptions::default()
@@ -2339,7 +2342,7 @@ async fn hung_repair_respects_operation_timeout_in_generate_and_stream() {
             &gen_model,
             "hi",
             GenerateTextOptions {
-                tools: Some(vec![weather_tool()]),
+                tools: Some(vec![weather_tool()].into()),
                 repair_tool_call: Some(repair),
                 timeout: Some(timeout_config),
                 ..GenerateTextOptions::default()
@@ -2359,7 +2362,7 @@ async fn hung_repair_respects_operation_timeout_in_generate_and_stream() {
             &stream_model,
             "hi",
             GenerateTextOptions {
-                tools: Some(vec![weather_tool()]),
+                tools: Some(vec![weather_tool()].into()),
                 repair_tool_call: Some(repair),
                 timeout: Some(timeout_config),
                 ..GenerateTextOptions::default()
@@ -2418,7 +2421,7 @@ async fn consumer_drop_mid_tool_input_delta_stops_pump_cleanly() {
         &model,
         "hi",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..GenerateTextOptions::default()
         },
     )
@@ -2497,7 +2500,7 @@ async fn consumer_polling_after_deadline_delivers_sync_tool_call_but_times_out_h
             &sync_model,
             "hi",
             GenerateTextOptions {
-                tools: Some(vec![weather_tool()]),
+                tools: Some(vec![weather_tool()].into()),
                 timeout: Some(timeout_config),
                 ..GenerateTextOptions::default()
             },
@@ -2536,7 +2539,7 @@ async fn consumer_polling_after_deadline_delivers_sync_tool_call_but_times_out_h
             &repair_model,
             "hi",
             GenerateTextOptions {
-                tools: Some(vec![weather_tool()]),
+                tools: Some(vec![weather_tool()].into()),
                 repair_tool_call: Some(repair),
                 timeout: Some(timeout_config),
                 ..GenerateTextOptions::default()

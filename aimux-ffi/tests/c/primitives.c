@@ -162,6 +162,87 @@ static void stream_lifetime(void) {
     aimux_drop(p);
     puts("PASS accepted stream lifetime / callback abort / one terminal");
 }
+
+struct async_result {
+    atomic_bool ready;
+    char *json;
+    aimux_error_t *error;
+};
+static void await_callback(atomic_bool *ready) {
+    const struct timespec delay = {0, 1000000};
+    for (unsigned i = 0; i < 5000 && !atomic_load(ready); ++i) nanosleep(&delay, NULL);
+    assert(atomic_load(ready));
+}
+static void complete_call(char *json, aimux_error_t *error, void *data) {
+    struct async_result *result = data;
+    assert((json == NULL) != (error == NULL));
+    char *out = &sentinel;
+    check_error(aimux_call(0, "runtime.describe", "{}", 0, &out), 204);
+    assert(out == NULL);
+    result->json = json;
+    result->error = error;
+    assert(!atomic_exchange(&result->ready, 1));
+}
+struct async_stream {
+    atomic_bool done;
+    uint64_t abort_handle;
+    char *end;
+};
+static void copy_terminal(const char *const *frames, size_t count, void *data) {
+    struct async_stream *stream = data;
+    assert(count == 1 && frames[0]);
+    assert(strstr(frames[0], "\"type\":\"end\"") != NULL);
+    char *out = &sentinel;
+    check_error(aimux_call(0, "runtime.describe", "{}", 0, &out), 204);
+    assert(out == NULL);
+    aimux_abort(stream->abort_handle);
+    stream->end = strdup(frames[0]);
+    assert(stream->end);
+    assert(!atomic_exchange(&stream->done, 1));
+}
+static void async_primitives(void) {
+    struct async_result call = {ATOMIC_VAR_INIT(0), NULL, NULL};
+    char *op = strdup("runtime.describe");
+    char *params = strdup("{}");
+    assert(op && params);
+    check_error(aimux_call_async(0, op, params, UINT64_MAX, complete_call, &call), 203);
+    assert(!atomic_load(&call.ready));
+    assert(aimux_call_async(0, op, "{", 0, complete_call, &call) == NULL);
+    await_callback(&call.ready);
+    assert(!call.json && call.error && aimux_error_code(call.error) == 202);
+    aimux_error_free(call.error);
+    call.error = NULL;
+    atomic_store(&call.ready, 0);
+    assert(aimux_call_async(0, op, params, 0, complete_call, &call) == NULL);
+    free(op);
+    free(params);
+    await_callback(&call.ready);
+    assert(!call.error && call.json && strstr(call.json, "\"abiVersion\":65536"));
+    aimux_free_string(call.json);
+
+    uint64_t provider = create_handle(AIMUX_OP_PROVIDER_CREATE, 0,
+        "{\"package\":\"openai\",\"settings\":{\"apiKey\":\"test\"}}");
+    uint64_t model = create_handle(AIMUX_OP_PROVIDER_MODEL, provider,
+        "{\"method\":\"languageModel\",\"modelId\":\"gpt-4o-mini\"}");
+    struct async_stream stream = {ATOMIC_VAR_INIT(0), create_handle(AIMUX_OP_ABORT_CREATE, 0, "{}"), NULL};
+    check_error(aimux_stream_async(model, AIMUX_OP_TEXT_STREAM, "{}", stream.abort_handle,
+                                  copy_terminal, &stream), 301);
+    assert(!atomic_load(&stream.done));
+    aimux_abort(stream.abort_handle);
+    params = strdup("{\"prompt\":[]}");
+    assert(params);
+    assert(aimux_stream_async(model, AIMUX_OP_TEXT_STREAM, params, stream.abort_handle,
+                              copy_terminal, &stream) == NULL);
+    free(params);
+    await_callback(&stream.done);
+    assert(strstr(stream.end, "\"outcome\":\"cancelled\""));
+    free(stream.end);
+    aimux_drop(stream.abort_handle);
+    aimux_drop(model);
+    aimux_drop(provider);
+    puts("PASS C11 async ownership, rejected admission, cancellation and callback reentry");
+}
+
 int main(void) {
     assert(aimux_abi_version() == (1u << 16));
     char *manifest = &sentinel;
@@ -177,6 +258,7 @@ int main(void) {
     wrong_kind();
     drop_races();
     stream_lifetime();
+    async_primitives();
     puts("PASS C11 primitives / errors / sentinels / wrong kinds / 100 drop races");
     return 0;
 }

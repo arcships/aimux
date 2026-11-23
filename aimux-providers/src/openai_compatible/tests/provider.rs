@@ -1235,10 +1235,13 @@ mod recorded_fixtures {
     fn tool_call_options(groq: Value) -> CallOptions {
         let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("hi")]);
         options.temperature = Some(0.5);
-        options.tools = Some(vec![Tool::Function(FunctionTool::new(
-            "weather".to_string(),
-            json!({"type": "object", "properties": {}}),
-        ))]);
+        options.tools = Some(
+            vec![Tool::Function(FunctionTool::new(
+                "weather".to_string(),
+                json!({"type": "object", "properties": {}}),
+            ))]
+            .into(),
+        );
         options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
         options.provider_options = Some(serde_json::from_value(json!({ "groq": groq })).unwrap());
         options

@@ -107,7 +107,7 @@ impl LanguageModel for BedrockModel {
         let resp = aimux_provider_utils::post_to_api(
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
-            aimux_provider_utils::create_json_response_handler(),
+            aimux_provider_utils::create_json_response_handler_with_body(false),
             super::error::bedrock_failed_response_handler(),
         )
         .await?;
@@ -540,7 +540,7 @@ impl AmazonBedrockChatStream {
     fn metadata(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         if let Some(usage) = payload.get("usage") {
             let bedrock_usage: super::api_types::BedrockUsage =
-                match serde_json::from_value(usage.clone()) {
+                match <super::api_types::BedrockUsage as serde::Deserialize>::deserialize(usage) {
                     Ok(usage) => usage,
                     Err(error) => {
                         self.final_finish_reason = Some(FINISH_ERROR);
@@ -651,10 +651,11 @@ impl Transformer for AmazonBedrockChatStream {
                 return;
             }
         };
-        self.ctx.raw(
-            &json!({ msg.event_type.clone(): payload.clone() }),
-            controller,
-        );
+        if self.ctx.include_raw_chunks {
+            controller.enqueue(StreamPart::Raw {
+                raw_value: json!({ &msg.event_type: &payload }),
+            });
+        }
         if msg.message_type != "event" || msg.event_type.ends_with("Exception") {
             self.final_finish_reason = Some(FINISH_ERROR);
             let (status_code, is_retryable) = match msg.event_type.as_str() {
@@ -1384,13 +1385,19 @@ pub fn build_request_body_checked(
         }
         output_config["format"] = json!({"type":"json_schema", "schema":crate::anthropic::internal::sanitize_json_schema(schema.unwrap())});
     }
-    let mut all_tools = call.tools.clone().unwrap_or_default();
-    if uses_json_tool {
-        all_tools.push(Tool::Function(
+    let tools = call.tools.as_deref().unwrap_or_default();
+    let augmented_tools;
+    let all_tools = if uses_json_tool {
+        let mut owned = tools.to_vec();
+        owned.push(Tool::Function(
             FunctionTool::new("json", schema.unwrap().clone())
                 .with_description("Respond with a JSON object."),
         ));
-    }
+        augmented_tools = owned;
+        augmented_tools.as_slice()
+    } else {
+        tools
+    };
     let tool_choice = if uses_json_tool {
         Some(LanguageModelV4ToolChoice::Required)
     } else {
@@ -1401,7 +1408,7 @@ pub fn build_request_body_checked(
         .and_then(Value::as_bool)
         == Some(true);
     let mut provider_tools = super::prepare_tools::prepare_provider_tools(
-        Some(&all_tools),
+        Some(all_tools),
         tool_choice.as_ref(),
         anthropic,
         disable_parallel,

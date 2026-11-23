@@ -1042,22 +1042,26 @@ mod anthropic_chunk_schema_web_fetch_tool_result {
     /// upstream: @ai-sdk/anthropic src/anthropic-prepare-tools.test.ts › anthropicChunkSchema - web_fetch_tool_result › should accept base64 PDF source in streaming response
     #[test]
     fn should_accept_base64_pdf_source_in_streaming_response() {
-        let result = serde_json::from_value::<StreamEvent>(chunk(json!({
+        let frame = chunk(json!({
             "type": "base64",
             "media_type": "application/pdf",
             "data": "JVBERi0xLjcNJeLjz9MNC",
-        })));
+        }))
+        .to_string();
+        let result = serde_json::from_str::<StreamEvent<'_>>(&frame);
         assert!(result.is_ok(), "{result:?}");
     }
 
     /// upstream: @ai-sdk/anthropic src/anthropic-prepare-tools.test.ts › anthropicChunkSchema - web_fetch_tool_result › should accept text source in streaming response
     #[test]
     fn should_accept_text_source_in_streaming_response() {
-        let result = serde_json::from_value::<StreamEvent>(chunk(json!({
+        let frame = chunk(json!({
             "type": "text",
             "media_type": "text/plain",
             "data": "content",
-        })));
+        }))
+        .to_string();
+        let result = serde_json::from_str::<StreamEvent<'_>>(&frame);
         assert!(result.is_ok(), "{result:?}");
     }
 }
@@ -1068,7 +1072,7 @@ mod anthropic_chunk_schema_shared_batch_content_variants {
     /// upstream: @ai-sdk/anthropic src/anthropic-prepare-tools.test.ts › anthropicChunkSchema - shared batch content variants › accepts a string MCP tool result in a streaming content block
     #[test]
     fn accepts_a_string_mcp_tool_result_in_a_streaming_content_block() {
-        let result = serde_json::from_value::<StreamEvent>(json!({
+        let frame = json!({
             "content_block": {
                 "content": "tool output",
                 "is_error": false,
@@ -1077,14 +1081,16 @@ mod anthropic_chunk_schema_shared_batch_content_variants {
             },
             "index": 0,
             "type": "content_block_start",
-        }));
+        })
+        .to_string();
+        let result = serde_json::from_str::<StreamEvent<'_>>(&frame);
         assert!(result.is_ok(), "{result:?}");
     }
 
     /// upstream: @ai-sdk/anthropic src/anthropic-prepare-tools.test.ts › anthropicChunkSchema - shared batch content variants › accepts opaque MCP tool result citations
     #[test]
     fn accepts_opaque_mcp_tool_result_citations() {
-        let result = serde_json::from_value::<StreamEvent>(json!({
+        let frame = json!({
             "content_block": {
                 "content": [{
                     "citations": [{ "reference": "opaque-reference", "type": "future_citation_variant" }],
@@ -1097,7 +1103,8 @@ mod anthropic_chunk_schema_shared_batch_content_variants {
             },
             "index": 0,
             "type": "content_block_start",
-        }));
+        }).to_string();
+        let result = serde_json::from_str::<StreamEvent<'_>>(&frame);
         assert!(result.is_ok(), "{result:?}");
     }
 
@@ -1124,11 +1131,13 @@ mod anthropic_chunk_schema_shared_batch_content_variants {
                 "type": "search_result_location",
             }),
         ] {
-            let result = serde_json::from_value::<StreamEvent>(json!({
+            let frame = json!({
                 "delta": { "citation": citation, "type": "citations_delta" },
                 "index": 0,
                 "type": "content_block_delta",
-            }));
+            })
+            .to_string();
+            let result = serde_json::from_str::<StreamEvent<'_>>(&frame);
             assert!(result.is_ok(), "{citation}: {result:?}");
         }
     }
@@ -1195,7 +1204,7 @@ mod rejects_forced_tool_use {
     fn body(choice: Value, provider_options: Option<Value>) -> (Value, Vec<Warning>) {
         let options = CallOptions {
             max_output_tokens: Some(100),
-            tools: Some(rejecting_tools()),
+            tools: Some(rejecting_tools().into()),
             tool_choice: Some(tool_choice(choice)),
             provider_options: provider_options
                 .map(|options| serde_json::from_value(options).expect("provider options")),
@@ -1314,7 +1323,7 @@ mod older_provider_tool_args {
         let fetch = MockFetch::new(vec![text_response()]);
         let options = CallOptions {
             max_output_tokens: Some(100),
-            tools: Some(vec![tool]),
+            tools: Some(vec![tool].into()),
             ..CallOptions::new(vec![LanguageModelMessage::user_text("Hi")])
         };
         let result = provider(&fetch)

@@ -2121,6 +2121,33 @@ mod do_stream {
         assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
     }
 
+    #[tokio::test]
+    async fn escaped_deltas_survive_malformed_usage() {
+        let chunks = sse(&[
+            r#"{"id":"x","choices":[{"delta":{"reasoning":"r\n\"\u0041"}}]}"#.into(),
+            r#"{"id":"x","choices":[{"delta":{"content":"t\n\"\u0041"}}],"usage":{"prompt_tokens":"invalid"}}"#.into(),
+            r#"{"id":"x","choices":[{"delta":{},"finish_reason":"stop"}],"usage":17}"#.into(),
+        ]);
+        let (parts, _) = stream_parts("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+        assert!(
+            parts
+                .iter()
+                .any(|part| part["type"] == "reasoning-delta" && part["delta"] == "r\n\"A")
+        );
+        assert!(
+            parts
+                .iter()
+                .any(|part| part["type"] == "text-delta" && part["delta"] == "t\n\"A")
+        );
+        assert!(
+            parts.iter().all(|part| part["type"] != "error"),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["finishReason"]["unified"], "stop");
+        assert!(finish["usage"]["raw"].is_null());
+    }
+
     /// aimux #461: refusal deltas stream as text deltas.
     #[tokio::test]
     async fn should_stream_refusal_deltas_as_text() {
@@ -3097,11 +3124,11 @@ mod older_stream {
     use aimux_core::error::AiMuxError;
     use serde_json::Value;
 
-    fn delta(delta: Value) -> Result<Value, AiMuxError> {
-        Ok(json!({ "choices": [{ "delta": delta }] }))
+    fn delta(delta: Value) -> Result<String, AiMuxError> {
+        Ok(json!({ "choices": [{ "delta": delta }] }).to_string())
     }
 
-    fn tool_calls(tool_calls: Value) -> Result<Value, AiMuxError> {
+    fn tool_calls(tool_calls: Value) -> Result<String, AiMuxError> {
         delta(json!({ "tool_calls": tool_calls }))
     }
 
@@ -3122,7 +3149,10 @@ mod older_stream {
                     { "index": 1, "function": { "arguments": "}" } },
                     { "index": 0, "function": { "arguments": "\"Paris\"}" } }
                 ])),
-                Ok(json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] })),
+                Ok(
+                    json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] })
+                        .to_string(),
+                ),
             ],
         );
         assert_eq!(
@@ -3151,7 +3181,10 @@ mod older_stream {
             OpenAIChatStream::default(),
             [
                 delta(json!({ "content": "Hi" })),
-                Ok(json!({ "error": { "message": "overloaded", "type": "server_error" } })),
+                Ok(
+                    json!({ "error": { "message": "overloaded", "type": "server_error" } })
+                        .to_string(),
+                ),
             ],
         );
         assert_eq!(parts.len(), 6, "{parts:?}");

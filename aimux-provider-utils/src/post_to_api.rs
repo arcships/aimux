@@ -22,11 +22,9 @@ pub async fn post_json_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let prepared = request.prepare(HttpMethod::Post, HttpBody::Json(body));
-    let source = RequestBodySource::HttpBody(prepared.body.clone());
-    call_to_api_source(
-        prepared,
-        source,
+    post_to_api(
+        request,
+        HttpBody::Json(body),
         successful_response_handler,
         failed_response_handler,
     )
@@ -70,7 +68,28 @@ pub async fn post_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let prepared = request.prepare(HttpMethod::Post, body);
+    post_to_api_with_header_layers(
+        request,
+        None,
+        body,
+        successful_response_handler,
+        failed_response_handler,
+    )
+    .await
+}
+
+/// POST with unresolved provider layers before any explicit request headers.
+/// The transport normalizes the layers as it builds the wire header map.
+#[doc(hidden)]
+pub async fn post_to_api_with_header_layers<T>(
+    request: HttpRequest,
+    header_layers: Option<std::sync::Arc<[crate::HeaderMapOpt]>>,
+    body: HttpBody,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    let mut prepared = request.prepare(HttpMethod::Post, body);
+    prepared.header_layers = header_layers;
     let source = RequestBodySource::HttpBody(prepared.body.clone());
     call_to_api_source(
         prepared,

@@ -192,13 +192,16 @@ impl ImageModel for GoogleImageModel {
         if image_options.google_search.is_some()
             && let Some(serde_json::Value::Object(args)) = search
         {
-            call.tools = Some(vec![Tool::Provider(ProviderTool {
-                id: NamespacedKind::new("google.google_search")
-                    .expect("google.google_search is namespaced"),
-                name: "google_search".into(),
-                args,
-                supports_deferred_results: None,
-            })]);
+            call.tools = Some(
+                vec![Tool::Provider(ProviderTool {
+                    id: NamespacedKind::new("google.google_search")
+                        .expect("google.google_search is namespaced"),
+                    name: "google_search".into(),
+                    args,
+                    supports_deferred_results: None,
+                })]
+                .into(),
+            );
         }
         google.insert("responseModalities".into(), json!(["IMAGE"]));
         let user_config = google.remove("imageConfig").filter(|v| !v.is_null());

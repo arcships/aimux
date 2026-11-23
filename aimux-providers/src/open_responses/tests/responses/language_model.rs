@@ -1388,17 +1388,20 @@ mod open_responses_language_model {
                     },
                 ];
                 let options = CallOptions {
-                    tools: Some(vec![Tool::from(
-                        FunctionTool::new(
-                            "get_weather",
-                            json!({
-                                "type": "object",
-                                "properties": {"location": {"type": "string"}},
-                                "required": ["location"]
-                            }),
-                        )
-                        .with_description("Get the current weather for a location"),
-                    )]),
+                    tools: Some(
+                        vec![Tool::from(
+                            FunctionTool::new(
+                                "get_weather",
+                                json!({
+                                    "type": "object",
+                                    "properties": {"location": {"type": "string"}},
+                                    "required": ["location"]
+                                }),
+                            )
+                            .with_description("Get the current weather for a location"),
+                        )]
+                        .into(),
+                    ),
                     ..CallOptions::new(prompt)
                 };
                 model.do_generate(&options).await.unwrap();
@@ -1907,7 +1910,8 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![
+            tools: Some(
+                vec![
                 Tool::from(
                     FunctionTool::new(
                         "get_weather",
@@ -1933,7 +1937,9 @@ mod do_generate_tests {
                     .with_description("Search for information")
                     .with_strict(true),
                 ),
-            ]),
+            ]
+                .into(),
+            ),
             ..CallOptions::new(wiremock_test_prompt())
         };
         model.do_generate(&options).await.unwrap();
@@ -2080,7 +2086,7 @@ mod do_generate_tests {
                     }),
                 )
                 .with_description("Get the weather in a location"),
-            )]),
+            )].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2113,10 +2119,13 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(
-                FunctionTool::new("weather", json!({"type": "object"}))
-                    .with_description("Get the weather in a location"),
-            )]),
+            tools: Some(
+                vec![Tool::from(
+                    FunctionTool::new("weather", json!({"type": "object"}))
+                        .with_description("Get the weather in a location"),
+                )]
+                .into(),
+            ),
             tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2134,10 +2143,13 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(
-                FunctionTool::new("weather", json!({"type": "object"}))
-                    .with_description("Get the weather in a location"),
-            )]),
+            tools: Some(
+                vec![Tool::from(
+                    FunctionTool::new("weather", json!({"type": "object"}))
+                        .with_description("Get the weather in a location"),
+                )]
+                .into(),
+            ),
             tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2175,7 +2187,7 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![test_tool()]),
+            tools: Some(vec![test_tool()].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Auto),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2195,7 +2207,7 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![test_tool()]),
+            tools: Some(vec![test_tool()].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::None),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2214,7 +2226,7 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![test_tool()]),
+            tools: Some(vec![test_tool()].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..CallOptions::new(wiremock_test_prompt())
         };
@@ -2233,7 +2245,7 @@ mod do_generate_tests {
 
         let model = make_model(&server, "gemma-7b-it");
         let options = CallOptions {
-            tools: Some(vec![test_tool()]),
+            tools: Some(vec![test_tool()].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "get_weather".to_string(),
             }),

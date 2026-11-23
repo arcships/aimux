@@ -501,7 +501,7 @@ fn descriptors_publish_decision_controls_and_canonical_types() {
     assert_eq!(descriptor.allowed_handle_kinds, &[HandleKind::Decision]);
     assert_eq!(
         descriptor.runtime_handle_fields,
-        &[("abort", &[HandleKind::Abort][..])]
+        &[(&["abort"][..], &[HandleKind::Abort][..])]
     );
     assert_eq!(descriptor.retry_owner, "core");
     assert_eq!(

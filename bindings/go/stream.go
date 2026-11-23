@@ -5,18 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"runtime"
 	"strconv"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 const (
 	maxItemBytes = 1 << 20
 	// Allow the data item limit plus bounded control-frame overhead.
 	maxFrameBytes = maxItemBytes + 4096
-	// Seven queued frames plus one blocked producer copy fit the 8 MiB
-	// output budget, even when every frame reaches the single-item limit.
-	streamBufferSize = 7
+	// Reserve one slot for the event a blocked callback is holding.
+	// Events retain only their copied payload, separately from control state.
+	streamBufferBytes = 8 << 20
+	streamBufferSize  = streamBufferBytes/maxItemBytes - 1
 )
 
 var activeCallbacks atomic.Int64
@@ -30,19 +33,18 @@ type EndFrame struct {
 }
 
 // Stream has a single native producer and one consumer. Its data channel is
-// closed only by that producer, after the C call and every callback return.
+// closed only by that producer, after terminal callback delivery.
 // Cancel is safe without a consumer. Always Close a stream abandoned early.
 type Stream struct {
 	bridge *streamBridge[json.RawMessage]
 	emit   func(json.RawMessage) bool
 	events chan json.RawMessage
-	ready  chan struct{}
 	done   chan struct{}
 	cancel context.CancelFunc
 	ctx    context.Context
 	abort  *Handle
-	// Written only by the native producer/callbacks; read after done closes.
-	accepted bool
+	// Written only by the native producer/callbacks, read after done closes.
+	ended    bool
 	terminal *EndFrame
 	failure  error
 	err      error
@@ -70,7 +72,8 @@ func (h *Handle) Stream(ctx context.Context, op string, params any) (*Stream, er
 		return nil, err
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
-	s := &Stream{ready: make(chan struct{}), ctx: streamCtx, cancel: cancel, abort: abort}
+	s := &Stream{ctx: streamCtx, cancel: cancel, abort: abort}
+	ready := make(chan error, 1)
 	start := make(chan struct{})
 	// Start even if the caller cancels now: native admission/terminal delivery
 	// and abort cleanup must finish before publishing channel closure.
@@ -86,23 +89,22 @@ func (h *Handle) Stream(ctx context.Context, op string, params any) (*Stream, er
 			case <-finished:
 			}
 		}()
-		s.produce(h, uint64(id), op, data)
+		s.produce(h, uint64(id), op, data, ready)
 		return s.err
 	})
 	s.events, s.done = s.bridge.parts, s.bridge.done
 	close(start)
-	// No callback means an admission failure, reported synchronously here.
-	<-s.ready
-	if !s.accepted {
+	if err := <-ready; err != nil {
 		<-s.done
-		return nil, s.err
+		return nil, err
 	}
 	return s, nil
 }
 
-func (s *Stream) produce(owner *Handle, id uint64, op string, params []byte) {
+func (s *Stream) produce(owner *Handle, id uint64, op string, params []byte, ready chan<- error) {
 	stop := watchAbort(s.ctx, s.abort)
-	nativeErr := nativeStream(id, op, params, s.abort.id.Load(), s)
+	callbacks := &streamCallbacks{stream: s, done: make(chan struct{})}
+	nativeErr := nativeStream(id, op, params, s.abort.id.Load(), callbacks, ready)
 	runtime.KeepAlive(owner)
 	stop()
 	s.abort.Close()
@@ -119,9 +121,6 @@ func (s *Stream) produce(owner *Handle, id uint64, op string, params []byte) {
 	case s.terminal.Outcome == "cancelled":
 		s.err = localError("aimux", 13, "AbortError", "stream cancelled")
 	}
-	if !s.accepted {
-		close(s.ready)
-	}
 }
 
 func (s *Stream) fail(err error) {
@@ -132,11 +131,8 @@ func (s *Stream) fail(err error) {
 }
 
 func (s *Stream) receive(raw []byte) {
-	if s.failure != nil {
-		return
-	}
-	if err := validateJSON("stream frame", raw); err != nil {
-		s.fail(localError("binding", 206, "CallbackFailure", err.Error()))
+	if !utf8.Valid(raw) {
+		s.fail(localError("binding", 206, "CallbackFailure", "stream frame: invalid UTF-8 JSON"))
 		return
 	}
 	var frame struct {
@@ -149,6 +145,20 @@ func (s *Stream) receive(raw []byte) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&frame); err != nil {
+		s.fail(localError("binding", 206, "CallbackFailure", err.Error()))
+		return
+	}
+	if frame.Type == "end" {
+		s.ended = true
+	} else if s.failure != nil {
+		return
+	}
+	// Decode accepts a stream of values. A callback must contain exactly one.
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		s.fail(localError("binding", 206, "CallbackFailure", "unexpected data after stream frame"))
+		return
+	}
+	if err := checkSurrogates("stream frame", raw); err != nil {
 		s.fail(localError("binding", 206, "CallbackFailure", err.Error()))
 		return
 	}
@@ -202,10 +212,6 @@ func (s *Stream) receive(raw []byte) {
 	default:
 		s.fail(localError("binding", 206, "CallbackFailure", "unknown stream frame type"))
 		return
-	}
-	if !s.accepted {
-		s.accepted = true
-		close(s.ready)
 	}
 	if frame.Type == "event" {
 		s.emit(frame.Event)

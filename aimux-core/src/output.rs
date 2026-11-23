@@ -336,7 +336,7 @@ pub(crate) fn validator_error(error: &jsonschema::ValidationError<'_>) -> Source
 fn validate(value: &Value, schema: &Value) -> Result<(), ErrorCause> {
     // An invalid schema is the caller's error, not the value's, so its cause
     // is a plain `SourceError`, as in `parse_tool_call`.
-    let validator = jsonschema::validator_for(schema).map_err(|error| {
+    let validator = crate::schema_validator::validator_for(schema).map_err(|error| {
         ErrorCause::from(SourceError {
             message: type_validation_message(value, &format!("schema is invalid: {error}")),
             cause: Some(Box::new(validator_error(&error))),

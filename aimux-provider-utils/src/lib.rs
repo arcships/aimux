@@ -94,7 +94,9 @@ pub use passthrough::{
     NativeExchangeObserver, NativeExchangeOutcome, NativeExchangeStarted, NativeRequest,
     NativeResponse, NativeRetryPolicy, SIGV4_PROTECTED_HEADERS, SafeRetryOptions, native_request,
 };
-pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
+pub use post_to_api::{
+    post_form_data_to_api, post_json_to_api, post_to_api, post_to_api_with_header_layers,
+};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
@@ -102,8 +104,9 @@ pub use response_handler::{
     ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
     ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_bytes_response_handler, create_json_error_response_handler,
-    create_json_response_handler, create_status_code_error_response_handler,
-    invalid_response_api_call,
+    create_json_response_handler, create_json_response_handler_with_body,
+    create_raw_event_source_response_handler, create_status_code_error_response_handler,
+    invalid_response_api_call, parse_sse_json,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4AuthFetch, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;

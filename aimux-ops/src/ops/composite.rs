@@ -8,9 +8,8 @@ use aimux_core::router::{
     FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
 };
 use serde::Deserialize;
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode, serialize_result};
 use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry, Owner};
 use crate::op::{
@@ -57,10 +56,9 @@ fn invalid(message: impl Into<String>) -> OpsError {
 }
 
 fn language(ctx: &Ctx, id: &str) -> Result<Arc<dyn LanguageModel>, OpsError> {
-    match resolve_secondary(
-        HandleRegistry::global(),
-        ctx,
-        &Value::String(id.to_owned()),
+    match HandleRegistry::global().get(
+        ctx.owner,
+        id.parse().map_err(invalid)?,
         &[HandleKind::Language],
     )? {
         Entry::Language(model) => Ok(model),
@@ -72,12 +70,12 @@ fn languages(ctx: &Ctx, ids: &[String]) -> Result<Vec<Arc<dyn LanguageModel>>, O
     ids.iter().map(|id| language(ctx, id)).collect()
 }
 
-fn store(owner: Owner, model: Arc<dyn LanguageModel>) -> Result<Value, OpsError> {
+fn store(owner: Owner, model: Arc<dyn LanguageModel>) -> Result<String, OpsError> {
     let id = HandleRegistry::global().insert(owner, Entry::Language(model))?;
-    Ok(Value::String(id.0.to_string()))
+    serialize_result(id)
 }
 
-fn router(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
+fn router(ctx: Ctx, _target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: RouterParams = decode(params)?;
         if params.children.is_empty() {
@@ -108,7 +106,7 @@ fn router(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn moa(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
+fn moa(ctx: Ctx, _target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: MoaParams = decode(params)?;
         let references = languages(&ctx, &params.references)?;
@@ -131,7 +129,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("children.*", &[HandleKind::Language])],
+        runtime_handle_fields: &[(&["children", "*"], &[HandleKind::Language])],
         required_capabilities: &[],
         cancellation: Cancellation::None,
         result_ownership: "owned",
@@ -151,8 +149,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         scope: Scope::Current,
         terminal_type: None,
         runtime_handle_fields: &[
-            ("references.*", &[HandleKind::Language]),
-            ("aggregator", &[HandleKind::Language]),
+            (&["references", "*"], &[HandleKind::Language]),
+            (&["aggregator"], &[HandleKind::Language]),
         ],
         required_capabilities: &[],
         cancellation: Cancellation::None,

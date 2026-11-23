@@ -124,7 +124,7 @@ fn call(tool_name: &str) -> GenerateContent {
 fn options(tool_choice: ToolChoice) -> GenerateTextOptions {
     let tool = |name: &str| -> Tool { FunctionTool::new(name, json!({ "type": "object" })).into() };
     GenerateTextOptions {
-        tools: Some(vec![tool("weather"), tool("search")]),
+        tools: Some(vec![tool("weather"), tool("search")].into()),
         tool_choice: Some(tool_choice),
         ..Default::default()
     }

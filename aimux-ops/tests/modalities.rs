@@ -180,7 +180,7 @@ fn manifest_uses_canonical_paths_and_complete_modality_metadata() {
         );
         assert_eq!(
             descriptor.runtime_handle_fields,
-            &[("abort", &[HandleKind::Abort][..])]
+            &[(&["abort"][..], &[HandleKind::Abort][..])]
         );
         assert_eq!(descriptor.scope, Scope::Current);
         assert_eq!(descriptor.cancellation, Cancellation::Abort);

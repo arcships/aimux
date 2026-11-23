@@ -8188,7 +8188,7 @@ mod bedrock_remaining {
 
         let model = make_model(&server);
         let opts = CallOptions {
-            tools: Some(vec![]),
+            tools: Some(vec![].into()),
             ..default_options(prompt)
         };
 
@@ -8234,7 +8234,7 @@ mod bedrock_remaining {
 
         let model = make_model(&server);
         let opts = CallOptions {
-            tools: Some(vec![]),
+            tools: Some(vec![].into()),
             ..default_options(prompt)
         };
 
@@ -8619,7 +8619,7 @@ mod bedrock_upstream_e2e {
         let schema =
             json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"]});
         let mut opts = options();
-        opts.tools = Some(vec![FunctionTool::new("test-tool", schema.clone()).into()]);
+        opts.tools = Some(vec![FunctionTool::new("test-tool", schema.clone()).into()].into());
         let result = provider(&fetch)
             .chat("anthropic.model")
             .do_stream(&opts)
@@ -8733,14 +8733,17 @@ mod bedrock_upstream_e2e {
             "usage":{"inputTokens":10,"outputTokens":20,"totalTokens":30},"stopReason":"tool_use"
         }))]);
         let mut call = options();
-        call.tools = Some(vec![aimux_core::tool::Tool::Provider(
-            aimux_core::tool::ProviderTool {
-                id: "anthropic.bash_20241022".parse().unwrap(),
-                name: "bash".into(),
-                args: serde_json::Map::new(),
-                supports_deferred_results: None,
-            },
-        )]);
+        call.tools = Some(
+            vec![aimux_core::tool::Tool::Provider(
+                aimux_core::tool::ProviderTool {
+                    id: "anthropic.bash_20241022".parse().unwrap(),
+                    name: "bash".into(),
+                    args: serde_json::Map::new(),
+                    supports_deferred_results: None,
+                },
+            )]
+            .into(),
+        );
         call.tool_choice = Some(aimux_core::options::LanguageModelV4ToolChoice::Auto);
         let result = provider(&fetch)
             .chat("anthropic.model")

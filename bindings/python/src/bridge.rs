@@ -4,20 +4,21 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::time::{Duration, Instant};
 
 use aimux_core::AbortSignal;
+use aimux_ops::dispatch::WireParams;
 use aimux_ops::envelope::{ErrorEnvelope, OpsError, ProtocolError};
-use aimux_ops::frame::{Outcome, StreamFrame};
+use aimux_ops::frame::{Outcome, WireFrame};
 use aimux_ops::handle::HandleId;
 use futures::StreamExt;
 use pyo3::prelude::*;
-use serde_json::Value;
 use tokio::sync::{Semaphore, mpsc as channel};
 
-use crate::{InterpreterOwner, check_owner, context, error, invalid_state, runtime, serialize};
+use crate::{InterpreterOwner, check_owner, context, error, invalid_state, runtime};
 
 const WAIT_SLICE: Duration = Duration::from_millis(20);
 const QUEUE_ITEMS: usize = 64;
+// Admitted queue data only. The producer may hold one additional encoded
+// frame (at most 1 MiB) while waiting for admission.
 const QUEUE_BYTES: usize = 8 * 1024 * 1024;
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 type Terminal = Result<(), ErrorEnvelope>;
 
@@ -190,7 +191,7 @@ struct Queue {
 }
 
 async fn pump(
-    mut frames: impl futures::Stream<Item = StreamFrame> + Unpin,
+    mut frames: impl futures::Stream<Item = WireFrame> + Unpin,
     sender: channel::Sender<Delivery>,
     queue: Arc<Queue>,
     abort: AbortSignal,
@@ -204,16 +205,7 @@ async fn pump(
             frame = frames.next() => frame,
         };
         match frame {
-            Some(frame @ StreamFrame::Event { .. }) => {
-                let json = match serialize(&frame) {
-                    Ok(json) => json,
-                    Err(error) => break Err(project(error)),
-                };
-                if json.len() > MAX_FRAME_BYTES {
-                    break Err(project(OpsError::Protocol(ProtocolError::ResourceLimit(
-                        "Python stream event exceeds 1 MiB".into(),
-                    ))));
-                }
+            Some(WireFrame::Event { json, .. }) => {
                 let permit = tokio::select! {
                     biased;
                     _ = abort.cancelled() => break Err(project(aborted())),
@@ -236,7 +228,7 @@ async fn pump(
                     }
                 }
             }
-            Some(StreamFrame::End { outcome, error, .. }) => {
+            Some(WireFrame::End { outcome, error, .. }) => {
                 break match (outcome, error) {
                     (Outcome::Success, None) => Ok(()),
                     (Outcome::Error | Outcome::Cancelled, Some(error)) => Err(error),
@@ -272,7 +264,7 @@ impl StreamIterator {
         owner: Arc<InterpreterOwner>,
         handle: HandleId,
         op: String,
-        params: Value,
+        params: String,
         signal: AbortSignal,
     ) -> PyResult<Self> {
         let (sender, receiver) = channel::channel(QUEUE_ITEMS);
@@ -286,15 +278,15 @@ impl StreamIterator {
         let worker_owner = owner.clone();
         let task = Task::spawn(py, signal, async move {
             let owner = worker_owner;
-            match aimux_ops::dispatch::stream(
+            match aimux_ops::dispatch::stream_wire(
                 context(owner.token, abort.clone()),
                 handle,
                 &op,
-                params,
+                WireParams::new(params.as_bytes(), "params_json"),
             ) {
                 Ok(frames) => {
                     if accepted_tx.send(Ok(())).is_ok() {
-                        pump(frames, sender, producer_queue, abort).await;
+                        pump(frames.into_wire(), sender, producer_queue, abort).await;
                     }
                 }
                 Err(error) => {
@@ -344,15 +336,23 @@ impl StreamIterator {
             ));
         }
         let _consumer = ConsumerGuard(&self.consuming);
-        let rt = py
-            .allow_threads(runtime)
-            .map_err(|e| error::ops_error(py, e))?;
         loop {
             self.check_cancelled(py)?;
-            let result = py.allow_threads(|| {
-                let mut receiver = lock(&self.queue.receiver);
-                rt.block_on(async { tokio::time::timeout(WAIT_SLICE, receiver.recv()).await })
-            });
+            let ready = lock(&self.queue.receiver).try_recv();
+            let result = match ready {
+                Ok(delivery) => Ok(Some(delivery)),
+                Err(channel::error::TryRecvError::Disconnected) => Ok(None),
+                Err(channel::error::TryRecvError::Empty) => {
+                    // Task::spawn initialized the runtime before returning the iterator.
+                    let rt = runtime().map_err(|e| error::ops_error(py, e))?;
+                    py.allow_threads(|| {
+                        let mut receiver = lock(&self.queue.receiver);
+                        rt.block_on(async {
+                            tokio::time::timeout(WAIT_SLICE, receiver.recv()).await
+                        })
+                    })
+                }
+            };
             if let Err(error) = py.check_signals() {
                 self.task.cancel();
                 return Err(error);

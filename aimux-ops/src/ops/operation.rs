@@ -1,11 +1,12 @@
 //! The six realtime operations share the native Operation service.
-use crate::dispatch::{CallFuture, Ctx, Handler, PollResult, Target, decode, next_operation};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+
+use crate::dispatch::serialize_result as serialize;
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, PollResult, Target, decode};
+use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::operation::{Operation, OperationOptions};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::time::Duration;
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -22,6 +23,8 @@ struct OperationNextParams {
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TranscriptionStartParams {
+    #[serde(default, deserialize_with = "input_audio_format")]
+    #[schemars(!default)]
     pub input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
     pub provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     pub headers: Option<aimux_core::shared::SharedHeaders>,
@@ -36,8 +39,7 @@ struct TranscriptionStartParams {
 #[serde(tag = "type", rename_all = "camelCase")]
 enum OperationPollResult {
     Part {
-        #[schemars(with = "aimux_core::transcription_model::TranscriptionStreamPart")]
-        part: Value,
+        part: aimux_core::transcription_model::TranscriptionStreamPart,
     },
     Ended,
     Timeout,
@@ -63,7 +65,7 @@ const fn descriptor(
         scope: Scope::Current,
         terminal_type: None,
         runtime_handle_fields: if matches!(cancellation, Cancellation::Abort) {
-            &[("abort", &[HandleKind::Abort])]
+            &[(&["abort"], &[HandleKind::Abort])]
         } else {
             &[]
         },
@@ -144,7 +146,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (descriptor, handler) in
         OPS.iter()
             .zip([start, binary_only, input_done, next, status, cancel]
-                as [fn(Ctx, Target, Value) -> CallFuture; 6])
+                as [crate::dispatch::CallHandler; 6])
     {
         r.push((descriptor, Handler::Call(handler)));
     }
@@ -157,33 +159,27 @@ fn operation(target: Target) -> Result<std::sync::Arc<Operation>, OpsError> {
         ))),
     }
 }
-fn serialize(value: impl serde::Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
+fn input_audio_format<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<aimux_core::transcription_model::InputAudioFormat>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct InputAudioFormat {
+        format_type: String,
+        rate: Option<u32>,
+    }
+    Ok(
+        Option::<InputAudioFormat>::deserialize(deserializer)?.map(|format| {
+            aimux_core::transcription_model::InputAudioFormat {
+                format_type: format.format_type,
+                rate: format.rate,
+            }
+        }),
+    )
 }
-fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+
+fn start(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
-        if params
-            .get("inputAudioFormat")
-            .and_then(Value::as_object)
-            .is_some_and(|format| {
-                format
-                    .keys()
-                    .any(|key| key != "formatType" && key != "rate")
-            })
-        {
-            return Err(ProtocolError::invalid_params("unknown inputAudioFormat field").into());
-        }
-        if params
-            .get("timeout")
-            .and_then(Value::as_object)
-            .is_some_and(|timeout| {
-                timeout.keys().any(|key| {
-                    !["totalMs", "stepMs", "firstChunkMs", "chunkMs"].contains(&key.as_str())
-                })
-            })
-        {
-            return Err(ProtocolError::invalid_params("unknown timeout field").into());
-        }
         let request: TranscriptionStartParams = decode(params)?;
         let Target::Handle(Entry::Transcription(model)) = target else {
             return Err(ProtocolError::InvalidState("expected transcription target".into()).into());
@@ -201,36 +197,39 @@ fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
         serialize(id)
     })
 }
-fn binary_only(_: Ctx, _: Target, _: Value) -> CallFuture {
+fn binary_only(_: Ctx, _: Target, _: Params<'_>) -> CallFuture<'_> {
     Box::pin(async {
         Err(ProtocolError::InvalidOp("operation.push requires binary dispatch".into()).into())
     })
 }
-fn input_done(_: Ctx, target: Target, params: Value) -> CallFuture {
+fn input_done(_: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         decode::<EmptyParams>(params)?;
         operation(target)?.input_done();
-        Ok(Value::Null)
+        serialize(())
     })
 }
-fn next(_: Ctx, target: Target, params: Value) -> CallFuture {
+fn next(_: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: OperationNextParams = decode(params)?;
         let operation = operation(target)?;
-        match next_operation(&operation, Duration::from_millis(request.timeout_ms)).await? {
+        match operation
+            .next(Some(Duration::from_millis(request.timeout_ms)))
+            .await?
+        {
             PollResult::Part(part) => serialize(OperationPollResult::Part { part }),
             PollResult::Ended => serialize(OperationPollResult::Ended),
             PollResult::Timeout => serialize(OperationPollResult::Timeout),
         }
     })
 }
-fn status(_: Ctx, target: Target, params: Value) -> CallFuture {
+fn status(_: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         decode::<EmptyParams>(params)?;
         serialize(operation(target)?.status())
     })
 }
-fn cancel(_: Ctx, target: Target, params: Value) -> CallFuture {
+fn cancel(_: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         decode::<EmptyParams>(params)?;
         serialize(operation(target)?.cancel())

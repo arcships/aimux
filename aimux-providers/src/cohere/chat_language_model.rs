@@ -533,7 +533,7 @@ pub fn build_request_body(
     }
 
     // Tools.
-    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
+    let prepared = prepare_tools(options.tools.as_deref(), options.tool_choice.as_ref());
     warnings.extend(prepared.tool_warnings);
     if let Some(tools) = prepared.tools {
         body["tools"] = json!(tools);

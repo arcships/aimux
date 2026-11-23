@@ -159,7 +159,7 @@ async fn openai_outputs_preserve_invalid_raw_tool_arguments() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
     )
@@ -176,7 +176,7 @@ async fn openai_outputs_preserve_invalid_raw_tool_arguments() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
         OpenAiStreamOptions::default(),
@@ -217,7 +217,7 @@ async fn openai_repair_shows_in_the_completion_but_not_in_the_stream() {
         .named("forecast")
         .with_streamed_input();
     let options = GenerateTextOptions {
-        tools: Some(vec![weather_tool()]),
+        tools: Some(vec![weather_tool()].into()),
         repair_tool_call: Some(repair.clone()),
         ..Default::default()
     };
@@ -231,7 +231,7 @@ async fn openai_repair_shows_in_the_completion_but_not_in_the_stream() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             repair_tool_call: Some(repair),
             ..Default::default()
         },
@@ -275,7 +275,7 @@ async fn openai_stream_without_repair_preserves_provider_tool_input_deltas() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
         OpenAiStreamOptions::default(),
@@ -370,7 +370,7 @@ async fn invalid_repair_keeps_original_arguments_with_original_name() {
         assert_openai_arguments(
             &model,
             GenerateTextOptions {
-                tools: Some(vec![weather_tool()]),
+                tools: Some(vec![weather_tool()].into()),
                 repair_tool_call: Some(repair),
                 ..Default::default()
             },
@@ -392,7 +392,7 @@ async fn unknown_tool_preserves_raw_arguments_with_and_without_input_deltas() {
             assert_openai_arguments(
                 &model,
                 GenerateTextOptions {
-                    tools: Some(vec![weather_tool()]),
+                    tools: Some(vec![weather_tool()].into()),
                     ..Default::default()
                 },
                 input,
@@ -421,7 +421,7 @@ async fn known_tool_invalid_arguments_stay_raw_with_and_without_input_deltas() {
             assert_openai_arguments(
                 &model,
                 GenerateTextOptions {
-                    tools: Some(vec![weather_tool()]),
+                    tools: Some(vec![weather_tool()].into()),
                     ..Default::default()
                 },
                 input,
@@ -441,7 +441,7 @@ async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
     )
@@ -459,7 +459,7 @@ async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
         &model,
         "weather",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
     )
