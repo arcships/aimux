@@ -61,6 +61,12 @@ MACHO_MAGICS = {
     b"\xfe\xed\xfa\xcf": (">", 64),
     b"\xcf\xfa\xed\xfe": ("<", 64),
 }
+FAT_MAGICS = {
+    b"\xca\xfe\xba\xbe": (">", False),
+    b"\xbe\xba\xfe\xca": ("<", False),
+    b"\xca\xfe\xba\xbf": (">", True),
+    b"\xbf\xba\xfe\xca": ("<", True),
+}
 MACHO_FILETYPES = {
     1: "MH_OBJECT",
     2: "MH_EXECUTE",
@@ -444,10 +450,45 @@ def macho_info(body):
     }
 
 
-def defined_exports_macho(path):
+def macho_slices(body):
+    """Return a list of parsed `macho_info` dicts for a single-arch or universal
+    (fat) Mach-O binary, or None if `body` is not a Mach-O binary."""
+    if len(body) < 8:
+        return None
+    if body[:4] in MACHO_MAGICS:
+        info = macho_info(body)
+        return [info] if info is not None else None
+    if body[:4] in FAT_MAGICS:
+        end, is64 = FAT_MAGICS[body[:4]]
+        nfat = struct.unpack_from(end + "I", body, 4)[0]
+        entry_size = 32 if is64 else 20
+        if nfat == 0 or 8 + nfat * entry_size > len(body):
+            return None
+        slices = []
+        for i in range(nfat):
+            off = 8 + i * entry_size
+            if is64:
+                _, _, slice_off, slice_size, _ = struct.unpack_from(end + "IIQQI", body, off)
+            else:
+                _, _, slice_off, slice_size, _ = struct.unpack_from(end + "IIIII", body, off)
+            if slice_off + slice_size > len(body):
+                return None
+            info = macho_info(body[slice_off : slice_off + slice_size])
+            if info is None:
+                return None
+            slices.append(info)
+        return slices
+    return None
+
+
+def defined_exports_macho(path, arch=None):
     """Return defined global `aimux_*` symbol names (without leading `_`) in `path`."""
     nm = os.environ.get("AIMUX_NM") or shutil.which("nm") or find_llvm_tool("nm")
-    out = subprocess.run([nm, "-gU", str(path)], check=True, capture_output=True, text=True).stdout
+    cmd = [nm]
+    if arch:
+        cmd += ["-arch", arch]
+    cmd += ["-gU", str(path)]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
     names = set()
     for line in out.splitlines():
         parts = line.split()
@@ -468,60 +509,76 @@ def check_macho_dylib(
     expect_min_os=None,
     expect_header_exports=False,
 ):
-    info = macho_info(data)
-    if info is None:
-        print(f"{path}: expected a Mach-O MH_DYLIB, but file is not a single-arch Mach-O binary", file=sys.stderr)
+    slices = macho_slices(data)
+    if not slices:
+        print(f"{path}: expected a Mach-O MH_DYLIB, but file is not a Mach-O binary", file=sys.stderr)
         return False
-    plat_summary = ", ".join(f"{p} {m}" for p, m, _ in info["platforms"]) or "none"
-    print(
-        f"  {info['filetype_name']} {info['arch']}, install_name {info['install_name']}, "
-        f"platforms {plat_summary}, .text {info['text_bytes']} bytes, bitcode {info['bitcode_bytes']} bytes"
-    )
     ok = True
-    if info["filetype"] != 6:
-        print(f"{path}: expected Mach-O MH_DYLIB (6), got {info['filetype_name']} ({info['filetype']})", file=sys.stderr)
-        ok = False
-    if info["bitcode_bytes"] != 0:
-        print(f"{path}: carries {info['bitcode_bytes']} bytes of LLVM bitcode (expected 0)", file=sys.stderr)
-        ok = False
-    if expect_arch and info["arch"] != expect_arch:
-        print(f"{path}: expected arch {expect_arch}, got {info['arch']}", file=sys.stderr)
-        ok = False
-    if expect_install_name and info["install_name"] != expect_install_name:
+    actual_archs = {info["arch"] for info in slices}
+    if expect_arch:
+        wanted_archs = {a.strip() for a in expect_arch.split(",") if a.strip()}
+        if actual_archs != wanted_archs:
+            print(
+                f"{path}: expected arch {','.join(sorted(wanted_archs))}, got {','.join(sorted(actual_archs))}",
+                file=sys.stderr,
+            )
+            ok = False
+    for info in slices:
+        plat_summary = ", ".join(f"{p} {m}" for p, m, _ in info["platforms"]) or "none"
         print(
-            f"{path}: expected install_name {expect_install_name!r}, got {info['install_name']!r}",
-            file=sys.stderr,
+            f"  {info['filetype_name']} {info['arch']}, install_name {info['install_name']}, "
+            f"platforms {plat_summary}, .text {info['text_bytes']} bytes, bitcode {info['bitcode_bytes']} bytes"
         )
-        ok = False
-    if expect_platform:
-        matching = [m for p, m, _ in info["platforms"] if p == expect_platform]
-        if not matching:
+        if info["filetype"] != 6:
             print(
-                f"{path}: expected platform {expect_platform!r}, got {[p for p, _, _ in info['platforms']]}",
+                f"{path} ({info['arch']}): expected Mach-O MH_DYLIB (6), got {info['filetype_name']} ({info['filetype']})",
                 file=sys.stderr,
             )
             ok = False
-        elif expect_min_os and normalize_version(matching[0]) != normalize_version(expect_min_os):
+        if info["bitcode_bytes"] != 0:
             print(
-                f"{path}: expected min-os {expect_min_os!r} for {expect_platform}, got {matching[0]!r}",
+                f"{path} ({info['arch']}): carries {info['bitcode_bytes']} bytes of LLVM bitcode (expected 0)",
                 file=sys.stderr,
             )
             ok = False
-    elif expect_min_os:
-        if not any(normalize_version(m) == normalize_version(expect_min_os) for _, m, _ in info["platforms"]):
+        if expect_install_name and info["install_name"] != expect_install_name:
             print(
-                f"{path}: expected min-os {expect_min_os!r}, got {[m for _, m, _ in info['platforms']]}",
+                f"{path} ({info['arch']}): expected install_name {expect_install_name!r}, got {info['install_name']!r}",
                 file=sys.stderr,
             )
             ok = False
+        if expect_platform:
+            matching = [m for p, m, _ in info["platforms"] if p == expect_platform]
+            if not matching:
+                print(
+                    f"{path} ({info['arch']}): expected platform {expect_platform!r}, got {[p for p, _, _ in info['platforms']]}",
+                    file=sys.stderr,
+                )
+                ok = False
+            elif expect_min_os and normalize_version(matching[0]) != normalize_version(expect_min_os):
+                print(
+                    f"{path} ({info['arch']}): expected min-os {expect_min_os!r} for {expect_platform}, got {matching[0]!r}",
+                    file=sys.stderr,
+                )
+                ok = False
+        elif expect_min_os:
+            if not any(normalize_version(m) == normalize_version(expect_min_os) for _, m, _ in info["platforms"]):
+                print(
+                    f"{path} ({info['arch']}): expected min-os {expect_min_os!r}, got {[m for _, m, _ in info['platforms']]}",
+                    file=sys.stderr,
+                )
+                ok = False
     if expect_header_exports:
         declared = header_exports(root)
-        defined = defined_exports_macho(path)
-        missing = sorted(declared - defined)
-        if missing:
-            print(f"{path}: missing exported C ABI symbols: {', '.join(missing)}", file=sys.stderr)
-            ok = False
-        else:
+        check_archs = [info["arch"] for info in slices] if len(slices) > 1 else [None]
+        for arch in check_archs:
+            defined = defined_exports_macho(path, arch=arch)
+            missing = sorted(declared - defined)
+            if missing:
+                label = f" ({arch})" if arch else ""
+                print(f"{path}{label}: missing exported C ABI symbols: {', '.join(missing)}", file=sys.stderr)
+                ok = False
+        if ok:
             print(f"  {len(declared)} required C ABI exports present")
     return ok
 

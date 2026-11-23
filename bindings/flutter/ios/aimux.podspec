@@ -21,8 +21,8 @@ dart:ffi.
   s.dependency       'Flutter'
   s.platform         = :ios, '12.0'
 
-  # Dynamic framework slices (device arm64 + simulator arm64), produced by
-  # scripts/build-ios-xcframework.sh and vendored here before
+  # Dynamic framework slices (device arm64 + universal simulator arm64/x86_64),
+  # produced by scripts/build-ios-xcframework.sh and vendored here before
   # `dart pub publish`.
   #
   # NOTE: Flutter's SwiftPM integration does not link plugin binary targets
@@ -30,22 +30,18 @@ dart:ffi.
   # official fallback. Flutter automatically uses it for podspec-only
   # plugins.
   #
-  # Because aimux_ffi.xcframework contains genuine MH_DYLIB slices, CocoaPods
-  # stages the matching slice via `[CP] Copy XCFrameworks`, embeds and signs
-  # `aimux_ffi.framework` into `Runner.app/Frameworks/` via `[CP] Embed Pods
-  # Frameworks`, and Dart loads it via
+  # Because aimux_ffi.xcframework contains genuine MH_DYLIB slices covering
+  # both device (ios-arm64) and simulator (ios-arm64_x86_64-simulator),
+  # CocoaPods natively stages the matching slice via `[CP] Copy XCFrameworks`,
+  # embeds and signs `aimux_ffi.framework` into `Runner.app/Frameworks/` via
+  # `[CP] Embed Pods Frameworks`, and Dart loads it via
   # `DynamicLibrary.open('aimux_ffi.framework/aimux_ffi')`.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
 
-  # Ensure the host app searches Runner.app/Frameworks at runtime, excludes
-  # legacy Intel simulator architectures (aimux_ffi.xcframework ships arm64
-  # slices only), and retains the aimux_dart_* C bridge symbols in the main
-  # executable for DynamicLibrary.process().
-  s.pod_target_xcconfig = {
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 x86_64',
-  }
+  # Ensure the host app searches Runner.app/Frameworks at runtime and retains
+  # the aimux_dart_* C bridge symbols in the main executable for
+  # DynamicLibrary.process().
   s.user_target_xcconfig = {
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 x86_64',
     'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/Frameworks',
     'OTHER_LDFLAGS' => [
       '-Wl,-u,_aimux_dart_finalize', '-Wl,-u,_aimux_dart_token_new',

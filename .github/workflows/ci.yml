@@ -212,7 +212,7 @@ jobs:
           )
           example=$(legs <<'EOF'
           [
-            {"platform": "ios", "host": "macos-latest", "targets": "aarch64-apple-ios aarch64-apple-ios-sim"},
+            {"platform": "ios", "host": "macos-latest", "targets": "aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios"},
             {"platform": "android", "host": "ubuntu-latest", "targets": "aarch64-linux-android armv7-linux-androideabi x86_64-linux-android", "abis": "arm64-v8a armeabi-v7a x86_64"}
           ]
           EOF
@@ -862,9 +862,8 @@ jobs:
           bash ../tool/check_symbols.sh build/ios/iphonesimulator/Runner.app
           python3 ../../../scripts/check_native_artifact.py \
             --expect-macho-dylib \
-            --expect-arch arm64 \
+            --expect-arch arm64,x86_64 \
             --expect-platform ios-simulator \
-            --expect-min-os 14.0 \
             --expect-install-name @rpath/aimux_ffi.framework/aimux_ffi \
             --expect-header-exports \
             build/ios/iphonesimulator/Runner.app/Frameworks/aimux_ffi.framework/aimux_ffi

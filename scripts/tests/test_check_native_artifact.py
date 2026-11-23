@@ -466,7 +466,7 @@ class CheckNativeArtifact(unittest.TestCase):
         arch_path = self.write("static.a", [("aimux_ffi-1.o", elf_object([(".text", TEXT)]))])
         code, _, err = run_main(["--expect-macho-dylib", str(arch_path)])
         self.assertEqual(code, 1)
-        self.assertIn("not a single-arch Mach-O binary", err)
+        self.assertIn("not a Mach-O binary", err)
 
         # MH_OBJECT must fail --expect-macho-dylib.
         obj_path = Path(self.tmp.name) / "obj.o"
@@ -567,6 +567,41 @@ class CheckNativeArtifact(unittest.TestCase):
         code, _, err = run_main(["--expect-macho-dylib", "--expect-header-exports", str(missing_dylib)])
         self.assertEqual(code, 1)
         self.assertIn(f"missing exported C ABI symbols: {exports[0]}", err)
+
+    def test_fat_universal_macho_dylib_validates_all_slices(self):
+        arm64 = macho64_dylib([("__TEXT", "__text", TEXT)], cputype=0x0100000C, platform=7, minos=(14 << 16))
+        x86_64 = macho64_dylib([("__TEXT", "__text", TEXT)], cputype=0x01000007, platform=7, minos=(12 << 16))
+        hdr_size = 8 + 2 * 20
+        off1 = hdr_size
+        off2 = off1 + len(arm64)
+        fat = (
+            struct.pack(">II", 0xCAFEBABE, 2)
+            + struct.pack(">IIIII", 0x0100000C, 0, off1, len(arm64), 0)
+            + struct.pack(">IIIII", 0x01000007, 0, off2, len(x86_64), 0)
+            + arm64
+            + x86_64
+        )
+        path = Path(self.tmp.name) / "universal_sim"
+        path.write_bytes(fat)
+        code, out, err = run_main(
+            [
+                "--expect-macho-dylib",
+                "--expect-arch",
+                "arm64,x86_64",
+                "--expect-install-name",
+                "@rpath/aimux_ffi.framework/aimux_ffi",
+                "--expect-platform",
+                "ios-simulator",
+                str(path),
+            ]
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("MH_DYLIB arm64", out)
+        self.assertIn("MH_DYLIB x86_64", out)
+
+        code, _, err = run_main(["--expect-macho-dylib", "--expect-arch", "arm64", str(path)])
+        self.assertEqual(code, 1)
+        self.assertIn("expected arch arm64, got arm64,x86_64", err)
 
 
 if __name__ == "__main__":
