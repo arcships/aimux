@@ -37,10 +37,15 @@ dart:ffi.
   # `DynamicLibrary.open('aimux_ffi.framework/aimux_ffi')`.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
 
-  # Ensure the host app searches Runner.app/Frameworks at runtime and retains
-  # the aimux_dart_* C bridge symbols in the main executable for
-  # DynamicLibrary.process().
+  # Ensure the host app searches Runner.app/Frameworks at runtime, excludes
+  # legacy Intel simulator architectures (aimux_ffi.xcframework ships arm64
+  # slices only), and retains the aimux_dart_* C bridge symbols in the main
+  # executable for DynamicLibrary.process().
+  s.pod_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 x86_64',
+  }
   s.user_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 x86_64',
     'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/Frameworks',
     'OTHER_LDFLAGS' => [
       '-Wl,-u,_aimux_dart_finalize', '-Wl,-u,_aimux_dart_token_new',

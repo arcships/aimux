@@ -850,7 +850,15 @@ jobs:
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager
-          flutter build ios --debug --no-codesign --simulator
+          if ! flutter build ios --debug --no-codesign --simulator --verbose > /tmp/flutter-ios-build.log 2>&1; then
+            tail -n 200 /tmp/flutter-ios-build.log
+            echo "=== Pods Target Support Files ==="
+            ls -la "ios/Pods/Target Support Files/aimux" "ios/Pods/Target Support Files/Pods-Runner" || true
+            cat "ios/Pods/Target Support Files/aimux/aimux-xcframeworks.sh" 2>/dev/null || true
+            cat "ios/Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh" 2>/dev/null || true
+            cat "ios/Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig" 2>/dev/null || true
+            exit 1
+          fi
           bash ../tool/check_symbols.sh build/ios/iphonesimulator/Runner.app
           python3 ../../../scripts/check_native_artifact.py \
             --expect-macho-dylib \
