@@ -73,6 +73,8 @@ Object? roundTripDto(String type, Object? value) {
     case 'ChatCompletionUsage':
       return ChatCompletionUsage.fromJson(value as Map<String, dynamic>)
           .toJson();
+    case 'CodexModeSpec':
+      return CodexModeSpec.fromJson(value as Map<String, dynamic>).toJson();
     case 'CodexRefreshRequest':
       return CodexRefreshRequest.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -123,6 +125,8 @@ Object? roundTripDto(String type, Object? value) {
       return EmbeddingUsage.fromJson(value as Map<String, dynamic>).toJson();
     case 'EmptyParams':
       return EmptyParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'EnvVarRef':
+      return EnvVarRef.fromJson(value as Map<String, dynamic>).toJson();
     case 'ErrorCause':
       return ErrorCause.fromJson(value).toJson();
     case 'ErrorCauseInput':
@@ -206,6 +210,8 @@ Object? roundTripDto(String type, Object? value) {
       return InputRecord.fromJson(value as Map<String, dynamic>).toJson();
     case 'InputTokenDetails':
       return InputTokenDetails.fromJson(value as Map<String, dynamic>).toJson();
+    case 'LanguageApi':
+      return LanguageApi.fromJson(value).toJson();
     case 'LanguageModelFile':
       return LanguageModelFile.fromJson(value as Map<String, dynamic>).toJson();
     case 'LanguageModelMessage':
@@ -246,6 +252,8 @@ Object? roundTripDto(String type, Object? value) {
       return MoaParams.fromJson(value as Map<String, dynamic>).toJson();
     case 'Modality':
       return Modality.fromJson(value).toJson();
+    case 'ModalityKind':
+      return ModalityKind.fromJson(value).toJson();
     case 'ModelCapabilities':
       return ModelCapabilities.fromJson(value as Map<String, dynamic>).toJson();
     case 'ModelCost':
@@ -313,10 +321,22 @@ Object? roundTripDto(String type, Object? value) {
     case 'OutputTokenDetails':
       return OutputTokenDetails.fromJson(value as Map<String, dynamic>)
           .toJson();
+    case 'PackageAuthKind':
+      return PackageAuthKind.fromJson(value).toJson();
+    case 'PackageDescriptor':
+      return PackageDescriptor.fromJson(value as Map<String, dynamic>).toJson();
+    case 'PackageKind':
+      return PackageKind.fromJson(value).toJson();
     case 'PrefixBreak':
       return PrefixBreak.fromJson(value as Map<String, dynamic>).toJson();
     case 'PromptTokensDetails':
       return PromptTokensDetails.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderConfigDocument':
+      return ProviderConfigDocument.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderConfigSettings':
+      return ProviderConfigSettings.fromJson(value as Map<String, dynamic>)
           .toJson();
     case 'ProviderCreateParams':
       return ProviderCreateParams.fromJson(value as Map<String, dynamic>)
@@ -327,6 +347,11 @@ Object? roundTripDto(String type, Object? value) {
     case 'ProviderDefaultParams':
       return ProviderDefaultParams.fromJson(value as Map<String, dynamic>)
           .toJson();
+    case 'ProviderDescriptorsParams':
+      return ProviderDescriptorsParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'ProviderEntrySpec':
+      return ProviderEntrySpec.fromJson(value as Map<String, dynamic>).toJson();
     case 'ProviderInvokeParams':
       return ProviderInvokeParams.fromJson(value as Map<String, dynamic>)
           .toJson();
@@ -379,8 +404,23 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'RegistryEntry':
       return RegistryEntry.fromJson(value as Map<String, dynamic>).toJson();
+    case 'RegistryFromConfigParams':
+      return RegistryFromConfigParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RegistryListParams':
+      return RegistryListParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RegistryListResult':
+      return RegistryListResult.fromJson(value as Map<String, dynamic>)
+          .toJson();
     case 'RegistryProviderParams':
       return RegistryProviderParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RegistryUpdateParams':
+      return RegistryUpdateParams.fromJson(value as Map<String, dynamic>)
+          .toJson();
+    case 'RegistryUpdateResult':
+      return RegistryUpdateResult.fromJson(value as Map<String, dynamic>)
           .toJson();
     case 'RepairedToolCall':
       return RepairedToolCall.fromJson(value as Map<String, dynamic>).toJson();
@@ -466,6 +506,10 @@ Object? roundTripDto(String type, Object? value) {
           .toJson();
     case 'SessionView':
       return SessionView.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SettingFieldKind':
+      return SettingFieldKind.fromJson(value).toJson();
+    case 'SettingFieldSpec':
+      return SettingFieldSpec.fromJson(value as Map<String, dynamic>).toJson();
     case 'Size':
       return Size.fromJson(value).toJson();
     case 'Source':
@@ -507,10 +551,15 @@ Object? roundTripDto(String type, Object? value) {
       return StreamFrame.fromJson(value as Map<String, dynamic>).toJson();
     case 'StreamOptions':
       return StreamOptions.fromJson(value as Map<String, dynamic>).toJson();
+    case 'StringOrEnv':
+      return StringOrEnv.fromJson(value).toJson();
     case 'TaggedRawToolCall':
       return TaggedRawToolCall.fromJson(value as Map<String, dynamic>).toJson();
     case 'TaggedToolResult':
       return TaggedToolResult.fromJson(value as Map<String, dynamic>).toJson();
+    case 'TemplateParamDescriptor':
+      return TemplateParamDescriptor.fromJson(value as Map<String, dynamic>)
+          .toJson();
     case 'TerminalSummary':
       return TerminalSummary.fromJson(value as Map<String, dynamic>).toJson();
     case 'TextPart':

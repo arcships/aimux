@@ -535,6 +535,20 @@ fn supports_specialized_packages_modes_and_strict_validation() {
     });
     assert!(matches!(bad_field, Err(AiMuxError::InvalidArgument { .. })));
 
+    let lone_session_token = provider_from_config(&ProviderEntrySpec {
+        package: "anthropic_aws".into(),
+        settings: ProviderConfigSettings {
+            session_token: Some("explicit-tok".into()),
+            region: Some("us-east-1".into()),
+            workspace_id: Some("ws".into()),
+            ..Default::default()
+        },
+    });
+    assert!(matches!(
+        lone_session_token,
+        Err(AiMuxError::InvalidArgument { .. })
+    ));
+
     let missing_name = provider_from_config(&ProviderEntrySpec {
         package: "openai_compatible".into(),
         settings: ProviderConfigSettings {

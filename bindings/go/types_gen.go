@@ -2087,6 +2087,71 @@ type ChatCompletionUsage struct {
 	TotalTokens             uint32                   `json:"total_tokens"`
 }
 
+// Access mode for the `codex` package in declarative configuration.
+type CodexModeSpecVariant interface{ isCodexModeSpec() }
+type CodexModeSpec struct {
+	Value CodexModeSpecVariant
+}
+
+func (v CodexModeSpec) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *CodexModeSpec) UnmarshalJSON(data []byte) error {
+	var tag struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(data, &tag); err != nil {
+		return err
+	}
+	switch tag.Type {
+	case "apiKey":
+		var next CodexModeSpecVariantAPIKey
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	case "chatGptAccount":
+		var next CodexModeSpecVariantChatGptAccount
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
+	}
+	return fmt.Errorf("CodexModeSpec: unknown type tag %q", tag.Type)
+}
+
+type CodexModeSpecVariantAPIKey struct {
+	APIKey *StringOrEnv `json:"apiKey,omitzero"`
+}
+
+func (CodexModeSpecVariantAPIKey) isCodexModeSpec() {}
+
+func (v CodexModeSpecVariantAPIKey) MarshalJSON() ([]byte, error) {
+	type plain CodexModeSpecVariantAPIKey
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "apiKey", plain: plain(v)})
+}
+
+type CodexModeSpecVariantChatGptAccount struct {
+	AccountID *string     `json:"accountId,omitzero"`
+	Token     StringOrEnv `json:"token"`
+}
+
+func (CodexModeSpecVariantChatGptAccount) isCodexModeSpec() {}
+
+func (v CodexModeSpecVariantChatGptAccount) MarshalJSON() ([]byte, error) {
+	type plain CodexModeSpecVariantChatGptAccount
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		plain
+	}{Type: "chatGptAccount", plain: plain(v)})
+}
+
 type CodexRefreshRequest struct {
 	ClientID     string `json:"clientId"`
 	RefreshToken string `json:"refreshToken"`
@@ -3186,6 +3251,11 @@ type EmbeddingUsage struct {
 }
 
 type EmptyParams struct{}
+
+// Reference to an environment variable carrying a credential or secret.
+type EnvVarRef struct {
+	Env string `json:"env"`
+}
 
 // The error another error was built from: the AI SDK's `cause`.
 //
@@ -4320,6 +4390,17 @@ type InputTokenDetails struct {
 	NoCacheTokens *uint32 `json:"noCacheTokens,omitzero"`
 }
 
+// Language-model API variant exposed on a [`Provider`] alongside the default
+// [`Provider::language_model`] constructor.
+type LanguageAPI string
+
+const (
+	LanguageAPIChat       LanguageAPI = "chat"
+	LanguageAPIResponses  LanguageAPI = "responses"
+	LanguageAPICompletion LanguageAPI = "completion"
+	LanguageAPIMessages   LanguageAPI = "messages"
+)
+
 // A file in a provider's output: `LanguageModelV4File` /
 // `LanguageModelV4ReasoningFile` (`provider`
 // `language-model/v4/language-model-v4-file.ts`), whose `data` is base64
@@ -4901,6 +4982,21 @@ const (
 	ModalityScore     Modality = "Score"
 )
 
+// Model modality supported by a provider package or registry resolution call.
+type ModalityKind string
+
+const (
+	ModalityKindLanguageModel      ModalityKind = "languageModel"
+	ModalityKindEmbeddingModel     ModalityKind = "embeddingModel"
+	ModalityKindImageModel         ModalityKind = "imageModel"
+	ModalityKindSpeechModel        ModalityKind = "speechModel"
+	ModalityKindTranscriptionModel ModalityKind = "transcriptionModel"
+	ModalityKindRerankingModel     ModalityKind = "rerankingModel"
+	ModalityKindVideoModel         ModalityKind = "videoModel"
+	ModalityKindSearchModel        ModalityKind = "searchModel"
+	ModalityKindDecision           ModalityKind = "decision"
+)
+
 // Model-level capability flags (more precise than provider-level `supports_*`).
 type ModelCapabilities struct {
 	// Accepts multimodal attachments (image/audio/pdf input).
@@ -5056,6 +5152,10 @@ type ModelMethod string
 
 const (
 	ModelMethodLanguageModel      ModelMethod = "languageModel"
+	ModelMethodChat               ModelMethod = "chat"
+	ModelMethodResponses          ModelMethod = "responses"
+	ModelMethodCompletion         ModelMethod = "completion"
+	ModelMethodMessages           ModelMethod = "messages"
 	ModelMethodEmbeddingModel     ModelMethod = "embeddingModel"
 	ModelMethodImageModel         ModelMethod = "imageModel"
 	ModelMethodSpeechModel        ModelMethod = "speechModel"
@@ -5557,6 +5657,53 @@ type OutputTokenDetails struct {
 	TextTokens *uint32 `json:"textTokens,omitzero"`
 }
 
+// Authentication mechanism implemented by a provider package.
+type PackageAuthKind string
+
+const (
+	PackageAuthKindBearer             PackageAuthKind = "bearer"
+	PackageAuthKindHeader             PackageAuthKind = "header"
+	PackageAuthKindQueryParam         PackageAuthKind = "queryParam"
+	PackageAuthKindBasic              PackageAuthKind = "basic"
+	PackageAuthKindAwsSigV4           PackageAuthKind = "awsSigV4"
+	PackageAuthKindAwsBearerOrSigV4   PackageAuthKind = "awsBearerOrSigV4"
+	PackageAuthKindAnthropicAws       PackageAuthKind = "anthropicAws"
+	PackageAuthKindGoogleVertex       PackageAuthKind = "googleVertex"
+	PackageAuthKindAzureApiKeyOrToken PackageAuthKind = "azureApiKeyOrToken"
+	PackageAuthKindCodexChannel       PackageAuthKind = "codexChannel"
+	PackageAuthKindOptionalBearer     PackageAuthKind = "optionalBearer"
+	PackageAuthKindNone               PackageAuthKind = "none"
+)
+
+// Secret-free static metadata describing a provider package.
+type PackageDescriptor struct {
+	APIKeyEnv               *string                   `json:"apiKeyEnv,omitzero"`
+	AuthKind                PackageAuthKind           `json:"authKind"`
+	BaseUrlEnv              *string                   `json:"baseUrlEnv,omitzero"`
+	DefaultBaseURL          *string                   `json:"defaultBaseUrl,omitzero"`
+	DefaultMethod           *ModalityKind             `json:"defaultMethod,omitzero"`
+	ID                      string                    `json:"id"`
+	Kind                    PackageKind               `json:"kind"`
+	LanguageApis            []LanguageAPI             `json:"languageApis"`
+	Modalities              []ModalityKind            `json:"modalities"`
+	Settings                []SettingFieldSpec        `json:"settings"`
+	SupportsDefaultInstance bool                      `json:"supportsDefaultInstance"`
+	SupportsDiscovery       bool                      `json:"supportsDiscovery"`
+	SupportsFiles           bool                      `json:"supportsFiles"`
+	SupportsSkills          bool                      `json:"supportsSkills"`
+	TemplateParams          []TemplateParamDescriptor `json:"templateParams"`
+}
+
+// Architectural category of a provider package.
+type PackageKind string
+
+const (
+	PackageKindNative      PackageKind = "native"
+	PackageKindProtocol    PackageKind = "protocol"
+	PackageKindPreset      PackageKind = "preset"
+	PackageKindSpecialized PackageKind = "specialized"
+)
+
 // A prefix break between two consecutive records of a session.
 type PrefixBreak struct {
 	AtRecordID    string    `json:"atRecordId"`
@@ -5571,12 +5718,61 @@ type PromptTokensDetails struct {
 	CachedTokens     uint32  `json:"cached_tokens"`
 }
 
+// Declarative provider registry configuration document.
+type ProviderConfigDocument struct {
+	Providers map[string]ProviderEntrySpec `json:"providers"`
+}
+
+// Secret-safe declarative settings shared across provider packages.
+type ProviderConfigSettings struct {
+	AccessKeyID                  *StringOrEnv       `json:"accessKeyId,omitzero"`
+	AccessToken                  *StringOrEnv       `json:"accessToken,omitzero"`
+	APIKey                       *StringOrEnv       `json:"apiKey,omitzero"`
+	APIVersion                   *string            `json:"apiVersion,omitzero"`
+	AuthToken                    *StringOrEnv       `json:"authToken,omitzero"`
+	BaseURL                      *string            `json:"baseUrl,omitzero"`
+	CodexMode                    *CodexModeSpec     `json:"codexMode,omitzero"`
+	Cx                           *string            `json:"cx,omitzero"`
+	Endpoint                     *string            `json:"endpoint,omitzero"`
+	Headers                      map[string]*string `json:"headers,omitzero"`
+	IncludeUsage                 *bool              `json:"includeUsage,omitzero"`
+	Location                     *string            `json:"location,omitzero"`
+	Login                        *StringOrEnv       `json:"login,omitzero"`
+	Name                         *string            `json:"name,omitzero"`
+	Organization                 *string            `json:"organization,omitzero"`
+	Originator                   *string            `json:"originator,omitzero"`
+	Params                       map[string]string  `json:"params,omitzero"`
+	Password                     *StringOrEnv       `json:"password,omitzero"`
+	ProbabilitySource            *string            `json:"probabilitySource,omitzero"`
+	Project                      *string            `json:"project,omitzero"`
+	QueryParams                  map[string]string  `json:"queryParams,omitzero"`
+	Region                       *string            `json:"region,omitzero"`
+	ResourceName                 *string            `json:"resourceName,omitzero"`
+	SecretAccessKey              *StringOrEnv       `json:"secretAccessKey,omitzero"`
+	SessionToken                 *StringOrEnv       `json:"sessionToken,omitzero"`
+	SpeechBaseURL                *string            `json:"speechBaseUrl,omitzero"`
+	SupportsMultiPartToolContent *bool              `json:"supportsMultiPartToolContent,omitzero"`
+	SupportsStructuredOutputs    *bool              `json:"supportsStructuredOutputs,omitzero"`
+	UseDeploymentBasedUrls       *bool              `json:"useDeploymentBasedUrls,omitzero"`
+	WorkspaceID                  *string            `json:"workspaceId,omitzero"`
+}
+
+// Trusted-caller operation: constructs a provider handle from package settings
+// and optional `{ "env": ... }` references. Untrusted callers must not be
+// permitted to supply arbitrary `baseUrl` values with omitted credentials.
 type ProviderCreateParams struct {
-	Package  string            `json:"package"`
-	Settings *ProviderSettings `json:"settings,omitzero"`
+	// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+	// interpolation in `settings`. Does not restrict implicit per-provider
+	// default environment variable fallbacks when credential or `baseUrl`
+	// settings are omitted.
+	EnvAllowlist []string          `json:"envAllowlist,omitzero"`
+	Package      string            `json:"package"`
+	Settings     *ProviderSettings `json:"settings,omitzero"`
 }
 
 type ProviderCustomParams struct {
+	ChatModels              map[string]HandleIdInput `json:"chatModels,omitzero"`
+	CompletionModels        map[string]HandleIdInput `json:"completionModels,omitzero"`
 	DecisionModels          map[string]HandleIdInput `json:"decisionModels,omitzero"`
 	DefaultMethod           *string                  `json:"defaultMethod,omitzero"`
 	EmbeddingModels         map[string]HandleIdInput `json:"embeddingModels,omitzero"`
@@ -5586,7 +5782,9 @@ type ProviderCustomParams struct {
 	ImageModels             map[string]HandleIdInput `json:"imageModels,omitzero"`
 	LanguageModelMiddleware []HandleIdInput          `json:"languageModelMiddleware,omitzero"`
 	LanguageModels          map[string]HandleIdInput `json:"languageModels,omitzero"`
+	MessagesModels          map[string]HandleIdInput `json:"messagesModels,omitzero"`
 	RerankingModels         map[string]HandleIdInput `json:"rerankingModels,omitzero"`
+	ResponsesModels         map[string]HandleIdInput `json:"responsesModels,omitzero"`
 	SearchModels            map[string]HandleIdInput `json:"searchModels,omitzero"`
 	SpeechModels            map[string]HandleIdInput `json:"speechModels,omitzero"`
 	TranscriptionModels     map[string]HandleIdInput `json:"transcriptionModels,omitzero"`
@@ -5595,6 +5793,16 @@ type ProviderCustomParams struct {
 
 type ProviderDefaultParams struct {
 	Package string `json:"package"`
+}
+
+type ProviderDescriptorsParams struct {
+	Package *string `json:"package,omitzero"`
+}
+
+// Configuration for a single provider entry (`package` + typed `settings`).
+type ProviderEntrySpec struct {
+	Package  string                  `json:"package"`
+	Settings *ProviderConfigSettings `json:"settings,omitzero"`
 }
 
 type ProviderInvokeParams struct {
@@ -5623,17 +5831,39 @@ type ProviderRecord struct {
 }
 
 type ProviderSettings struct {
-	APIKey             *string            `json:"apiKey,omitzero"`
-	BaseURL            *string            `json:"baseUrl,omitzero"`
-	CredentialResolver *HandleIdInput     `json:"credentialResolver,omitzero"`
-	Endpoint           *string            `json:"endpoint,omitzero"`
-	Fetch              *HandleIdInput     `json:"fetch,omitzero"`
-	Headers            map[string]*string `json:"headers,omitzero"`
-	Organization       *string            `json:"organization,omitzero"`
-	Params             map[string]string  `json:"params,omitzero"`
-	ProbabilitySource  *string            `json:"probabilitySource,omitzero"`
-	Project            *string            `json:"project,omitzero"`
-	WebSocket          *HandleIdInput     `json:"webSocket,omitzero"`
+	AccessKeyID                  *StringOrEnv       `json:"accessKeyId,omitzero"`
+	AccessToken                  *StringOrEnv       `json:"accessToken,omitzero"`
+	APIKey                       *StringOrEnv       `json:"apiKey,omitzero"`
+	APIVersion                   *string            `json:"apiVersion,omitzero"`
+	AuthToken                    *StringOrEnv       `json:"authToken,omitzero"`
+	BaseURL                      *string            `json:"baseUrl,omitzero"`
+	CodexMode                    *CodexModeSpec     `json:"codexMode,omitzero"`
+	CredentialResolver           *HandleIdInput     `json:"credentialResolver,omitzero"`
+	Cx                           *string            `json:"cx,omitzero"`
+	Endpoint                     *string            `json:"endpoint,omitzero"`
+	Fetch                        *HandleIdInput     `json:"fetch,omitzero"`
+	Headers                      map[string]*string `json:"headers,omitzero"`
+	IncludeUsage                 *bool              `json:"includeUsage,omitzero"`
+	Location                     *string            `json:"location,omitzero"`
+	Login                        *StringOrEnv       `json:"login,omitzero"`
+	Name                         *string            `json:"name,omitzero"`
+	Organization                 *string            `json:"organization,omitzero"`
+	Originator                   *string            `json:"originator,omitzero"`
+	Params                       map[string]string  `json:"params,omitzero"`
+	Password                     *StringOrEnv       `json:"password,omitzero"`
+	ProbabilitySource            *string            `json:"probabilitySource,omitzero"`
+	Project                      *string            `json:"project,omitzero"`
+	QueryParams                  map[string]string  `json:"queryParams,omitzero"`
+	Region                       *string            `json:"region,omitzero"`
+	ResourceName                 *string            `json:"resourceName,omitzero"`
+	SecretAccessKey              *StringOrEnv       `json:"secretAccessKey,omitzero"`
+	SessionToken                 *StringOrEnv       `json:"sessionToken,omitzero"`
+	SpeechBaseURL                *string            `json:"speechBaseUrl,omitzero"`
+	SupportsMultiPartToolContent *bool              `json:"supportsMultiPartToolContent,omitzero"`
+	SupportsStructuredOutputs    *bool              `json:"supportsStructuredOutputs,omitzero"`
+	UseDeploymentBasedUrls       *bool              `json:"useDeploymentBasedUrls,omitzero"`
+	WebSocket                    *HandleIdInput     `json:"webSocket,omitzero"`
+	WorkspaceID                  *string            `json:"workspaceId,omitzero"`
 }
 
 // A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -6001,6 +6231,7 @@ const (
 type RegistryCreateParams struct {
 	Entries   []RegistryEntry `json:"entries"`
 	Namespace *string         `json:"namespace,omitzero"`
+	Separator *string         `json:"separator,omitzero"`
 }
 
 type RegistryEntry struct {
@@ -6008,8 +6239,44 @@ type RegistryEntry struct {
 	Provider string `json:"provider"`
 }
 
+// Trusted-caller operation: constructs a provider registry from a declarative
+// configuration document and optional `{ "env": ... }` references. Untrusted
+// callers must not be permitted to supply arbitrary `baseUrl` values with
+// omitted credentials.
+type RegistryFromConfigParams struct {
+	Config ProviderConfigDocument `json:"config"`
+	// Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+	// interpolation inside `config`. Does not restrict implicit per-provider
+	// default environment variable fallbacks when credential or `baseUrl`
+	// settings are omitted.
+	EnvAllowlist []string `json:"envAllowlist,omitzero"`
+	Namespace    *string  `json:"namespace,omitzero"`
+	Separator    *string  `json:"separator,omitzero"`
+}
+
+type RegistryListParams struct{}
+
+type RegistryListResult struct {
+	Keys      []string `json:"keys"`
+	Namespace string   `json:"namespace"`
+	Separator string   `json:"separator"`
+}
+
 type RegistryProviderParams struct {
 	Key string `json:"key"`
+}
+
+type RegistryUpdateParams struct {
+	Derive  *bool           `json:"derive,omitzero"`
+	Remove  []string        `json:"remove,omitzero"`
+	Replace *bool           `json:"replace,omitzero"`
+	Set     []RegistryEntry `json:"set,omitzero"`
+}
+
+type RegistryUpdateResult struct {
+	Handle *HandleID   `json:"handle,omitzero"`
+	Keys   []string    `json:"keys"`
+	Kind   *HandleKind `json:"kind,omitzero"`
 }
 
 // A replacement raw call whose tag is optional on input.
@@ -6465,6 +6732,27 @@ type SessionView struct {
 	SessionID string        `json:"sessionId"`
 	// Where the session id came from (first call's source).
 	Source SessionSource `json:"source"`
+}
+
+// Wire shape of a setting field accepted by a provider package.
+type SettingFieldKind string
+
+const (
+	SettingFieldKindString     SettingFieldKind = "string"
+	SettingFieldKindCredential SettingFieldKind = "credential"
+	SettingFieldKindBoolean    SettingFieldKind = "boolean"
+	SettingFieldKindHeaderMap  SettingFieldKind = "headerMap"
+	SettingFieldKindStringMap  SettingFieldKind = "stringMap"
+	SettingFieldKindCodexMode  SettingFieldKind = "codexMode"
+)
+
+// Static description of one setting accepted when constructing a provider package.
+type SettingFieldSpec struct {
+	Credential bool             `json:"credential"`
+	EnvVar     *string          `json:"envVar,omitzero"`
+	Kind       SettingFieldKind `json:"kind"`
+	Name       string           `json:"name"`
+	Required   bool             `json:"required"`
 }
 
 // Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
@@ -6968,6 +7256,51 @@ type StreamOptions struct {
 	IncludeUsage     *bool `json:"includeUsage,omitzero"`
 }
 
+// Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
+type StringOrEnvVariant interface{ isStringOrEnv() }
+type StringOrEnv struct {
+	Value StringOrEnvVariant
+}
+
+func (v StringOrEnv) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *StringOrEnv) UnmarshalJSON(data []byte) error {
+	var err error
+	{
+		var next string
+		if err = decodeUnionBranch(data, &next, false); err == nil {
+			v.Value = StringOrEnvBranchText{Value: next}
+			return nil
+		}
+	}
+	{
+		var next EnvVarRef
+		if err = decodeUnionBranch(data, &next, false, "env"); err == nil {
+			v.Value = StringOrEnvBranchEnvVarRef{Value: next}
+			return nil
+		}
+	}
+	return err
+}
+
+type StringOrEnvBranchText struct{ Value string }
+
+func (StringOrEnvBranchText) isStringOrEnv() {}
+
+func (v StringOrEnvBranchText) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+type StringOrEnvBranchEnvVarRef struct{ Value EnvVarRef }
+
+func (StringOrEnvBranchEnvVarRef) isStringOrEnv() {}
+
+func (v StringOrEnvBranchEnvVarRef) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
 // A raw provider call with its required wire tag.
 type TaggedRawToolCall struct {
 	Dynamic          *bool                                 `json:"dynamic,omitzero"`
@@ -6998,6 +7331,12 @@ type TaggedToolResult struct {
 	ToolName         string                                `json:"toolName"`
 	// Required value: "tool-result".
 	Type string `json:"type"`
+}
+
+// Static description of one URL template parameter required by a preset provider.
+type TemplateParamDescriptor struct {
+	EnvVar string `json:"envVar"`
+	Name   string `json:"name"`
 }
 
 type TerminalSummary struct {
@@ -10365,6 +10704,8 @@ func NewDTO(name string) (any, error) {
 		return new(ChatCompletionToolCall), nil
 	case "ChatCompletionUsage":
 		return new(ChatCompletionUsage), nil
+	case "CodexModeSpec":
+		return new(CodexModeSpec), nil
 	case "CodexRefreshRequest":
 		return new(CodexRefreshRequest), nil
 	case "CodexTokens":
@@ -10409,6 +10750,8 @@ func NewDTO(name string) (any, error) {
 		return new(EmbeddingUsage), nil
 	case "EmptyParams":
 		return new(EmptyParams), nil
+	case "EnvVarRef":
+		return new(EnvVarRef), nil
 	case "ErrorCause":
 		return new(ErrorCause), nil
 	case "ErrorCauseInput":
@@ -10485,6 +10828,8 @@ func NewDTO(name string) (any, error) {
 		return new(InputRecord), nil
 	case "InputTokenDetails":
 		return new(InputTokenDetails), nil
+	case "LanguageApi":
+		return new(LanguageAPI), nil
 	case "LanguageModelFile":
 		return new(LanguageModelFile), nil
 	case "LanguageModelMessage":
@@ -10517,6 +10862,8 @@ func NewDTO(name string) (any, error) {
 		return new(MoaParams), nil
 	case "Modality":
 		return new(Modality), nil
+	case "ModalityKind":
+		return new(ModalityKind), nil
 	case "ModelCapabilities":
 		return new(ModelCapabilities), nil
 	case "ModelCost":
@@ -10577,16 +10924,30 @@ func NewDTO(name string) (any, error) {
 		return new(OutputChunkTimingStats), nil
 	case "OutputTokenDetails":
 		return new(OutputTokenDetails), nil
+	case "PackageAuthKind":
+		return new(PackageAuthKind), nil
+	case "PackageDescriptor":
+		return new(PackageDescriptor), nil
+	case "PackageKind":
+		return new(PackageKind), nil
 	case "PrefixBreak":
 		return new(PrefixBreak), nil
 	case "PromptTokensDetails":
 		return new(PromptTokensDetails), nil
+	case "ProviderConfigDocument":
+		return new(ProviderConfigDocument), nil
+	case "ProviderConfigSettings":
+		return new(ProviderConfigSettings), nil
 	case "ProviderCreateParams":
 		return new(ProviderCreateParams), nil
 	case "ProviderCustomParams":
 		return new(ProviderCustomParams), nil
 	case "ProviderDefaultParams":
 		return new(ProviderDefaultParams), nil
+	case "ProviderDescriptorsParams":
+		return new(ProviderDescriptorsParams), nil
+	case "ProviderEntrySpec":
+		return new(ProviderEntrySpec), nil
 	case "ProviderInvokeParams":
 		return new(ProviderInvokeParams), nil
 	case "ProviderModelParams":
@@ -10633,8 +10994,18 @@ func NewDTO(name string) (any, error) {
 		return new(RegistryCreateParams), nil
 	case "RegistryEntry":
 		return new(RegistryEntry), nil
+	case "RegistryFromConfigParams":
+		return new(RegistryFromConfigParams), nil
+	case "RegistryListParams":
+		return new(RegistryListParams), nil
+	case "RegistryListResult":
+		return new(RegistryListResult), nil
 	case "RegistryProviderParams":
 		return new(RegistryProviderParams), nil
+	case "RegistryUpdateParams":
+		return new(RegistryUpdateParams), nil
+	case "RegistryUpdateResult":
+		return new(RegistryUpdateResult), nil
 	case "RepairedToolCall":
 		return new(RepairedToolCall), nil
 	case "ReplayCreateParams":
@@ -10709,6 +11080,10 @@ func NewDTO(name string) (any, error) {
 		return new(SessionStoreHandle), nil
 	case "SessionView":
 		return new(SessionView), nil
+	case "SettingFieldKind":
+		return new(SettingFieldKind), nil
+	case "SettingFieldSpec":
+		return new(SettingFieldSpec), nil
 	case "Size":
 		return new(Size), nil
 	case "Source":
@@ -10747,10 +11122,14 @@ func NewDTO(name string) (any, error) {
 		return new(StreamFrame), nil
 	case "StreamOptions":
 		return new(StreamOptions), nil
+	case "StringOrEnv":
+		return new(StringOrEnv), nil
 	case "TaggedRawToolCall":
 		return new(TaggedRawToolCall), nil
 	case "TaggedToolResult":
 		return new(TaggedToolResult), nil
+	case "TemplateParamDescriptor":
+		return new(TemplateParamDescriptor), nil
 	case "TerminalSummary":
 		return new(TerminalSummary), nil
 	case "TextPart":

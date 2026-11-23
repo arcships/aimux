@@ -45,6 +45,20 @@ provider.create  ->  provider.model  ->  text.generate / text.stream / ...
   `NewOpenAI(...)` and `aimux_openai_new(...)` are gone.
 - Handles are decimal strings, including values above 2^53. Adopt each
   returned handle exactly once and close it explicitly.
+- `provider.create` validates `settings` strictly against each package's
+  `PackageDescriptor.settings` (discoverable via `provider.descriptors`).
+  `settings.organization` (accepted only by `openai`) and `settings.project`
+  (accepted only by `openai` and `google_vertex`) are now rejected with
+  `InvalidArgument` on preset and other packages rather than injecting
+  `OpenAI-Organization` / `OpenAI-Project` headers, and on `google_vertex`
+  `settings.project` configures the GCP Vertex project rather than injecting an
+  `OpenAI-Project` header; pass custom headers explicitly via
+  `settings.headers`. `settings.params` is likewise accepted only by preset
+  packages that declare `templateParams`.
+- `provider.create` and `registry.fromConfig` are trusted-caller operations:
+  `envAllowlist` restricts `{ "env": "VAR" }` config interpolation only and
+  does not suppress implicit per-provider default environment variable
+  fallbacks when credentials or `baseUrl` are omitted.
 - `runtime.describe` returns the manifest, versions and available operation
   names. Use it to discover supported methods for a provider.
 - Streams deliver business event frames plus one explicit end frame. A data

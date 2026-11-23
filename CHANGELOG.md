@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `provider.create` now validates `settings` strictly against each package's
+  `PackageDescriptor.settings`: `settings.organization` is accepted only by
+  `openai`, and `settings.project` is accepted only by `openai` and
+  `google_vertex` (where `google_vertex` configures the GCP Vertex project
+  rather than injecting an `OpenAI-Project` header). Preset and other packages
+  now reject `organization` / `project` with `InvalidArgument`; pass
+  `OpenAI-Organization` / `OpenAI-Project` explicitly via `settings.headers`.
 - Removed the `aimux_providers::voyage::embedding` and
   `aimux_providers::voyage::reranking` submodule paths; import
   `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`

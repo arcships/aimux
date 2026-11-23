@@ -11,83 +11,235 @@ import java.util.*;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ProviderSettings {
+    @JsonProperty("accessKeyId")
+    private final StringOrEnv accessKeyId;
+    @JsonProperty("accessToken")
+    private final StringOrEnv accessToken;
     @JsonProperty("apiKey")
-    private final String apiKey;
+    private final StringOrEnv apiKey;
+    @JsonProperty("apiVersion")
+    private final String apiVersion;
+    @JsonProperty("authToken")
+    private final StringOrEnv authToken;
     @JsonProperty("baseUrl")
     private final String baseUrl;
+    @JsonProperty("codexMode")
+    private final CodexModeSpec codexMode;
     @JsonProperty("credentialResolver")
     private final HandleIdInput credentialResolver;
+    @JsonProperty("cx")
+    private final String cx;
     @JsonProperty("endpoint")
     private final String endpoint;
     @JsonProperty("fetch")
     private final HandleIdInput fetch;
     @JsonProperty("headers")
     private final Map<String, String> headers;
+    @JsonProperty("includeUsage")
+    private final Boolean includeUsage;
+    @JsonProperty("location")
+    private final String location;
+    @JsonProperty("login")
+    private final StringOrEnv login;
+    @JsonProperty("name")
+    private final String name;
     @JsonProperty("organization")
     private final String organization;
+    @JsonProperty("originator")
+    private final String originator;
     @JsonProperty("params")
     private final Map<String, String> params;
+    @JsonProperty("password")
+    private final StringOrEnv password;
     @JsonProperty("probabilitySource")
     private final String probabilitySource;
     @JsonProperty("project")
     private final String project;
+    @JsonProperty("queryParams")
+    private final Map<String, String> queryParams;
+    @JsonProperty("region")
+    private final String region;
+    @JsonProperty("resourceName")
+    private final String resourceName;
+    @JsonProperty("secretAccessKey")
+    private final StringOrEnv secretAccessKey;
+    @JsonProperty("sessionToken")
+    private final StringOrEnv sessionToken;
+    @JsonProperty("speechBaseUrl")
+    private final String speechBaseUrl;
+    @JsonProperty("supportsMultiPartToolContent")
+    private final Boolean supportsMultiPartToolContent;
+    @JsonProperty("supportsStructuredOutputs")
+    private final Boolean supportsStructuredOutputs;
+    @JsonProperty("useDeploymentBasedUrls")
+    private final Boolean useDeploymentBasedUrls;
     @JsonProperty("webSocket")
     private final HandleIdInput webSocket;
+    @JsonProperty("workspaceId")
+    private final String workspaceId;
 
     @JsonCreator
     public ProviderSettings(
-        @JsonProperty(value = "apiKey") String apiKey,
+        @JsonProperty(value = "accessKeyId") StringOrEnv accessKeyId,
+        @JsonProperty(value = "accessToken") StringOrEnv accessToken,
+        @JsonProperty(value = "apiKey") StringOrEnv apiKey,
+        @JsonProperty(value = "apiVersion") String apiVersion,
+        @JsonProperty(value = "authToken") StringOrEnv authToken,
         @JsonProperty(value = "baseUrl") String baseUrl,
+        @JsonProperty(value = "codexMode") CodexModeSpec codexMode,
         @JsonProperty(value = "credentialResolver") HandleIdInput credentialResolver,
+        @JsonProperty(value = "cx") String cx,
         @JsonProperty(value = "endpoint") String endpoint,
         @JsonProperty(value = "fetch") HandleIdInput fetch,
         @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "includeUsage") Boolean includeUsage,
+        @JsonProperty(value = "location") String location,
+        @JsonProperty(value = "login") StringOrEnv login,
+        @JsonProperty(value = "name") String name,
         @JsonProperty(value = "organization") String organization,
+        @JsonProperty(value = "originator") String originator,
         @JsonProperty(value = "params") Map<String, String> params,
+        @JsonProperty(value = "password") StringOrEnv password,
         @JsonProperty(value = "probabilitySource") String probabilitySource,
         @JsonProperty(value = "project") String project,
-        @JsonProperty(value = "webSocket") HandleIdInput webSocket) {
+        @JsonProperty(value = "queryParams") Map<String, String> queryParams,
+        @JsonProperty(value = "region") String region,
+        @JsonProperty(value = "resourceName") String resourceName,
+        @JsonProperty(value = "secretAccessKey") StringOrEnv secretAccessKey,
+        @JsonProperty(value = "sessionToken") StringOrEnv sessionToken,
+        @JsonProperty(value = "speechBaseUrl") String speechBaseUrl,
+        @JsonProperty(value = "supportsMultiPartToolContent") Boolean supportsMultiPartToolContent,
+        @JsonProperty(value = "supportsStructuredOutputs") Boolean supportsStructuredOutputs,
+        @JsonProperty(value = "useDeploymentBasedUrls") Boolean useDeploymentBasedUrls,
+        @JsonProperty(value = "webSocket") HandleIdInput webSocket,
+        @JsonProperty(value = "workspaceId") String workspaceId) {
+        this.accessKeyId = accessKeyId;
+        this.accessToken = accessToken;
         this.apiKey = apiKey;
+        this.apiVersion = apiVersion;
+        this.authToken = authToken;
         this.baseUrl = baseUrl;
+        this.codexMode = codexMode;
         this.credentialResolver = credentialResolver;
+        this.cx = cx;
         this.endpoint = endpoint;
         this.fetch = fetch;
         this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.includeUsage = includeUsage;
+        this.location = location;
+        this.login = login;
+        this.name = name;
         this.organization = organization;
+        this.originator = originator;
         this.params = params == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(params));
+        this.password = password;
         this.probabilitySource = probabilitySource;
         this.project = project;
+        this.queryParams = queryParams == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(queryParams));
+        this.region = region;
+        this.resourceName = resourceName;
+        this.secretAccessKey = secretAccessKey;
+        this.sessionToken = sessionToken;
+        this.speechBaseUrl = speechBaseUrl;
+        this.supportsMultiPartToolContent = supportsMultiPartToolContent;
+        this.supportsStructuredOutputs = supportsStructuredOutputs;
+        this.useDeploymentBasedUrls = useDeploymentBasedUrls;
         this.webSocket = webSocket;
+        this.workspaceId = workspaceId;
     }
 
     public static Builder builder() { return new Builder(); }
-    public String getApiKey() { return apiKey; }
+    public StringOrEnv getAccessKeyId() { return accessKeyId; }
+    public StringOrEnv getAccessToken() { return accessToken; }
+    public StringOrEnv getApiKey() { return apiKey; }
+    public String getApiVersion() { return apiVersion; }
+    public StringOrEnv getAuthToken() { return authToken; }
     public String getBaseUrl() { return baseUrl; }
+    public CodexModeSpec getCodexMode() { return codexMode; }
     public HandleIdInput getCredentialResolver() { return credentialResolver; }
+    public String getCx() { return cx; }
     public String getEndpoint() { return endpoint; }
     public HandleIdInput getFetch() { return fetch; }
     public Map<String, String> getHeaders() { return headers; }
+    public Boolean getIncludeUsage() { return includeUsage; }
+    public String getLocation() { return location; }
+    public StringOrEnv getLogin() { return login; }
+    public String getName() { return name; }
     public String getOrganization() { return organization; }
+    public String getOriginator() { return originator; }
     public Map<String, String> getParams() { return params; }
+    public StringOrEnv getPassword() { return password; }
     public String getProbabilitySource() { return probabilitySource; }
     public String getProject() { return project; }
+    public Map<String, String> getQueryParams() { return queryParams; }
+    public String getRegion() { return region; }
+    public String getResourceName() { return resourceName; }
+    public StringOrEnv getSecretAccessKey() { return secretAccessKey; }
+    public StringOrEnv getSessionToken() { return sessionToken; }
+    public String getSpeechBaseUrl() { return speechBaseUrl; }
+    public Boolean getSupportsMultiPartToolContent() { return supportsMultiPartToolContent; }
+    public Boolean getSupportsStructuredOutputs() { return supportsStructuredOutputs; }
+    public Boolean getUseDeploymentBasedUrls() { return useDeploymentBasedUrls; }
     public HandleIdInput getWebSocket() { return webSocket; }
+    public String getWorkspaceId() { return workspaceId; }
 
     public static final class Builder {
-        private String apiKey;
+        private StringOrEnv accessKeyId;
+        private StringOrEnv accessToken;
+        private StringOrEnv apiKey;
+        private String apiVersion;
+        private StringOrEnv authToken;
         private String baseUrl;
+        private CodexModeSpec codexMode;
         private HandleIdInput credentialResolver;
+        private String cx;
         private String endpoint;
         private HandleIdInput fetch;
         private Map<String, String> headers;
+        private Boolean includeUsage;
+        private String location;
+        private StringOrEnv login;
+        private String name;
         private String organization;
+        private String originator;
         private Map<String, String> params;
+        private StringOrEnv password;
         private String probabilitySource;
         private String project;
+        private Map<String, String> queryParams;
+        private String region;
+        private String resourceName;
+        private StringOrEnv secretAccessKey;
+        private StringOrEnv sessionToken;
+        private String speechBaseUrl;
+        private Boolean supportsMultiPartToolContent;
+        private Boolean supportsStructuredOutputs;
+        private Boolean useDeploymentBasedUrls;
         private HandleIdInput webSocket;
+        private String workspaceId;
 
-        public Builder apiKey(String value) {
+        public Builder accessKeyId(StringOrEnv value) {
+            this.accessKeyId = value;
+            return this;
+        }
+
+        public Builder accessToken(StringOrEnv value) {
+            this.accessToken = value;
+            return this;
+        }
+
+        public Builder apiKey(StringOrEnv value) {
             this.apiKey = value;
+            return this;
+        }
+
+        public Builder apiVersion(String value) {
+            this.apiVersion = value;
+            return this;
+        }
+
+        public Builder authToken(StringOrEnv value) {
+            this.authToken = value;
             return this;
         }
 
@@ -96,8 +248,18 @@ public final class ProviderSettings {
             return this;
         }
 
+        public Builder codexMode(CodexModeSpec value) {
+            this.codexMode = value;
+            return this;
+        }
+
         public Builder credentialResolver(HandleIdInput value) {
             this.credentialResolver = value;
+            return this;
+        }
+
+        public Builder cx(String value) {
+            this.cx = value;
             return this;
         }
 
@@ -116,13 +278,43 @@ public final class ProviderSettings {
             return this;
         }
 
+        public Builder includeUsage(Boolean value) {
+            this.includeUsage = value;
+            return this;
+        }
+
+        public Builder location(String value) {
+            this.location = value;
+            return this;
+        }
+
+        public Builder login(StringOrEnv value) {
+            this.login = value;
+            return this;
+        }
+
+        public Builder name(String value) {
+            this.name = value;
+            return this;
+        }
+
         public Builder organization(String value) {
             this.organization = value;
             return this;
         }
 
+        public Builder originator(String value) {
+            this.originator = value;
+            return this;
+        }
+
         public Builder params(Map<String, String> value) {
             this.params = value;
+            return this;
+        }
+
+        public Builder password(StringOrEnv value) {
+            this.password = value;
             return this;
         }
 
@@ -136,11 +328,61 @@ public final class ProviderSettings {
             return this;
         }
 
+        public Builder queryParams(Map<String, String> value) {
+            this.queryParams = value;
+            return this;
+        }
+
+        public Builder region(String value) {
+            this.region = value;
+            return this;
+        }
+
+        public Builder resourceName(String value) {
+            this.resourceName = value;
+            return this;
+        }
+
+        public Builder secretAccessKey(StringOrEnv value) {
+            this.secretAccessKey = value;
+            return this;
+        }
+
+        public Builder sessionToken(StringOrEnv value) {
+            this.sessionToken = value;
+            return this;
+        }
+
+        public Builder speechBaseUrl(String value) {
+            this.speechBaseUrl = value;
+            return this;
+        }
+
+        public Builder supportsMultiPartToolContent(Boolean value) {
+            this.supportsMultiPartToolContent = value;
+            return this;
+        }
+
+        public Builder supportsStructuredOutputs(Boolean value) {
+            this.supportsStructuredOutputs = value;
+            return this;
+        }
+
+        public Builder useDeploymentBasedUrls(Boolean value) {
+            this.useDeploymentBasedUrls = value;
+            return this;
+        }
+
         public Builder webSocket(HandleIdInput value) {
             this.webSocket = value;
             return this;
         }
 
-        public ProviderSettings build() { return new ProviderSettings(apiKey, baseUrl, credentialResolver, endpoint, fetch, headers, organization, params, probabilitySource, project, webSocket); }
+        public Builder workspaceId(String value) {
+            this.workspaceId = value;
+            return this;
+        }
+
+        public ProviderSettings build() { return new ProviderSettings(accessKeyId, accessToken, apiKey, apiVersion, authToken, baseUrl, codexMode, credentialResolver, cx, endpoint, fetch, headers, includeUsage, location, login, name, organization, originator, params, password, probabilitySource, project, queryParams, region, resourceName, secretAccessKey, sessionToken, speechBaseUrl, supportsMultiPartToolContent, supportsStructuredOutputs, useDeploymentBasedUrls, webSocket, workspaceId); }
     }
 }

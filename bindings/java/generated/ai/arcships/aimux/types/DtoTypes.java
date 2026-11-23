@@ -71,6 +71,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionToolCall.class));
             case "ChatCompletionUsage":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionUsage.class));
+            case "CodexModeSpec":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CodexModeSpec.class));
             case "CodexRefreshRequest":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CodexRefreshRequest.class));
             case "CodexTokens":
@@ -115,6 +117,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingUsage.class));
             case "EmptyParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams.class));
+            case "EnvVarRef":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EnvVarRef.class));
             case "ErrorCause":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorCause.class));
             case "ErrorCauseInput":
@@ -191,6 +195,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputRecord.class));
             case "InputTokenDetails":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputTokenDetails.class));
+            case "LanguageApi":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageApi.class));
             case "LanguageModelFile":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelFile.class));
             case "LanguageModelMessage":
@@ -223,6 +229,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MoaParams.class));
             case "Modality":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Modality.class));
+            case "ModalityKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModalityKind.class));
             case "ModelCapabilities":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelCapabilities.class));
             case "ModelCost":
@@ -283,16 +291,30 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutputChunkTimingStats.class));
             case "OutputTokenDetails":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutputTokenDetails.class));
+            case "PackageAuthKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PackageAuthKind.class));
+            case "PackageDescriptor":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PackageDescriptor.class));
+            case "PackageKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PackageKind.class));
             case "PrefixBreak":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PrefixBreak.class));
             case "PromptTokensDetails":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PromptTokensDetails.class));
+            case "ProviderConfigDocument":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderConfigDocument.class));
+            case "ProviderConfigSettings":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderConfigSettings.class));
             case "ProviderCreateParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderCreateParams.class));
             case "ProviderCustomParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderCustomParams.class));
             case "ProviderDefaultParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderDefaultParams.class));
+            case "ProviderDescriptorsParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderDescriptorsParams.class));
+            case "ProviderEntrySpec":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderEntrySpec.class));
             case "ProviderInvokeParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderInvokeParams.class));
             case "ProviderModelParams":
@@ -339,8 +361,18 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryCreateParams.class));
             case "RegistryEntry":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryEntry.class));
+            case "RegistryFromConfigParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryFromConfigParams.class));
+            case "RegistryListParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryListParams.class));
+            case "RegistryListResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryListResult.class));
             case "RegistryProviderParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryProviderParams.class));
+            case "RegistryUpdateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryUpdateParams.class));
+            case "RegistryUpdateResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryUpdateResult.class));
             case "RepairedToolCall":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RepairedToolCall.class));
             case "ReplayCreateParams":
@@ -415,6 +447,10 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionStoreHandle.class));
             case "SessionView":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionView.class));
+            case "SettingFieldKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SettingFieldKind.class));
+            case "SettingFieldSpec":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SettingFieldSpec.class));
             case "Size":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Size.class));
             case "Source":
@@ -453,10 +489,14 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamFrame.class));
             case "StreamOptions":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamOptions.class));
+            case "StringOrEnv":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StringOrEnv.class));
             case "TaggedRawToolCall":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedRawToolCall.class));
             case "TaggedToolResult":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedToolResult.class));
+            case "TemplateParamDescriptor":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TemplateParamDescriptor.class));
             case "TerminalSummary":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TerminalSummary.class));
             case "TextPart":
