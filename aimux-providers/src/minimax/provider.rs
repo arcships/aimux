@@ -38,7 +38,9 @@ pub struct MiniMaxProviderSettings {
     /// `/anthropic/v1`, `/v1` and `/v2` segments are removed (repeatedly) and
     /// the media paths are appended to what is left, so a relay keeps its
     /// prefix. `api.minimaxi.com` and `api.minimax.cn` become
-    /// `https://api.minimax.cn`.
+    /// `https://api.minimax.cn`. A base URL with a query or a fragment is
+    /// rejected: the media path is appended to the string, so a query would
+    /// end up inside the path and no request would reach its endpoint.
     pub base_url: Option<String>,
     /// The API key. `None` loads `MINIMAX_API_KEY` when a request is made and
     /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
@@ -74,17 +76,25 @@ impl std::fmt::Debug for MiniMaxProviderSettings {
 }
 
 /// The media base URL of `base_url`: the China host spellings normalized to
-/// [`MINIMAX_CN_BASE_URL`] and the chat path suffixes removed.
+/// [`MINIMAX_CN_BASE_URL`] and the chat path suffixes removed. The query and
+/// fragment are rejected rather than removed: the media path is appended to
+/// the string, so a query left in place would swallow it.
 ///
 /// # Errors
 ///
-/// `InvalidArgument` when `base_url` is not an `http(s)` URL with a host.
+/// `InvalidArgument` when `base_url` is not an `http(s)` URL with a host, or
+/// when it has a query or a fragment.
 pub(crate) fn normalize_base_url(base_url: &str) -> Result<String, AiMuxError> {
     let validated = aimux_provider_utils::validate_base_url(base_url)?;
     let mut url = url::Url::parse(&validated).map_err(|e| AiMuxError::InvalidArgument {
         message: format!("invalid base URL: {e}"),
         cause: Some(aimux_core::ErrorCause::source(&e)),
     })?;
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(AiMuxError::invalid_argument(
+            "MiniMax base URL must not include a query or a fragment",
+        ));
+    }
     let is_cn = url
         .host_str()
         .is_some_and(|host| CN_HOSTS.iter().any(|cn| host.eq_ignore_ascii_case(cn)));
@@ -117,8 +127,8 @@ fn strip_suffix_ignore_ascii_case<'a>(path: &'a str, suffix: &str) -> Option<&'a
 /// # Errors
 ///
 /// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
-/// URL with a host. That is the only way this fails: the key is loaded per
-/// request, not here.
+/// URL with a host, or when it carries a query or a fragment. That is the
+/// only way this fails: the key is loaded per request, not here.
 pub fn create_minimax(settings: MiniMaxProviderSettings) -> Result<MiniMaxProvider, AiMuxError> {
     let base_url = settings
         .base_url
@@ -234,8 +244,29 @@ mod tests {
     }
 
     #[test]
+    fn a_base_url_with_a_query_or_a_fragment_is_rejected() {
+        for input in [
+            "https://relay.example/minimax/v1?api-version=2024",
+            "https://relay.example/minimax?api-version=2024",
+            "https://api.minimax.io/v1#fragment",
+            "https://api.minimaxi.com/v1?",
+        ] {
+            let error = normalize_base_url(input).unwrap_err();
+            assert!(
+                matches!(error, AiMuxError::InvalidArgument { .. }),
+                "{input}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
     fn an_invalid_base_url_fails_creation() {
-        for input in ["", "ftp://api.minimax.io", "not a url"] {
+        for input in [
+            "",
+            "ftp://api.minimax.io",
+            "not a url",
+            "https://api.minimax.io/v1?api-version=2024",
+        ] {
             assert!(
                 create_minimax(MiniMaxProviderSettings {
                     base_url: Some(input.to_string()),

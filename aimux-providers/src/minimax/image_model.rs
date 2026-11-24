@@ -133,10 +133,12 @@ fn build_body(
     let mut warnings = Vec::new();
 
     let prompt = options.prompt.as_deref().unwrap_or_default();
-    let prompt_chars = prompt.chars().count();
-    if prompt.trim().is_empty() || prompt_chars > MAX_PROMPT_CHARS {
+    // MiniMax documents the limit as Unicode characters excluding leading and
+    // trailing whitespace; the prompt itself goes on the wire unchanged.
+    let prompt_chars = prompt.trim().chars().count();
+    if prompt_chars == 0 || prompt_chars > MAX_PROMPT_CHARS {
         return Err(AiMuxError::invalid_argument(format!(
-            "MiniMax image prompt must be 1 to {MAX_PROMPT_CHARS} characters, got {prompt_chars}"
+            "MiniMax image prompt must be 1 to {MAX_PROMPT_CHARS} characters excluding leading and trailing whitespace, got {prompt_chars}"
         )));
     }
 
@@ -477,6 +479,13 @@ mod tests {
         assert!(err(&o).contains("invalid minimax provider options"));
         assert!(err(&ImageCallOptions::new(" ")).contains("1 to 32000"));
         assert!(err(&ImageCallOptions::new("a".repeat(32_001))).contains("got 32001"));
+        // A boundary prompt padded with whitespace is accepted and sent as is.
+        let boundary = format!(" \n{}\n ", "猫".repeat(MAX_PROMPT_CHARS));
+        let (body, _) =
+            build_body("MiniMax-H3-Image", &ImageCallOptions::new(boundary.clone())).unwrap();
+        assert_eq!(body["prompt"], json!(boundary));
+        let over = format!(" \n{}\n ", "猫".repeat(MAX_PROMPT_CHARS + 1));
+        assert!(err(&ImageCallOptions::new(over)).contains("got 32001"));
 
         let mut o = ImageCallOptions::new("x");
         o.n = 2;

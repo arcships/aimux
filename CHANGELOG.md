@@ -33,10 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MiniMaxProvider::image` (`MiniMax-H3-Image`, `-Image-Highspeed`,
   `/v1/images/generations`). A chat base URL is accepted (trailing
   `/anthropic`, `/anthropic/v1`, `/v1`, `/v2` removed; `api.minimaxi.com`
-  normalized to `https://api.minimax.cn`). A failed create or image
-  generation is not retried except after an HTTP 429. `create_provider`
-  adds these media models to the four existing `minimax*` presets while
-  preserving their chat, embedding, and discovery behavior.
+  normalized to `https://api.minimax.cn`); a base URL with a query or a
+  fragment is rejected. The image prompt limit excludes leading and trailing
+  whitespace, as documented. A failed create or image generation is not
+  retried except after an HTTP 429. `create_provider` adds these media
+  models to the four existing `minimax*` presets while preserving their
+  chat, embedding, and discovery behavior.
 
 ## [0.6.1] - 2026-11-05
 

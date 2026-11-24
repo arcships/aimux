@@ -562,27 +562,36 @@ async fn invalid_image_options_send_nothing() {
 }
 
 #[tokio::test]
-async fn prompt_limits_count_whitespace_sent_on_the_wire() {
+async fn the_image_prompt_limit_excludes_surrounding_whitespace() {
+    let server = MockServer::start().await;
+    // An empty `data` fails generation after the request, not validation.
+    mount_image(&server, 200, json!({"data": []})).await;
+    let prompt = format!(" \n{}\n ", "猫".repeat(32_000));
+    let error = provider(&server.uri())
+        .image("MiniMax-H3-Image")
+        .do_generate(&ImageCallOptions::new(prompt.clone()))
+        .await
+        .unwrap_err();
+    assert!(
+        !matches!(error, AiMuxError::InvalidArgument { .. }),
+        "{error:?}"
+    );
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(body_of(&requests[0])["prompt"], json!(prompt));
+}
+
+#[tokio::test]
+async fn the_video_prompt_limit_counts_every_character() {
     let server = MockServer::start().await;
     let provider = provider(&server.uri());
     for prompt in [
-        format!(" {}", "猫".repeat(7000)),
-        format!("{} ", "猫".repeat(7000)),
+        format!(" {}", "猫".repeat(7_000)),
+        format!("{} ", "猫".repeat(7_000)),
     ] {
         let error = provider
             .video("MiniMax-H3")
             .do_start(&VideoCallOptions::new(prompt))
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
-    }
-    for prompt in [
-        format!(" {}", "猫".repeat(32000)),
-        format!("{} ", "猫".repeat(32000)),
-    ] {
-        let error = provider
-            .image("MiniMax-H3-Image")
-            .do_generate(&ImageCallOptions::new(prompt))
             .await
             .unwrap_err();
         assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
@@ -714,6 +723,25 @@ async fn named_minimax_media_keeps_relay_prefix_and_custom_headers() {
     );
     assert_eq!(seen[0].headers["x-relay"], "custom");
     assert_eq!(seen[0].headers["authorization"], "Bearer test-key");
+}
+
+#[test]
+fn a_base_url_with_a_query_or_a_fragment_is_rejected() {
+    for base_url in [
+        "https://relay.example/minimax/v1?api-version=2024",
+        "https://api.minimax.io/v1#fragment",
+    ] {
+        let error = create_minimax(MiniMaxProviderSettings {
+            base_url: Some(base_url.to_string()),
+            ..Default::default()
+        })
+        .err()
+        .unwrap();
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument { .. }),
+            "{base_url}: {error:?}"
+        );
+    }
 }
 
 #[test]

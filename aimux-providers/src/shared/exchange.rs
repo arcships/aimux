@@ -315,6 +315,10 @@ impl Exchange {
     }
 
     /// `base_url` followed by `path` (which starts with `/`).
+    ///
+    /// `base_url` carries no query or fragment: a provider that accepted one
+    /// would put it in the middle of the URL here, so it rejects or removes it
+    /// when it normalizes the base URL.
     pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)
     }
