@@ -23,6 +23,9 @@ use aimux_providers::{CodexMode, CodexProvider, CodexProviderSettings, create_co
 
 const PNG_B64: &str = "iVBORw0KGgo=";
 
+/// A base64 image payload that must never reach a diagnostic.
+const LEAK_CANARY: &str = "aW1hZ2UtcGF5bG9hZC1ieXRlcy1tdXN0LW5vdC1sZWFr";
+
 fn subscription(base_url: impl Into<String>) -> CodexProvider {
     create_codex(CodexProviderSettings {
         mode: CodexMode::ChatGptAccount {
@@ -818,6 +821,91 @@ async fn gpt_image_2_5_failure_events_are_errors_and_not_replayed() {
     }
 }
 
+// A terminal failure event can carry output items with image payloads. The
+// diagnostic keeps the allowlisted summary only: neither the raw body nor the
+// parsed data may retain the bytes.
+#[tokio::test]
+async fn gpt_image_2_5_failure_event_keeps_image_payload_out_of_the_error() {
+    // Shaped like a base64 image result; distinct from `PNG_B64`.
+    let payload = LEAK_CANARY;
+    let image_item = || {
+        json!({
+            "id": "ig_1",
+            "type": "image_generation_call",
+            "status": "incomplete",
+            "output_format": "png",
+            "result": payload
+        })
+    };
+    for (name, event, expected) in [
+        (
+            "response.incomplete",
+            json!({
+                "type": "response.incomplete",
+                "response": {
+                    "status": "incomplete",
+                    "incomplete_details": { "reason": "max_output_tokens" },
+                    "output": [image_item()]
+                }
+            }),
+            json!({
+                "type": "response.incomplete",
+                "status": "incomplete",
+                "incomplete_reason": "max_output_tokens"
+            }),
+        ),
+        (
+            "response.failed",
+            json!({
+                "type": "response.failed",
+                "response": {
+                    "status": "failed",
+                    "error": { "code": "server_error", "message": "boom" },
+                    "output": [image_item()]
+                }
+            }),
+            json!({
+                "type": "response.failed",
+                "status": "failed",
+                "code": "server_error"
+            }),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        mount_sse(&server, &[event]).await;
+        let model = subscription(server.uri())
+            .image_model("gpt-image-2.5-flare")
+            .unwrap();
+        let error = generate_image(model.as_ref(), ImageCallOptions::new("x"))
+            .await
+            .expect_err(name);
+        let AiMuxError::ApiCall(detail) = &error else {
+            panic!("{name}: expected ApiCall, got {error:?}");
+        };
+        assert!(!detail.is_retryable, "{name}: not replayed");
+        let body = detail.response_body.as_deref().expect("response body");
+        assert!(
+            !body.contains(payload),
+            "{name}: payload in the response body"
+        );
+        assert!(
+            !detail.message.contains(payload),
+            "{name}: payload in message"
+        );
+        assert_eq!(
+            detail.data.as_ref(),
+            Some(&expected),
+            "{name}: structured data"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(body).expect("summary is JSON"),
+            expected,
+            "{name}: response body"
+        );
+        assert_eq!(requests(&server).await.len(), 1, "{name}: not replayed");
+    }
+}
+
 #[tokio::test]
 async fn malformed_image_payloads_are_rejected_without_replay() {
     for model_id in ["gpt-image-2", "gpt-image-2.5-flare"] {
@@ -858,8 +946,9 @@ async fn malformed_image_payloads_are_rejected_without_replay() {
 #[tokio::test]
 async fn malformed_sse_frame_is_not_hidden_by_completed_or_replayed() {
     let server = MockServer::start().await;
+    // A truncated frame can be an item carrying image bytes.
     let body = format!(
-        "data: {{invalid json\n\n{}",
+        "data: {{\"type\":\"response.output_item.done\",\"item\":{{\"result\":\"{LEAK_CANARY}\"\n\n{}",
         sse(&[image_call_done(PNG_B64), completed(json!([]))])
     );
     Mock::given(method("POST"))
@@ -878,6 +967,7 @@ async fn malformed_sse_frame_is_not_hidden_by_completed_or_replayed() {
         .await
         .expect_err("malformed SSE frame");
     assert!(!error.is_retryable());
+    assert!(!error.to_string().contains(LEAK_CANARY), "{error}");
     assert_eq!(requests(&server).await.len(), 1);
 }
 

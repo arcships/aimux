@@ -540,7 +540,7 @@ where
         let mut retained: Option<Value> = None;
         let mut saw_image_call = false;
         while let Some(event) = events.next().await {
-            let data = event.map_err(no_replay)?;
+            let data = event.map_err(|error| no_replay(without_frame_text(error)))?;
             match data.get("type").and_then(Value::as_str).unwrap_or("") {
                 "response.output_item.done" => {
                     let item = &data["item"];
@@ -579,6 +579,18 @@ where
     }
 }
 
+/// A frame that does not parse is reported without its text: an image frame is
+/// megabytes of base64 at worst, and none of it belongs in the diagnostic.
+fn without_frame_text(error: AiMuxError) -> AiMuxError {
+    match error {
+        AiMuxError::JsonParse { cause, .. } => AiMuxError::JsonParse {
+            message: "image stream frame is not valid JSON".to_string(),
+            cause,
+        },
+        other => other,
+    }
+}
+
 /// The error of a stream that outlived its hang guard. Non-retryable like every
 /// other failure these models return: the generation may already be billed.
 fn stream_timeout(timeout: Duration, endpoint: &str, body: &Value) -> AiMuxError {
@@ -599,6 +611,9 @@ fn stream_timeout(timeout: Duration, endpoint: &str, body: &Value) -> AiMuxError
 /// The error of an in-band failure event (`error`, `response.failed`,
 /// `response.incomplete`, or a `response.completed` whose status is not
 /// `completed`). Never retryable.
+///
+/// A terminal event can carry output items, image payloads included, so only
+/// their allowlisted summary reaches the public error.
 fn stream_failure(
     event: &Value,
     endpoint: &str,
@@ -632,19 +647,39 @@ fn stream_failure(
         .and_then(|error| error.get("code").or_else(|| error.get("type")))
         .and_then(Value::as_str)
         .map(str::to_string);
+    let summary = stream_failure_summary(event, event_type, provider_code.as_deref());
     aimux_provider_utils::create_provider_stream_error(
         aimux_provider_utils::ProviderStreamError {
             message,
             provider_code,
             status_code: Some(200),
             is_retryable: Some(false),
-            data: event.clone(),
+            data: summary.clone(),
         },
-        event,
+        &summary,
         endpoint.to_string(),
         body,
         response_headers,
     )
+}
+
+/// The fields of a terminal stream event that may reach the public error: its
+/// type, the provider code, the response status and the incomplete reason.
+/// Output items — and the image payloads they carry — never do.
+fn stream_failure_summary(event: &Value, event_type: &str, provider_code: Option<&str>) -> Value {
+    let response = &event["response"];
+    let mut summary = Map::new();
+    summary.insert("type".to_string(), json!(event_type));
+    if let Some(code) = provider_code {
+        summary.insert("code".to_string(), json!(code));
+    }
+    if let Some(status) = response["status"].as_str() {
+        summary.insert("status".to_string(), json!(status));
+    }
+    if let Some(reason) = response["incomplete_details"]["reason"].as_str() {
+        summary.insert("incomplete_reason".to_string(), json!(reason));
+    }
+    Value::Object(summary)
 }
 
 /// `{ "openai": { "images": [ {...} ] } }`, the shape the OpenAI image model
