@@ -1,7 +1,7 @@
 # RFC-0039 implementation
 
 This document describes the implementation in this tree. The runtime manifest
-contains 72 operations, 23 resource kinds and 93 referenced type entries. ABI v1
+contains 76 operations, 23 resource kinds and 321 referenced type entries. ABI v1
 is `65536` (`1 << 16`) and ops is `1.0`. Capability registration is not evidence
 that a live provider or every supported platform has been tested. See the
 [conformance matrix](rfc-0039-conformance.md) and
@@ -115,6 +115,7 @@ mode, not an inference from the operation name.
 | `provider.create` | call | G | `provider::create` | Current |
 | `provider.custom` | call | G | `provider::custom` | Current |
 | `provider.default` | call | G | `provider::default_provider` | Current |
+| `provider.descriptors` | call | G | `provider::provider_descriptors` | Current |
 | `provider.files` | call | Provider | `files::provider_files` | Current |
 | `provider.invoke` | call | Provider | `provider::invoke` | Current |
 | `provider.model` | call | Provider | `provider::model` | Current |
@@ -126,7 +127,10 @@ mode, not an inference from the operation name.
 | `recorder.stats` | call | Recorder | `recording::stats` | Current |
 | `recorder.stop` | call | Recorder | `recording::stop` | Current |
 | `registry.create` | call | G | `registry::create` | Current |
+| `registry.fromConfig` | call | G | `registry::from_config` | Current |
+| `registry.list` | call | Registry | `registry::list` | Current |
 | `registry.provider` | call | Registry | `registry::provider` | Current |
+| `registry.update` | call | Registry | `registry::update` | Current |
 | `replay.capabilities` | call | ReplaySession | `replay::capabilities` | Future: UnsupportedFunctionality |
 | `replay.create` | call | G | `replay::create` | Current |
 | `replay.dryRun` | call | ReplaySession | `replay::dry_run` | Current |
@@ -161,14 +165,39 @@ mode, not an inference from the operation name.
 | `transport.create` | call | G | `handles::transport_create` | Current |
 | `video.generate` | call | Video | `modalities::generate_video` | Current |
 
-`provider.create` accepts strict settings (`apiKey`, `baseUrl`, `headers`,
-`organization`, `project`, `params`, `fetch`, `webSocket`, `credentialResolver`,
-`endpoint`, `probabilitySource`); accepted keys do not imply support by every
-factory. WebSocket/credential slots are resolved then explicitly rejected when
-unsupported. `provider.default` takes a package and default settings. Supply an
-explicit model method for vendor packages without default-method metadata.
-`provider.invoke` only accepts `listModels`. `model.resolve` takes an explicit
-`{modelRef:{namespace,key,method,modelId}}`; it never falls back to a gateway.
+`provider.create` and `registry.fromConfig` are trusted-caller operations that
+support all 329 packages (including `openai_compatible` via
+`provider_from_config_with_transport`) and accept strict package-validated
+settings (including `StringOrEnv` credential references with optional
+`envAllowlist`, package-specific settings, `params`, `fetch`, `webSocket`, and
+`credentialResolver`). `envAllowlist` governs explicit `{ "env": "VAR" }`
+(`StringOrEnv`) interpolation only and does not restrict implicit per-provider
+default environment variable fallbacks when credential or `baseUrl` fields are
+omitted (untrusted callers must not supply arbitrary `baseUrl` values with
+omitted credentials). Passing `organization` or `project` to preset or
+non-supporting native packages is rejected with `InvalidArgument` rather than
+injecting `OpenAI-Organization` / `OpenAI-Project` headers, and on
+`google_vertex` `settings.project` configures the GCP Vertex project rather than
+setting `OpenAI-Project` (pass custom headers via `settings.headers` instead). Accepted keys do not imply support by every
+factory, and `package_descriptor` supplies the authoritative `default_method`
+(also recorded for providers built by `registry.fromConfig`). WebSocket and
+credential slots are resolved then explicitly rejected when unsupported.
+`provider.default` takes a package and default settings and rejects
+`openai_compatible`. `provider.descriptors` returns static `PackageDescriptor`
+metadata for all 329 packages. `provider.invoke` only accepts `listModels`.
+`provider.model` supports `Provider::language_model_with_api`
+(`LanguageApi::{Chat, Responses, Completion, Messages}`) alongside standard
+modality constructors. `model.resolve` takes an explicit
+`{modelRef:{namespace,key,method,modelId}}` (where `method` accepts
+`"chat"`, `"responses"`, `"completion"`, and `"messages"` as well as the
+standard modality methods); it never falls back to a gateway, and both
+`provider.model` and `model.resolve` return `UnsupportedFunctionality` (code 8)
+when a provider does not expose a requested `LanguageApi` or optional modality
+and preserve the constructor's own error (such as `NoSuchModel` code 9 or
+`InvalidArgument` code 5) when an offered constructor rejects `modelId`.
+`registry.update` validates all entries before applying multi-key updates
+atomically under a single write lock (dropping displaced providers outside the
+lock, or deriving from a single snapshot when `derive: true`).
 `model.wrap` supports existing Language/Image wrappers, not invented wrappers
 for every model kind. Trace middleware uses the canonical `TraceLayer` hook.
 
@@ -341,7 +370,7 @@ documentation change or that their existence establishes release readiness.
 | Workspace | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; workspace tests and docs |
 
 The manifest matrix uses probe handlers to test routing/admission across all
-72 names and 23 kinds plus global/invalid states; it does not execute every
+76 names and 23 kinds plus global/invalid states; it does not execute every
 business operation. Family suites test real dispatch with existing engine
 traits. stream_terminal runs all eleven native shared scenarios; its external
 driver hook remains ignored unless explicitly enabled. Cross-language complete
@@ -374,6 +403,7 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **D17 — Untagged unions are ordered (§7.3):** Tagged unions are disjoint `oneOf` branches keyed by a literal tag, but unions that serde decodes untagged (for example `ToolChoice`, a mode string or a tool object) are `anyOf` marked `x-aimux-codec: ordered-untagged`, and every codec takes the first branch that decodes, in schema order, exactly as serde does. Making them disjoint would change the wire shape the AI SDK defines.
 - **D18 — JNA declarations (§9.3):** The Java binding's JNA declarations for the 14 C ABI primitives (`bindings/java/src/main/java/ai/arcships/aimux/AimuxFFI.java`) are written by hand; `AbiContractTest` pins the exact set of 14 primitives and the portable `size_t` width and exercises them against the C fixture library; the generator owns the header, constants and DTOs. The primitive set is small and frozen with the ABI version, so a generated copy would add an emitter without removing a source of drift.
 - **D19 — Reference docs (§10.1, §10.2):** API reference pages under `docs/api/` are handwritten prose that links to the generated type files; only `docs/api/providers.md` is generated, by `scripts/gen_providers_doc.py`, and checked by the CI step "Providers doc generator drift". `aimux-codegen --check` therefore covers every generated code, schema and constant file but no document table.
+- **D20 — Provider descriptors and config-driven registry operations:** Four additional operations (`provider.descriptors`, `registry.fromConfig`, `registry.list`, `registry.update`) extend the runtime manifest beyond the Decision addition (`D2`, 72 operations) to 76 operations so callers can inspect static `PackageDescriptor` metadata for all 329 packages, build `Registry` handles directly from declarative configuration documents, enumerate registered keys, and apply in-place or derived registry updates.
 
 ## Registered gaps
 
@@ -382,7 +412,7 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **G-c — Future capabilities:** `credential.create` and `replay.capabilities` have Future scope and return UnsupportedFunctionality as amended in RFC-0039 §0.2 on the basis of RFC-0041, because no credential-construction or Fetch/WebSocket/Download replay engine is implemented; replay retains existing Language/Decision model replay.
 - **G-d — Business schemas and DTO generation (closed by #268):** `aimux-codegen` generates the business schemas and every binding's DTOs from the Rust types (RFC-0042 D8); ts-rs and `scripts/gen_ts_types.py` are removed.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
-- **G-f — Provider metadata:** Complete package provenance, authoritative default methods for every package, general named vendor-method dispatch and registry/string-model lifting in text requests are absent because entries retain canonical Arcs and current factories/control DTOs do not supply all that metadata or lifting; owner-scoped reference metadata exists for registry-resolved models, and `provider.invoke` accepts only `listModels`.
+- **G-f — Provider metadata (partially closed):** Static package descriptors (`provider.descriptors`), authoritative default methods for all 329 packages, and direct language-model method dispatch (`Provider::language_model_with_api`, `provider.model`, `model.resolve`) are now delivered; per-handle construction provenance beyond owner-scoped model reference summaries, non-language vendor extension methods (`provider.invoke` accepts only `listModels`), and direct string/registry model lifting in `text.*` requests remain absent because entries retain canonical Arcs and text requests still require resolved model handles.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.
 - **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable because consumed-type metadata is incomplete; every adapter already pins the exact ABI version, ops version and manifest digest.
 - **G-i — Cross-language and platform conformance:** Exhaustive eight-language business-vector execution, same-source release evidence, installed-wheel checks and all platform sanitizer/link/install results are not established here because narrower local and fixture suites do not prove the full matrix; Dart Windows streaming is explicitly unsupported.

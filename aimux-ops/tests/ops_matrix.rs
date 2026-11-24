@@ -131,8 +131,8 @@ async fn every_manifest_op_crosses_every_kind_and_invalid_handle_state() {
     let operations = manifest["ops"].as_array().unwrap();
     assert_eq!(
         operations.len(),
-        72,
-        "RFC inventory plus Decision operations"
+        76,
+        "RFC inventory plus Decision and provider/registry extensions"
     );
     let table: Vec<_> = operations
         .iter()

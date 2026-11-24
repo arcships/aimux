@@ -15,22 +15,28 @@ public final class RegistryCreateParams {
     private final List<RegistryEntry> entries;
     @JsonProperty("namespace")
     private final String namespace;
+    @JsonProperty("separator")
+    private final String separator;
 
     @JsonCreator
     public RegistryCreateParams(
         @JsonProperty(value = "entries", required = true) List<RegistryEntry> entries,
-        @JsonProperty(value = "namespace") String namespace) {
+        @JsonProperty(value = "namespace") String namespace,
+        @JsonProperty(value = "separator") String separator) {
         this.entries = entries == null ? null : Collections.unmodifiableList(new ArrayList<>(entries));
         this.namespace = namespace;
+        this.separator = separator;
     }
 
     public static Builder builder() { return new Builder(); }
     public List<RegistryEntry> getEntries() { return entries; }
     public String getNamespace() { return namespace; }
+    public String getSeparator() { return separator; }
 
     public static final class Builder {
         private List<RegistryEntry> entries;
         private String namespace;
+        private String separator;
 
         public Builder entries(List<RegistryEntry> value) {
             this.entries = value;
@@ -42,6 +48,11 @@ public final class RegistryCreateParams {
             return this;
         }
 
-        public RegistryCreateParams build() { return new RegistryCreateParams(entries, namespace); }
+        public Builder separator(String value) {
+            this.separator = value;
+            return this;
+        }
+
+        public RegistryCreateParams build() { return new RegistryCreateParams(entries, namespace, separator); }
     }
 }

@@ -170,8 +170,10 @@ pub mod anthropic_aws;
 pub mod azure;
 pub mod bedrock;
 pub mod cohere;
+mod config_loader;
 pub mod deepseek;
 mod default_providers;
+mod descriptors;
 pub mod google;
 pub mod groq;
 pub mod jev;
@@ -179,10 +181,16 @@ pub use jev::{JevConfig, JevDecisionModel, JevProvider};
 pub mod mistral;
 pub mod openai;
 pub mod openai_compatible;
+pub use config_loader::{
+    CodexModeSpec, EnvLookupPolicy, ProviderConfigDocument, ProviderConfigSettings,
+    ProviderEntrySpec, provider_from_config, provider_from_config_with_policy,
+    provider_from_config_with_transport, providers_from_config, providers_from_config_with_policy,
+};
 pub use default_providers::{
     create_provider, default_providers, provider_api_key_env, provider_default_base_url,
     provider_names,
 };
+pub use descriptors::{package_descriptor, package_descriptors};
 pub mod preset;
 pub(crate) mod shared;
 pub(crate) mod stream;

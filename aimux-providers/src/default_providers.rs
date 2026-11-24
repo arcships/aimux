@@ -431,59 +431,12 @@ pub fn create_provider(
 /// console's `env:VAR`) use it to allow only the provider's own variable.
 #[must_use]
 pub fn provider_api_key_env(name: &str) -> Option<&'static str> {
-    use crate::{
-        anthropic, assemblyai, azure, bedrock, black_forest_labs, cartesia, cohere, deepgram,
-        deepseek, elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq,
-        huggingface, hume, jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai,
-        prodia, recraft, replicate, revai, runwayml, serper, stability, tavily, tinyfish, vertex,
-        voyage, xai, you_com,
-    };
-    Some(match name {
-        "amazon_bedrock" => bedrock::BEARER_TOKEN_ENV_VAR,
-        "anthropic" => anthropic::API_KEY_ENV_VAR,
-        "assemblyai" => assemblyai::API_KEY_ENV_VAR,
-        "azure" => azure::API_KEY_ENV_VAR,
-        "black_forest_labs" => black_forest_labs::API_KEY_ENV_VAR,
-        "cartesia" => cartesia::API_KEY_ENV_VAR,
-        "cohere" => cohere::API_KEY_ENV_VAR,
-        "deepgram" => deepgram::API_KEY_ENV_VAR,
-        "deepseek" => deepseek::API_KEY_ENV_VAR,
-        "elevenlabs" => elevenlabs::API_KEY_ENV_VAR,
-        "exa_ai" => exa_ai::API_KEY_ENV_VAR,
-        "fal" => fal::API_KEY_ENV_VAR,
-        "firecrawl" => firecrawl::API_KEY_ENV_VAR,
-        "gladia" => gladia::API_KEY_ENV_VAR,
-        "google" => google::API_KEY_ENV_VAR,
-        "google_pse" => google_pse::API_KEY_ENV_VAR,
-        "google_vertex" => vertex::API_KEY_ENV_VAR,
-        "groq" => groq::API_KEY_ENV_VAR,
-        "huggingface" => huggingface::API_KEY_ENV_VAR,
-        "hume" => hume::API_KEY_ENV_VAR,
-        "jina_ai" => jina_ai::API_KEY_ENV_VAR,
-        "klingai" => klingai::API_KEY_ENV_VAR,
-        "linkup" => linkup::API_KEY_ENV_VAR,
-        "lmnt" => lmnt::API_KEY_ENV_VAR,
-        "luma" => luma::API_KEY_ENV_VAR,
-        "mistral" => mistral::API_KEY_ENV_VAR,
-        "openai" => openai::API_KEY_ENV_VAR,
-        "parallel_ai" => parallel_ai::API_KEY_ENV_VAR,
-        "prodia" => prodia::API_KEY_ENV_VAR,
-        "recraft" => recraft::API_KEY_ENV_VAR,
-        "replicate" => replicate::API_KEY_ENV_VAR,
-        "revai" => revai::API_KEY_ENV_VAR,
-        "runwayml" => runwayml::API_KEY_ENV_VAR,
-        "serper" => serper::API_KEY_ENV_VAR,
-        "stability" => stability::API_KEY_ENV_VAR,
-        "tavily" => tavily::API_KEY_ENV_VAR,
-        "tinyfish" => tinyfish::API_KEY_ENV_VAR,
-        "voyage" => voyage::API_KEY_ENV_VAR,
-        "xai" => xai::API_KEY_ENV_VAR,
-        "you_com" => you_com::API_KEY_ENV_VAR,
-        _ if PACKAGES.contains(&name) => return None,
-        _ => preset::lookup(name)
-            .map(|entry| entry.descriptor.env_var.as_str())
-            .filter(|var| !var.is_empty())?,
-    })
+    if PACKAGES.contains(&name) {
+        return crate::descriptors::native_api_key_env(name);
+    }
+    preset::lookup(name)
+        .map(|entry| entry.descriptor.env_var.as_str())
+        .filter(|var| !var.is_empty())
 }
 
 /// The endpoint `name`'s factory calls when [`create_provider`] gets no
@@ -497,58 +450,12 @@ pub fn provider_api_key_env(name: &str) -> Option<&'static str> {
 /// to tell the provider's own endpoint from one the caller picked.
 #[must_use]
 pub fn provider_default_base_url(name: &str) -> Option<&'static str> {
-    use crate::{
-        anthropic, assemblyai, black_forest_labs, cartesia, cohere, dataforseo, deepgram, deepseek,
-        elevenlabs, exa_ai, fal, firecrawl, gladia, google, google_pse, groq, huggingface, hume,
-        jina_ai, klingai, linkup, lmnt, luma, mistral, openai, parallel_ai, prodia, recraft,
-        replicate, revai, runwayml, serper, stability, tavily, tinyfish, voyage, xai, you_com,
-    };
-    Some(match name {
-        "anthropic" => anthropic::DEFAULT_BASE_URL,
-        "assemblyai" => assemblyai::DEFAULT_BASE_URL,
-        "black_forest_labs" => black_forest_labs::DEFAULT_BASE_URL,
-        "cartesia" => cartesia::DEFAULT_BASE_URL,
-        "cohere" => cohere::DEFAULT_BASE_URL,
-        "dataforseo" => dataforseo::DEFAULT_BASE_URL,
-        "deepgram" => deepgram::DEFAULT_BASE_URL,
-        "deepseek" => deepseek::DEFAULT_BASE_URL,
-        "elevenlabs" => elevenlabs::DEFAULT_BASE_URL,
-        "exa_ai" => exa_ai::DEFAULT_BASE_URL,
-        "fal" => fal::DEFAULT_BASE_URL,
-        "firecrawl" => firecrawl::DEFAULT_BASE_URL,
-        "gladia" => gladia::DEFAULT_BASE_URL,
-        "google" => google::DEFAULT_BASE_URL,
-        "google_pse" => google_pse::DEFAULT_BASE_URL,
-        "groq" => groq::DEFAULT_BASE_URL,
-        "huggingface" => huggingface::DEFAULT_BASE_URL,
-        "hume" => hume::DEFAULT_BASE_URL,
-        "jina_ai" => jina_ai::DEFAULT_BASE_URL,
-        "klingai" => klingai::DEFAULT_BASE_URL,
-        "linkup" => linkup::DEFAULT_BASE_URL,
-        "lmnt" => lmnt::DEFAULT_BASE_URL,
-        "luma" => luma::DEFAULT_BASE_URL,
-        "mistral" => mistral::DEFAULT_BASE_URL,
-        "openai" => openai::DEFAULT_BASE_URL,
-        "parallel_ai" => parallel_ai::DEFAULT_BASE_URL,
-        "prodia" => prodia::DEFAULT_BASE_URL,
-        "recraft" => recraft::DEFAULT_BASE_URL,
-        "replicate" => replicate::DEFAULT_BASE_URL,
-        "revai" => revai::DEFAULT_BASE_URL,
-        "runwayml" => runwayml::DEFAULT_BASE_URL,
-        "serper" => serper::DEFAULT_BASE_URL,
-        "stability" => stability::DEFAULT_BASE_URL,
-        "tavily" => tavily::DEFAULT_BASE_URL,
-        "tinyfish" => tinyfish::DEFAULT_BASE_URL,
-        "voyage" => voyage::DEFAULT_BASE_URL,
-        "xai" => xai::DEFAULT_BASE_URL,
-        "you_com" => you_com::DEFAULT_BASE_URL,
-        // amazon_bedrock, anthropic_aws, aws_polly, azure, codex,
-        // google_vertex and searxng.
-        _ if PACKAGES.contains(&name) => return None,
-        _ => preset::lookup(name)
-            .filter(|entry| entry.descriptor.params.is_empty())
-            .map(|entry| entry.descriptor.base_url.as_str())?,
-    })
+    if PACKAGES.contains(&name) {
+        return crate::descriptors::native_default_base_url(name);
+    }
+    preset::lookup(name)
+        .filter(|entry| entry.descriptor.params.is_empty())
+        .map(|entry| entry.descriptor.base_url.as_str())
 }
 
 /// Every built-in provider with default settings, keyed by name: pass it to

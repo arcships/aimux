@@ -4,6 +4,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "chatModels": {
+      "additionalProperties": {
+        "$ref": "HandleIdInput.json"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "completionModels": {
+      "additionalProperties": {
+        "$ref": "HandleIdInput.json"
+      },
+      "default": {},
+      "type": "object"
+    },
     "decisionModels": {
       "additionalProperties": {
         "$ref": "HandleIdInput.json"
@@ -72,7 +86,21 @@
       "default": {},
       "type": "object"
     },
+    "messagesModels": {
+      "additionalProperties": {
+        "$ref": "HandleIdInput.json"
+      },
+      "default": {},
+      "type": "object"
+    },
     "rerankingModels": {
+      "additionalProperties": {
+        "$ref": "HandleIdInput.json"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "responsesModels": {
       "additionalProperties": {
         "$ref": "HandleIdInput.json"
       },

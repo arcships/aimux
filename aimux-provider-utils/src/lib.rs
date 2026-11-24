@@ -31,6 +31,7 @@ pub mod logging;
 pub mod map_reasoning_to_provider;
 pub mod media_type;
 pub mod multipart;
+pub mod package_descriptor;
 pub mod parse_provider_options;
 pub mod passthrough;
 pub mod post_to_api;
@@ -85,6 +86,10 @@ pub use media_type::{
     is_full_media_type, resolve_full_media_type,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
+pub use package_descriptor::{
+    EnvVarRef, LanguageApi, ModalityKind, PackageAuthKind, PackageDescriptor, PackageKind,
+    SettingFieldKind, SettingFieldSpec, StringOrEnv, TemplateParamDescriptor,
+};
 pub use parse_provider_options::{
     nullish_positive, optional_field, parse_option_fields, parse_provider_options,
 };

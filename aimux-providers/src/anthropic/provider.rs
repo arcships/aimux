@@ -307,6 +307,18 @@ impl Provider for AnthropicProvider {
         Some(Arc::new(self.files()))
     }
 
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        match api {
+            aimux_core::LanguageApi::Messages => Some(Ok(Arc::new(self.messages(model_id)))),
+            aimux_core::LanguageApi::Chat => Some(Ok(Arc::new(self.chat(model_id)))),
+            _ => None,
+        }
+    }
+
     fn skills(&self) -> Option<Arc<dyn aimux_core::skills_model::Skills>> {
         Some(Arc::new(self.skills()))
     }
