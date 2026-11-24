@@ -1,7 +1,10 @@
 //! Seedream generation and editing share the JSON images endpoint.
 
-use super::options::{check_types, failed_response, http_url, image_url, no_replay, options};
-use crate::shared::{EndpointConfig, image_response};
+use super::options::{
+    check_types, failed_response, http_url, image_url, no_replay,
+    not_retryable_unless_rate_limited, options,
+};
+use crate::shared::{EndpointConfig, image_response, retry_download};
 use aimux_core::{
     AiMuxError,
     image_model::{ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResult, ImageUsage},
@@ -24,6 +27,9 @@ const ALLOWED: &[&str] = &[
     "response_format",
     "size",
 ];
+
+/// How long a failed asset download waits before its next attempt.
+const DOWNLOAD_RETRY_INTERVAL_MS: u64 = 1_000;
 
 /// A Seedream image model supporting JSON reference images and streamed results.
 pub struct ByteDanceImageModel {
@@ -100,7 +106,8 @@ impl ByteDanceImageModel {
         if let Some(seed) = call.seed {
             body.insert("seed".into(), json!(seed));
         }
-        body.entry("response_format").or_insert(json!("b64_json"));
+        // `response_format` is left to Ark's `url` default: a sequential 4K
+        // group's base64 can exceed the JSON response budget.
         body.entry("stream").or_insert(json!(false));
         body.insert("model".into(), json!(self.model_id));
         body.insert("prompt".into(), json!(prompt));
@@ -178,7 +185,7 @@ impl ImageModel for ByteDanceImageModel {
                 failed_response(),
             )
             .await
-            .map_err(no_replay)?;
+            .map_err(not_retryable_unless_rate_limited)?;
             let mut stream = response.value;
             let mut images = Vec::new();
             let mut completed = None;
@@ -222,7 +229,7 @@ impl ImageModel for ByteDanceImageModel {
                 failed_response(),
             )
             .await
-            .map_err(no_replay)?;
+            .map_err(not_retryable_unless_rate_limited)?;
             (response.value, response.response_headers)
         };
         let data = value["data"]
@@ -246,18 +253,26 @@ impl ImageModel for ByteDanceImageModel {
                 http_url(url).map_err(|_| {
                     AiMuxError::invalid_response_data("Seedream returned a non-HTTP image URL")
                 })?;
-                // Download failures cannot replay the already-billed generation.
-                aimux_provider_utils::get_from_api(
-                    HttpRequest {
-                        url: url.to_owned(),
-                        abort_signal: call.abort_signal.clone(),
-                        fetch: self.config.fetch.clone(),
-                        validate_url: true,
-                        trusted_origin: Some(exchange.base_url().to_owned()),
-                        ..Default::default()
+                // The generation is already billed, so a transient download
+                // failure is retried here; only an exhausted download becomes
+                // a non-retryable error that never replays the generation.
+                retry_download(
+                    call.abort_signal.as_ref(),
+                    Duration::from_millis(DOWNLOAD_RETRY_INTERVAL_MS),
+                    || {
+                        aimux_provider_utils::get_from_api(
+                            HttpRequest {
+                                url: url.to_owned(),
+                                abort_signal: call.abort_signal.clone(),
+                                fetch: self.config.fetch.clone(),
+                                validate_url: true,
+                                trusted_origin: Some(exchange.base_url().to_owned()),
+                                ..Default::default()
+                            },
+                            aimux_provider_utils::create_binary_response_handler(),
+                            aimux_provider_utils::create_status_code_error_response_handler(),
+                        )
                     },
-                    aimux_provider_utils::create_binary_response_handler(),
-                    aimux_provider_utils::create_status_code_error_response_handler(),
                 )
                 .await
                 .map_err(no_replay)?

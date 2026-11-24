@@ -9,7 +9,9 @@ use aimux_core::video_model::{
 };
 use aimux_core::{AiMuxError, shared::SharedProviderMetadata};
 
-use super::options::{check_types, failed_response, http_url, image_url, no_replay, options};
+use super::options::{
+    check_types, failed_response, http_url, image_url, not_retryable_unless_rate_limited, options,
+};
 use crate::shared::{EndpointConfig, task_failed, video_response};
 
 const PATH: &str = "/contents/generations/tasks";
@@ -211,7 +213,7 @@ impl VideoModel for ByteDanceVideoModel {
             failed_response(),
         )
         .await
-        .map_err(no_replay)?;
+        .map_err(not_retryable_unless_rate_limited)?;
         let id = response
             .value
             .get("id")
@@ -294,19 +296,15 @@ impl VideoModel for ByteDanceVideoModel {
                 }))
             }
             Some(status @ ("failed" | "cancelled" | "expired")) => {
-                let mut error = task_failed(
+                // Every terminal status ends the poll loop: `expired` reaches
+                // the host as `providerCode: expired`, so a resubmit is the
+                // host's decision, not a silent replay.
+                Err(task_failed(
                     value["error"]["message"].as_str().unwrap_or(status),
                     url,
                     status,
                     Some(value.to_string()),
-                );
-                // Retry the status query for expired tasks; never resubmit generation.
-                if status == "expired"
-                    && let AiMuxError::ApiCall(detail) = &mut error
-                {
-                    detail.is_retryable = true;
-                }
-                Err(error)
+                ))
             }
             _ => Err(AiMuxError::invalid_response_data(
                 "unknown Seedance task status",

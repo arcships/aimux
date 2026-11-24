@@ -174,7 +174,8 @@ async fn seedance_statuses_and_last_frame() {
                     panic!()
                 };
                 assert_eq!(error.message, "task stopped");
-                assert_eq!(error.is_retryable, status == "expired");
+                assert_eq!(error.provider_code.as_deref(), Some(status));
+                assert!(!error.is_retryable, "{status} must be terminal");
             }
         }
     }
@@ -373,9 +374,11 @@ async fn seedream_rejects_empty_or_invalid_success_payloads() {
     }
 }
 
+/// A create that fails before Ark queues a task or image is safe to replay
+/// only for a rate limit; every other status is terminal.
 #[tokio::test]
-async fn generation_and_download_failures_never_replay_billed_calls() {
-    for status in [429, 500] {
+async fn create_failures_stay_retryable_only_for_rate_limits() {
+    for (status, retryable) in [(429, true), (500, false), (400, false)] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(
@@ -384,23 +387,110 @@ async fn generation_and_download_failures_never_replay_billed_calls() {
             .expect(2)
             .mount(&server)
             .await;
-        let mut call = ImageCallOptions::new("cat");
-        call.max_retries = Some(2);
-        assert!(
-            generate_image(&provider(&server).image("seedream"), call)
-                .await
-                .is_err()
-        );
-        let error = provider(&server)
+        let provider = provider(&server);
+        let error = provider
+            .image("seedream")
+            .do_generate(&ImageCallOptions::new("cat"))
+            .await
+            .unwrap_err();
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("{status}")
+        };
+        assert_eq!(error.status_code, Some(status));
+        assert_eq!(error.is_retryable, retryable, "image create {status}");
+        let error = provider
             .video("seedance")
             .do_start(&VideoCallOptions::new("cat"))
             .await
             .unwrap_err();
         let AiMuxError::ApiCall(error) = error else {
-            panic!()
+            panic!("{status}")
         };
-        assert!(!error.is_retryable);
+        assert_eq!(error.status_code, Some(status));
+        assert_eq!(error.is_retryable, retryable, "video create {status}");
     }
+}
+
+/// The rate-limit flag reaches Core: it replays the create once, while a
+/// server error is returned after one attempt.
+#[tokio::test]
+async fn core_retries_a_rate_limited_create_but_not_a_server_error() {
+    for (status, posts) in [(429, 2), (500, 1)] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(status).set_body_json(json!({"error":{"message":"busy"}})),
+            )
+            .mount(&server)
+            .await;
+        let mut call = ImageCallOptions::new("cat");
+        call.max_retries = Some(1);
+        assert!(
+            generate_image(&provider(&server).image("seedream"), call)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            posts,
+            "image create {status}"
+        );
+    }
+}
+
+/// A transient asset download failure is retried before the error becomes
+/// non-retryable, so the billed generation is downloaded without a resubmit.
+#[tokio::test]
+async fn transient_download_failures_are_retried_without_resubmitting() {
+    let server = MockServer::start().await;
+    image_mock(
+        &server,
+        json!({"data":[{"url":format!("{}/asset.png",server.uri())}]}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/asset.png"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/asset.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"image"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let result = provider(&server)
+        .image("seedream")
+        .do_generate(&ImageCallOptions::new("cat"))
+        .await
+        .unwrap();
+    let ImageOutputs::Binary(images) = result.images else {
+        panic!()
+    };
+    assert_eq!(images, vec![b"image".to_vec()]);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/asset.png")
+            .count(),
+        2
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/relay/api/v3/images/generations")
+            .count(),
+        1
+    );
+}
+
+/// When every download attempt fails the error is terminal: the billed
+/// generation is never submitted a second time.
+#[tokio::test]
+async fn exhausted_download_failures_do_not_resubmit_the_generation() {
     let server = MockServer::start().await;
     image_mock(
         &server,
@@ -408,17 +498,72 @@ async fn generation_and_download_failures_never_replay_billed_calls() {
     )
     .await;
     Mock::given(method("GET"))
+        .and(path("/asset"))
         .respond_with(ResponseTemplate::new(503))
-        .expect(1)
         .mount(&server)
         .await;
     let mut call = ImageCallOptions::new("cat");
     call.max_retries = Some(2);
-    assert!(
-        generate_image(&provider(&server).image("seedream"), call)
-            .await
-            .is_err()
+    let error = generate_image(&provider(&server).image("seedream"), call)
+        .await
+        .unwrap_err();
+    assert!(!error.is_retryable());
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/asset")
+            .count(),
+        3
     );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/relay/api/v3/images/generations")
+            .count(),
+        1
+    );
+}
+
+/// Ark's own default carries `url`, so a sequential 4K group cannot fill the
+/// JSON response budget with base64; an explicit `b64_json` is still sent.
+#[tokio::test]
+async fn seedream_leaves_response_format_to_ark_unless_requested() {
+    let server = MockServer::start().await;
+    image_mock(
+        &server,
+        json!({"data":[{"url":format!("{}/asset.png",server.uri())}]}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/asset.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"image"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    provider(&server)
+        .image("seedream")
+        .do_generate(&ImageCallOptions::new("cat"))
+        .await
+        .unwrap();
+    let body: Value = server.received_requests().await.unwrap()[0]
+        .body_json()
+        .unwrap();
+    assert!(body.get("response_format").is_none());
+
+    let server = MockServer::start().await;
+    image_mock(&server, json!({"data":[{"b64_json":"aW1hZ2U="}]})).await;
+    let mut call = ImageCallOptions::new("cat");
+    call.provider_options = opts(json!({"response_format":"b64_json"}));
+    provider(&server)
+        .image("seedream")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    let body: Value = server.received_requests().await.unwrap()[0]
+        .body_json()
+        .unwrap();
+    assert_eq!(body["response_format"], "b64_json");
 }
 
 #[tokio::test]

@@ -18,10 +18,31 @@ pub(super) fn options(
     Ok(values)
 }
 
+/// Clear the retryability of a billed request.
+///
+/// Used after a bounded inner exchange (such as an asset download) or for
+/// errors that must never resubmit a generation Core already paid for.
 pub(super) fn no_replay(error: AiMuxError) -> AiMuxError {
     match error {
         AiMuxError::ApiCall(mut detail) => {
             detail.is_retryable = false;
+            AiMuxError::ApiCall(detail)
+        }
+        other => other,
+    }
+}
+
+/// Clear the retryability of a create, except for a rate limit.
+///
+/// A create the vendor refused for any other reason queued no task or image,
+/// so replaying it could bill twice. A rate-limited create (HTTP 429) is safe
+/// to replay and stays retryable.
+pub(super) fn not_retryable_unless_rate_limited(error: AiMuxError) -> AiMuxError {
+    match error {
+        AiMuxError::ApiCall(mut detail) => {
+            if detail.status_code != Some(429) {
+                detail.is_retryable = false;
+            }
             AiMuxError::ApiCall(detail)
         }
         other => other,
