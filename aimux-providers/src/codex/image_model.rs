@@ -744,10 +744,11 @@ fn require_image_data(bytes: Vec<u8>) -> Result<Vec<u8>, AiMuxError> {
 /// The media type and decoded payload of an inline `data:` URL, or `None` for
 /// any other URL.
 ///
-/// The scheme is matched case-insensitively. Only base64-encoded
-/// `image/<subtype>` data is accepted; a non-image or partial media type, a
-/// non-base64 payload, and malformed or empty data are refused before the
-/// request is sent.
+/// The scheme is matched case-insensitively. Media type parameters such as
+/// `charset` are accepted, but the payload must still be base64-encoded (the
+/// last parameter is `base64`); a non-image or partial media type, a payload
+/// without the `;base64` marker, and malformed or empty data are refused
+/// before the request is sent.
 fn parse_image_data_url(url: &str) -> Result<Option<(String, Vec<u8>)>, AiMuxError> {
     let Some((scheme, rest)) = url.split_once(':') else {
         return Ok(None);
@@ -763,7 +764,8 @@ fn parse_image_data_url(url: &str) -> Result<Option<(String, Vec<u8>)>, AiMuxErr
     let Some((head, payload)) = rest.split_once(',') else {
         return invalid("missing the `,` separator");
     };
-    let (media_type, parameters) = head.split_once(';').unwrap_or((head, ""));
+    let mut parameters = head.split(';');
+    let media_type = parameters.next().unwrap_or("");
     let image_media_type = media_type
         .split_once('/')
         .filter(|(top_level, subtype)| {
@@ -773,8 +775,15 @@ fn parse_image_data_url(url: &str) -> Result<Option<(String, Vec<u8>)>, AiMuxErr
     let Some(media_type) = image_media_type else {
         return invalid("the media type is not a full `image/<subtype>`");
     };
-    if !parameters.eq_ignore_ascii_case("base64") {
-        return invalid("only base64-encoded payloads are accepted");
+    // RFC 2397 puts `;base64` last, after any media type parameters
+    // (`data:image/png;charset=utf-8;base64,...`).
+    if !parameters
+        .last()
+        .is_some_and(|parameter| parameter.eq_ignore_ascii_case("base64"))
+    {
+        return invalid(
+            "the payload is not base64-encoded: the media type must end with `;base64`",
+        );
     }
     let bytes = aimux_provider_utils::convert_base64_to_uint8_array(payload).map_err(|error| {
         AiMuxError::InvalidArgument {
@@ -935,10 +944,19 @@ mod tests {
             parse_image_data_url("data:image/png;base64,SGVsbG8=").unwrap(),
             png
         );
+        // Media type parameters are allowed before the `;base64` marker.
+        assert_eq!(
+            parse_image_data_url("data:image/png;charset=utf-8;base64,SGVsbG8=").unwrap(),
+            png
+        );
         // The scheme, media type and marker are case-insensitive; the rebuilt
         // data URL is normalized.
         assert_eq!(
             parse_image_data_url("DATA:IMAGE/PNG;BASE64,SGVsbG8=").unwrap(),
+            png
+        );
+        assert_eq!(
+            parse_image_data_url("DATA:IMAGE/PNG;CHARSET=UTF-8;BASE64,SGVsbG8=").unwrap(),
             png
         );
         for invalid in [
@@ -946,6 +964,7 @@ mod tests {
             "data:image;base64,SGVsbG8=",
             "data:image/*;base64,SGVsbG8=",
             "data:image/png,SGVsbG8=",
+            "data:image/png;base64;charset=utf-8,SGVsbG8=",
             "data:image/png;base64,not base64!!",
             "data:image/png;base64,",
             "data:image/png",
@@ -956,5 +975,12 @@ mod tests {
                 "{invalid}: {error:?}"
             );
         }
+        // The error names the actual reason: the base64 marker is missing, not
+        // the payload being non-base64 text.
+        let error = parse_image_data_url("data:image/png,SGVsbG8=").expect_err("no marker");
+        assert!(
+            error.to_string().contains("must end with `;base64`"),
+            "{error}"
+        );
     }
 }

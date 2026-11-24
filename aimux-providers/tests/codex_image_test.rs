@@ -416,6 +416,10 @@ async fn input_data_urls_are_validated_before_sending() {
         ("non-image media type", "data:text/plain;base64,SGVsbG8="),
         ("partial media type", "data:image;base64,SGVsbG8="),
         ("missing base64 marker", "data:image/png,SGVsbG8="),
+        (
+            "base64 marker not last",
+            "data:image/png;base64;charset=utf-8,SGVsbG8=",
+        ),
         ("invalid base64", "data:image/png;base64,not base64!!"),
         ("empty payload", "data:image/png;base64,"),
     ] {
@@ -428,8 +432,42 @@ async fn input_data_urls_are_validated_before_sending() {
             matches!(error, AiMuxError::InvalidArgument { .. }),
             "{name}: {error:?}"
         );
+        if name == "missing base64 marker" {
+            assert!(
+                error.to_string().contains("must end with `;base64`"),
+                "{name}: {error}"
+            );
+        }
     }
     assert!(requests(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn input_data_url_with_media_type_parameters_is_accepted() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/images/edits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(image_api_response()))
+        .mount(&server)
+        .await;
+
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2")
+        .unwrap();
+    let mut options = ImageCallOptions::new("make it blue");
+    options.files = Some(vec![ImageFile::Url {
+        // Media type parameters before `;base64` are legal and the payload is
+        // forwarded normalized, without them.
+        url: format!("data:image/png;charset=utf-8;base64,{PNG_B64}"),
+    }]);
+    model.do_generate(&options).await.expect("edit");
+
+    let seen = requests(&server).await;
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        body_of(&seen[0])["images"][0]["image_url"],
+        json!(format!("data:image/png;base64,{PNG_B64}"))
+    );
 }
 
 #[tokio::test]
