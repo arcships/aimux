@@ -49,10 +49,18 @@ pub(super) fn prepare(
                 "DeepSeek web search requires deepseek-flash at https://api.deepseek.com/responses",
             ));
         }
-        if options.tools.iter().flatten().any(|tool| matches!(tool,
-            Tool::Provider(tool) if matches!(tool.id.as_str().rsplit('.').next(), Some("web_search" | "web_search_preview"))
-        )) {
-            return Err(AiMuxError::invalid_argument("deepseekWebSearch cannot be combined with the legacy web_search tool"));
+        let legacy_web_search = options
+            .tools
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|tool| matches!(tool,
+                Tool::Provider(tool) if matches!(tool.id.as_str().rsplit('.').next(), Some("web_search" | "web_search_preview"))
+            ));
+        if legacy_web_search {
+            return Err(AiMuxError::invalid_argument(
+                "deepseekWebSearch cannot be combined with the legacy web_search tool",
+            ));
         }
         if body.get("tools").is_none() {
             body["tools"] = json!([]);
