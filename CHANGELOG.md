@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI-compatible asynchronous video models for `/videos` gateways, with
+  multipart reference files, provider option passthrough, task polling and
+  guarded authenticated content downloads (#530).
+
 ### Breaking
 
 - Replaced `chrono` with `jiff` across all `aimux-*` crates for
@@ -66,6 +72,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Recraft, Prodia, fal, Replicate (`prefer: wait`), and the Black Forest Labs
   and Luma submit requests for images; OpenAI, Google, xAI, ElevenLabs, Hume,
   Cartesia, LMNT, Mistral and AWS Polly for speech (#527).
+
+### Added
+
+- MiniMax H3 media models (#528): `create_minimax` / `minimax()` with
+  `MiniMaxProvider::video` (`MiniMax-H3`, `-Highspeed`, `-Lite`, `-Max`,
+  `/v2/video_generation` + `/v2/query/video_generation/{task_id}`) and
+  `MiniMaxProvider::image` (`MiniMax-H3-Image`, `-Image-Highspeed`,
+  `/v1/images/generations`). A chat base URL is accepted (trailing
+  `/anthropic`, `/anthropic/v1`, `/v1`, `/v2` removed; `api.minimaxi.com`
+  normalized to `https://api.minimax.cn`); a base URL with a query or a
+  fragment is rejected. The image prompt limit excludes leading and trailing
+  whitespace, as documented. A failed create or image generation is not
+  retried except after an HTTP 429. `create_provider` routes these model
+  IDs to the native implementations on the four existing `minimax*`
+  presets; any other image ID keeps the preset's OpenAI-compatible image
+  model, and chat, embedding, and discovery behavior is preserved.
 
 ## [0.6.1] - 2026-11-05
 
