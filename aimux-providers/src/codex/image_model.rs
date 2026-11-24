@@ -779,7 +779,7 @@ fn parse_image_data_url(url: &str) -> Result<Option<(String, Vec<u8>)>, AiMuxErr
     // RFC 2397 puts `;base64` last, after any media type parameters
     // (`data:image/png;charset=utf-8;base64,...`).
     if !parameters
-        .last()
+        .next_back()
         .is_some_and(|parameter| parameter.eq_ignore_ascii_case("base64"))
     {
         return invalid(
