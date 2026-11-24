@@ -7,33 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.7.0] - 2026-11-24
 
-- DeepSeek `deepseek-flash` native web search on the official Responses route:
-  explicit `deepseekWebSearch` opt-in, provider-executed search results, URL
-  citations with Unicode code-point offsets, and ordered stateless output
-  replay through message-level `responseOutput` provider options (#525). The
-  replay record is attached on that route even without the opt-in, because it
-  also carries the signed reasoning items a later turn replays.
-- OpenAI-compatible asynchronous video models for `/videos` gateways, with
-  multipart reference files, provider option passthrough, task polling and
-  guarded authenticated content downloads (#530).
-- Codex image models on the ChatGPT subscription channel (#526):
-  `CodexProvider::image` / `image_model` serve `gpt-image-2` (JSON
-  `/images/generations` and `/images/edits`) and `gpt-image-2.5-flare`,
-  `gpt-image-2.5-sunburst` and their `-2026-09-08` snapshots (the streamed
-  Responses `image_generation` tool). Only probed fields are sent; input
-  images are decoded and validated locally, so empty or malformed payloads
-  fail before the request is billed. Direct requests carry a 600-second
-  `response_timeout`; on the streamed route the SSE drain after the response
-  headers arrive is bounded at 600 seconds. Both report usage and never
-  retry: a billed generation is not replayed. API-key mode still serves no
-  image models.
+**Breaking release** (pre-1.0 SemVer). The Rust API surface changes in a few
+places; the wire protocol, manifest digest and C ABI stay compatible with 0.6
+(ABI 1 / ops 1.0, additive C exports only). See the
+[0.7 upgrade guide](docs/upgrading-to-0.7.md) before moving a 0.6 integration.
 
 ### Breaking
 
 - Replaced `chrono` with `jiff` across all `aimux-*` crates for
-  `RUSTSEC-2026-0543` (#523, targeting `0.7.0` under pre-1.0 SemVer):
+  `RUSTSEC-2026-0543` (#523):
   - `aimux_core::Timestamp`: removed `Timestamp::from_datetime` and
     `Timestamp::to_datetime`; use `Timestamp::from_timestamp(jiff::Timestamp) -> Option<Self>`
     / `TryFrom<jiff::Timestamp>` (fallible because `jiff::Timestamp` extends
@@ -43,13 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     / `From<Timestamp> for jiff::Timestamp` instead.
   - `aimux_provider_utils::SigV4Fetch::with_clock`: changed parameter type from
     `fn() -> chrono::DateTime<chrono::Utc>` to `fn() -> jiff::Timestamp`.
-- `provider.create` now validates `settings` strictly against each package's
-  `PackageDescriptor.settings`: `settings.organization` is accepted only by
-  `openai`, and `settings.project` is accepted only by `openai` and
-  `google_vertex` (where `google_vertex` configures the GCP Vertex project
-  rather than injecting an `OpenAI-Project` header). Preset and other packages
-  now reject `organization` / `project` with `InvalidArgument`; pass
-  `OpenAI-Organization` / `OpenAI-Project` explicitly via `settings.headers`.
 - Removed the `aimux_providers::voyage::embedding` and
   `aimux_providers::voyage::reranking` submodule paths; import
   `VoyageEmbeddingModel` and `VoyageRerankingModel` from `aimux_providers::voyage`
@@ -62,43 +39,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (RFC-0050 §3.1).
 - Rust: `aimux_ops::Handler::Call` now takes `Params<'_>` and returns
   serialized JSON (`String`), and exhaustive matches need to account for the
-  new `TypedStream` variant.
+  new `TypedStream` variant. `OpDescriptor.runtime_handle_fields` is now
+  `&[HandleField]` (segmented paths) instead of dotted strings (#538).
+- Swift `AimuxError.cause` and Flutter `OpsException.cause` are now the typed
+  `ErrorCause?` model instead of untyped JSON, matching the other bindings.
+  Untyped access stays available through `error["cause"]` (Swift) and the raw
+  map entry (Flutter) (#515).
+- `provider.create` validates `settings` strictly against each package's
+  `PackageDescriptor.settings` (discoverable via `provider.descriptors`).
+  `settings.organization` (accepted only by `openai`) and `settings.project`
+  (accepted only by `openai` and `google_vertex`) are rejected with
+  `InvalidArgument` on preset and other packages instead of silently injecting
+  `OpenAI-Organization` / `OpenAI-Project` headers; pass custom headers via
+  `settings.headers`. `settings.params` is accepted only by preset packages
+  that declare `templateParams` (#509, #510).
 
 ### Added
 
-- iOS `aimux_ffi.xcframework` now ships dynamic `aimux_ffi.framework` (`cdylib`,
-  fat-LTO, `opt-level = "z"`, `@rpath/aimux_ffi.framework/aimux_ffi`) slices
-  instead of merged static archives, shrinking distributed iOS slices and
-  removing `-force_load` from the Flutter CocoaPods podspec.
-- `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation_for(options)`
-  (with `generation(timeout)` available to transport callers):
-  mark a synchronous, billable generation exchange. Its hang guard defaults to
-  10 minutes instead of 30s and widens to the call's `totalMs` / `stepMs` when
-  that is longer; a failure after the request may have reached the server (the
-  guard, a transport timeout, a connection broken while sending or reading the
-  body) is not retryable. A refused connection and HTTP statuses keep their
-  retryability (#527).
-- The C ABI exports `aimux_call_async` and `aimux_stream_async`. The Go
-  binding uses them for calls and streams. Accepted streams deliver batches
-  of ready frames followed by a standalone terminal frame.
-
-### Changed
-
-- Node drains ready stream frames in batches while the public iterator yields
-  one frame at a time. Python reads ready frames without reentering the runtime.
-  Native text streams encode each frame directly against the wire size limit.
-
-### Fixed
-
-- Synchronous image and speech generations are no longer cut at 30s and
-  resubmitted by the default retries, which billed a slow generation up to
-  three times: OpenAI, OpenAI-compatible, Google, Vertex, Bedrock, Stability,
-  Recraft, Prodia, fal, Replicate (`prefer: wait`), and the Black Forest Labs
-  and Luma submit requests for images; OpenAI, Google, xAI, ElevenLabs, Hume,
-  Cartesia, LMNT, Mistral and AWS Polly for speech (#527).
-
-### Added
-
+- Unified provider configuration and registry management (#508, #509, #510):
+  - `LanguageApi::{Chat, Responses, Completion, Messages}` and
+    `Provider::language_model_with_api(api, id)`; `provider.model`,
+    `model.resolve` and `provider.custom` accept the direct methods
+    `chat` / `responses` / `completion` / `messages` (and the matching
+    `chatModels` / `responsesModels` / `completionModels` / `messagesModels`
+    maps) alongside `languageModel`.
+  - `provider.descriptors` lists every package's `PackageDescriptor`
+    (`languageApis`, setting specs, template params, capabilities, default
+    method); `provider.create` accepts `openai_compatible` with explicit
+    `name` + `baseUrl`, `StringOrEnv` (`{ "env": "VAR" }`) credentials and an
+    optional `envAllowlist` (a trusted-caller boundary: it gates explicit env
+    interpolation only, not implicit per-provider env fallbacks).
+  - `registry.fromConfig` builds a registry from a declarative
+    `ProviderConfigDocument`; `registry.list` returns namespace, separator and
+    keys; `registry.update` applies `set` / `remove` atomically in place or,
+    with `derive: true`, returns a new registry handle. `registry.create`
+    accepts a custom `separator`.
+  - `aimux_providers::{package_descriptor, package_descriptors}`,
+    `provider_from_config_with_transport`, `providers_from_config_with_policy`,
+    `EnvLookupPolicy`; `ProviderRegistry::{register, unregister,
+    extend_providers, replace_providers, update_providers,
+    with_updated_providers, ...}`. `ProviderRegistry::provider` returns
+    `Arc<dyn Provider>` and `provider_ids` returns `Vec<String>`.
+- DeepSeek `deepseek-flash` native web search on the official Responses route:
+  explicit `deepseekWebSearch` opt-in, provider-executed search results, URL
+  citations with Unicode code-point offsets, and ordered stateless output
+  replay through message-level `responseOutput` provider options (#525). The
+  replay record is attached on that route even without the opt-in, because it
+  also carries the signed reasoning items a later turn replays.
+- OpenAI-compatible asynchronous video models for `/videos` gateways, with
+  multipart reference files, provider option passthrough, task polling and
+  guarded authenticated content downloads. Self-authenticating result URLs
+  (SigV4 / presigned) are requested exactly as received (#530).
+- ByteDance Ark Seedance video (`/contents/generations/tasks`) and Seedream
+  image (`/images/generations`) models on the `bytedance` provider, with
+  relay prefixes, transient-download retry and non-replayable terminal task
+  states (#529).
 - MiniMax H3 media models (#528): `create_minimax` / `minimax()` with
   `MiniMaxProvider::video` (`MiniMax-H3`, `-Highspeed`, `-Lite`, `-Max`,
   `/v2/video_generation` + `/v2/query/video_generation/{task_id}`) and
@@ -108,10 +103,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   normalized to `https://api.minimax.cn`); a base URL with a query or a
   fragment is rejected. The image prompt limit excludes leading and trailing
   whitespace, as documented. A failed create or image generation is not
-  retried except after an HTTP 429. `create_provider` routes these model
-  IDs to the native implementations on the four existing `minimax*`
-  presets; any other image ID keeps the preset's OpenAI-compatible image
-  model, and chat, embedding, and discovery behavior is preserved.
+  retried except after an HTTP 429. `create_provider` routes the H3 model
+  IDs to the native implementations on the four existing `minimax*` presets;
+  any other image or video ID keeps the preset's OpenAI-compatible model.
+- Codex image models on the ChatGPT subscription channel (#526):
+  `CodexProvider::image` / `image_model` serve `gpt-image-2` (JSON
+  `/images/generations` and `/images/edits`) and `gpt-image-2.5-flare`,
+  `gpt-image-2.5-sunburst` and their `-2026-09-08` snapshots (the streamed
+  Responses `image_generation` tool). Only probed fields are sent; input
+  images are decoded and validated locally, so empty or malformed payloads
+  fail before the request is billed. Direct requests carry a 600-second
+  `response_timeout`; on the streamed route the SSE drain after the response
+  headers arrive is bounded at 600 seconds. Both report usage and never
+  retry: a billed generation is not replayed. Streamed failure diagnostics
+  carry only an allowlisted summary, never image payloads. API-key mode still
+  serves no image models.
+- iOS `aimux_ffi.xcframework` now ships dynamic `aimux_ffi.framework` (`cdylib`,
+  fat-LTO, `opt-level = "z"`, `@rpath/aimux_ffi.framework/aimux_ffi`) slices
+  instead of merged static archives, shrinking distributed iOS slices and
+  removing `-force_load` from the Flutter CocoaPods podspec.
+- `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation_for(&options)`
+  (with `generation(timeout)` available to transport callers):
+  mark a synchronous, billable generation exchange. Its hang guard defaults to
+  10 minutes instead of 30s and widens to the call's `totalMs` / `stepMs` when
+  that is longer; a failure after the request may have reached the server (the
+  guard, a transport timeout, a connection broken while sending or reading the
+  body) is not retryable. A refused connection and HTTP statuses keep their
+  retryability (#527).
+- `aimux_provider_utils::passthrough`: the public L0 native passthrough
+  endpoint (`NativeEndpoint`, `NativeRequest`, `NativeContext`, guarded
+  `NativeResponse` / `NativeBodyStream`, `NativeExchangeObserver`) with strict
+  base-URL prefixes (no userinfo, query or fragment), protected credential
+  headers that also cover resolver-supplied names, same-origin response
+  pinning, and automatic SigV4 protected-header enforcement (RFC-0040 §5).
+- The C ABI exports `aimux_call_async` and `aimux_stream_async`. The Go
+  binding uses them for calls and streams. Accepted streams deliver batches
+  of ready frames followed by a standalone terminal frame.
+
+### Changed
+
+- Node drains ready stream frames in batches while the public iterator yields
+  one frame at a time. Python reads ready frames without reentering the runtime.
+  Native text streams encode each frame directly against the wire size limit.
+- Text generation, header resolution, SSE decoding, schema validation and
+  ops dispatch avoid per-request allocations and `Value` round-trips; the ops
+  dispatcher probes wire JSON directly for handle fields (RFC-0049 / RFC-0050).
+  Manifest JSON and digest are byte-identical to 0.6.1 (#538, #502).
+
+### Fixed
+
+- Synchronous image and speech generations are no longer cut at 30s and
+  resubmitted by the default retries, which billed a slow generation up to
+  three times: OpenAI, OpenAI-compatible, Google, Vertex, Bedrock, Stability,
+  Recraft, Prodia, fal, Replicate (`prefer: wait`), and the Black Forest Labs
+  and Luma submit requests for images; OpenAI, Google, xAI, ElevenLabs, Hume,
+  Cartesia, LMNT, Mistral and AWS Polly for speech (#527).
+- Tool-call repair (`supported_urls` / `parse_tool_call`) is bounded by the
+  operation's abort signal and timeout, so a stalled repair can no longer
+  outlive a cancelled call (RFC-0042 §8.1).
 
 ## [0.6.1] - 2026-11-05
 
@@ -2997,6 +3046,7 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
 [Unreleased]: https://github.com/arcships/aimux/compare/v0.6.1...HEAD
+[0.7.0]: https://github.com/arcships/aimux/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/arcships/aimux/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/arcships/aimux/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arcships/aimux/compare/v0.3.0...v0.5.0

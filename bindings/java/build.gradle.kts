@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "ai.arcships"
-version = "0.6.1"
+version = "0.7.0"
 
 repositories {
     mavenCentral()
