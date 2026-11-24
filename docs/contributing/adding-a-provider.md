@@ -52,7 +52,15 @@ and `deepseek/`. The registry has no `family` field.
      prefixes; `[]` disables native `json_schema` and falls back to
      `json_object`; absent enables all models);
    - `profile.user_agent` (defaults to `openai-compatible`; e.g.
-     `"amazon-bedrock"` for Bedrock Mantle).
+     `"amazon-bedrock"` for Bedrock Mantle);
+   - `profile.in_band_retryable_codes` (error codes the vendor documents as
+     worth retrying when the error arrives in a body with a success status,
+     as a long non-streaming response that has already sent `200` must report
+     a later failure; without it such an error keeps its message and code but
+     is not retried);
+   - `profile.response_timeout_secs` (how long a non-streaming exchange may
+     take, connect through the whole body, for a vendor that documents
+     responses slower than the transport's 30 s default).
 
    Presets also inherit `PresetSettings::transform_request_body` via
    `openai_compatible::internal`.

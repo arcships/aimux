@@ -226,7 +226,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
         let response = aimux_provider_utils::post_json_to_api(
             self.request(options).await?,
             body.clone(),
-            aimux_provider_utils::create_json_response_handler::<Value>(),
+            self.config.json_response_handler::<Value>(),
             self.config.failed_response_handler(),
         )
         .await?;

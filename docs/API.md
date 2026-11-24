@@ -96,8 +96,8 @@ binding READMEs.
 
 ## Providers
 
-There are 328 provider names: 282 registry-backed OpenAI-compatible presets and
-46 vendor packages. The generated catalogue is
+There are 330 provider names: 283 registry-backed OpenAI-compatible presets and
+47 vendor packages. The generated catalogue is
 [api/providers.md](api/providers.md).
 
 Rust:
