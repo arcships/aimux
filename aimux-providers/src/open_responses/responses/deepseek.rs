@@ -194,9 +194,16 @@ pub(super) fn metadata(namespace: &str, items: Value) -> Option<ProviderMetadata
 pub(super) struct DeepSeekStream {
     pub enabled: bool,
     // Completion order can differ from output order. Only completed items are
-    // replayable; `added` items supply identity if a done event omits it.
+    // replayable; `added` items supply identity if a done or terminal item
+    // omits it.
     added: BTreeMap<u64, Value>,
-    output: BTreeMap<u64, Value>,
+    // The first item reported for each output index. It decides publication
+    // only; the replay record uses it solely when the stream carries no
+    // terminal `output` array.
+    reported: BTreeMap<u64, Value>,
+    // The terminal `response.output` array in provider order. When present,
+    // including when it is empty, it alone is the replay record.
+    terminal: Option<Vec<Value>>,
 }
 
 impl DeepSeekStream {
@@ -207,23 +214,57 @@ impl DeepSeekStream {
         }
     }
 
-    /// Record one finished item, and publish it when it is a server search.
+    /// Publish one finished item once per output index, and return it with its
+    /// id recovered, so a replay record stores the same identity it emitted.
     /// Both `response.output_item.done` and the terminal `response.output`
     /// report items, so one that only appears in the latter still reaches the
-    /// caller. The first report of an index wins; a repeated one is the same
-    /// item, not a second call.
-    fn record(&mut self, index: u64, item: Value, namespace: &str, controller: &mut Controller) {
-        if self.output.contains_key(&index) {
-            return;
-        }
-        let mut item = item;
+    /// caller. The first report of an index wins for publication; a repeated
+    /// one is the same item, not a second call. The replay record does not use
+    /// this map, because the terminal array is authoritative for it.
+    fn report(
+        &mut self,
+        index: u64,
+        mut item: Value,
+        namespace: &str,
+        controller: &mut Controller,
+    ) -> Value {
         recover_id(&mut item, index, &self.added);
-        if item["type"] == "web_search_call" {
-            let (call, result) = search_parts(&item, namespace, index);
-            controller.enqueue(StreamPart::ToolCall(call));
-            controller.enqueue(StreamPart::ToolResult(result));
+        self.reported.entry(index).or_insert_with(|| {
+            if item["type"] == "web_search_call" {
+                let (call, result) = search_parts(&item, namespace, index);
+                controller.enqueue(StreamPart::ToolCall(call));
+                controller.enqueue(StreamPart::ToolResult(result));
+            }
+            item.clone()
+        });
+        item
+    }
+
+    /// Match every terminal item with the added item it belongs to. A filtered
+    /// array keeps the provider order but not the earlier `output_index`
+    /// positions, so items are consumed in order, preferring an equal id, and
+    /// fall back to their own position when no added item is left.
+    fn align(&self, items: &[Value]) -> Vec<u64> {
+        let added = self.added.iter().collect::<Vec<_>>();
+        let mut cursor = 0;
+        let mut indexes = Vec::with_capacity(items.len());
+        for (position, item) in items.iter().enumerate() {
+            let remaining = &added[cursor..];
+            let found = remaining.iter().position(|(_, candidate)| {
+                candidate["type"] == item["type"]
+                    && match (item["id"].as_str(), candidate["id"].as_str()) {
+                        (Some(item_id), Some(added_id)) => item_id == added_id,
+                        _ => true,
+                    }
+            });
+            if let Some(offset) = found {
+                indexes.push(*remaining[offset].0);
+                cursor += offset + 1;
+            } else {
+                indexes.push(position as u64);
+            }
         }
-        self.output.insert(index, item);
+        indexes
     }
 
     pub fn observe(&mut self, event: &Value, namespace: &str, controller: &mut Controller) {
@@ -238,7 +279,7 @@ impl DeepSeekStream {
             }
             Some("response.output_item.done") => {
                 if let Some(index) = event["output_index"].as_u64() {
-                    self.record(index, event["item"].clone(), namespace, controller);
+                    self.report(index, event["item"].clone(), namespace, controller);
                 }
             }
             Some("response.output_text.annotation.added") => {
@@ -262,28 +303,40 @@ impl DeepSeekStream {
                 }
             }
             Some("response.completed" | "response.incomplete") => {
-                for (index, item) in event["response"]["output"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .enumerate()
-                {
-                    self.record(index as u64, item.clone(), namespace, controller);
+                let Some(items) = event["response"]["output"].as_array() else {
+                    return;
+                };
+                // The terminal array is the replay record, even when a filtered
+                // array drops items and its positions no longer match the
+                // earlier output indexes.
+                let indexes = self.align(items);
+                let mut replay = Vec::with_capacity(items.len());
+                for (position, item) in items.iter().enumerate() {
+                    replay.push(self.report(
+                        indexes[position],
+                        item.clone(),
+                        namespace,
+                        controller,
+                    ));
                 }
+                self.terminal = Some(replay);
             }
             _ => {}
         }
     }
 
     pub fn metadata(self, namespace: &str) -> Option<ProviderMetadata> {
-        self.enabled
-            .then(|| {
-                metadata(
-                    namespace,
-                    json!(self.output.into_values().collect::<Vec<_>>()),
-                )
-            })
-            .flatten()
+        if !self.enabled {
+            return None;
+        }
+        // A terminal array is authoritative for replay, including when the
+        // provider emptied it; only a stream that never carries one falls back
+        // to the items reported along the way.
+        let items = match self.terminal {
+            Some(items) => items,
+            None => self.reported.into_values().collect(),
+        };
+        metadata(namespace, json!(items))
     }
 }
 

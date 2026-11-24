@@ -74,7 +74,7 @@ async fn interleaved_search_citations_and_fresh_instance_replay() {
         json!({"type":"response.output_item.done", "output_index":1, "item":search_a}),
         json!({"type":"response.output_item.done", "output_index":2, "item":message}),
         json!({"type":"response.output_item.done", "output_index":4, "item":function}),
-        json!({"type":"response.completed", "response":response(json!([]))}),
+        json!({"type":"response.completed", "response":response(ordered.clone())}),
     ];
     let (first, transport) = model(
         "https://api.deepseek.com",
@@ -380,6 +380,104 @@ async fn item_reported_by_done_and_terminal_output_is_published_once() {
     }
 }
 
+// The terminal array is the authoritative replay record: a snapshot it carries
+// replaces the item an earlier done event reported, while publication still
+// happens once for that output index.
+#[tokio::test]
+async fn terminal_snapshot_replaces_the_done_item_in_the_replay_record() {
+    let draft_search = json!({"id":"s", "type":"web_search_call", "status":"in_progress", "action":{"type":"search", "query":"火星"}});
+    let final_search = json!({"id":"s", "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let draft_message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"草稿", "annotations":[]}]});
+    let final_message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"定稿", "annotations":[]}]});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"s"}}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"message", "id":"m"}}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":draft_search}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":draft_message}),
+        json!({"type":"response.completed", "response":response(json!([final_search, final_message]))}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    let calls = tool_calls(&parts);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].tool_call_id, "s");
+    let results = tool_results(&parts);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].result, draft_search);
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([final_search, final_message])
+    );
+}
+
+// A filtered terminal array drops items, so its positions are no longer the
+// earlier output indexes. Replay keeps the provider order without the dropped
+// item, and an item that lost its id recovers the id of the added item it
+// aligns with rather than the one at its new position.
+#[tokio::test]
+async fn terminal_output_dropped_item_leaves_the_replay_record() {
+    let reasoning = json!({"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text", "text":"想"}], "summary":[], "signature":"sig", "kind":"opaque"});
+    let search = json!({"id":"a", "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"答", "annotations":[]}]});
+    let reported_search = json!({"type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"web_search_call", "id":"a"}}),
+        json!({"type":"response.output_item.added", "output_index":2, "item":{"type":"message", "id":"m"}}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":search}),
+        json!({"type":"response.output_item.done", "output_index":2, "item":message}),
+        // The reasoning item is not in the terminal array, so the search moves
+        // from output index 1 to position 0 and no longer carries its id.
+        json!({"type":"response.completed", "response":response(json!([reported_search, message]))}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    let calls = tool_calls(&parts);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].tool_call_id, "a");
+    let mut persisted = reported_search.clone();
+    persisted["id"] = json!("a");
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([persisted, message])
+    );
+}
+
+// An empty terminal array is authoritative too: the replay record carries no
+// items even when the done events reported some.
+#[tokio::test]
+async fn empty_terminal_output_clears_the_replay_record() {
+    let reasoning = json!({"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text", "text":"想"}], "summary":[], "signature":"sig", "kind":"opaque"});
+    let search = json!({"id":"s", "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星"}});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"web_search_call", "id":"s"}}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":search}),
+        json!({"type":"response.completed", "response":response(json!([]))}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    assert_eq!(tool_calls(&parts).len(), 1);
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([])
+    );
+}
+
 // `"id": null` is missing identity too: the `added` id must be used both on
 // the call and in the stored item, instead of the synthetic fallback id.
 #[tokio::test]
@@ -388,7 +486,7 @@ async fn null_item_id_is_recovered_into_the_replay_record() {
     let events = vec![
         json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"real"}}),
         json!({"type":"response.output_item.done", "output_index":0, "item":reported}),
-        json!({"type":"response.completed", "response":response(json!([]))}),
+        json!({"type":"response.completed", "response":response(json!([reported]))}),
     ];
     let (model, _) = model(
         "https://api.deepseek.com",
