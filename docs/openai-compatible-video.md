@@ -42,11 +42,11 @@ with repeated `input_references` parts.
 ## Completion and download
 
 `queued`, `pending`, `processing`, `in_progress`, and `running` mean pending.
-`completed` and `succeeded` mean complete. Terminal failures include the
-provider's error message. A status the model does not recognize is treated as
-pending and keeps polling until the poll timeout, so a gateway-specific alias
-does not fail a task that is still running; a returned task ID that does not
-match the operation is rejected.
+`completed` and `succeeded` mean complete. Terminal failures carry the
+provider's error message and the terminal status as `providerCode`. A status
+the model does not recognize is treated as pending and keeps polling until the
+poll timeout, so a gateway-specific alias does not fail a task that is still
+running; a returned task ID that does not match the operation is rejected.
 
 An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
 Core downloads it without provider credentials. A result URL on the provider's
@@ -63,7 +63,11 @@ protocol-relative references, and URL userinfo are rejected. Creation and
 content-download exchanges move whole media files, so they use a 600-second
 exchange guard instead of the 30-second default.
 
-Creation errors are non-retryable: a timeout, 5xx or malformed successful
-response may follow an accepted, billable task. Status and content-download
-failures keep the usual retry classification; retrying those phases does not
-create another task. No cancellation endpoint is provided.
+A creation the gateway refused is not replayed, because a timeout, 5xx or
+malformed successful response may follow an accepted, billable task; a
+rate-limited creation (HTTP 429) queued no task and stays retryable. Status
+failures keep the usual retry classification. An authenticated content
+download retries a transient failure a bounded number of times and is
+non-retryable once those attempts are exhausted; retrying the status or
+download phase never creates another task. No cancellation endpoint is
+provided.

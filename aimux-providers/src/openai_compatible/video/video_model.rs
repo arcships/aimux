@@ -15,6 +15,10 @@ use aimux_provider_utils::{HttpBody, HttpRequest, MultipartForm};
 use super::super::CompatModelConfig;
 use super::super::provider::RequestHeaders;
 use super::super::utils::to_camel_case;
+use crate::shared::{retry_download, task_failed};
+
+/// How long a failed result download waits before its next attempt.
+const DOWNLOAD_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
 /// The exchange guard of the two exchanges that move a whole media file: the
 /// multipart creation (reference files) and the authenticated content
@@ -160,12 +164,22 @@ impl OpenAICompatibleVideoModel {
             .request_headers(options.headers.as_ref())
             .await?;
         let request = self.content_request(target, base, headers, options);
-        let response = aimux_provider_utils::get_from_api(
-            request,
-            aimux_provider_utils::create_binary_response_handler(),
-            aimux_provider_utils::create_status_code_error_response_handler(),
+        // The task is already billed, so a transient download failure is
+        // retried here; only an exhausted download becomes a non-retryable
+        // error that never resubmits the creation.
+        let response = retry_download(
+            options.abort_signal.as_ref(),
+            DOWNLOAD_RETRY_INTERVAL,
+            || {
+                aimux_provider_utils::get_from_api(
+                    request.clone(),
+                    aimux_provider_utils::create_binary_response_handler(),
+                    aimux_provider_utils::create_status_code_error_response_handler(),
+                )
+            },
         )
-        .await?;
+        .await
+        .map_err(no_replay)?;
         let media_type = response
             .response_headers
             .get("content-type")
@@ -234,16 +248,18 @@ impl VideoModel for OpenAICompatibleVideoModel {
             .request_headers(options.headers.as_ref())
             .await?;
         let (bytes, content_type) = form.finish();
+        let request = self.creation_request(headers, options)?;
+        let creation_url = request.url.clone();
         let response = aimux_provider_utils::post_to_api(
-            self.creation_request(headers, options)?,
+            request,
             HttpBody::Bytes(bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             self.config.failed_response_handler(),
         )
         .await
-        .map_err(no_replay)?;
+        .map_err(not_retryable_unless_rate_limited)?;
         if let Some(status) = response.value.get("status").and_then(Value::as_str) {
-            check_status(status, &response.value)?;
+            check_status(status, &response.value, &creation_url)?;
         }
         let id = response
             .value
@@ -277,9 +293,12 @@ impl VideoModel for OpenAICompatibleVideoModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let response = aimux_provider_utils::get_from_api(
+        let request =
             self.config
-                .http_request(&format!("/videos/{}", encode_id(id)), headers, options)?,
+                .http_request(&format!("/videos/{}", encode_id(id)), headers, options)?;
+        let status_url = request.url.clone();
+        let response = aimux_provider_utils::get_from_api(
+            request,
             aimux_provider_utils::create_json_response_handler::<Value>(),
             self.config.failed_response_handler(),
         )
@@ -296,7 +315,7 @@ impl VideoModel for OpenAICompatibleVideoModel {
             .get("status")
             .and_then(Value::as_str)
             .ok_or_else(|| AiMuxError::invalid_response_data("video task has no status"))?;
-        if !check_status(status, &response.value)? {
+        if !check_status(status, &response.value, &status_url)? {
             return Ok(VideoOperationStatus::Pending);
         }
         let video = self.completed_video(&response.value, id, options).await?;
@@ -313,7 +332,7 @@ impl VideoModel for OpenAICompatibleVideoModel {
     }
 }
 
-fn check_status(status: &str, value: &Value) -> Result<bool, AiMuxError> {
+fn check_status(status: &str, value: &Value, url: &str) -> Result<bool, AiMuxError> {
     match status {
         "queued" | "pending" | "processing" | "in_progress" | "running" => Ok(false),
         "completed" | "succeeded" => Ok(true),
@@ -323,9 +342,15 @@ fn check_status(status: &str, value: &Value) -> Result<bool, AiMuxError> {
                 Some(error) if !error.is_null() => error.to_string(),
                 _ => status.to_string(),
             };
-            Err(AiMuxError::invalid_response_data(format!(
-                "video generation failed: {message}"
-            )))
+            // The terminal status reaches Core as the provider code, so a
+            // caller can tell an ended task from an accepted one; the task is
+            // terminal, so the error is never retried.
+            Err(task_failed(
+                format!("video generation failed: {message}"),
+                url,
+                status,
+                Some(value.to_string()),
+            ))
         }
         _ => {
             // A name this list does not know may be a gateway alias for an
@@ -340,6 +365,23 @@ fn no_replay(error: AiMuxError) -> AiMuxError {
     match error {
         AiMuxError::ApiCall(mut detail) => {
             detail.is_retryable = false;
+            AiMuxError::ApiCall(detail)
+        }
+        other => other,
+    }
+}
+
+/// Clear the retryability of a create, except for a rate limit.
+///
+/// A create the gateway refused for any other reason queued no task, so a
+/// replay could bill twice. A rate-limited create (HTTP 429) did not run, and
+/// replaying it is safe, so it stays retryable.
+fn not_retryable_unless_rate_limited(error: AiMuxError) -> AiMuxError {
+    match error {
+        AiMuxError::ApiCall(mut detail) => {
+            if detail.status_code != Some(429) {
+                detail.is_retryable = false;
+            }
             AiMuxError::ApiCall(detail)
         }
         other => other,
@@ -555,9 +597,25 @@ mod tests {
     /// terminal failure.
     #[test]
     fn unknown_status_keeps_polling() {
-        assert!(!check_status("gateway_alias", &Value::Null).unwrap());
-        assert!(!check_status("queued", &Value::Null).unwrap());
-        assert!(check_status("completed", &Value::Null).unwrap());
-        assert!(check_status("failed", &Value::Null).is_err());
+        assert!(!check_status("gateway_alias", &Value::Null, BASE_URL).unwrap());
+        assert!(!check_status("queued", &Value::Null, BASE_URL).unwrap());
+        assert!(check_status("completed", &Value::Null, BASE_URL).unwrap());
+        assert!(check_status("failed", &Value::Null, BASE_URL).is_err());
+    }
+
+    /// Only a rate limit keeps a refused create retryable; every other status
+    /// is terminal, and a transport timeout has no status at all.
+    #[test]
+    fn only_rate_limited_creates_stay_retryable() {
+        for (status, retryable) in [(Some(429), true), (Some(500), false), (None, false)] {
+            let error = not_retryable_unless_rate_limited(AiMuxError::ApiCall(Box::new(
+                aimux_core::ApiCallError {
+                    status_code: status,
+                    is_retryable: true,
+                    ..aimux_core::ApiCallError::new("failed", BASE_URL, Value::Null)
+                },
+            )));
+            assert_eq!(error.is_retryable(), retryable, "{status:?}");
+        }
     }
 }

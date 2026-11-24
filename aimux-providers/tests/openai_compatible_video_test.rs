@@ -1,6 +1,7 @@
 //! Compatible gateway video protocol and credential-boundary regressions (#530).
 use std::collections::HashMap;
 
+use aimux_core::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameImage, VideoFrameType,
@@ -169,6 +170,34 @@ async fn core_does_not_resubmit_failed_creation() {
     }
 }
 
+/// A rate-limited create queued no task, so replaying it is safe and Core
+/// does so. Every other create failure stays a single attempt.
+#[tokio::test]
+async fn core_replays_only_rate_limited_creations() {
+    for (status, posts) in [(429, 2), (500, 1)] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/videos"))
+            .respond_with(
+                ResponseTemplate::new(status).set_body_json(json!({"error":{"message":"busy"}})),
+            )
+            .mount(&server)
+            .await;
+        let mut options = VideoCallOptions::new("cat");
+        options.max_retries = Some(1);
+        assert!(
+            generate_video(&provider(&server).video("m"), options)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            posts,
+            "HTTP {status}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn pending_status_aliases_and_terminal_errors() {
     for state in [
@@ -205,6 +234,10 @@ async fn pending_status_aliases_and_terminal_errors() {
             .await
             .unwrap_err();
         assert!(!error.is_retryable());
+        let AiMuxError::ApiCall(detail) = &error else {
+            panic!("{state}")
+        };
+        assert_eq!(detail.provider_code.as_deref(), Some(state));
         assert!(error.to_string().contains("provider detail"));
         assert!(error.to_string().contains("quota"));
     }
@@ -370,6 +403,56 @@ async fn credentialed_redirect_cannot_reach_a_private_foreign_origin() {
             .is_err()
     );
     assert!(foreign.received_requests().await.unwrap().is_empty());
+}
+
+/// A transient content-download failure is retried inside the provider, so a
+/// billed task whose result is briefly unavailable still returns its video.
+#[tokio::test]
+async fn transient_content_download_failures_are_retried() {
+    let server = MockServer::start().await;
+    status(&server, json!({"id":"task","status":"completed"})).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/videos/task/content"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/videos/task/content"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+}
+
+/// When every attempt fails the download error is terminal: the completed
+/// task is not polled again for a result the gateway cannot serve.
+#[tokio::test]
+async fn exhausted_content_download_failures_are_not_retryable() {
+    let server = MockServer::start().await;
+    status(&server, json!({"id":"task","status":"completed"})).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/videos/task/content"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(3)
+        .mount(&server)
+        .await;
+    let error = provider(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap_err();
+    assert!(!error.is_retryable());
 }
 
 #[tokio::test]
