@@ -417,23 +417,24 @@ enum AssetUrl {
     /// A target on the gateway's own API: the configured query parameters the
     /// URL lacks are appended and the configured credentials are sent.
     Gateway(String),
-    /// A complete target the response supplied with a query of its own: sent
-    /// exactly as received, because that query may be the only thing that
-    /// authorises it and a second scheme next to it would conflict.
+    /// A target whose own query authenticates it: sent exactly as received,
+    /// because appending a configured parameter would change a canonical
+    /// query a signature covers and a provider credential next to it would be
+    /// a second scheme.
     Complete(String),
 }
 
 /// Classify a completed video's `url`. An HTTP(S) URL on another origin stays
 /// public for Core's uncredentialed downloader. On the provider's own origin,
-/// the form of the reference decides whether the gateway's parameters and
-/// credentials are added. A relative reference addresses the gateway's API, so
-/// it is resolved against the base as a directory (and must stay on that
-/// origin) and gets them. An absolute URL is a complete target: the gateway
-/// named the whole address, and a query it carries may be a signature over
-/// every parameter and its encoding, so the target is sent as received and
-/// only a queryless one is treated as an asset route that needs the configured
-/// authentication. A relative reference that carries its own authentication is
-/// the same complete target, resolved.
+/// a reference whose own query authenticates it (a presigned link, recognised
+/// by its parameter names) is a complete target: a relative one is resolved
+/// against the base and an absolute one is kept as received, and neither gets
+/// the configured parameters or credentials. Every other reference on that
+/// origin addresses the gateway's API, so it gets the configured query
+/// parameters it lacks appended after its own bytes and the configured
+/// credentials: a relative reference is resolved against the base as a
+/// directory (the origin check holds it there), and an absolute URL keeps the
+/// path and query it was received with.
 fn resolve_asset_url(
     config: &CompatModelConfig,
     base: &str,
@@ -471,37 +472,31 @@ fn resolve_asset_url(
         }
         return Ok(AssetUrl::Public(url.to_string()));
     }
-    if relative {
-        // A relative reference addresses the gateway's API, so it is requested
-        // with the configured parameters and credentials. The one exception is
-        // a reference whose own query authenticates it: that is resolved and
-        // otherwise sent as received.
-        if has_self_authenticating_query(&url) {
-            return Ok(AssetUrl::Complete(url.to_string()));
-        }
-        return Ok(AssetUrl::Gateway(config.with_configured_query(&url)));
-    }
-    if url.query().is_some() {
-        // The gateway supplied a complete target and chose its query, so it is
-        // kept byte for byte: appending a configured parameter or re-encoding
-        // the pairs would change a canonical query a signature covers, and a
-        // provider credential next to the target's own is a second scheme.
-        return Ok(AssetUrl::Complete(raw.to_owned()));
+    if has_self_authenticating_query(&url) {
+        // A query that authenticates the target is its whole authorisation:
+        // appending a configured parameter or re-encoding the pairs would
+        // change a canonical query a signature covers, and a provider
+        // credential next to the target's own is a second scheme. A relative
+        // reference is resolved; an absolute one is already complete and is
+        // kept with the bytes the gateway sent.
+        return Ok(AssetUrl::Complete(if relative {
+            url.to_string()
+        } else {
+            raw.to_owned()
+        }));
     }
     Ok(AssetUrl::Gateway(config.with_configured_query(&url)))
 }
 
-/// Whether the URL's own query authenticates it. Only a relative reference
-/// needs the question answered: an absolute target's query is never touched.
-/// The names cover the presigned link schemes of the object stores and CDNs
-/// gateways commonly put in front of their media — SigV4 `X-Amz-*`, Cloud
-/// Storage `X-Goog-*`, Azure SAS `sig`, CloudFront
-/// `Signature`/`Policy`/`Key-Pair-Id` — and the plain signature and token
-/// names compatible relays use, including Akamai `hdnts`, `hmac`, `jwt`,
-/// `credential` and `auth`. The list supplements the structural rule: a
-/// signature scheme outside it that appears in an absolute URL is preserved
-/// without being recognized, and a new name is added here only for the
-/// relative form, which is decided by form and then exempted by name.
+/// Whether the URL's own query authenticates it. The names cover the presigned
+/// link schemes of the object stores and CDNs gateways commonly put in front of
+/// their media — SigV4 `X-Amz-*`, Cloud Storage `X-Goog-*`, Azure SAS `sig`,
+/// CloudFront `Signature`/`Policy`/`Key-Pair-Id` — and the plain signature and
+/// token names compatible relays use, including Akamai `hdnts`, `hmac`, `jwt`,
+/// `credential` and `auth`. The list is a boundary, not a proof: a scheme
+/// outside it cannot be told from a plain query, so the URL gets the configured
+/// parameters and the provider credential and such a signature may stop
+/// verifying; a gateway that signs with another name must have it added here.
 fn has_self_authenticating_query(url: &url::Url) -> bool {
     url.query_pairs().any(|(name, _)| {
         let normalized: String = name
@@ -655,22 +650,17 @@ mod tests {
         );
     }
 
-    /// A complete target the response supplied is sent as received: its query
-    /// may be a signature or a token that covers every parameter and its
-    /// encoding, so the configured parameters are not appended, a value is not
-    /// replaced and the pairs are not re-encoded. The rule is the form of the
-    /// URL, not the name of its parameters, so an unlisted signature scheme is
-    /// preserved the same way.
+    /// A same-origin absolute target whose query authenticates it is sent as
+    /// received: a configured parameter next to a signature would change a
+    /// canonical query it covers, and a provider credential would be a second
+    /// scheme. The recognised names include SigV4 `X-Amz-*` and the Akamai
+    /// `hdnts` token.
     #[test]
-    fn absolute_asset_with_its_own_query_is_sent_as_received() {
+    fn signed_absolute_asset_is_sent_as_received() {
         let model = model();
         for raw in [
-            // Akamai token authentication: no name the supplement knows.
+            "https://gateway.example/files/movie.mp4?X-Amz-Signature=abc%20def&X-Amz-Expires=900",
             "https://gateway.example/files/movie.mp4?hdnts=exp=1700000000~hmac=abc",
-            // A plain query the gateway chose, with a value it chose.
-            "https://gateway.example/files/movie.mp4?v=2&api-version=2023-01",
-            // Percent-encoded and form-encoded bytes stay exactly as received.
-            "https://gateway.example/files/movie.mp4?a=exp%3D1%7Ehmac%3Dabc&b=x+y",
         ] {
             let AssetUrl::Complete(url) = resolve_asset_url(&model.config, BASE_URL, raw).unwrap()
             else {
@@ -678,6 +668,56 @@ mod tests {
             };
             assert_eq!(url, raw);
         }
+    }
+
+    /// A same-origin absolute target with a plain query is an asset route: the
+    /// received pairs keep their bytes and order, a parameter it already
+    /// carries keeps the value the gateway sent, and only the configured
+    /// parameters it lacks are appended.
+    #[test]
+    fn absolute_asset_with_a_plain_query_keeps_the_received_bytes() {
+        let model = model();
+        for (raw, expected) in [
+            (
+                "https://gateway.example/files/movie.mp4?v=2",
+                "https://gateway.example/files/movie.mp4?v=2&api-version=2024-01",
+            ),
+            (
+                "https://gateway.example/files/movie.mp4?v=2&api-version=2023-01",
+                "https://gateway.example/files/movie.mp4?v=2&api-version=2023-01",
+            ),
+            (
+                "https://gateway.example/files/movie.mp4?a=exp%3D1%7Ehmac%3Dabc&b=x+y",
+                "https://gateway.example/files/movie.mp4?a=exp%3D1%7Ehmac%3Dabc&b=x+y&api-version=2024-01",
+            ),
+        ] {
+            let AssetUrl::Gateway(url) = resolve_asset_url(&model.config, BASE_URL, raw).unwrap()
+            else {
+                panic!("{raw} must keep the configured query")
+            };
+            assert_eq!(url, expected, "{raw}");
+        }
+    }
+
+    /// A signature name the list does not know cannot be told from a plain
+    /// query, so the URL is treated as an asset route: the configured parameter
+    /// is appended and the credential is sent. This is the documented residual
+    /// boundary of deciding by name; a gateway signing with another name must
+    /// have it added to the list.
+    #[test]
+    fn unlisted_signature_name_is_treated_as_a_plain_query() {
+        let AssetUrl::Gateway(url) = resolve_asset_url(
+            &model().config,
+            BASE_URL,
+            "https://gateway.example/files/movie.mp4?x-sign=abc&expires=1",
+        )
+        .unwrap() else {
+            panic!("an unlisted signature name is a plain query")
+        };
+        assert_eq!(
+            url,
+            "https://gateway.example/files/movie.mp4?x-sign=abc&expires=1&api-version=2024-01"
+        );
     }
 
     /// A relative reference is resolved as received: the query bytes the

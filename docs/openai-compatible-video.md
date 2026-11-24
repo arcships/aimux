@@ -50,30 +50,31 @@ running; a returned task ID that does not match the operation is rejected.
 
 An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
 Core downloads it without provider credentials. A result URL on the provider's
-own origin is downloaded by the provider, and the form of the reference
-decides whether the gateway's configured query parameters (`api-version`,
-`key`) and credentials are added. A relative reference addresses the gateway's
-API: it resolves against the base URL as a directory, must remain on that
-origin, and gets the configured parameters appended after the query bytes it
-carries; the received pairs keep their order and encoding, and a parameter the
-reference already carries keeps the value the gateway sent. An absolute URL is
-a complete target: the gateway named the whole address and chose its query, so
-it is sent exactly as received — its path and query bytes are neither changed
-nor re-encoded — and the configured parameters and credentials are not added,
-because the query may be a signature or token over its canonical form and a
-provider credential next to it would be a second authentication scheme. An
-absolute URL without a query cannot carry a query signature, so it is treated
-as an asset route and gets the configured parameters and credentials. This is
-a rule about the shape of the URL, not about parameter names: an unfamiliar
-signature scheme in an absolute URL is preserved without being recognized. A
-relative reference whose own query authenticates it — a presigned link such as
-SigV4 `X-Amz-*`, `X-Goog-*`, `Signature`, `sig`, a token, or an Akamai
-`hdnts`, `hmac`, `jwt`, `credential` or `auth` parameter — is likewise only
-resolved, with no configured parameters and no credential; that name list is a
-supplement to the structural rule and is consulted only for the relative form.
-If `url` is absent/null, the provider downloads `/videos/{id}/content`, with
-the configured parameters and credentials. A gateway that needs its query
-parameters on an absolute asset URL includes them in the URL it returns.
+own origin is downloaded by the provider, and whether the gateway's configured
+query parameters (`api-version`, `key`) and credentials are added depends on
+whether the URL's own query authenticates it. A query that carries a signature
+or token parameter makes the reference self-authenticating; the recognized
+names cover the presigning schemes gateways commonly put in front of media —
+SigV4 `X-Amz-*`, `X-Goog-*`, `Signature`, `sig`, `Policy`, `Key-Pair-Id`, an
+access token, and an Akamai `hdnts`, `hmac`, `jwt`, `credential` or `auth`
+parameter. A relative reference of that kind is only resolved against the base
+URL, and an absolute one is sent exactly as received; neither gets a configured
+parameter, and neither gets a provider credential, because a configured
+parameter would change a canonical query the signature covers and a credential
+next to the target's own is a second authentication scheme. Every other
+reference on that origin addresses the gateway's API: a relative reference
+resolves against the base URL as a directory and must remain on that origin,
+and an absolute URL keeps the path and query it was received with. The
+configured parameters such a URL lacks are appended after the query bytes it
+carries, the received pairs keep their order and encoding, a parameter the URL
+already carries keeps the value the gateway sent, and the request carries the
+configured credentials. The name list is a boundary rather than a proof: a
+signature scheme outside it cannot be told from a plain query, so its URL is
+treated as an asset route, gets the configured parameters and credential, and
+the signature may stop verifying. A gateway signing with another name should
+either return a relative reference or have its parameter name added to the
+list. If `url` is absent/null, the provider downloads `/videos/{id}/content`,
+with the configured parameters and credentials.
 Download requests use the existing SSRF guard, allow the explicitly configured
 origin, and strip caller headers on a redirect to another origin. Non-HTTP
 schemes, foreign protocol-relative references, and URL userinfo are rejected.

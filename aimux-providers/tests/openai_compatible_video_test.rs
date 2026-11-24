@@ -285,6 +285,42 @@ async fn same_origin_absolute_url_is_downloaded_with_credentials() {
     assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
 }
 
+/// A plain query on a same-origin absolute URL does not make it a presigned
+/// target: the configured parameter the URL lacks is appended after the query
+/// bytes it carries and the configured credential is sent. A query the gateway
+/// added for its own reasons must not turn a credentialed asset into an
+/// unauthenticated request.
+#[tokio::test]
+async fn plain_query_absolute_url_is_downloaded_with_credentials() {
+    let server = MockServer::start().await;
+    let url = format!("{}/files/movie.mp4?v=2", server.uri());
+    status(&server, json!({"id":"task","status":"completed","url":url})).await;
+    Mock::given(method("GET"))
+        .and(path("/files/movie.mp4"))
+        .and(query_param("v", "2"))
+        .and(query_param("api-version", "2024-01"))
+        .and(header("authorization", "Bearer fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+    let requests = server.received_requests().await.unwrap();
+    let download = requests
+        .iter()
+        .find(|request| request.url.path() == "/files/movie.mp4")
+        .unwrap();
+    assert_eq!(download.url.query(), Some("v=2&api-version=2024-01"));
+}
+
 /// Rejects any request whose path and query differ from `target` in any way:
 /// an added, replaced, reordered or re-encoded parameter, or a different path,
 /// does not match.
@@ -318,6 +354,40 @@ async fn relative_asset_keeps_the_gateway_query_parameters() {
         // response's own URL carried.
         .and(query_param("api-version", "2024-01"))
         .and(query_param("Expires", "1"))
+        .and(header("authorization", "Bearer fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+}
+
+/// A relative reference that already carries a configured parameter keeps the
+/// value the gateway sent: the configured parameter is neither appended again
+/// nor replaced, and the credential is still attached.
+#[tokio::test]
+async fn relative_asset_keeps_a_received_configured_parameter() {
+    let server = MockServer::start().await;
+    status(
+        &server,
+        json!({
+            "id":"task",
+            "status":"completed",
+            "url":"assets/movie.mp4?api-version=2023-01"
+        }),
+    )
+    .await;
+    let target = "/v1/assets/movie.mp4?api-version=2023-01";
+    Mock::given(method("GET"))
+        .and(ExactTarget(target.into()))
         .and(header("authorization", "Bearer fixture-key"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
         .expect(1)
@@ -374,13 +444,13 @@ async fn signed_result_target_is_requested_exactly_as_received() {
     assert!(!download.headers.contains_key("authorization"));
 }
 
-/// A result URL that carries its own query is a complete target, and the
-/// decision does not depend on the name of its parameters: this query uses an
-/// Akamai token (`hdnts`) that no signature list knows, and the fixture still
-/// answers only the received path and query. Appending `api-version`,
-/// re-encoding the pairs or attaching a credential fails the download.
+/// An absolute result URL whose query authenticates it is a presigned target:
+/// this one uses an Akamai token (`hdnts`), a name the signature list knows, and
+/// the fixture answers only the received path and query. Appending
+/// `api-version`, re-encoding the pairs or attaching a credential fails the
+/// download.
 #[tokio::test]
-async fn unlisted_signature_target_is_requested_exactly_as_received() {
+async fn token_authenticated_target_is_requested_exactly_as_received() {
     let server = MockServer::start().await;
     let target = "/files/movie.mp4?hdnts=exp=1700000000~hmac=abc&response-content-type=video%2Fmp4";
     status(
