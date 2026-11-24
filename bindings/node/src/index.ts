@@ -46,12 +46,14 @@ export type { Manifest } from './native.ts'
 
 export interface CallOptions { signal?: AbortSignal; abort?: Abort }
 
+function jsonData(_key: string, item: unknown): unknown {
+  if (typeof item === 'function' || typeof item === 'symbol') throw new TypeError('Ops parameters must contain JSON data only')
+  return item
+}
+
 function json(value: unknown): string {
   try {
-    const serialized = JSON.stringify(value, (_key, item: unknown) => {
-      if (typeof item === 'function' || typeof item === 'symbol') throw new TypeError('Ops parameters must contain JSON data only')
-      return item
-    })
+    const serialized = JSON.stringify(value, jsonData)
     if (serialized === undefined) throw new TypeError('Parameters must be JSON data')
     return serialized
   } catch (error) {

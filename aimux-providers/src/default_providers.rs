@@ -111,11 +111,26 @@ pub fn create_provider(
                 available_providers: provider_names().into_iter().map(str::to_owned).collect(),
             });
         }
+        let base = Arc::new(preset::create(name, settings.clone())?);
+        if name == "bytedance" {
+            let media =
+                crate::bytedance::create_bytedance(crate::bytedance::ByteDanceProviderSettings {
+                    api_key: settings.api_key,
+                    base_url: settings.base_url,
+                    headers: settings.headers,
+                    fetch: settings.fetch,
+                    transform_request_body: settings.transform_request_body,
+                    ..Default::default()
+                })?;
+            return Ok(Arc::new(crate::shared::media_overlay::MediaOverlay::new(
+                base,
+                Arc::new(media),
+            )));
+        }
         if matches!(
             name,
             "minimax" | "minimax_cn" | "minimax_coding_plan" | "minimax_cn_coding_plan"
         ) {
-            let base = Arc::new(preset::create(name, settings.clone())?);
             let media = Arc::new(crate::minimax::create_minimax(
                 crate::minimax::MiniMaxProviderSettings {
                     base_url: settings.base_url.or_else(|| {
@@ -127,14 +142,16 @@ pub fn create_provider(
                     fetch: settings.fetch,
                 },
             )?);
-            return Ok(Arc::new(crate::shared::media_overlay::MediaOverlay::new(
-                base,
-                media,
-                &crate::minimax::IMAGE_MODEL_IDS,
-                &crate::minimax::VIDEO_MODEL_IDS,
-            )));
+            return Ok(Arc::new(
+                crate::shared::media_overlay::MediaOverlay::with_native_ids(
+                    base,
+                    media,
+                    &crate::minimax::IMAGE_MODEL_IDS,
+                    &crate::minimax::VIDEO_MODEL_IDS,
+                ),
+            ));
         }
-        return Ok(Arc::new(preset::create(name, settings)?));
+        return Ok(base);
     }
     let PresetSettings {
         api_key,

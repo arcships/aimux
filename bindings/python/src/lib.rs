@@ -14,11 +14,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use aimux_core::AbortSignal;
-use aimux_ops::dispatch::{self, Ctx};
-use aimux_ops::envelope::{BindingError, OpsError, ProtocolError, SourceError};
+use aimux_ops::dispatch::{self, Ctx, WireParams};
+#[cfg(feature = "contract-tests")]
+use aimux_ops::envelope::SourceError;
+use aimux_ops::envelope::{BindingError, OpsError, ProtocolError};
 use aimux_ops::handle::{HandleId, HandleRegistry, Owner};
 use pyo3::prelude::*;
-use serde_json::Value;
 
 use bridge::{StreamIterator, wait_call};
 
@@ -57,7 +58,8 @@ fn parse_handle(value: &str) -> Result<HandleId, OpsError> {
         .map_err(|_| OpsError::Protocol(ProtocolError::invalid_params("handle exceeds u64")))
 }
 
-fn parse_params(text: &str) -> Result<Value, OpsError> {
+#[cfg(feature = "contract-tests")]
+fn parse_params(text: &str) -> Result<serde_json::Value, OpsError> {
     serde_json::from_str(text).map_err(|error| {
         OpsError::Binding(BindingError::InvalidWireJson {
             argument: "params_json".into(),
@@ -202,14 +204,15 @@ impl Client {
     ) -> PyResult<String> {
         check_owner(py, self.owner.token)?;
         let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
-        let params = parse_params(params_json).map_err(|e| error::ops_error(py, e))?;
         let signal = signal_for(py, self.owner.token, abort)?;
+        let params = params_json.to_owned();
         let ctx = context(self.owner.token, signal.clone());
         // No Python references cross this boundary, including in construction,
         // discovery, poll and recorder flush operations.
         wait_call(py, signal, async move {
             #[cfg(feature = "contract-tests")]
             if op == "test.teardown" {
+                parse_params(&params)?;
                 let owner = InterpreterOwner {
                     token: Owner::new_python()?,
                 };
@@ -232,10 +235,17 @@ impl Client {
             }
             #[cfg(feature = "contract-tests")]
             if op == "test.scenario" {
-                return serialize(&native_scenarios::replay(params, ctx.owner).await);
+                return serialize(
+                    &native_scenarios::replay(parse_params(&params)?, ctx.owner).await,
+                );
             }
-            let value = dispatch::call(ctx, handle, &op, params).await?;
-            serialize(&value)
+            dispatch::call_wire(
+                ctx,
+                handle,
+                &op,
+                WireParams::new(params.as_bytes(), "params_json"),
+            )
+            .await
         })
     }
 
@@ -268,11 +278,11 @@ impl Client {
             .allow_threads(runtime)
             .map_err(|e| error::ops_error(py, e))?;
         rt.spawn(async move {
-            let _ = dispatch::call(
+            let _ = dispatch::call_wire(
                 context(owner, AbortSignal::new()),
                 handle,
                 dispatch::HANDLE_DROP,
-                serde_json::json!({}),
+                WireParams::new(b"{}", "params_json"),
             )
             .await;
         });
@@ -290,8 +300,8 @@ impl Client {
     ) -> PyResult<StreamIterator> {
         check_owner(py, self.owner.token)?;
         let handle = parse_handle(&handle).map_err(|e| error::ops_error(py, e))?;
-        let params = parse_params(params_json).map_err(|e| error::ops_error(py, e))?;
         let signal = signal_for(py, self.owner.token, abort)?;
+        let params = params_json.to_owned();
         StreamIterator::start(py, self.owner.clone(), handle, op, params, signal)
     }
 }

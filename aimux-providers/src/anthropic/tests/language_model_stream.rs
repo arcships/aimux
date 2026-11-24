@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
 
-use crate::anthropic::api::StreamEvent;
 use crate::anthropic::language_model::AnthropicMessagesStream;
 use crate::anthropic::language_model_options::CANONICAL;
 use crate::stream::testing::run;
@@ -14,14 +13,11 @@ fn stream() -> AnthropicMessagesStream {
     AnthropicMessagesStream::with_options_name(CANONICAL)
 }
 
-fn event(event: Value) -> (Option<Value>, Result<StreamEvent, AiMuxError>) {
-    (
-        Some(event.clone()),
-        serde_json::from_value(event).map_err(AiMuxError::from),
-    )
+fn event(event: Value) -> Result<String, AiMuxError> {
+    Ok(event.to_string())
 }
 
-fn message_start() -> (Option<Value>, Result<StreamEvent, AiMuxError>) {
+fn message_start() -> Result<String, AiMuxError> {
     event(json!({
         "type": "message_start",
         "message": {
@@ -31,7 +27,7 @@ fn message_start() -> (Option<Value>, Result<StreamEvent, AiMuxError>) {
     }))
 }
 
-fn text_block(index: usize, text: &str) -> [(Option<Value>, Result<StreamEvent, AiMuxError>); 3] {
+fn text_block(index: usize, text: &str) -> [Result<String, AiMuxError>; 3] {
     [
         event(json!({
             "type": "content_block_start", "index": index,

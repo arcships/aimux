@@ -1,29 +1,62 @@
 //! Compose a text preset with a native image/video provider without replacing
 //! the preset's existing model factories or discovery implementation.
-//!
-//! The overlay only takes over the image and video model IDs the native
-//! provider declares. Every other ID goes back to the base provider, so a
-//! model that exists only on a relay keeps the preset's implementation.
 
 use std::sync::Arc;
 
 use aimux_core::provider::ProviderDiscovery;
+
 use aimux_core::{
     AiMuxError, DecisionModel, EmbeddingModel, Files, ImageModel, LanguageModel, Provider,
     RerankingModel, SearchModel, Skills, SpeechModel, TranscriptionModel, VideoModel,
 };
 
+/// Which image and video model IDs the overlay answers from `media`.
+enum NativeIds {
+    /// Every ID, whatever the media provider does with it.
+    All,
+    /// Only the listed IDs. A model that exists only on a relay keeps the
+    /// preset's implementation.
+    Only {
+        image: &'static [&'static str],
+        video: &'static [&'static str],
+    },
+}
+
+impl NativeIds {
+    fn serves_image(&self, id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only { image, .. } => image.contains(&id),
+        }
+    }
+
+    fn serves_video(&self, id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only { video, .. } => video.contains(&id),
+        }
+    }
+}
+
 pub(crate) struct MediaOverlay {
     base: Arc<dyn Provider>,
     media: Arc<dyn Provider>,
-    image_models: &'static [&'static str],
-    video_models: &'static [&'static str],
+    native_ids: NativeIds,
 }
 
 impl MediaOverlay {
-    /// `image_models` and `video_models` are the IDs `media` serves; any other
+    /// Every image and video ID is served by `media`.
+    pub(crate) fn new(base: Arc<dyn Provider>, media: Arc<dyn Provider>) -> Self {
+        Self {
+            base,
+            media,
+            native_ids: NativeIds::All,
+        }
+    }
+
+    /// Only `image_models` and `video_models` are served by `media`; any other
     /// ID is looked up on `base`.
-    pub(crate) fn new(
+    pub(crate) fn with_native_ids(
         base: Arc<dyn Provider>,
         media: Arc<dyn Provider>,
         image_models: &'static [&'static str],
@@ -32,8 +65,10 @@ impl MediaOverlay {
         Self {
             base,
             media,
-            image_models,
-            video_models,
+            native_ids: NativeIds::Only {
+                image: image_models,
+                video: video_models,
+            },
         }
     }
 }
@@ -52,7 +87,7 @@ impl Provider for MediaOverlay {
     }
 
     fn image_model(&self, id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        if self.image_models.contains(&id) {
+        if self.native_ids.serves_image(id) {
             self.media.image_model(id)
         } else {
             self.base.image_model(id)
@@ -60,7 +95,7 @@ impl Provider for MediaOverlay {
     }
 
     fn video_model(&self, id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
-        if self.video_models.contains(&id) {
+        if self.native_ids.serves_video(id) {
             self.media.video_model(id)
         } else {
             self.base.video_model(id)

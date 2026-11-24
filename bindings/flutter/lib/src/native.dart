@@ -13,7 +13,17 @@ import 'ffi.g.dart';
 
 DynamicLibrary openLibrary(String? path, {bool bridge = false}) {
   if (path != null) return DynamicLibrary.open(path);
-  if (Platform.isIOS) return DynamicLibrary.process();
+  if (Platform.isIOS) {
+    // The small aimux_dart_* C bridge is statically linked into the host app
+    // via the aimux pod; the Rust core ships as an embedded dynamic framework.
+    if (bridge) return DynamicLibrary.process();
+    try {
+      return DynamicLibrary.open('aimux_ffi.framework/aimux_ffi');
+    } on ArgumentError {
+      // Allow custom host builds that statically link aimux_ffi into Runner.
+      return DynamicLibrary.process();
+    }
+  }
   final name = bridge ? 'aimux_dart' : 'aimux_ffi';
   if (Platform.isAndroid || Platform.isLinux) {
     return DynamicLibrary.open('lib$name.so');

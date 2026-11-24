@@ -634,14 +634,17 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![function_tool(
-                    "weather",
-                    "get weather",
-                    json!({
-                        "type": "object",
-                        "properties": { "location": { "type": "string" } }
-                    }),
-                )]);
+                options.tools = Some(
+                    vec![function_tool(
+                        "weather",
+                        "get weather",
+                        json!({
+                            "type": "object",
+                            "properties": { "location": { "type": "string" } }
+                        }),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -1767,11 +1770,8 @@ mod xai_responses_language_model {
             /// `xai.web_search` request, made with the model.
             async fn web_search_before_each(fetch: &Arc<MockFetch>) -> GenerateResult {
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 create_model(fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -1810,15 +1810,18 @@ mod xai_responses_language_model {
                 web_search_before_each(&fetch).await;
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({
-                        "allowedDomains": ["wikipedia.org"],
-                        "enableImageSearch": true,
-                        "enableImageUnderstanding": true
-                    }),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.web_search",
+                        "web_search",
+                        json!({
+                            "allowedDomains": ["wikipedia.org"],
+                            "enableImageSearch": true,
+                            "enableImageUnderstanding": true
+                        }),
+                    )]
+                    .into(),
+                );
                 create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -1911,11 +1914,8 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -1995,7 +1995,8 @@ mod xai_responses_language_model {
                 )));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool("xai.x_search", "x_search", json!({}))]);
+                options.tools =
+                    Some(vec![provider_tool("xai.x_search", "x_search", json!({}))].into());
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2021,11 +2022,14 @@ mod xai_responses_language_model {
                 )));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.code_execution",
-                    "code_execution",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.code_execution",
+                        "code_execution",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2051,11 +2055,14 @@ mod xai_responses_language_model {
                 )));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.file_search",
-                    "file_search",
-                    json!({ "vectorStoreIds": ["collection_test123"] }),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.file_search",
+                        "file_search",
+                        json!({ "vectorStoreIds": ["collection_test123"] }),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2135,11 +2142,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.file_search",
-                    "file_search",
-                    json!({ "vectorStoreIds": ["collection_test123"] }),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.file_search",
+                        "file_search",
+                        json!({ "vectorStoreIds": ["collection_test123"] }),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2184,11 +2194,14 @@ mod xai_responses_language_model {
                 )));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2256,11 +2269,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2312,11 +2328,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2364,11 +2383,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "generateImage",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "generateImage",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2422,14 +2444,17 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![function_tool(
-                    "weather",
-                    "get weather",
-                    json!({
-                        "type": "object",
-                        "properties": { "location": { "type": "string" } }
-                    }),
-                )]);
+                options.tools = Some(
+                    vec![function_tool(
+                        "weather",
+                        "get weather",
+                        json!({
+                            "type": "object",
+                            "properties": { "location": { "type": "string" } }
+                        }),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2550,10 +2575,13 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![
-                    provider_tool("xai.web_search", "web_search", json!({})),
-                    provider_tool("xai.code_execution", "code_execution", json!({})),
-                ]);
+                options.tools = Some(
+                    vec![
+                        provider_tool("xai.web_search", "web_search", json!({})),
+                        provider_tool("xai.code_execution", "code_execution", json!({})),
+                    ]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2592,11 +2620,8 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2644,7 +2669,8 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool("xai.x_search", "x_search", json!({}))]);
+                options.tools =
+                    Some(vec![provider_tool("xai.x_search", "x_search", json!({}))].into());
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2686,11 +2712,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.code_execution",
-                    "code_execution",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.code_execution",
+                        "code_execution",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2732,11 +2761,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.code_execution",
-                    "code_execution",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.code_execution",
+                        "code_execution",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2778,11 +2810,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "my_custom_search",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.web_search",
+                        "my_custom_search",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let result = create_model(&fetch, DEFAULT_MODEL_ID)
                     .do_generate(&options)
                     .await
@@ -2844,11 +2879,8 @@ mod xai_responses_language_model {
                     chunks_fixture_fetch(include_str!("fixtures/xai-web-search-tool.1.chunks.txt"));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_js_eq(
@@ -3334,7 +3366,8 @@ mod xai_responses_language_model {
                     chunks_fixture_fetch(include_str!("fixtures/xai-x-search-tool.chunks.txt"));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool("xai.x_search", "x_search", json!({}))]);
+                options.tools =
+                    Some(vec![provider_tool("xai.x_search", "x_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_js_eq(
@@ -3475,11 +3508,8 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -3545,11 +3575,8 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -3627,11 +3654,8 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -3703,11 +3727,8 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -3746,11 +3767,14 @@ mod xai_responses_language_model {
                 ));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_js_eq(
@@ -3906,11 +3930,14 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_js_eq(
@@ -4009,11 +4036,14 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4086,11 +4116,14 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.image_generation",
-                    "image_generation",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.image_generation",
+                        "image_generation",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4184,14 +4217,17 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![function_tool(
-                    "weather",
-                    "get weather",
-                    json!({
-                        "type": "object",
-                        "properties": { "location": { "type": "string" } }
-                    }),
-                )]);
+                options.tools = Some(
+                    vec![function_tool(
+                        "weather",
+                        "get weather",
+                        json!({
+                            "type": "object",
+                            "properties": { "location": { "type": "string" } }
+                        }),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4284,14 +4320,17 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![function_tool(
-                    "weather",
-                    "get weather",
-                    json!({
-                        "type": "object",
-                        "properties": { "location": { "type": "string" } }
-                    }),
-                )]);
+                options.tools = Some(
+                    vec![function_tool(
+                        "weather",
+                        "get weather",
+                        json!({
+                            "type": "object",
+                            "properties": { "location": { "type": "string" } }
+                        }),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_matches_object(
@@ -4359,11 +4398,14 @@ mod xai_responses_language_model {
                 ]);
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.file_search",
-                    "file_search",
-                    json!({ "vectorStoreIds": ["collection_123"] }),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.file_search",
+                        "file_search",
+                        json!({ "vectorStoreIds": ["collection_123"] }),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4458,11 +4500,8 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "web_search",
-                    json!({}),
-                )]);
+                options.tools =
+                    Some(vec![provider_tool("xai.web_search", "web_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4490,7 +4529,8 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool("xai.x_search", "x_search", json!({}))]);
+                options.tools =
+                    Some(vec![provider_tool("xai.x_search", "x_search", json!({}))].into());
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4518,11 +4558,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.code_execution",
-                    "code_execution",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.code_execution",
+                        "code_execution",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4550,11 +4593,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.code_execution",
-                    "code_execution",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.code_execution",
+                        "code_execution",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -4582,11 +4628,14 @@ mod xai_responses_language_model {
                 }));
 
                 let mut options = CallOptions::new(test_prompt());
-                options.tools = Some(vec![provider_tool(
-                    "xai.web_search",
-                    "my_custom_search",
-                    json!({}),
-                )]);
+                options.tools = Some(
+                    vec![provider_tool(
+                        "xai.web_search",
+                        "my_custom_search",
+                        json!({}),
+                    )]
+                    .into(),
+                );
                 let parts = run_stream(&fetch, DEFAULT_MODEL_ID, &options).await;
 
                 assert_contains(
@@ -5374,12 +5423,15 @@ async fn tool_results_preserve_actions_and_sources() {
     });
     let fetch = MockFetch::new(vec![Canned::json(&body)]);
     let mut options = options();
-    options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "xai.web_search".parse().unwrap(),
-        name: "web_search".into(),
-        args: serde_json::Map::new(),
-        supports_deferred_results: None,
-    })]);
+    options.tools = Some(
+        vec![Tool::Provider(ProviderTool {
+            id: "xai.web_search".parse().unwrap(),
+            name: "web_search".into(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })]
+        .into(),
+    );
     let result = model(&fetch).do_generate(&options).await.unwrap();
     assert_request(&fetch, false, true);
     let expected = vec![

@@ -47,9 +47,9 @@ Each stream owns its bridge and creates an abort handle unless the request
 provides `abort` as a decimal handle string. Supplied abort handles remain
 caller-owned; cancellation signals the same handle. The native C callback copies a frame and
 posts through `NativeCallable.listener` to its owning isolate; it never invokes
-a Dart function on a Rust thread. A callback waits for an ack after consumer
-delivery. The C bridge holds at most one frame and the isolate transport grants one
-event credit (each frame is at most 1 MiB), plus an independent terminal slot.
+a Dart function on a Rust thread. The C listener can hold three frames and the isolate transport grants four
+event credits. Including the producer's current frame, the window holds at
+most eight 1 MiB frames. Terminal delivery to the consumer has its own slot.
 Pause withholds event credit. Cancel wakes the producer
 without needing credit. The bridge and listener remain alive until both native
 return and the final queued notification have completed. Single-subscription
@@ -97,16 +97,23 @@ Unknown union tags raise `FormatException` with the type and tag.
 ## Native packaging
 
 Android retains the prebuilt `android/src/main/jniLibs/<abi>/libaimux_ffi.so`
-loader and builds `libaimux_dart.so` with the NDK/CMake. iOS retains
-`DynamicLibrary.process()` and force-loads the Rust xcframework; the CocoaPods
-plugin is static and retains every bridge symbol via explicit linker roots.
-The iOS CI `tool/check_symbols.sh` gate verifies all defined ABI and bridge symbols
-across app executables, including `Runner.debug.dylib`.
+loader and builds `libaimux_dart.so` with the NDK/CMake. iOS ships a dynamic
+`aimux_ffi.framework` (`cdylib`, fat-LTO, `-Oz`) inside `aimux_ffi.xcframework`,
+embedded into `Runner.app/Frameworks/` by CocoaPods and loaded via
+`DynamicLibrary.open('aimux_ffi.framework/aimux_ffi')` (with a fallback to
+`DynamicLibrary.process()` for custom static builds). The CocoaPods `aimux`
+plugin pod itself stays static and retains every `aimux_dart_*` C bridge symbol
+via explicit linker roots for `DynamicLibrary.process()`. The iOS CI
+`tool/check_symbols.sh` gate verifies the embedded dynamic `aimux_ffi.framework`
+(`MH_DYLIB`, `arm64`, `@rpath` install name, all 14 ABI exports), the host app's
+`@executable_path/Frameworks` rpath, and all defined bridge symbols across app
+executables, including `Runner.debug.dylib`.
 
 For desktop use, build `native/CMakeLists.txt` and place the resulting
 `libaimux_dart.dylib`, `libaimux_dart.so`, or `aimux_dart.dll` beside the Rust
 library on the loader path. Explicit `libraryPath` and `bridgePath` overrides are
-available for development/tests; iOS normally uses process lookup for both.
+available for development/tests; iOS loads `aimux_ffi.framework/aimux_ffi` for
+the Rust core and uses process lookup for the C bridge.
 The stream credit transport currently requires POSIX pipes (Android, iOS, macOS
 and Linux); Windows streaming is unsupported.
 

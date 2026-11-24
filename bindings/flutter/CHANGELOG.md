@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Packaging (iOS): switched `aimux_ffi.xcframework` from a force-loaded static
+  archive (`ld -r` `.a`) to an embedded dynamic `aimux_ffi.framework` (`cdylib`,
+  fat-LTO, `opt-level = "z"`, `@rpath/aimux_ffi.framework/aimux_ffi`). Dart
+  loads `aimux_ffi.framework/aimux_ffi` on iOS (with a fallback to
+  `DynamicLibrary.process()`), while the `aimux_dart_*` C bridge stays
+  statically linked in the host app binary.
 - Switch to the versioned ops C ABI with manifest validation.
 - Run blocking native work in isolates and bridge streams with bounded credit/ack.
 - Add correct allocated-token NativeFinalizer cleanup and asynchronous explicit close.

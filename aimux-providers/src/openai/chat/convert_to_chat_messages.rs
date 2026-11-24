@@ -7,8 +7,10 @@ use aimux_core::language_model_message::{
     ToolResultOutput, UserPart,
 };
 use aimux_core::shared::{FileData, SharedProviderOptions};
+use aimux_core::types::Warning;
 use aimux_provider_utils::{
     get_top_level_media_type, resolve_full_media_type, tool_result_to_content,
+    warn_tool_result_error_flag,
 };
 use serde_json::{Value, json};
 
@@ -25,10 +27,15 @@ use crate::openai::language_model_capabilities::SystemMessageMode;
 pub fn convert_prompt_to_openai_messages_with_mode_fallible(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     for msg in prompt {
-        result.extend(convert_message_to_openai(msg, system_message_mode)?);
+        result.extend(convert_message_to_openai(
+            msg,
+            system_message_mode,
+            warnings,
+        )?);
     }
     Ok(result)
 }
@@ -177,6 +184,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
 fn convert_message_to_openai(
     msg: &LanguageModelMessage,
     system_message_mode: SystemMessageMode,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let message = match msg {
         LanguageModelMessage::System {
@@ -201,6 +209,7 @@ fn convert_message_to_openai(
                 .iter()
                 .filter_map(|part| {
                     let ToolPart::ToolResult(result) = part else { return None; };
+                    warn_tool_result_error_flag(&result.output, warnings);
                     let mut content = tool_result_to_content(&result.output);
                     let breakpoint = tool_result_cache_breakpoint(&result.output).or_else(|| get_prompt_cache_breakpoint(&result.provider_options));
                     if let Some(breakpoint) = breakpoint {

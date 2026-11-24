@@ -120,6 +120,17 @@ test('return cancels while next is pending', async () => {
   assert.equal((await iterator.next()).done, true)
 })
 
+test('a concurrent next rejects without cancelling the pending batch', async () => {
+  const client = new Client()
+  const abort = client.abort()
+  const iterator = await client.raw.stream('0', ops.OP_TEXT_STREAM, '{"pending":true}', abort)
+  const pending = iterator.next()
+  await assert.rejects(iterator.next(), error => error instanceof AimuxError && error.code === 303)
+  assert.equal(abort.aborted, false)
+  await iterator.return!()
+  assert.deepEqual(await pending, { done: true, value: undefined })
+})
+
 test('reader.cancel cancels while a read is pending without prefetch', async () => {
   const client = new Client()
   const abort = client.abort()
@@ -201,11 +212,55 @@ test('manifest handshake pins every generated value and reports both sides', () 
   }
 })
 
-test('typed serialization failures stay in the binding error domain', async () => {
+test('client pins the native contract before lazily reading and caching its manifest', () => {
+  const { Runtime } = require('./fixtures/native.cjs')
+  const read = Runtime.prototype.manifestJson
+  const digest = Runtime.prototype.manifestDigest
+  let reads = 0
+  Runtime.prototype.manifestJson = function () { reads++; return read.call(this) }
+  try {
+    Runtime.prototype.manifestDigest = () => 'stale'
+    assert.throws(() => new Client(), error => error instanceof AimuxError && error.code === 302)
+    Runtime.prototype.manifestDigest = digest
+    const client = new Client()
+    assert.equal(client.manifestDigest, ops.MANIFEST_DIGEST)
+    assert.equal(reads, 0)
+    assert.equal(client.manifest.digest, ops.MANIFEST_DIGEST)
+    assert.strictEqual(client.manifest, client.manifest)
+    assert.equal(reads, 1)
+  } finally {
+    Runtime.prototype.manifestJson = read
+    Runtime.prototype.manifestDigest = digest
+  }
+})
+
+test('typed serialization preserves plain options and nested handle references', async () => {
+  const client = new Client()
+  const provider = await client.provider({ package: 'openai', settings: { apiKey: 'test' } })
+  try {
+    const plain = { prompt: 'hello', options: { include: { requestBody: false }, tags: ['a', 'b'] } }
+    assert.deepEqual(await client.call('0', 'fixture.echo', plain), { op: 'fixture.echo', params: plain })
+    const op = 'fixture.echo'
+    const params = { nested: [{ handle: provider.handle }, { toJSON: () => provider.handle }] }
+    assert.deepEqual(await client.call('0', op, params), { op, params: { nested: [{ handle: provider.handle }, provider.handle] } })
+  } finally {
+    await provider.close()
+  }
+})
+
+test('typed serialization rejects invalid values and invokes getters once', async () => {
   const client = new Client()
   const cyclic: Record<string, unknown> = {}
   cyclic.self = cyclic
-  await assert.rejects(client.call('0', ops.OP_RUNTIME_CONFIGURE, cyclic), error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202)
+  const errors = [cyclic, { nested: [1n] }, { fn: () => {} }, { nested: [Symbol('bad')] }]
+  for (const params of errors) {
+    await assert.rejects(client.call('0', 'fixture.echo', params),
+      error => error instanceof AimuxError && error.kind === 'binding' && error.code === 202 && error.cause instanceof TypeError)
+  }
+  let reads = 0
+  const params = { get text() { reads++; return 'hello' } }
+  assert.deepEqual(await client.call('0', 'fixture.echo', params), { op: 'fixture.echo', params: { text: 'hello' } })
+  assert.equal(reads, 1)
 })
 
 test('raw and typed expose matching error/cancelled terminal frames as DTOs', async () => {

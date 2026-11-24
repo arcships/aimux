@@ -273,7 +273,18 @@ pub fn create_json_response_handler<T>() -> ResponseHandler<T>
 where
     T: DeserializeOwned + Send + 'static,
 {
-    ResponseHandler::new_with_source(|input, body_source| async move {
+    create_json_response_handler_with_body(true)
+}
+
+/// Parse a successful response into `T`, retaining its full JSON body only
+/// when the caller needs it. `T` should capture any raw subtrees it needs.
+#[doc(hidden)]
+#[must_use]
+pub fn create_json_response_handler_with_body<T>(retain_body: bool) -> ResponseHandler<T>
+where
+    T: DeserializeOwned + Send + 'static,
+{
+    ResponseHandler::new_with_source(move |input, body_source| async move {
         let (value, body, headers) = read_json_response::<T>(input, body_source).await?;
         // `raw_value` (needed by callers such as `Usage.raw`) is a
         // best-effort second parse: `T`'s successful deserialization already
@@ -281,7 +292,9 @@ where
         // changes the outcome. A caller whose `T` is already a
         // `serde_json::Value` uses [`create_json_bytes_response_handler`]
         // instead and skips it.
-        let raw_value = serde_json::from_slice::<serde_json::Value>(&body).ok();
+        let raw_value = retain_body
+            .then(|| serde_json::from_slice(&body).ok())
+            .flatten();
         Ok(ResponseHandlerOutput {
             value,
             raw_value,
@@ -506,7 +519,8 @@ fn event_json_parse_error(data: &str, error: serde_json::Error) -> AiMuxError {
 /// (`safeParseJSON`): text that is not JSON is a JSON parse error naming the
 /// text, in the AI SDK's `JSONParseError` message
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
-fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
+#[doc(hidden)]
+pub fn parse_sse_json<'a, T: serde::Deserialize<'a>>(data: &'a str) -> Result<T, AiMuxError> {
     serde_json::from_str(data).map_err(|error| event_json_parse_error(data, error))
 }
 
@@ -610,6 +624,23 @@ fn raw_event_source_stream(
     (output_headers, stream)
 }
 
+/// Stream the owned SSE data strings so the consuming transformer can borrow
+/// from each frame while deserializing it.
+#[doc(hidden)]
+#[must_use]
+pub fn create_raw_event_source_response_handler()
+-> ResponseHandler<BoxStream<'static, Result<String, AiMuxError>>> {
+    ResponseHandler::new_with_source(|input, body_source| async move {
+        let (response_headers, stream) = raw_event_source_stream(input, body_source);
+        Ok(ResponseHandlerOutput {
+            value: Box::pin(stream) as BoxStream<'static, Result<String, AiMuxError>>,
+            raw_value: None,
+            response_headers,
+        })
+    })
+    .streaming()
+}
+
 /// Parse an SSE response and deserialize each `data:` field as `T`.
 ///
 /// A `data: [DONE]` event ends the stream; nothing after it is read.
@@ -624,7 +655,7 @@ where
     ResponseHandler::new_with_source(|input, body_source| async move {
         let (output_headers, stream) = raw_event_source_stream(input, body_source);
         let value: BoxStream<'static, Result<T, AiMuxError>> =
-            Box::pin(stream.map(|item| item.and_then(|data| parse_event::<T>(&data))));
+            Box::pin(stream.map(|item| item.and_then(|data| parse_sse_json::<T>(&data))));
         Ok(ResponseHandlerOutput {
             value,
             raw_value: None,

@@ -258,10 +258,13 @@ mod do_generate {
             let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
             let schema = json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false,"$schema":"http://json-schema.org/draft-07/schema#"});
             let mut opts = options();
-            opts.tools = Some(vec![Tool::Function(FunctionTool::new(
-                "test-tool",
-                schema.clone(),
-            ))]);
+            opts.tools = Some(
+                vec![Tool::Function(FunctionTool::new(
+                    "test-tool",
+                    schema.clone(),
+                ))]
+                .into(),
+            );
             let result = provider(&fetch)
                 .chat("command-r-plus")
                 .do_generate(&opts)

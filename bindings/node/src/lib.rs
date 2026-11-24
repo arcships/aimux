@@ -12,12 +12,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use aimux_core::AbortSignal;
-use aimux_ops::dispatch::{self, Ctx};
+use aimux_ops::dispatch::{self, Ctx, WireParams};
 use aimux_ops::envelope::{ErrorEnvelope, OpsError, ProtocolError};
 use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner, allocate};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use serde_json::Value;
 
 pub use bridge::FrameIterator;
 use error::{WireResult, envelope};
@@ -67,7 +66,7 @@ impl Realm {
         })
     }
 
-    fn remember(&self, result: &Value, signal: &Arc<AbortSignal>) {
+    fn remember(&self, result: &str, signal: &Arc<AbortSignal>) {
         let registry = HandleRegistry::global();
         let mut resources = self.lock();
         if resources.closed {
@@ -80,9 +79,14 @@ impl Realm {
         // An operation keeps its start call's cancellation signal until handle.drop.
         // Only a bare handle-id result can name one; model JSON is never scanned.
         let operation = result
-            .as_str()
+            .strip_prefix('"')
+            .and_then(|id| id.strip_suffix('"'))
             .and_then(|id| id.parse().ok())
-            .filter(|&id| registry.get(self.owner, id, &[HandleKind::Operation]).is_ok());
+            .filter(|&id| {
+                registry
+                    .get(self.owner, id, &[HandleKind::Operation])
+                    .is_ok()
+            });
         if let Some(HandleId(id)) = operation {
             resources.operations.insert(id, signal.clone());
         }
@@ -181,6 +185,16 @@ impl Runtime {
     }
 
     #[napi]
+    pub fn abi_version(&self) -> u32 {
+        aimux_ops::ABI_VERSION
+    }
+
+    #[napi]
+    pub fn ops_version(&self) -> &'static str {
+        aimux_ops::OPS_VERSION
+    }
+
+    #[napi]
     pub fn manifest_json(&self) -> WireResult<String> {
         WireResult(error::serialize(&aimux_ops::manifest::manifest()))
     }
@@ -201,15 +215,17 @@ impl Runtime {
         WireResult(
             async {
                 let id = handle(&id)?;
-                let params = error::parse("params", &params_json)?;
+                let params = WireParams::new(params_json.as_bytes(), "params");
                 let signal = self.signal(abort)?;
                 let request = self.realm.request(signal.clone())?;
                 #[cfg(feature = "contract-tests")]
                 if op == "test.operation" {
+                    error::parse("params", &params_json)?;
                     return error::serialize(&native_scenarios::operation(self.realm.owner).await);
                 }
                 #[cfg(feature = "contract-tests")]
                 if op == "test.teardown" {
+                    error::parse("params", &params_json)?;
                     let realm = Realm {
                         owner: Owner::new_node().map_err(envelope)?,
                         next_request: AtomicU64::new(1),
@@ -226,10 +242,14 @@ impl Runtime {
                 #[cfg(feature = "contract-tests")]
                 if op == "test.scenario" {
                     return error::serialize(
-                        &native_scenarios::replay(params, self.realm.owner).await,
+                        &native_scenarios::replay(
+                            error::parse("params", &params_json)?,
+                            self.realm.owner,
+                        )
+                        .await,
                     );
                 }
-                let result = dispatch::call(self.realm.context(&signal), id, &op, params)
+                let result = dispatch::call_wire(self.realm.context(&signal), id, &op, params)
                     .await
                     .map_err(envelope)?;
                 self.realm.remember(&result, &signal);
@@ -240,7 +260,7 @@ impl Runtime {
                     }
                 }
                 drop(request);
-                error::serialize(&result)
+                Ok(result)
             }
             .await,
         )
@@ -281,13 +301,13 @@ impl Runtime {
         WireResult(
             async {
                 let id = handle(&id)?;
-                let params = error::parse("params", &params_json)?;
+                let params = WireParams::new(params_json.as_bytes(), "params");
                 let signal = self.signal(abort)?;
                 let request = self.realm.request(signal.clone())?;
                 // Validation occurs before an iterator is returned, never as a fabricated first event.
-                let stream = dispatch::stream(self.realm.context(&signal), id, &op, params)
+                let stream = dispatch::stream_wire(self.realm.context(&signal), id, &op, params)
                     .map_err(envelope)?;
-                Ok(bridge::start(stream, request))
+                Ok(bridge::start(stream.into_wire(), request))
             }
             .await,
         )
@@ -406,14 +426,14 @@ mod tests {
         };
         let started = Arc::new(AbortSignal::new());
         let id = native_scenarios::operation(realm.owner).await;
-        realm.remember(&Value::String(id.0.to_string()), &started);
+        realm.remember(&serde_json::to_string(&id).unwrap(), &started);
         assert!(realm.lock().operations.contains_key(&id.0));
         realm.cleanup();
         assert!(started.is_aborted());
 
         let late = native_scenarios::operation(realm.owner).await;
         let finishing = Arc::new(AbortSignal::new());
-        realm.remember(&serde_json::json!({ "handle": late.0.to_string() }), &finishing);
+        realm.remember("null", &finishing);
         assert!(native_scenarios::released(realm.owner, late));
         assert!(finishing.is_aborted());
     }

@@ -157,7 +157,9 @@ impl VertexImageModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url(&self.generate_content_path()), options),
+            exchange
+                .request(exchange.url(&self.generate_content_path()), options)
+                .generation_for(options),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             google_failed_response_handler(),

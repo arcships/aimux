@@ -368,7 +368,7 @@ func TestStreamTerminalErrorAndCallbackFailureLatch(t *testing.T) {
 	}{
 		{"test.terminalError", "aimux", 11}, {"test.bad", "binding", 206},
 		{"test.null", "binding", 206}, {"test.large", "protocol", 305},
-		{"test.sequence", "binding", 206}, {"test.eventTooLarge", "protocol", 305}, {"test.noend", "binding", 206},
+		{"test.sequence", "binding", 206}, {"test.eventTooLarge", "protocol", 305}, {"test.badEnd", "binding", 206},
 	} {
 		t.Run(c.op, func(t *testing.T) {
 			s, err := h.Stream(context.Background(), c.op, struct{}{})

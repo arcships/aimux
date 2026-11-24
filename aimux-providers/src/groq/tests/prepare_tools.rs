@@ -48,7 +48,7 @@ mod prepare_tools {
     #[test]
     fn should_return_undefined_tools_and_tool_choice_when_tools_are_empty() {
         let options = CallOptions {
-            tools: Some(Vec::new()),
+            tools: Some(Default::default()),
             ..CallOptions::new(Vec::new())
         };
 
@@ -66,22 +66,25 @@ mod prepare_tools {
         #[test]
         fn should_pass_through_strict_mode_for_multiple_tools_with_different_strict_settings() {
             let options = CallOptions {
-                tools: Some(vec![
-                    Tool::Function(FunctionTool {
-                        description: Some("A strict tool".to_string()),
-                        strict: Some(true),
-                        ..FunctionTool::new("strictTool", empty_object_schema())
-                    }),
-                    Tool::Function(FunctionTool {
-                        description: Some("A non-strict tool".to_string()),
-                        strict: Some(false),
-                        ..FunctionTool::new("nonStrictTool", empty_object_schema())
-                    }),
-                    Tool::Function(FunctionTool {
-                        description: Some("A tool without strict setting".to_string()),
-                        ..FunctionTool::new("defaultTool", empty_object_schema())
-                    }),
-                ]),
+                tools: Some(
+                    vec![
+                        Tool::Function(FunctionTool {
+                            description: Some("A strict tool".to_string()),
+                            strict: Some(true),
+                            ..FunctionTool::new("strictTool", empty_object_schema())
+                        }),
+                        Tool::Function(FunctionTool {
+                            description: Some("A non-strict tool".to_string()),
+                            strict: Some(false),
+                            ..FunctionTool::new("nonStrictTool", empty_object_schema())
+                        }),
+                        Tool::Function(FunctionTool {
+                            description: Some("A tool without strict setting".to_string()),
+                            ..FunctionTool::new("defaultTool", empty_object_schema())
+                        }),
+                    ]
+                    .into(),
+                ),
                 ..CallOptions::new(Vec::new())
             };
 
@@ -137,7 +140,7 @@ mod prepare_tools {
                 input_examples: None,
             };
             let options = CallOptions {
-                tools: Some(vec![Tool::from(tool)]),
+                tools: Some(vec![Tool::from(tool)].into()),
                 ..default_options(test_prompt())
             };
             model.do_generate(&options).await.unwrap();
@@ -174,7 +177,7 @@ mod prepare_tools {
                 input_examples: None,
             };
             let options = CallOptions {
-                tools: Some(vec![Tool::from(tool)]),
+                tools: Some(vec![Tool::from(tool)].into()),
                 ..default_options(test_prompt())
             };
             model.do_generate(&options).await.unwrap();
@@ -206,7 +209,7 @@ mod prepare_tools {
                 FunctionTool::new("testFunction", json!({"type": "object", "properties": {}}))
                     .with_description("A test function");
             let options = CallOptions {
-                tools: Some(vec![Tool::from(tool)]),
+                tools: Some(vec![Tool::from(tool)].into()),
                 ..default_options(test_prompt())
             };
             model.do_generate(&options).await.unwrap();
@@ -233,7 +236,7 @@ mod prepare_tools {
         #[test]
         fn should_handle_browser_search_with_tool_choice() {
             let options = CallOptions {
-                tools: Some(vec![browser_search_tool()]),
+                tools: Some(vec![browser_search_tool()].into()),
                 tool_choice: Some(LanguageModelV4ToolChoice::Required),
                 ..CallOptions::new(Vec::new())
             };
@@ -263,7 +266,7 @@ mod prepare_tools {
                 supports_deferred_results: None,
             });
             let options = CallOptions {
-                tools: Some(vec![tool]),
+                tools: Some(vec![tool].into()),
                 ..default_options(test_prompt())
             };
             let result = model.do_generate(&options).await.unwrap();
@@ -288,7 +291,7 @@ mod prepare_tools {
                 supports_deferred_results: None,
             });
             let options = CallOptions {
-                tools: Some(vec![tool]),
+                tools: Some(vec![tool].into()),
                 ..default_options(test_prompt())
             };
             let result = model.do_generate(&options).await.unwrap();
@@ -323,7 +326,7 @@ mod prepare_tools {
                 supports_deferred_results: None,
             });
             let options = CallOptions {
-                tools: Some(vec![Tool::from(func_tool), browser_tool]),
+                tools: Some(vec![Tool::from(func_tool), browser_tool].into()),
                 ..default_options(test_prompt())
             };
             let result = model.do_generate(&options).await.unwrap();
@@ -364,7 +367,7 @@ mod prepare_tools {
                     supports_deferred_results: None,
                 });
                 let options = CallOptions {
-                    tools: Some(vec![tool]),
+                    tools: Some(vec![tool].into()),
                     ..default_options(test_prompt())
                 };
                 let result = model.do_generate(&options).await.unwrap();
@@ -393,7 +396,7 @@ mod prepare_tools {
             input_examples: None,
         };
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             ..default_options(test_prompt())
         };
         let result = model.do_generate(&options).await.unwrap();
@@ -429,7 +432,7 @@ mod prepare_tools {
             supports_deferred_results: None,
         });
         let options = CallOptions {
-            tools: Some(vec![tool]),
+            tools: Some(vec![tool].into()),
             ..default_options(test_prompt())
         };
         let result = model.do_generate(&options).await.unwrap();
@@ -457,7 +460,7 @@ mod prepare_tools {
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Auto),
             ..default_options(test_prompt())
         };
@@ -478,7 +481,7 @@ mod prepare_tools {
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..default_options(test_prompt())
         };
@@ -498,7 +501,7 @@ mod prepare_tools {
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::None),
             ..default_options(test_prompt())
         };
@@ -518,7 +521,7 @@ mod prepare_tools {
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "testFunction".to_string(),
             }),

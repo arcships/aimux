@@ -23,7 +23,7 @@ pub(crate) struct PreparedTools {
 /// `UnsupportedFunctionality` when a tool is `strict` and the base URL is not
 /// the beta one, or when strict and non-strict function tools are mixed.
 pub(crate) fn prepare_tools(
-    tools: Option<&Vec<Tool>>,
+    tools: Option<&[Tool]>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
     supports_strict_tool_calls: bool,
 ) -> Result<PreparedTools, AiMuxError> {

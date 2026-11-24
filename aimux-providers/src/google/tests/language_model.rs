@@ -7689,10 +7689,8 @@ mod older_upstream_e2e {
         let mock = MockFetch::new(vec![Canned::json(&body)]);
         let schema = json!({"type":"object","properties":{"location":{"type":"string"}},"required":["location"],"additionalProperties":false,"$schema":"http://json-schema.org/draft-07/schema#"});
         let mut opts = options();
-        opts.tools = Some(vec![Tool::Function(FunctionTool::new(
-            "weather",
-            schema.clone(),
-        ))]);
+        opts.tools =
+            Some(vec![Tool::Function(FunctionTool::new("weather", schema.clone()))].into());
         let result = create_google(settings(&mock))
             .unwrap()
             .chat("gemini-pro")

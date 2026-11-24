@@ -24,16 +24,16 @@ pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> Result<PreparedResponsesTools, AiMuxError> {
-    prepare_responses_tools_for(tools, tool_choice, None, true)
+    prepare_responses_tools_for(tools.as_deref(), tool_choice, None, true)
 }
 
 pub(crate) fn prepare_responses_tools_for(
-    tools: &Option<Vec<Tool>>,
+    tools: Option<&[Tool]>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
     allowed_tools: Option<&Value>,
     supports_async: bool,
 ) -> Result<PreparedResponsesTools, AiMuxError> {
-    let Some(tools) = tools.as_ref().filter(|tools| !tools.is_empty()) else {
+    let Some(tools) = tools.filter(|tools| !tools.is_empty()) else {
         return Ok(PreparedResponsesTools {
             tools: None,
             tool_choice: None,

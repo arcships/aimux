@@ -1,11 +1,11 @@
 //! Decision calls reuse the existing core operation and its model properties.
+
 use aimux_core::decision_model::{DecideOptions, decide, decision_model_properties};
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{
-    dispatch::{CallFuture, Ctx, Handler, Target, decode},
-    envelope::{BindingError, OpsError, ProtocolError},
+    dispatch::{CallFuture, Ctx, Handler, Params, Target, decode, serialize_result},
+    envelope::{OpsError, ProtocolError},
     handle::{Entry, HandleId, HandleKind},
     op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef},
     ops::operation::EmptyParams,
@@ -32,7 +32,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         required_capabilities: &["doDecide"],
         cancellation: Cancellation::Abort,
         side_effects: true,
@@ -73,7 +73,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (descriptor, handler) in OPS
         .iter()
-        .zip([decision_decide, decision_capabilities] as [fn(Ctx, Target, Value) -> CallFuture; 2])
+        .zip([decision_decide, decision_capabilities] as [crate::dispatch::CallHandler; 2])
     {
         r.push((descriptor, Handler::Call(handler)));
     }
@@ -88,19 +88,18 @@ fn model(
     Ok(model)
 }
 
-fn decision_capabilities(_: Ctx, target: Target, params: Value) -> CallFuture {
+fn decision_capabilities(_: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         decode::<EmptyParams>(params)?;
-        Ok(decision_model_properties(model(target)?.as_ref()))
+        serialize_result(decision_model_properties(model(target)?.as_ref()))
     })
 }
 
-fn decision_decide(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn decision_decide(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let mut request: DecisionDecideRequest = decode(params)?;
         request.options.abort_signal = ctx.abort;
         let result = decide(model(target)?.as_ref(), request.options).await?;
-        serde_json::to_value(result)
-            .map_err(|error| BindingError::result_serialization(&error).into())
+        serialize_result(result)
     })
 }

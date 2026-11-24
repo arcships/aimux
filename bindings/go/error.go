@@ -70,11 +70,8 @@ func (c *Cause) UnmarshalJSON(data []byte) error {
 }
 
 func decodeError(data []byte) (*Error, error) {
-	if err := validateJSON("error envelope", data); err != nil {
-		return nil, err
-	}
 	var envelope ErrorEnvelope
-	if err := json.Unmarshal(data, &envelope); err != nil {
+	if err := decodeJSON("error envelope", data, &envelope); err != nil {
 		return nil, err
 	}
 	return &Error{Envelope: envelope, RawEnvelope: append(json.RawMessage(nil), data...)}, nil

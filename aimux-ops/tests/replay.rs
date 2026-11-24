@@ -160,12 +160,12 @@ fn metadata_keeps_transport_future_and_declares_nested_handles_and_cancellation(
     assert!(
         live.runtime_handle_fields
             .iter()
-            .any(|(path, _)| *path == "target.handle")
+            .any(|(path, _)| *path == ["target", "handle"])
     );
     assert!(
         live.runtime_handle_fields
             .iter()
-            .any(|(path, _)| *path == "abort")
+            .any(|(path, _)| *path == ["abort"])
     );
     assert!(live.side_effects);
     for name in [

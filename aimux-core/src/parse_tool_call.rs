@@ -283,15 +283,16 @@ fn parse_and_validate_tool_call(
         tool_input: tool_call.input.clone(),
         cause,
     };
-    let validator = jsonschema::validator_for(&function_tool.input_schema).map_err(|error| {
-        invalid(
-            SourceError {
-                message: format!("input schema is invalid: {error}"),
-                cause: Some(Box::new(validator_error(&error))),
-            }
-            .into(),
-        )
-    })?;
+    let validator =
+        crate::schema_validator::validator_for(&function_tool.input_schema).map_err(|error| {
+            invalid(
+                SourceError {
+                    message: format!("input schema is invalid: {error}"),
+                    cause: Some(Box::new(validator_error(&error))),
+                }
+                .into(),
+            )
+        })?;
     // The cause is the AI SDK's `TypeValidationError`.
     validator.validate(&input).map_err(|error| {
         invalid(

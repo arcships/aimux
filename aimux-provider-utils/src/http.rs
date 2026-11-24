@@ -61,11 +61,16 @@ pub struct HttpRequest {
     pub abort_signal: Option<aimux_core::AbortSignal>,
     pub call_id: Option<String>,
     pub recording_context: Option<RecordingContext>,
-    /// Per-exchange whole-response hang guard. `None` uses the 30s default;
-    /// a provider whose endpoint legitimately holds the connection longer
-    /// (e.g. Replicate `prefer: wait`) declares its own bound here. Streaming
-    /// exchanges are exempt regardless.
+    /// Per-exchange whole-response hang guard. `None` uses the default of
+    /// [`HttpRequest::kind`] (30s, or 10 minutes for
+    /// [`ExchangeKind::Generation`]); a provider whose endpoint legitimately
+    /// holds the connection longer (e.g. Replicate `prefer: wait`) declares
+    /// its own bound here. Streaming exchanges are exempt regardless.
     pub response_timeout: Option<std::time::Duration>,
+    /// What the exchange does on the server: it selects the default hang
+    /// guard and whether a failure after the request may have reached the
+    /// server is retryable. See [`ExchangeKind`].
+    pub kind: ExchangeKind,
     /// Per-request override of the successful-JSON-body size cap (default 64 MiB).
     /// Only consulted by [`crate::response_handler::create_json_response_handler`];
     /// binary downloads keep the separate, larger
@@ -101,11 +106,67 @@ pub struct HttpRequest {
     pub omit_provider_utils_user_agent: bool,
 }
 
+/// What an exchange does on the server.
+///
+/// The kind decides two things a provider cannot otherwise express: the
+/// default whole-response hang guard (when [`HttpRequest::response_timeout`]
+/// is `None`), and whether a failure is retryable once the request may have
+/// reached the server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExchangeKind {
+    /// An ordinary API call: a 30s hang guard, and transport failures and
+    /// the hang guard are retryable.
+    #[default]
+    Standard,
+    /// A synchronous generation (an image endpoint that answers when the
+    /// image is done): the server starts billable work and may legitimately
+    /// hold the connection for minutes. The hang guard defaults to 10
+    /// minutes, and once the request may have reached the server (the hang
+    /// guard tripped, the transport timed out, the connection broke while
+    /// sending or reading the body) the failure is not retryable, so a
+    /// generation the server already accepted is not submitted again. A
+    /// refused connection and an HTTP status keep their usual retryability.
+    Generation,
+}
+
+/// [`ExchangeKind::Standard`]'s default hang guard.
+pub(crate) const EXCHANGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// [`ExchangeKind::Generation`]'s default hang guard.
+pub(crate) const GENERATION_EXCHANGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+impl ExchangeKind {
+    /// The hang guard of an exchange of this kind that declares none.
+    #[must_use]
+    pub fn default_response_timeout(self) -> Duration {
+        match self {
+            Self::Standard => EXCHANGE_RESPONSE_TIMEOUT,
+            Self::Generation => GENERATION_EXCHANGE_RESPONSE_TIMEOUT,
+        }
+    }
+
+    /// A failure that may come after the request reached the server, with the
+    /// retryability this kind allows: a generation is never replayed.
+    pub(crate) fn after_send(self, error: AiMuxError) -> AiMuxError {
+        match (self, error) {
+            (Self::Generation, AiMuxError::ApiCall(mut detail)) if detail.is_retryable => {
+                detail.is_retryable = false;
+                AiMuxError::ApiCall(detail)
+            }
+            (_, error) => error,
+        }
+    }
+}
+
 /// The per-operation context of an exchange: the call options' cancellation,
 /// and for language-model and decision calls the call id and recording context
 /// of the operation the call runs in ([`RecordingContext::current`]).
 pub trait ExchangeContext {
     fn abort_signal(&self) -> Option<aimux_core::AbortSignal>;
+    /// The Core deadline used only to widen a generation's exchange guard.
+    /// Providers pass the context through; Core still enforces the deadline.
+    fn operation_timeout(&self) -> Option<&aimux_core::options::TimeoutConfiguration> {
+        None
+    }
     /// Only language-model `CallOptions` participate in recording; the other
     /// modalities have no call id to correlate on.
     fn call_id(&self) -> Option<String> {
@@ -152,8 +213,6 @@ macro_rules! exchange_context_abort_only {
 
 exchange_context_abort_only!(
     aimux_core::search_model::SearchCallOptions,
-    aimux_core::speech_model::SpeechCallOptions,
-    aimux_core::image_model::ImageCallOptions,
     aimux_core::video_model::VideoCallOptions,
     aimux_core::transcription_model::TranscriptionCallOptions,
     aimux_core::embedding_model::EmbeddingCallOptions,
@@ -161,7 +220,32 @@ exchange_context_abort_only!(
     aimux_core::files_model::UploadFileCallOptions,
 );
 
+macro_rules! generation_exchange_context {
+    ($($ty:path),* $(,)?) => {
+        $(impl ExchangeContext for $ty {
+            fn abort_signal(&self) -> Option<aimux_core::AbortSignal> {
+                self.abort_signal.clone()
+            }
+            fn operation_timeout(&self) -> Option<&aimux_core::options::TimeoutConfiguration> {
+                self.timeout.as_ref()
+            }
+        })*
+    };
+}
+
+generation_exchange_context!(
+    aimux_core::image_model::ImageCallOptions,
+    aimux_core::speech_model::SpeechCallOptions,
+);
+
 impl HttpRequest {
+    /// Mark a generation using the operation context, without requiring a
+    /// provider to inspect Core's timeout settings.
+    #[must_use]
+    pub fn generation_for(self, options: &impl ExchangeContext) -> Self {
+        self.generation(options.operation_timeout())
+    }
+
     /// A plain exchange that inherits the operation's cancellation and
     /// recording context. Downloads of provider-supplied URLs set the guard
     /// fields explicitly instead.
@@ -179,6 +263,35 @@ impl HttpRequest {
             recording_context: options.recording_context(),
             ..Self::default()
         }
+    }
+
+    /// Mark this exchange as an [`ExchangeKind::Generation`], with a hang
+    /// guard no tighter than the operation's own deadline: when the call's
+    /// `timeout` sets `totalMs` / `stepMs` and that bound is longer than the
+    /// guard in force (the declared [`HttpRequest::response_timeout`], else
+    /// the kind's default), the guard is widened to it, so the Core deadline
+    /// rather than the exchange ends a call the caller allowed to run long.
+    #[must_use]
+    pub fn generation(
+        mut self,
+        operation_timeout: Option<&aimux_core::options::TimeoutConfiguration>,
+    ) -> Self {
+        self.kind = ExchangeKind::Generation;
+        let operation_bound = operation_timeout
+            .and_then(|timeout| match (timeout.total_ms, timeout.step_ms) {
+                (Some(total), Some(step)) => Some(total.min(step)),
+                (total, step) => total.or(step),
+            })
+            .map(Duration::from_millis);
+        let in_force = self
+            .response_timeout
+            .unwrap_or_else(|| self.kind.default_response_timeout());
+        if let Some(bound) = operation_bound
+            && bound > in_force
+        {
+            self.response_timeout = Some(bound);
+        }
+        self
     }
 }
 
@@ -200,10 +313,12 @@ pub(crate) struct PreparedRequest {
     /// an `Err` here and is reported when the request is sent, as before.
     parsed_url: Result<url::Url, url::ParseError>,
     headers: Vec<(String, String)>,
+    pub(crate) header_layers: Option<std::sync::Arc<[crate::HeaderMapOpt]>>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
     call_id: Option<String>,
     recording_context: Option<RecordingContext>,
     pub(crate) response_timeout: Option<std::time::Duration>,
+    pub(crate) kind: ExchangeKind,
     pub(crate) max_json_response_bytes: Option<usize>,
     pub(crate) validation: Option<DownloadValidation>,
     pub(crate) fetch: Option<FetchFunction>,
@@ -278,10 +393,12 @@ impl HttpRequest {
             parsed_url: url::Url::parse(&self.url),
             url: self.url,
             headers,
+            header_layers: None,
             abort_signal: self.abort_signal,
             call_id: self.call_id,
             recording_context: self.recording_context,
             response_timeout: self.response_timeout,
+            kind: self.kind,
             max_json_response_bytes: self.max_json_response_bytes,
             validation: self.validate_url.then_some(DownloadValidation {
                 trusted_origin: self.trusted_origin,
@@ -368,7 +485,7 @@ pub(crate) async fn send_request_once(
         url = %request.sanitized_url(),
         host = %request.host_str(),
         body_size = request_body_size(request),
-        header_count = request.headers.len(),
+        header_count = request.headers.len() + request.header_layers.as_deref().unwrap_or_default().iter().map(crate::HeaderMapOpt::len).sum::<usize>(),
         call_id = request.call_id.as_deref().unwrap_or(""),
         "request"
     );
@@ -428,11 +545,19 @@ async fn send_one_request(
         None => fetch.fetch(fetch_request).await,
     };
     sent.map_err(|error| {
-        fetch_error_to_ai_mux_error(
+        // A refused connection never reached the server; a transport timeout
+        // or a connection that broke while sending may have.
+        let reached_server = !matches!(error, FetchError::Connect(_));
+        let error = fetch_error_to_ai_mux_error(
             error,
             &request.sanitized_url(),
             &crate::logging::redact_request_values(&request.body),
-        )
+        );
+        if reached_server {
+            request.kind.after_send(error)
+        } else {
+            error
+        }
     })
 }
 
@@ -619,34 +744,27 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             message: format!("invalid request URL: {error}"),
             cause: Some(ErrorCause::source(&error)),
         })?;
-    let mut headers = http::HeaderMap::new();
+    let mut headers = if let Some(layers) = &request.header_layers {
+        crate::headers::merge_header_layers(layers, |name| {
+            (request.credentials != RequestCredentials::Omit
+                || name.eq_ignore_ascii_case("user-agent"))
+                && (request.validation.is_none()
+                    || aimux_core::download_guard::is_download_header_allowed(name))
+        })?
+    } else {
+        http::HeaderMap::new()
+    };
     for (name, value) in &request.headers {
-        let header_name =
-            http::HeaderName::try_from(name).map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid header name: {name}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?;
-        // The value is never echoed: it is commonly a credential.
-        let header_value =
-            http::HeaderValue::try_from(value).map_err(|error| AiMuxError::InvalidArgument {
-                message: format!("invalid header value for {name}"),
-                cause: Some(ErrorCause::source(&error)),
-            })?;
-        headers.insert(header_name, header_value);
+        crate::headers::insert_header(&mut headers, name, value)?;
     }
     if request.provider_utils_user_agent {
         let suffix = format!(
             "ai-sdk-provider-utils/{}",
             crate::aisdk_pins::PROVIDER_UTILS
         );
-        let current = request
-            .headers
-            .iter()
-            .rev()
-            .find_map(|(name, value)| {
-                name.eq_ignore_ascii_case("user-agent")
-                    .then_some(value.as_str())
-            })
+        let current = headers
+            .get(http::header::USER_AGENT)
+            .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
             .unwrap_or_default();
         let user_agent = crate::headers::user_agent_value(current, &suffix);
         headers.insert(
@@ -925,9 +1043,21 @@ impl ByteAccumulator {
 
 fn to_http_record(request: &PreparedRequest) -> HttpRecord {
     use aimux_core::recording::is_sensitive_key;
-    let headers = request
-        .headers
+    // The wire fast path keeps provider layers separate from explicit
+    // headers. Reconstruct the pre-transport header list for the recording,
+    // including failed exchanges where no wire HeaderMap was built.
+    let layered = request
+        .header_layers
+        .as_deref()
+        .map(|layers| {
+            let layers: Vec<_> = layers.iter().collect();
+            crate::normalize_headers(crate::combine_headers(&layers))
+        })
+        .unwrap_or_default();
+    let headers = layered
         .iter()
+        .filter(|(name, _)| request.credentials != RequestCredentials::Omit || name == "user-agent")
+        .chain(&request.headers)
         .map(|(name, value)| {
             (
                 name.clone(),

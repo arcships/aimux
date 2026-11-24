@@ -448,7 +448,7 @@ fn descriptors_publish_concrete_types_and_all_secondary_slots() {
         assert_eq!(
             op.runtime_handle_fields
                 .iter()
-                .map(|(path, _)| *path)
+                .map(|(path, _)| path.join("."))
                 .collect::<Vec<_>>(),
             slots
         );

@@ -22,11 +22,9 @@ pub async fn post_json_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let prepared = request.prepare(HttpMethod::Post, HttpBody::Json(body));
-    let source = RequestBodySource::HttpBody(prepared.body.clone());
-    call_to_api_source(
-        prepared,
-        source,
+    post_to_api(
+        request,
+        HttpBody::Json(body),
         successful_response_handler,
         failed_response_handler,
     )
@@ -70,7 +68,28 @@ pub async fn post_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let prepared = request.prepare(HttpMethod::Post, body);
+    post_to_api_with_header_layers(
+        request,
+        None,
+        body,
+        successful_response_handler,
+        failed_response_handler,
+    )
+    .await
+}
+
+/// POST with unresolved provider layers before any explicit request headers.
+/// The transport normalizes the layers as it builds the wire header map.
+#[doc(hidden)]
+pub async fn post_to_api_with_header_layers<T>(
+    request: HttpRequest,
+    header_layers: Option<std::sync::Arc<[crate::HeaderMapOpt]>>,
+    body: HttpBody,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    let mut prepared = request.prepare(HttpMethod::Post, body);
+    prepared.header_layers = header_layers;
     let source = RequestBodySource::HttpBody(prepared.body.clone());
     call_to_api_source(
         prepared,
@@ -80,14 +99,6 @@ pub async fn post_to_api<T>(
     )
     .await
 }
-
-/// Default whole-exchange response timeout for non-streaming exchanges
-/// (connect through fully read body), matching the pre-0.4 shared-client
-/// behavior. Streaming exchanges are exempt: their body outlives the call.
-/// Tripping it yields a retryable error — a hung exchange is a transport
-/// fault, and the Core operation deadline (`AiMuxError::Timeout`) remains
-/// the non-retryable outer bound.
-const EXCHANGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) async fn call_to_api<T>(
     request: PreparedRequest,
@@ -110,11 +121,19 @@ pub(crate) async fn call_to_api_source<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    // A provider whose endpoint legitimately holds the connection longer
-    // (e.g. Replicate `prefer: wait`) declares its own bound on the request.
+    // Whole-exchange response timeout for non-streaming exchanges (connect
+    // through fully read body), matching the pre-0.4 shared-client behavior;
+    // streaming exchanges are exempt, their body outlives the call. The
+    // default comes from the exchange kind (`ExchangeKind`); a provider whose
+    // endpoint legitimately holds the connection longer (e.g. Replicate
+    // `prefer: wait`) declares its own bound on the request. Tripping it is a
+    // retryable error for a standard exchange — a hung exchange is a
+    // transport fault, and the Core operation deadline (`AiMuxError::Timeout`)
+    // remains the non-retryable outer bound — and a non-retryable one for a
+    // generation, which the server may already be running and billing.
     let response_timeout = request
         .response_timeout
-        .unwrap_or(EXCHANGE_RESPONSE_TIMEOUT);
+        .unwrap_or_else(|| request.kind.default_response_timeout());
     call_to_api_with_deadline_source(
         request,
         request_body_source,
@@ -318,6 +337,7 @@ pub(crate) async fn call_to_api_with_deadline_source<T>(
     }
     // Only the timeout error below names the URL; it is sanitized there.
     let timeout_url = request.url.clone();
+    let kind = request.kind;
     let exchange = execute_exchange(
         request,
         request_body_source.clone(),
@@ -326,11 +346,11 @@ pub(crate) async fn call_to_api_with_deadline_source<T>(
     );
     match tokio::time::timeout(response_timeout, exchange).await {
         Ok(result) => result,
-        Err(_) => Err(exchange_timeout_error(
+        Err(_) => Err(kind.after_send(exchange_timeout_error(
             response_timeout,
             &timeout_url,
             &request_body_source,
-        )),
+        ))),
     }
 }
 
@@ -340,6 +360,7 @@ async fn execute_exchange<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    let kind = request.kind;
     let PreparedSuccessExchange {
         status,
         fallback_headers,
@@ -359,7 +380,15 @@ async fn execute_exchange<T>(
         .handle_with_source(input, Some(request_body_source.clone()))
         .await
         .map_err(|error| {
-            wrap_success_handler_error(error, status, &fallback_headers, url, &request_body_source)
+            // A 2xx answer means the server did the work: a body that broke
+            // while being read must not submit a generation again.
+            kind.after_send(wrap_success_handler_error(
+                error,
+                status,
+                &fallback_headers,
+                url,
+                &request_body_source,
+            ))
         })
 }
 

@@ -118,6 +118,49 @@ impl StreamContext {
     }
 }
 
+/// Serde's borrowing annotation handles a direct Cow, but an Option
+/// must deserialize through a borrowing field to keep unescaped strings borrowed.
+pub(crate) fn deserialize_optional_cow<'de: 'a, 'a, D>(
+    deserializer: D,
+) -> Result<Option<std::borrow::Cow<'a, str>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(transparent)]
+    struct Borrowed<'a>(#[serde(borrow)] std::borrow::Cow<'a, str>);
+
+    Ok(Option::<Borrowed<'a>>::deserialize(deserializer)?.map(|value| value.0))
+}
+
+/// Decode directly from the SSE frame. On a schema error, recover the raw
+/// object for in-band provider errors or distinguish invalid JSON from an
+/// invalid chunk. The successful path builds a full tree only for raw output.
+pub(crate) fn decode_sse_event<'a, T>(
+    data: &'a str,
+    include_raw: bool,
+) -> (Option<Value>, Result<T, aimux_core::AiMuxError>)
+where
+    T: serde::Deserialize<'a>,
+{
+    let parsed = serde_json::from_str(data);
+    if !include_raw && parsed.is_ok() {
+        return (None, parsed.map_err(Into::into));
+    }
+    match aimux_provider_utils::parse_sse_json::<Value>(data) {
+        Ok(raw) => (
+            Some(raw),
+            parsed.map_err(|error| aimux_core::AiMuxError::InvalidResponseData {
+                message: error.to_string(),
+                cause: Some(aimux_core::ErrorCause::source(&error)),
+            }),
+        ),
+        Err(error) => (None, Err(error)),
+    }
+}
+
 /// The finish reason of a stream that ended without one.
 pub(crate) const FINISH_OTHER: FinishReason = FinishReason {
     unified: FinishReasonUnified::Other,

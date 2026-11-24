@@ -45,6 +45,7 @@ fn convert_with(
             metadata_key: provider_options_key,
             supports_multi_part_tool_content,
         },
+        &mut Vec::new(),
     )
     .map(Value::Array)
 }

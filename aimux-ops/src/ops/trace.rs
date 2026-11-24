@@ -5,10 +5,10 @@ use std::sync::Arc;
 use aimux_core::error::{AiMuxError, SourceError};
 use aimux_core::trace::store::{DEFAULT_RING_CAPACITY, DEFAULT_SCOPE_CAP, TraceAuditMode};
 use aimux_core::trace::{RingTraceStore, TraceFilter};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
+use crate::dispatch::serialize_result as result;
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
@@ -54,8 +54,7 @@ pub struct TraceAggregateParams {
     filter: TraceFilter,
 }
 
-// TraceFilter is the canonical core DTO, whose open deserializer is also used
-// elsewhere. Validate its control keys here without duplicating its fields.
+// The schema uses the canonical filter type, with a closed object.
 #[derive(schemars::JsonSchema)]
 #[schemars(schema_with = "trace_filter_schema")]
 struct TraceAggregateFilter;
@@ -67,32 +66,27 @@ fn trace_filter_schema(generator: &mut schemars::SchemaGenerator) -> schemars::S
 }
 
 fn deserialize_filter<'de, D: serde::Deserializer<'de>>(d: D) -> Result<TraceFilter, D::Error> {
-    let value = Value::deserialize(d)?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| serde::de::Error::custom("trace filter must be an object"))?;
-    for key in object.keys() {
-        if !matches!(
-            key.as_str(),
-            "provider" | "model" | "sessionId" | "sinceUnixMs"
-        ) {
-            return Err(serde::de::Error::custom(format!(
-                "unknown filter field `{key}`"
-            )));
-        }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Filter {
+        provider: Option<String>,
+        model: Option<String>,
+        session_id: Option<String>,
+        since_unix_ms: Option<i64>,
     }
-    serde_json::from_value(value).map_err(serde::de::Error::custom)
+    let filter: Filter = crate::request::deserialize_object(d)?;
+    Ok(TraceFilter {
+        provider: filter.provider,
+        model: filter.model,
+        session_id: filter.session_id,
+        since_unix_ms: filter.since_unix_ms,
+    })
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TraceSessionParams {
     session_id: String,
-}
-
-fn result(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn store(target: Target) -> Result<Arc<RingTraceStore>, OpsError> {
@@ -108,7 +102,7 @@ fn store(target: Target) -> Result<Arc<RingTraceStore>, OpsError> {
     }
 }
 
-fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let p: TraceCreateParams = decode(value)?;
         if p.capacity == 0 || p.per_scope_capacity == 0 {
@@ -129,7 +123,7 @@ fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn aggregate(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn aggregate(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let p: TraceAggregateParams = decode(value)?;
         let stats: TraceAggregateResult = store(target)?.aggregate(&p.filter);
@@ -137,7 +131,7 @@ fn aggregate(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn session_chain(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn session_chain(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let p: TraceSessionParams = decode(value)?;
         let view = store(target)?
@@ -147,7 +141,7 @@ fn session_chain(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn session_trajectory(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn session_trajectory(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let p: TraceSessionParams = decode(value)?;
         let steps: TraceTrajectoryResult = store(target)?.session_cache_trajectory(&p.session_id);
@@ -155,7 +149,7 @@ fn session_trajectory(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn export(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn export(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(value)?;
         let mut bytes = Vec::new();
@@ -171,15 +165,15 @@ fn export(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
                 cause: Some(SourceError::new(&error)),
             })
         })?;
-        Ok(Value::String(jsonl))
+        result(jsonl)
     })
 }
 
-fn clear(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn clear(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(value)?;
         store(target)?.clear();
-        Ok(Value::Null)
+        result(())
     })
 }
 

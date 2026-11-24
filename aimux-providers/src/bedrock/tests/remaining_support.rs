@@ -34,7 +34,7 @@ pub(super) fn model_normalizes_tool_id(id: &str) -> bool {
         "getWeather".into(),
         json!({}),
     )])]);
-    opts.tools = Some(vec![test_tool().into()]);
+    opts.tools = Some(vec![test_tool().into()].into());
     let (body, _, _, _) = build_request_body_checked(id, &opts, None).unwrap();
     body["messages"][0]["content"][0]["toolUse"]["toolUseId"] == "8eHypBDcw"
 }

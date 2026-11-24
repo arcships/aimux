@@ -192,13 +192,16 @@ impl ImageModel for GoogleImageModel {
         if image_options.google_search.is_some()
             && let Some(serde_json::Value::Object(args)) = search
         {
-            call.tools = Some(vec![Tool::Provider(ProviderTool {
-                id: NamespacedKind::new("google.google_search")
-                    .expect("google.google_search is namespaced"),
-                name: "google_search".into(),
-                args,
-                supports_deferred_results: None,
-            })]);
+            call.tools = Some(
+                vec![Tool::Provider(ProviderTool {
+                    id: NamespacedKind::new("google.google_search")
+                        .expect("google.google_search is namespaced"),
+                    name: "google_search".into(),
+                    args,
+                    supports_deferred_results: None,
+                })]
+                .into(),
+            );
         }
         google.insert("responseModalities".into(), json!(["IMAGE"]));
         let user_config = google.remove("imageConfig").filter(|v| !v.is_null());
@@ -215,10 +218,12 @@ impl ImageModel for GoogleImageModel {
         let (body, _) = build_request_body_with_warnings(&self.model_id, &call);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let response = aimux_provider_utils::post_json_to_api(
-            exchange.request(
-                exchange.url(&format!("/models/{}:generateContent", self.model_id)),
-                options,
-            ),
+            exchange
+                .request(
+                    exchange.url(&format!("/models/{}:generateContent", self.model_id)),
+                    options,
+                )
+                .generation_for(options),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler::<GenerateContentResponse>(),
             super::google_failed_response_handler(),

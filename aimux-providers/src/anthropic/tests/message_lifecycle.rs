@@ -60,15 +60,18 @@ mod anthropic_message_lifecycle {
     #[tokio::test]
     async fn fails_when_a_different_message_starts_while_the_previous_message_is_open() {
         let mut options = CallOptions::new(prompt());
-        options.tools = Some(vec![Tool::Function(FunctionTool::new(
-            "test-tool",
-            json!({
-                "type": "object",
-                "properties": { "value": { "type": "string" } },
-                "required": ["value"],
-                "additionalProperties": false,
-            }),
-        ))]);
+        options.tools = Some(
+            vec![Tool::Function(FunctionTool::new(
+                "test-tool",
+                json!({
+                    "type": "object",
+                    "properties": { "value": { "type": "string" } },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                }),
+            ))]
+            .into(),
+        );
         let parts = collect(&create_model(SPLICED_MESSAGE_START), &options).await;
 
         let error_parts: Vec<&AiMuxError> = parts

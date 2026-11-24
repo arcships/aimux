@@ -213,6 +213,9 @@ pub mod luma;
 pub mod prodia;
 pub mod replicate;
 
+// Native image and video protocols.
+pub mod bytedance;
+
 // Video-only providers.
 pub mod klingai;
 
@@ -239,6 +242,10 @@ pub use azure::{
 pub use bedrock::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,
     BedrockModel, BedrockRerankingModel, amazon_bedrock, create_amazon_bedrock,
+};
+pub use bytedance::{
+    ByteDanceImageModel, ByteDanceProvider, ByteDanceProviderSettings, ByteDanceVideoModel,
+    bytedance, create_bytedance,
 };
 pub use cohere::{
     CohereEmbeddingModel, CohereModel, CohereProvider, CohereProviderSettings,

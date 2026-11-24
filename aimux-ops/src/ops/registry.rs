@@ -1,5 +1,7 @@
 //! Explicit provider registries and model references. Resolution never uses a gateway.
 
+use crate::dispatch::serialize_result;
+
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
@@ -8,9 +10,9 @@ use aimux_core::provider_registry::{
     ProviderRegistry, ProviderRegistryOptions, create_provider_registry,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
@@ -45,8 +47,8 @@ const fn descriptor(
         scope: Scope::Current,
         terminal_type: None,
         runtime_handle_fields: match name.as_bytes() {
-            b"registry.create" => &[("entries.*.provider", &[HandleKind::Provider])],
-            b"model.wrap" => &[("middleware.*", &[HandleKind::Middleware])],
+            b"registry.create" => &[(&["entries", "*", "provider"], &[HandleKind::Provider])],
+            b"model.wrap" => &[(&["middleware", "*"], &[HandleKind::Middleware])],
             _ => &[],
         },
         required_capabilities: &[],
@@ -102,7 +104,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (op, handler) in OPS.iter().zip([
-        create as fn(Ctx, Target, Value) -> CallFuture,
+        create as crate::dispatch::CallHandler,
         provider,
         resolve,
         info,
@@ -200,8 +202,53 @@ struct ModelInfo<'a> {
     provider: &'a str,
     model_id: &'a str,
     modality: &'static str,
-    capabilities: Value,
-    source: Value,
+    #[schemars(with = "Value")]
+    capabilities: ModelCapabilities<'a>,
+    #[schemars(with = "Value")]
+    source: Option<ModelSource>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged, rename_all_fields = "camelCase")]
+enum ModelCapabilities<'a> {
+    Language {
+        generate: bool,
+        stream: bool,
+    },
+    Embedding {
+        embed: bool,
+        max_embeddings_per_call: Option<u32>,
+        supports_parallel_calls: bool,
+    },
+    Image {
+        generate: bool,
+        max_images_per_call: Option<u32>,
+        supports_file_inputs: Option<bool>,
+        supports_mask_inputs: Option<bool>,
+    },
+    Generate {
+        generate: bool,
+    },
+    Reranking {
+        rerank: bool,
+    },
+    Video {
+        start: bool,
+        status: bool,
+        max_videos_per_call: Option<u32>,
+    },
+    Search {
+        search: bool,
+    },
+    Decision {
+        decide: bool,
+        supported_question_types: &'a [aimux_core::decision_model::DecisionQuestionType],
+    },
+}
+
+#[derive(Serialize)]
+struct ModelSource {
+    references: Vec<ModelRef>,
 }
 
 fn target_entry(target: Target, expected: &[HandleKind]) -> Result<Entry, OpsError> {
@@ -216,10 +263,10 @@ fn target_entry(target: Target, expected: &[HandleKind]) -> Result<Entry, OpsErr
     }
 }
 
-fn insert(owner: Owner, entry: Entry) -> Result<Value, OpsError> {
+fn insert(owner: Owner, entry: Entry) -> Result<String, OpsError> {
     let kind = entry.kind();
     let id = HandleRegistry::global().insert(owner, entry)?;
-    Ok(json!(HandleResult { handle: id, kind }))
+    serialize_result(HandleResult { handle: id, kind })
 }
 
 // Core registries and model traits have no source fields. These weak sidecars
@@ -313,7 +360,7 @@ fn metadata(owner: Owner, entry: &Entry, update: Option<Metadata>) -> Option<Met
     None
 }
 
-fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn create(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         if let Target::Handle(entry) = target {
             return Err(wrong(&entry, &[]));
@@ -330,10 +377,9 @@ fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
                     registration.key
                 )));
             }
-            let provider = resolve_secondary(
-                HandleRegistry::global(),
-                &ctx,
-                &json!(handle(&registration.provider)?),
+            let provider = HandleRegistry::global().get(
+                ctx.owner,
+                handle(&registration.provider)?,
                 &[HandleKind::Provider],
             )?;
             let Entry::Provider(provider) = provider else {
@@ -354,7 +400,7 @@ fn create(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn provider(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn provider(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let entry = target_entry(target, &[HandleKind::Registry])?;
         let params: RegistryProviderParams = decode(params)?;
@@ -366,7 +412,7 @@ fn provider(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn resolve(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn resolve(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let entry = target_entry(target, &[HandleKind::Registry])?;
         let params: ModelResolveParams = decode(params)?;
@@ -427,7 +473,7 @@ fn resolve_model(registry: &ProviderRegistry, reference: &ModelRef) -> Result<En
     result.map_err(OpsError::AiMux)
 }
 
-fn info(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn info(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let entry = target_entry(target, MODELS)?;
         let _: ModelInfoParams = decode(params)?;
@@ -435,90 +481,105 @@ fn info(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn model_info(owner: Owner, entry: &Entry) -> Result<Value, OpsError> {
+fn model_info(owner: Owner, entry: &Entry) -> Result<String, OpsError> {
     let source = match metadata(owner, entry, None) {
-        Some(Metadata::Sources(references)) => json!({"references": references}),
-        _ => Value::Null,
+        Some(Metadata::Sources(references)) => Some(ModelSource { references }),
+        _ => None,
     };
     let (provider, model_id, modality, capabilities) = match entry {
         Entry::Language(m) => (
             m.provider(),
             m.model_id(),
             "language",
-            json!({"generate": true, "stream": true}),
+            ModelCapabilities::Language {
+                generate: true,
+                stream: true,
+            },
         ),
         Entry::Embedding(m) => (
             m.provider(),
             m.model_id(),
             "embedding",
-            json!({"embed": true, "maxEmbeddingsPerCall": m.max_embeddings_per_call(), "supportsParallelCalls": m.supports_parallel_calls()}),
+            ModelCapabilities::Embedding {
+                embed: true,
+                max_embeddings_per_call: m.max_embeddings_per_call(),
+                supports_parallel_calls: m.supports_parallel_calls(),
+            },
         ),
         Entry::Image(m) => (
             m.provider(),
             m.model_id(),
             "image",
-            json!({"generate": true, "maxImagesPerCall": m.max_images_per_call(), "supportsFileInputs": m.supports_file_inputs(), "supportsMaskInputs": m.supports_mask_inputs()}),
+            ModelCapabilities::Image {
+                generate: true,
+                max_images_per_call: m.max_images_per_call(),
+                supports_file_inputs: m.supports_file_inputs(),
+                supports_mask_inputs: m.supports_mask_inputs(),
+            },
         ),
         Entry::Speech(m) => (
             m.provider(),
             m.model_id(),
             "speech",
-            json!({"generate": true}),
+            ModelCapabilities::Generate { generate: true },
         ),
         Entry::Transcription(m) => (
             m.provider(),
             m.model_id(),
             "transcription",
-            json!({"generate": true}),
+            ModelCapabilities::Generate { generate: true },
         ),
         Entry::Reranking(m) => (
             m.provider(),
             m.model_id(),
             "reranking",
-            json!({"rerank": true}),
+            ModelCapabilities::Reranking { rerank: true },
         ),
         Entry::Video(m) => (
             m.provider(),
             m.model_id(),
             "video",
-            json!({"start": true, "status": true, "maxVideosPerCall": m.max_videos_per_call()}),
+            ModelCapabilities::Video {
+                start: true,
+                status: true,
+                max_videos_per_call: m.max_videos_per_call(),
+            },
         ),
         Entry::Search(m) => (
             m.provider(),
             m.model_id(),
             "search",
-            json!({"search": true}),
+            ModelCapabilities::Search { search: true },
         ),
         Entry::Decision(m) => (
             m.provider(),
             m.model_id(),
             "decision",
-            json!({"decide": true, "supportedQuestionTypes": m.supported_question_types()}),
+            ModelCapabilities::Decision {
+                decide: true,
+                supported_question_types: m.supported_question_types(),
+            },
         ),
         _ => return Err(wrong(entry, MODELS)),
     };
-    Ok(json!(ModelInfo {
+    serialize_result(ModelInfo {
         provider,
         model_id,
         modality,
         capabilities,
-        source
-    }))
+        source,
+    })
 }
 
-fn wrap(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn wrap(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let entry = target_entry(target, MODELS)?;
         let params: ModelWrapParams = decode(params)?;
         // Resolve the complete chain before any middleware hook can run.
         let mut middleware = Vec::with_capacity(params.middleware.len());
         for id in &params.middleware {
-            let resolved = resolve_secondary(
-                HandleRegistry::global(),
-                &ctx,
-                &json!(handle(id)?),
-                &[HandleKind::Middleware],
-            )?;
+            let resolved =
+                HandleRegistry::global().get(ctx.owner, handle(id)?, &[HandleKind::Middleware])?;
             let Entry::Middleware(value) = resolved else {
                 return Err(wrong(&resolved, &[HandleKind::Middleware]));
             };
@@ -574,9 +635,14 @@ fn wrap(ctx: Ctx, target: Target, params: Value) -> CallFuture {
 
 #[cfg(test)]
 mod tests {
+    fn parse_result(json: String) -> Value {
+        serde_json::from_str(&json).unwrap()
+    }
+
     use super::*;
     use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
     use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel, EmbeddingResult};
+    use serde_json::json;
 
     struct Embedding;
 
@@ -646,11 +712,12 @@ mod tests {
             Target::Global,
             json!({"namespace": "tenant", "entries": [
                 {"key": "key:with:colon", "provider": provider.0.to_string()}
-            ]}),
+            ]})
+            .into(),
         )
         .await
         .unwrap();
-        result_entry(owner, &result, HandleKind::Registry)
+        result_entry(owner, &parse_result(result), HandleKind::Registry)
     }
 
     fn reference(namespace: &str, key: &str, method: &str, model_id: &str) -> Value {
@@ -689,7 +756,8 @@ mod tests {
             json!({"entries": [
                 {"key": "same", "provider": id.0.to_string()},
                 {"key": "same", "provider": id.0.to_string()}
-            ]}),
+            ]})
+            .into(),
         )
         .await;
         assert!(matches!(
@@ -708,7 +776,8 @@ mod tests {
             Target::Global,
             json!({"entries": [
                 {"key": "x", "provider": id.0.to_string()}
-            ]}),
+            ]})
+            .into(),
         )
         .await;
         assert!(matches!(
@@ -727,11 +796,11 @@ mod tests {
         let result = provider(
             ctx(owner),
             Target::Handle(registry),
-            json!({"key": "key:with:colon"}),
+            json!({"key": "key:with:colon"}).into(),
         )
         .await
         .unwrap();
-        let returned = result_entry(owner, &result, HandleKind::Provider);
+        let returned = result_entry(owner, &parse_result(result), HandleKind::Provider);
         let (Entry::Provider(a), Entry::Provider(b)) = (original, returned) else {
             panic!()
         };
@@ -749,13 +818,14 @@ mod tests {
             "embeddingModel",
             "alias:with:colons",
         );
-        let result = resolve(ctx(owner), Target::Handle(registry), params.clone())
+        let result = resolve(ctx(owner), Target::Handle(registry), params.clone().into())
             .await
             .unwrap();
-        let model = result_entry(owner, &result, HandleKind::Embedding);
-        let info = info(ctx(owner), Target::Handle(model), json!({}))
+        let model = result_entry(owner, &parse_result(result), HandleKind::Embedding);
+        let info = info(ctx(owner), Target::Handle(model), json!({}).into())
             .await
             .unwrap();
+        let info: Value = serde_json::from_str(&info).unwrap();
         assert_eq!(info["modelId"], "actual:model:id");
         assert_eq!(info["provider"], "test");
         assert_eq!(info["modality"], "embedding");
@@ -779,6 +849,7 @@ mod tests {
                     "embeddingModel",
                     "alias:with:colons"
                 )
+                .into()
             )
             .await
             .is_err()
@@ -799,7 +870,7 @@ mod tests {
                 resolve(
                     ctx(owner),
                     Target::Handle(registry.clone()),
-                    reference("tenant", key, method, model)
+                    reference("tenant", key, method, model).into()
                 )
                 .await,
                 Err(OpsError::AiMux(_))
@@ -811,12 +882,19 @@ mod tests {
     async fn direct_models_have_no_invented_source_and_empty_wrap_retains_modality() {
         let owner = owner();
         let model = Entry::Embedding(Arc::new(Embedding));
-        assert_eq!(model_info(owner, &model).unwrap()["source"], Value::Null);
-        let result = wrap(ctx(owner), Target::Handle(model), json!({"middleware": []}))
-            .await
-            .unwrap();
         assert_eq!(
-            result_entry(owner, &result, HandleKind::Embedding).kind(),
+            parse_result(model_info(owner, &model).unwrap())["source"],
+            Value::Null
+        );
+        let result = wrap(
+            ctx(owner),
+            Target::Handle(model),
+            json!({"middleware": []}).into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result_entry(owner, &parse_result(result), HandleKind::Embedding).kind(),
             HandleKind::Embedding
         );
     }
@@ -831,11 +909,12 @@ mod tests {
             Target::Global,
             json!({"namespace": "other", "entries": [
                 {"key": "second", "provider": id.0.to_string()}
-            ]}),
+            ]})
+            .into(),
         )
         .await
         .unwrap();
-        let second = result_entry(owner, &second, HandleKind::Registry);
+        let second = result_entry(owner, &parse_result(second), HandleKind::Registry);
         let a = reference(
             "tenant",
             "key:with:colon",
@@ -843,26 +922,30 @@ mod tests {
             "alias:with:colons",
         );
         let b = reference("other", "second", "embeddingModel", "alias:with:colons");
-        let result = resolve(ctx(owner), Target::Handle(first.clone()), a.clone())
+        let result = resolve(ctx(owner), Target::Handle(first.clone()), a.clone().into())
             .await
             .unwrap();
-        let model = result_entry(owner, &result, HandleKind::Embedding);
-        resolve(ctx(owner), Target::Handle(first), a.clone())
+        let model = result_entry(owner, &parse_result(result), HandleKind::Embedding);
+        resolve(ctx(owner), Target::Handle(first), a.clone().into())
             .await
             .unwrap();
-        resolve(ctx(owner), Target::Handle(second), b.clone())
+        resolve(ctx(owner), Target::Handle(second), b.clone().into())
             .await
             .unwrap();
-        let wrapped = wrap(ctx(owner), Target::Handle(model), json!({"middleware": []}))
-            .await
-            .unwrap();
-        let wrapped = result_entry(owner, &wrapped, HandleKind::Embedding);
+        let wrapped = wrap(
+            ctx(owner),
+            Target::Handle(model),
+            json!({"middleware": []}).into(),
+        )
+        .await
+        .unwrap();
+        let wrapped = result_entry(owner, &parse_result(wrapped), HandleKind::Embedding);
         assert_eq!(
-            model_info(owner, &wrapped).unwrap()["source"]["references"],
+            parse_result(model_info(owner, &wrapped).unwrap())["source"]["references"],
             json!([a["modelRef"], b["modelRef"]])
         );
         assert_eq!(
-            model_info(Owner::Python(999), &wrapped).unwrap()["source"],
+            parse_result(model_info(Owner::Python(999), &wrapped).unwrap())["source"],
             Value::Null
         );
     }
@@ -875,17 +958,22 @@ mod tests {
             wrap(
                 ctx(owner),
                 Target::Handle(Entry::Embedding(Arc::new(Embedding))),
-                json!({"middleware": [id.0.to_string()]})
+                json!({"middleware": [id.0.to_string()]}).into()
             )
             .await,
             Err(OpsError::Binding(BindingError::InvalidHandle { .. }))
         ));
         assert!(matches!(
-            info(ctx(owner), Target::Handle(input.clone()), json!({})).await,
+            info(ctx(owner), Target::Handle(input.clone()), json!({}).into()).await,
             Err(OpsError::Binding(_))
         ));
         assert!(matches!(
-            wrap(ctx(owner), Target::Handle(input), json!({"middleware": []})).await,
+            wrap(
+                ctx(owner),
+                Target::Handle(input),
+                json!({"middleware": []}).into()
+            )
+            .await,
             Err(OpsError::Binding(_))
         ));
     }

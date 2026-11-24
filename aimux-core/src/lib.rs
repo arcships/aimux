@@ -54,6 +54,7 @@ pub(crate) mod response_messages;
 pub mod result;
 pub mod retry;
 pub mod router;
+mod schema_validator;
 pub mod search_model;
 pub mod session;
 pub mod shared;
