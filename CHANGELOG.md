@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI-compatible asynchronous video models for `/videos` gateways, with
   multipart reference files, provider option passthrough, task polling and
   guarded authenticated content downloads (#530).
+- Codex image models on the ChatGPT subscription channel (#526):
+  `CodexProvider::image` / `image_model` serve `gpt-image-2` (JSON
+  `/images/generations` and `/images/edits`) and `gpt-image-2.5-flare`,
+  `gpt-image-2.5-sunburst` and their `-2026-09-08` snapshots (the streamed
+  Responses `image_generation` tool). Only probed fields are sent; input
+  images are decoded and validated locally, so empty or malformed payloads
+  fail before the request is billed. Direct requests carry a 600-second
+  `response_timeout`; on the streamed route the SSE drain after the response
+  headers arrive is bounded at 600 seconds. Both report usage and never
+  retry: a billed generation is not replayed. API-key mode still serves no
+  image models.
 
 ### Breaking
 

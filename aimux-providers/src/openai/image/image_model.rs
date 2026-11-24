@@ -401,7 +401,7 @@ fn generate_boundary() -> String {
 }
 
 /// Extract base64 images from the response.
-fn extract_images(response: &Value) -> ImageOutputs {
+pub(crate) fn extract_images(response: &Value) -> ImageOutputs {
     let images: Vec<String> = response
         .get("data")
         .and_then(|d| d.as_array())
@@ -419,7 +419,7 @@ fn extract_images(response: &Value) -> ImageOutputs {
 }
 
 /// Extract usage information from the response.
-fn extract_usage(response: &Value) -> Option<ImageUsage> {
+pub(crate) fn extract_usage(response: &Value) -> Option<ImageUsage> {
     response.get("usage").map(|u| ImageUsage {
         input_tokens: u
             .get("input_tokens")
@@ -488,7 +488,7 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
 /// `revisedPrompt` (if present), `created`, `size`, `quality`, `background`,
 /// `outputFormat`, and distributed token details. Fields with null/absent
 /// values are omitted (matching JSON serialization of TS `undefined`).
-fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
+pub(crate) fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
     let mut metadata = aimux_core::shared::NamespaceMap::new();
 
     let data = response.get("data").and_then(|d| d.as_array());
