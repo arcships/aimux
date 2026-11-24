@@ -742,6 +742,7 @@ async fn named_minimax_presets_route_only_h3_ids_to_the_native_media_models() {
             Canned::json(&json!({"data": []})),
             Canned::json(&json!({"data": []})),
             Canned::json(&json!({"task_id": TASK_ID})),
+            Canned::json(&json!({"id": "relay-task", "status": "queued"})),
         ]);
         let provider = aimux_providers::create_provider(
             name,
@@ -777,9 +778,8 @@ async fn named_minimax_presets_route_only_h3_ids_to_the_native_media_models() {
             .unwrap_err();
         assert!(error.to_string().contains("no image"), "{name}: {error}");
 
-        // Video splits the same way: the preset has no video factory, so a
-        // relay-only video ID is not served, while H3 is.
-        assert!(provider.video_model("relay-video-1").is_none(), "{name}");
+        // Video splits the same way: a relay-only video ID is served by the
+        // preset's compatible gateway, while H3 keeps the native body.
         provider
             .video_model("MiniMax-H3")
             .unwrap()
@@ -787,9 +787,16 @@ async fn named_minimax_presets_route_only_h3_ids_to_the_native_media_models() {
             .do_start(&VideoCallOptions::new("hi"))
             .await
             .unwrap();
+        provider
+            .video_model("relay-video-1")
+            .unwrap()
+            .unwrap()
+            .do_start(&VideoCallOptions::new("hi"))
+            .await
+            .unwrap();
 
         let seen = fetch.seen();
-        assert_eq!(seen.len(), 3, "{name}");
+        assert_eq!(seen.len(), 4, "{name}");
         assert_eq!(
             seen[0].url, "https://relay.example/v1/images/generations",
             "{name}"
@@ -817,6 +824,18 @@ async fn named_minimax_presets_route_only_h3_ids_to_the_native_media_models() {
         assert_eq!(
             seen[2].url, "https://relay.example/v2/video_generation",
             "{name}"
+        );
+        assert_eq!(seen[3].method, "POST", "{name}");
+        assert_eq!(seen[3].url, "https://relay.example/v1/videos", "{name}");
+        assert!(
+            seen[3].headers["content-type"].starts_with("multipart/form-data; boundary="),
+            "{name}: {}",
+            seen[3].headers["content-type"]
+        );
+        let form = String::from_utf8_lossy(&seen[3].body);
+        assert!(
+            form.contains("name=\"model\"\r\n\r\nrelay-video-1\r\n"),
+            "{name}: {form}"
         );
     }
 }
