@@ -180,6 +180,9 @@ fn async_boundary_rejects_invalid_submissions_without_callbacks() {
 type Completion = std::result::Result<Value, Value>;
 
 extern "C" fn complete(result: *mut c_char, error: *mut aimux_error_t, data: *mut c_void) {
+    // Take back the sender the submission handed over, so it outlives `send`: the runtime
+    // thread can still be inside that call after the receiver has woken up.
+    let sender = unsafe { Box::from_raw(data.cast::<Sender<Completion>>()) };
     assert_ne!(result.is_null(), error.is_null());
     let completion = if error.is_null() {
         Ok(serde_json::from_str(&unsafe { take_string(result) }).unwrap())
@@ -188,9 +191,7 @@ extern "C" fn complete(result: *mut c_char, error: *mut aimux_error_t, data: *mu
         aimux_error_free(error);
         Err(serde_json::from_str(&json).unwrap())
     };
-    unsafe { &*data.cast::<Sender<Completion>>() }
-        .send(completion)
-        .unwrap();
+    sender.send(completion).unwrap();
 }
 
 #[tokio::test]
@@ -199,17 +200,14 @@ async fn async_calls_fan_out_from_another_runtime_and_own_the_inputs() {
     for _ in 0..64 {
         let op = CString::new("runtime.describe").unwrap();
         let params = CString::new("{}").unwrap();
-        assert!(
-            aimux_call_async(
-                0,
-                op.as_ptr(),
-                params.as_ptr(),
-                0,
-                Some(complete),
-                std::ptr::from_ref(&send).cast_mut().cast()
-            )
-            .is_null()
-        );
+        let context = Box::into_raw(Box::new(send.clone())).cast();
+        let submission =
+            aimux_call_async(0, op.as_ptr(), params.as_ptr(), 0, Some(complete), context);
+        if !submission.is_null() {
+            // A rejected submission never invokes the callback, so reclaim the sender here.
+            drop(unsafe { Box::from_raw(context.cast::<Sender<Completion>>()) });
+        }
+        assert!(submission.is_null());
     }
     for _ in 0..64 {
         assert!(
@@ -236,17 +234,20 @@ fn accepted_async_calls_report_dispatch_errors_and_abort_once() {
         (c"runtime.describe", c"{", 0, 202),
         (c"catalogue.fetch", c"{}", abort.0, 13),
     ] {
-        assert!(
-            aimux_call_async(
-                0,
-                op.as_ptr(),
-                params.as_ptr(),
-                abort,
-                Some(complete),
-                std::ptr::from_ref(&send).cast_mut().cast()
-            )
-            .is_null()
+        let context = Box::into_raw(Box::new(send.clone())).cast();
+        let submission = aimux_call_async(
+            0,
+            op.as_ptr(),
+            params.as_ptr(),
+            abort,
+            Some(complete),
+            context,
         );
+        if !submission.is_null() {
+            // A rejected submission never invokes the callback, so reclaim the sender here.
+            drop(unsafe { Box::from_raw(context.cast::<Sender<Completion>>()) });
+        }
+        assert!(submission.is_null());
         assert_eq!(
             receive
                 .recv_timeout(Duration::from_secs(5))
