@@ -117,7 +117,7 @@ let result = generate_text(model, "Hello", GenerateTextOptions::default()).await
 
 - 只发探测确认过的字段：`quality`、`outputFormat` 等 provider options 一律报错；不支持 `mask`；编辑至少一张输入图；每次一张图（`n` 必须为 1）。
 - 输入图在本地先解码再发：Base64 非法或为空、`data:` URL 不是 base64 的 `image/<subtype>`（`data:` 前缀大小写不敏感），都会在发送前报 `InvalidArgument`，不会到计费端点才失败。
-- **失败不重放**：超时、连接重置、5xx、格式异常都可能已被服务端接受并计费，这些模型返回的错误都不可重试，`generate_image` 不会自动重发。两条路由的交换都有 600 秒挂起保护（流式响应读多久都不会超过它），外层上限用 `ImageCallOptions.timeout`。
+- **失败不重放**：超时、连接重置、5xx、格式异常都可能已被服务端接受并计费，这些模型返回的错误都不可重试，`generate_image` 不会自动重发。`gpt-image-2` 的整条请求/响应交换有 600 秒 `response_timeout`；`gpt-image-2.5` 的 600 秒上限只包住拿到响应头之后的 SSE drain（`STREAMED_EXCHANGE_TIMEOUT`），等响应头的阶段不在这个保护内。外层上限仍用 `ImageCallOptions.timeout`。
 - 返回 `usage`；`gpt-image-2.5` 取自 `response.completed.response.usage`。
 - 401 → `TokenExpired`（同语言模型）；403 表示账号无图片权限。
 - API key 模式不提供图片模型（返回 `NoSuchModel`），公开 Image API 请用 `openai` 包。

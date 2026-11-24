@@ -24,9 +24,10 @@
 //! error these models return is non-retryable. A 401 is
 //! [`AiMuxError::TokenExpired`], as for the language models.
 //!
-//! Input images are decoded locally and both exchange kinds carry a hang
-//! guard, so corrupt caller input and a stalled stream fail locally instead of
-//! becoming an opaque error from the billed endpoint.
+//! Input images are decoded locally; the direct exchange carries a response
+//! timeout and the streamed drain its own bound, so corrupt caller input and a
+//! stalled stream fail locally instead of becoming an opaque error from the
+//! billed endpoint.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -75,7 +76,7 @@ written, preserving all wording, language, punctuation, and visual constraints."
 /// default; the Core operation `timeout` stays the caller's outer bound.
 pub(super) const DIRECT_EXCHANGE_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// Hang guard of the streamed exchange. `post_json_to_api` exempts streaming
+/// Hang guard of the streamed drain. `post_json_to_api` exempts streaming
 /// handlers from the exchange timeout (their body outlives the call), so the
 /// drain of a `gpt-image-2.5` exchange carries its own bound: a stalled SSE
 /// must not keep `do_generate` waiting forever.
