@@ -374,6 +374,47 @@ async fn signed_result_target_is_requested_exactly_as_received() {
     assert!(!download.headers.contains_key("authorization"));
 }
 
+/// A result URL that carries its own query is a complete target, and the
+/// decision does not depend on the name of its parameters: this query uses an
+/// Akamai token (`hdnts`) that no signature list knows, and the fixture still
+/// answers only the received path and query. Appending `api-version`,
+/// re-encoding the pairs or attaching a credential fails the download.
+#[tokio::test]
+async fn unlisted_signature_target_is_requested_exactly_as_received() {
+    let server = MockServer::start().await;
+    let target = "/files/movie.mp4?hdnts=exp=1700000000~hmac=abc&response-content-type=video%2Fmp4";
+    status(
+        &server,
+        json!({"id":"task","status":"completed","url": format!("{}{target}", server.uri())}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(ExactTarget(target.into()))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+    let requests = server.received_requests().await.unwrap();
+    let download = requests
+        .iter()
+        .find(|request| request.url.path() == "/files/movie.mp4")
+        .unwrap();
+    assert_eq!(
+        download.url.query(),
+        Some(&target[target.find('?').unwrap() + 1..])
+    );
+    assert!(!download.headers.contains_key("authorization"));
+}
+
 /// A relative signed asset is resolved against the base and keeps its own
 /// path and query, without the gateway's configured parameters.
 #[tokio::test]

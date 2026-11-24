@@ -50,22 +50,35 @@ running; a returned task ID that does not match the operation is rejected.
 
 An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
 Core downloads it without provider credentials. A result URL on the provider's
-own origin — absolute or relative — is downloaded by the provider: a relative
-one resolves against the base URL as a directory and must remain on that
-origin, and an absolute one is downloaded only while its origin matches. If
-`url` is absent/null, the provider downloads `/videos/{id}/content`. An
-unsigned asset URL carries the provider's configured query parameters
-(`api-version`, `key`) and the configured credentials. A URL whose own query
-authenticates it — a presigned link, such as SigV4 `X-Amz-Signature`, a
-`Signature`, `sig` or token parameter — is requested exactly as received: its
-path and query are neither modified nor re-encoded, and no provider credential
-is attached, because a signature covers the whole canonical query and a second
-authentication scheme next to it is an auth conflict. Download requests use
-the existing SSRF guard, allow the explicitly configured origin, and strip
-caller headers on a redirect to another origin. Non-HTTP schemes, foreign
-protocol-relative references, and URL userinfo are rejected. Creation and
-content-download exchanges move whole media files, so they use a 600-second
-exchange guard instead of the 30-second default.
+own origin is downloaded by the provider, and the form of the reference
+decides whether the gateway's configured query parameters (`api-version`,
+`key`) and credentials are added. A relative reference addresses the gateway's
+API: it resolves against the base URL as a directory, must remain on that
+origin, and gets the configured parameters appended after the query bytes it
+carries; the received pairs keep their order and encoding, and a parameter the
+reference already carries keeps the value the gateway sent. An absolute URL is
+a complete target: the gateway named the whole address and chose its query, so
+it is sent exactly as received — its path and query bytes are neither changed
+nor re-encoded — and the configured parameters and credentials are not added,
+because the query may be a signature or token over its canonical form and a
+provider credential next to it would be a second authentication scheme. An
+absolute URL without a query cannot carry a query signature, so it is treated
+as an asset route and gets the configured parameters and credentials. This is
+a rule about the shape of the URL, not about parameter names: an unfamiliar
+signature scheme in an absolute URL is preserved without being recognized. A
+relative reference whose own query authenticates it — a presigned link such as
+SigV4 `X-Amz-*`, `X-Goog-*`, `Signature`, `sig`, a token, or an Akamai
+`hdnts`, `hmac`, `jwt`, `credential` or `auth` parameter — is likewise only
+resolved, with no configured parameters and no credential; that name list is a
+supplement to the structural rule and is consulted only for the relative form.
+If `url` is absent/null, the provider downloads `/videos/{id}/content`, with
+the configured parameters and credentials. A gateway that needs its query
+parameters on an absolute asset URL includes them in the URL it returns.
+Download requests use the existing SSRF guard, allow the explicitly configured
+origin, and strip caller headers on a redirect to another origin. Non-HTTP
+schemes, foreign protocol-relative references, and URL userinfo are rejected.
+Creation and content-download exchanges move whole media files, so they use a
+600-second exchange guard instead of the 30-second default.
 
 A creation the gateway refused is not replayed, because a timeout, 5xx or
 malformed successful response may follow an accepted, billable task; a

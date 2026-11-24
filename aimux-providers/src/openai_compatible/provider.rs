@@ -486,30 +486,37 @@ impl CompatModelConfig {
         Ok((url.to_string(), base))
     }
 
-    /// `url` with the configured query parameters laid over it: a configured
-    /// name replaces the value the URL already carried, and parameters only
-    /// the URL carries are kept. Used for asset URLs, where the response's own
-    /// query may be a signature that has to survive alongside the gateway's
-    /// `api-version`.
-    pub(crate) fn overlay_query_params(&self, url: &mut url::Url) {
+    /// `url` with the configured query parameters it does not already carry
+    /// appended after the query it was received with. The received pairs keep
+    /// their bytes and their order, and a parameter the URL already carries
+    /// keeps the value it was sent with: a URL taken from a provider response
+    /// is only ever extended, so a value or an encoding the gateway chose is
+    /// never rewritten.
+    pub(crate) fn with_configured_query(&self, url: &url::Url) -> String {
         let Some(params) = &self.query_params else {
-            return;
+            return url.to_string();
         };
-        if params.is_empty() {
-            return;
-        }
-        let mut pairs: Vec<(String, String)> = url
-            .query_pairs()
-            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+        let missing: Vec<(&str, &str)> = params
+            .iter()
+            .filter(|(name, _)| {
+                !url.query_pairs()
+                    .any(|(received, _)| received == name.as_str())
+            })
+            .map(|(name, value)| (name.as_str(), value.as_str()))
             .collect();
-        for (name, value) in params.iter() {
-            match pairs.iter_mut().find(|(existing, _)| existing == name) {
-                Some((_, existing_value)) => *existing_value = value.clone(),
-                None => pairs.push((name.clone(), value.clone())),
-            }
+        if missing.is_empty() {
+            return url.to_string();
         }
-        url.set_query(None);
-        url.query_pairs_mut().extend_pairs(pairs);
+        let appended = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(missing)
+            .finish();
+        let query = match url.query() {
+            Some(received) if !received.is_empty() => format!("{received}&{appended}"),
+            _ => appended,
+        };
+        let mut url = url.clone();
+        url.set_query(Some(&query));
+        url.to_string()
     }
 
     /// Resolve the provider headers, layer the per-call headers over them,

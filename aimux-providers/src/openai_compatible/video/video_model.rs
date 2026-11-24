@@ -151,8 +151,8 @@ impl OpenAICompatibleVideoModel {
                         media_type: "video/mp4".into(),
                     });
                 }
-                AssetUrl::Authenticated(url) => (url, true),
-                AssetUrl::Signed(url) => (url, false),
+                AssetUrl::Gateway(url) => (url, true),
+                AssetUrl::Complete(url) => (url, false),
             },
             Some(_) => {
                 return Err(AiMuxError::invalid_response_data(
@@ -228,8 +228,9 @@ impl OpenAICompatibleVideoModel {
             headers.fetch_user_agent,
         );
         if !attach_credentials {
-            // A self-authenticating URL carries its own credential; the
-            // provider's must not be added as a second scheme.
+            // A complete target carries its own authorisation in the URL the
+            // gateway supplied; the provider's credential must not be added as
+            // a second scheme.
             request.credentialed_origin = None;
         }
         request.validate_url = true;
@@ -413,20 +414,26 @@ fn encode_id(id: &str) -> String {
 enum AssetUrl {
     /// Another origin: Core downloads it without provider credentials.
     Public(String),
-    /// The provider's own origin without its own authentication: downloaded
-    /// with the configured credentials and query parameters.
-    Authenticated(String),
-    /// The provider's own origin with its own authentication in the query (a
-    /// presigned or tokenised link): requested exactly as received.
-    Signed(String),
+    /// A target on the gateway's own API: the configured query parameters the
+    /// URL lacks are appended and the configured credentials are sent.
+    Gateway(String),
+    /// A complete target the response supplied with a query of its own: sent
+    /// exactly as received, because that query may be the only thing that
+    /// authorises it and a second scheme next to it would conflict.
+    Complete(String),
 }
 
 /// Classify a completed video's `url`. An HTTP(S) URL on another origin stays
-/// public for Core's uncredentialed downloader. A URL on the provider's own
-/// origin — absolute or relative — is downloaded by the provider: an unsigned
-/// one carries the configured credentials and query parameters, while one
-/// whose own query authenticates it is sent byte for byte as received. A
-/// relative URL that leaves the origin is rejected.
+/// public for Core's uncredentialed downloader. On the provider's own origin,
+/// the form of the reference decides whether the gateway's parameters and
+/// credentials are added. A relative reference addresses the gateway's API, so
+/// it is resolved against the base as a directory (and must stay on that
+/// origin) and gets them. An absolute URL is a complete target: the gateway
+/// named the whole address, and a query it carries may be a signature over
+/// every parameter and its encoding, so the target is sent as received and
+/// only a queryless one is treated as an asset route that needs the configured
+/// authentication. A relative reference that carries its own authentication is
+/// the same complete target, resolved.
 fn resolve_asset_url(
     config: &CompatModelConfig,
     base: &str,
@@ -437,7 +444,7 @@ fn resolve_asset_url(
     }
     let base = url::Url::parse(&format!("{}/", base.trim_end_matches('/')))
         .map_err(|_| AiMuxError::invalid_response_data("invalid video base URL"))?;
-    let (mut url, relative) = match url::Url::parse(raw) {
+    let (url, relative) = match url::Url::parse(raw) {
         Ok(url) => (url, false),
         Err(url::ParseError::RelativeUrlWithoutBase) => {
             let url = base.join(raw).map_err(|_| {
@@ -464,29 +471,37 @@ fn resolve_asset_url(
         }
         return Ok(AssetUrl::Public(url.to_string()));
     }
-    if has_self_authenticating_query(&url) {
-        // A signature covers the canonical query: every parameter, its order
-        // and its encoding. Overlaying the gateway's configured parameters,
-        // or re-serializing the pairs, would invalidate it, so an absolute
-        // URL is kept exactly as received and a relative one is only resolved
-        // against the base.
-        return Ok(AssetUrl::Signed(if relative {
-            url.to_string()
-        } else {
-            raw.to_owned()
-        }));
+    if relative {
+        // A relative reference addresses the gateway's API, so it is requested
+        // with the configured parameters and credentials. The one exception is
+        // a reference whose own query authenticates it: that is resolved and
+        // otherwise sent as received.
+        if has_self_authenticating_query(&url) {
+            return Ok(AssetUrl::Complete(url.to_string()));
+        }
+        return Ok(AssetUrl::Gateway(config.with_configured_query(&url)));
     }
-    // The gateway authenticates every request with its configured query
-    // parameters (`api-version`, `key`); an unsigned asset needs them too.
-    config.overlay_query_params(&mut url);
-    Ok(AssetUrl::Authenticated(url.to_string()))
+    if url.query().is_some() {
+        // The gateway supplied a complete target and chose its query, so it is
+        // kept byte for byte: appending a configured parameter or re-encoding
+        // the pairs would change a canonical query a signature covers, and a
+        // provider credential next to the target's own is a second scheme.
+        return Ok(AssetUrl::Complete(raw.to_owned()));
+    }
+    Ok(AssetUrl::Gateway(config.with_configured_query(&url)))
 }
 
-/// Whether the URL's own query authenticates it. The names cover the presigned
-/// link schemes of the object stores and CDNs gateways commonly put in front of
-/// their media — SigV4 `X-Amz-*`, Cloud Storage `X-Goog-*`, Azure SAS `sig`,
-/// CloudFront `Signature`/`Policy`/`Key-Pair-Id` — and the plain signature and
-/// token names compatible relays use.
+/// Whether the URL's own query authenticates it. Only a relative reference
+/// needs the question answered: an absolute target's query is never touched.
+/// The names cover the presigned link schemes of the object stores and CDNs
+/// gateways commonly put in front of their media — SigV4 `X-Amz-*`, Cloud
+/// Storage `X-Goog-*`, Azure SAS `sig`, CloudFront
+/// `Signature`/`Policy`/`Key-Pair-Id` — and the plain signature and token
+/// names compatible relays use, including Akamai `hdnts`, `hmac`, `jwt`,
+/// `credential` and `auth`. The list supplements the structural rule: a
+/// signature scheme outside it that appears in an absolute URL is preserved
+/// without being recognized, and a new name is added here only for the
+/// relative form, which is decided by form and then exempted by name.
 fn has_self_authenticating_query(url: &url::Url) -> bool {
     url.query_pairs().any(|(name, _)| {
         let normalized: String = name
@@ -503,6 +518,12 @@ fn has_self_authenticating_query(url: &url::Url) -> bool {
             || normalized == "accesstoken"
             || normalized == "authtoken"
             || normalized == "apikey"
+            || normalized == "hdnts"
+            || normalized == "hmac"
+            || normalized == "jwt"
+            || normalized == "credential"
+            || normalized == "credentials"
+            || normalized == "auth"
             || normalized.starts_with("xamz")
             || normalized.starts_with("xgoog")
     })
@@ -615,55 +636,95 @@ mod tests {
         assert_eq!(signed.credentialed_origin, None);
     }
 
-    /// An unsigned asset on the gateway's own origin is downloaded with the
-    /// credentials and the configured query parameters, which replace a value
-    /// the URL already carried and add the missing ones.
+    /// An absolute asset URL without a query is a route on the gateway's own
+    /// API, so the configured query parameters are appended and the configured
+    /// credentials are sent.
     #[test]
-    fn unsigned_same_origin_asset_keeps_the_configured_query() {
-        let resolved = resolve_asset_url(
+    fn queryless_same_origin_asset_keeps_the_configured_query() {
+        let AssetUrl::Gateway(url) = resolve_asset_url(
             &model().config,
             BASE_URL,
-            "https://gateway.example/files/movie.mp4?v=2&api-version=2023-01",
+            "https://gateway.example/files/movie.mp4",
         )
-        .unwrap();
-        let AssetUrl::Authenticated(url) = resolved else {
-            panic!("unsigned same-origin asset must stay credentialed")
+        .unwrap() else {
+            panic!("a queryless same-origin asset must stay credentialed")
         };
         assert_eq!(
             url,
-            "https://gateway.example/files/movie.mp4?v=2&api-version=2024-01"
+            "https://gateway.example/files/movie.mp4?api-version=2024-01"
         );
     }
 
-    /// A URL whose own query authenticates it is a presigned target: the
-    /// received path and query are kept exactly, because a signature covers
-    /// every parameter and its encoding. Appending the gateway's configured
-    /// `api-version`, replacing a value or re-encoding the pairs would change
-    /// the canonical query and break it.
+    /// A complete target the response supplied is sent as received: its query
+    /// may be a signature or a token that covers every parameter and its
+    /// encoding, so the configured parameters are not appended, a value is not
+    /// replaced and the pairs are not re-encoded. The rule is the form of the
+    /// URL, not the name of its parameters, so an unlisted signature scheme is
+    /// preserved the same way.
     #[test]
-    fn self_authenticating_asset_query_is_kept_exactly() {
+    fn absolute_asset_with_its_own_query_is_sent_as_received() {
         let model = model();
-        let absolute = "https://gateway.example/files/movie.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=key%2F20261124&X-Amz-Signature=abc%2Fdef";
-        let AssetUrl::Signed(url) = resolve_asset_url(&model.config, BASE_URL, absolute).unwrap()
-        else {
-            panic!("a presigned absolute asset must stay signed")
-        };
-        assert_eq!(url, absolute);
+        for raw in [
+            // Akamai token authentication: no name the supplement knows.
+            "https://gateway.example/files/movie.mp4?hdnts=exp=1700000000~hmac=abc",
+            // A plain query the gateway chose, with a value it chose.
+            "https://gateway.example/files/movie.mp4?v=2&api-version=2023-01",
+            // Percent-encoded and form-encoded bytes stay exactly as received.
+            "https://gateway.example/files/movie.mp4?a=exp%3D1%7Ehmac%3Dabc&b=x+y",
+        ] {
+            let AssetUrl::Complete(url) = resolve_asset_url(&model.config, BASE_URL, raw).unwrap()
+            else {
+                panic!("{raw} must be sent as received")
+            };
+            assert_eq!(url, raw);
+        }
+    }
 
-        let relative = "assets/movie.mp4?X-Amz-Signature=abc%20def&X-Amz-Expires=900";
-        let AssetUrl::Signed(url) = resolve_asset_url(&model.config, BASE_URL, relative).unwrap()
-        else {
-            panic!("a presigned relative asset must stay signed")
+    /// A relative reference is resolved as received: the query bytes the
+    /// gateway wrote keep their order and encoding, and only the configured
+    /// parameters the reference lacks are appended.
+    #[test]
+    fn relative_asset_keeps_the_received_query_bytes() {
+        let AssetUrl::Gateway(url) = resolve_asset_url(
+            &model().config,
+            BASE_URL,
+            "assets/movie.mp4?Expires=1&meta=exp%3D1%7Ehmac%3Dabc&a=b+c",
+        )
+        .unwrap() else {
+            panic!("an unsigned relative asset must get the configured query")
         };
         assert_eq!(
             url,
-            "https://gateway.example/v1/assets/movie.mp4?X-Amz-Signature=abc%20def&X-Amz-Expires=900"
+            "https://gateway.example/v1/assets/movie.mp4?Expires=1&meta=exp%3D1%7Ehmac%3Dabc&a=b+c&api-version=2024-01"
         );
+    }
+
+    /// A relative reference whose own query authenticates it is a presigned
+    /// target: it is only resolved against the base, with no configured
+    /// parameters appended and no re-encoding.
+    #[test]
+    fn self_authenticating_relative_query_is_kept_exactly() {
+        let model = model();
+        for raw in [
+            "assets/movie.mp4?X-Amz-Signature=abc%20def&X-Amz-Expires=900",
+            "assets/movie.mp4?hdnts=exp=1700000000~hmac=abc",
+            "assets/movie.mp4?hmac=abc&expires=1",
+            "assets/movie.mp4?jwt=abc.def.ghi",
+            "assets/movie.mp4?credential=abc",
+            "assets/movie.mp4?auth=abc",
+        ] {
+            let AssetUrl::Complete(url) = resolve_asset_url(&model.config, BASE_URL, raw).unwrap()
+            else {
+                panic!("{raw} must stay as received")
+            };
+            assert_eq!(url, format!("https://gateway.example/v1/{raw}"), "{raw}");
+        }
     }
 
     /// The signature and token parameter names of the common presigning
-    /// schemes all mark the URL as self-authenticating, in any casing; a
-    /// parameter that does not authenticate it keeps the configured overlay.
+    /// schemes mark a relative reference as self-authenticating, in any
+    /// casing; a reference whose parameters do not authenticate it keeps the
+    /// configured query.
     #[test]
     fn presigning_parameter_names_are_recognized() {
         let model = model();
@@ -678,20 +739,28 @@ mod tests {
             "Key-Pair-Id",
             "token",
             "access_token",
+            "hdnts",
+            "hmac",
+            "jwt",
+            "credential",
+            "auth",
         ] {
-            let raw = format!("https://gateway.example/f?{name}=v");
-            let AssetUrl::Signed(url) = resolve_asset_url(&model.config, BASE_URL, &raw).unwrap()
+            let raw = format!("assets/movie.mp4?{name}=v");
+            let AssetUrl::Complete(url) = resolve_asset_url(&model.config, BASE_URL, &raw).unwrap()
             else {
-                panic!("{name} must mark the URL as self-authenticating")
+                panic!("{name} must mark the reference as self-authenticating")
             };
-            assert_eq!(url, raw);
+            assert_eq!(url, format!("https://gateway.example/v1/{raw}"));
         }
-        let AssetUrl::Authenticated(url) =
-            resolve_asset_url(&model.config, BASE_URL, "https://gateway.example/f?v=2").unwrap()
+        let AssetUrl::Gateway(url) =
+            resolve_asset_url(&model.config, BASE_URL, "assets/movie.mp4?v=2").unwrap()
         else {
-            panic!("a cache buster must keep the configured overlay")
+            panic!("a cache buster must keep the configured query")
         };
-        assert_eq!(url, "https://gateway.example/f?v=2&api-version=2024-01");
+        assert_eq!(
+            url,
+            "https://gateway.example/v1/assets/movie.mp4?v=2&api-version=2024-01"
+        );
     }
 
     /// A foreign absolute URL stays public: Core downloads it without the
@@ -719,7 +788,7 @@ mod tests {
     #[test]
     fn relative_asset_stays_on_the_provider_origin() {
         let model = model();
-        let AssetUrl::Authenticated(url) =
+        let AssetUrl::Gateway(url) =
             resolve_asset_url(&model.config, BASE_URL, "assets/movie.mp4").unwrap()
         else {
             panic!("relative asset must stay credentialed")
