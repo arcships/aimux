@@ -1,6 +1,7 @@
 //! The Responses model of the Open Responses package (`src/responses/`).
 
 pub(super) mod convert_to_input;
+mod deepseek;
 mod language_model;
 mod map_finish_reason;
 

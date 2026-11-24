@@ -25,6 +25,7 @@ use crate::stream::{Controller, Emit, FINISH_OTHER};
 use super::convert_to_input::{
     convert_to_open_responses_input_with_namespace, url_citations, validate_file_media,
 };
+use super::deepseek::{self, DeepSeekStream};
 use super::map_finish_reason::map_open_responses_finish_reason;
 
 fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -138,8 +139,18 @@ impl LanguageModel for OpenResponsesModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         validate_file_media(&options.prompt)?;
-        let (body, warnings) =
+        let (mut body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
+        // Opt-in, validation and replay substitution; `true` means this request
+        // is on the official DeepSeek Responses route, so the raw output is the
+        // replay record even when search itself is off for this call.
+        let deepseek_compatible = deepseek::prepare(
+            &self.model_id,
+            &exchange.url("/responses"),
+            &self.provider_options_name,
+            options,
+            &mut body,
+        )?;
         let body = exchange.transform_body(body);
 
         let resp = aimux_provider_utils::post_json_to_api(
@@ -162,7 +173,7 @@ impl LanguageModel for OpenResponsesModel {
         let mut has_tool_calls = false;
 
         if let Some(output_arr) = output.and_then(|o| o.as_array()) {
-            for part in output_arr {
+            for (index, part) in output_arr.iter().enumerate() {
                 let part_type = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match part_type {
                     "reasoning" => match part
@@ -219,6 +230,12 @@ impl LanguageModel for OpenResponsesModel {
                                 }
                             }
                         }
+                    }
+                    "web_search_call" if deepseek_compatible => {
+                        let (call, result) =
+                            deepseek::search_parts(part, &self.provider_options_name, index as u64);
+                        content.push(GenerateContent::ToolCall(call));
+                        content.push(GenerateContent::ToolResult(result));
                     }
                     "function_call" => {
                         has_tool_calls = true;
@@ -277,7 +294,11 @@ impl LanguageModel for OpenResponsesModel {
             finish_reason,
             usage,
             warnings,
-            provider_metadata: None,
+            provider_metadata: if deepseek_compatible {
+                deepseek::metadata(&self.provider_options_name, raw["output"].clone())
+            } else {
+                None
+            },
             response: Some(aimux_core::shared::ResponseInfo {
                 headers: Some(response_headers),
                 body: Some(raw),
@@ -290,8 +311,15 @@ impl LanguageModel for OpenResponsesModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         validate_file_media(&options.prompt)?;
-        let (body, warnings) =
+        let (mut body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
+        let deepseek_compatible = deepseek::prepare(
+            &self.model_id,
+            &exchange.url("/responses"),
+            &self.provider_options_name,
+            options,
+            &mut body,
+        )?;
 
         let stream_body = {
             let mut b = body.clone();
@@ -368,6 +396,7 @@ impl LanguageModel for OpenResponsesModel {
                 include_raw_chunks: options.include_raw_chunks == Some(true),
                 strict: options.strict_stream == Some(true),
                 terminal_seen: false,
+                deepseek: DeepSeekStream::new(deepseek_compatible),
             },
         );
 
@@ -405,6 +434,7 @@ struct OpenResponsesStream {
     /// A `response.completed`, `response.incomplete`, `response.failed` or
     /// `error` event arrived.
     terminal_seen: bool,
+    deepseek: DeepSeekStream,
 }
 
 impl Transformer for OpenResponsesStream {
@@ -443,6 +473,10 @@ impl Transformer for OpenResponsesStream {
                 }
                 Err(_) => {}
             }
+        }
+        if let Ok(chunk) = &event {
+            self.deepseek
+                .observe(chunk, &self.provider_options_name, controller);
         }
         let Self {
             ref provider_options_name,
@@ -764,7 +798,7 @@ impl Transformer for OpenResponsesStream {
         controller.enqueue(StreamPart::Finish {
             finish_reason: self.finish_reason,
             usage: self.final_usage,
-            provider_metadata: None,
+            provider_metadata: self.deepseek.metadata(&self.provider_options_name),
         });
     }
 }

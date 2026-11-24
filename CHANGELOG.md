@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- DeepSeek `deepseek-flash` native web search on the official Responses route:
+  explicit `deepseekWebSearch` opt-in, provider-executed search results, URL
+  citations with Unicode code-point offsets, and ordered stateless output
+  replay through message-level `responseOutput` provider options (#525). The
+  replay record is attached on that route even without the opt-in, because it
+  also carries the signed reasoning items a later turn replays.
 - OpenAI-compatible asynchronous video models for `/videos` gateways, with
   multipart reference files, provider option passthrough, task polling and
   guarded authenticated content downloads (#530).
