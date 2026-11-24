@@ -519,7 +519,7 @@ class CheckNativeArtifact(unittest.TestCase):
     def test_macho_dylib_exports_end_to_end(self):
         tmp = Path(self.tmp.name)
         exports = sorted(check.header_exports(ROOT))
-        self.assertEqual(len(exports), 14)
+        self.assertEqual(len(exports), 16)
 
         full_c = tmp / "full.c"
         full_c.write_text("\n".join(f"int {name}(void) {{ return 0; }}" for name in exports) + "\n", encoding="utf-8")
@@ -545,7 +545,7 @@ class CheckNativeArtifact(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0, err)
-        self.assertIn("14 required C ABI exports present", out)
+        self.assertIn("16 required C ABI exports present", out)
 
         missing_c = tmp / "missing.c"
         missing_c.write_text(
