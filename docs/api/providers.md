@@ -9,7 +9,7 @@
 
 | category | count |
 |----------|-------|
-| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | 282 |
+| Registry-backed OpenAI-compatible (`provider.create` + `provider.model`) | 283 |
 | Non-registry: Native protocol providers | 14 |
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
@@ -22,11 +22,11 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **328** |
 
-**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
+**283 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
 
-## Registry-backed (OpenAI-compatible) — 282
+## Registry-backed (OpenAI-compatible) — 283
 
 | name | display | auth | env var | base_url |
 |------|---------|------|---------|----------|
@@ -74,6 +74,7 @@
 | `canopywave` | Canopywave | api_key | `CANOPYWAVE_API_KEY` | `https://api.canopywave.com/v1` |
 | `cerebras` | Cerebras | api_key | `CEREBRAS_API_KEY` | `https://api.cerebras.ai/v1` |
 | `chatgpt` | ChatGPT (订阅) | api_key | `CHATGPT_API_KEY` | `https://chatgpt.com/backend-api/codex` |
+| `cheaper_inference` | Cheaper Inference | api_key | `CHEAPER_INFERENCE_API_KEY` | `https://api.cheaperinference.com/v1` |
 | `cherryin` | cherryin | api_key | `CHERRYIN_API_KEY` | `https://open.cherryin.net` |
 | `chutes` | Chutes | api_key | `CHUTES_API_KEY` | `https://llm.chutes.ai/v1` |
 | `clarifai` | Clarifai | api_key | `CLARIFAI_API_KEY` | `https://api.clarifai.com/v2/ext/openai/v1` |
