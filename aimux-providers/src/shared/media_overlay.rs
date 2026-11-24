@@ -10,14 +10,66 @@ use aimux_core::{
     RerankingModel, SearchModel, Skills, SpeechModel, TranscriptionModel, VideoModel,
 };
 
+/// Which image and video model IDs the overlay answers from `media`.
+enum NativeIds {
+    /// Every ID, whatever the media provider does with it.
+    All,
+    /// Only the listed IDs. A model that exists only on a relay keeps the
+    /// preset's implementation.
+    Only {
+        image: &'static [&'static str],
+        video: &'static [&'static str],
+    },
+}
+
+impl NativeIds {
+    fn serves_image(&self, id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only { image, .. } => image.contains(&id),
+        }
+    }
+
+    fn serves_video(&self, id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only { video, .. } => video.contains(&id),
+        }
+    }
+}
+
 pub(crate) struct MediaOverlay {
     base: Arc<dyn Provider>,
     media: Arc<dyn Provider>,
+    native_ids: NativeIds,
 }
 
 impl MediaOverlay {
+    /// Every image and video ID is served by `media`.
     pub(crate) fn new(base: Arc<dyn Provider>, media: Arc<dyn Provider>) -> Self {
-        Self { base, media }
+        Self {
+            base,
+            media,
+            native_ids: NativeIds::All,
+        }
+    }
+
+    /// Only `image_models` and `video_models` are served by `media`; any other
+    /// ID is looked up on `base`.
+    pub(crate) fn with_native_ids(
+        base: Arc<dyn Provider>,
+        media: Arc<dyn Provider>,
+        image_models: &'static [&'static str],
+        video_models: &'static [&'static str],
+    ) -> Self {
+        Self {
+            base,
+            media,
+            native_ids: NativeIds::Only {
+                image: image_models,
+                video: video_models,
+            },
+        }
     }
 }
 
@@ -35,11 +87,19 @@ impl Provider for MediaOverlay {
     }
 
     fn image_model(&self, id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        self.media.image_model(id)
+        if self.native_ids.serves_image(id) {
+            self.media.image_model(id)
+        } else {
+            self.base.image_model(id)
+        }
     }
 
     fn video_model(&self, id: &str) -> Option<Result<Arc<dyn VideoModel>, AiMuxError>> {
-        self.media.video_model(id)
+        if self.native_ids.serves_video(id) {
+            self.media.video_model(id)
+        } else {
+            self.base.video_model(id)
+        }
     }
 
     fn transcription_model(

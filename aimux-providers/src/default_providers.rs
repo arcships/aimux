@@ -127,6 +127,30 @@ pub fn create_provider(
                 Arc::new(media),
             )));
         }
+        if matches!(
+            name,
+            "minimax" | "minimax_cn" | "minimax_coding_plan" | "minimax_cn_coding_plan"
+        ) {
+            let media = Arc::new(crate::minimax::create_minimax(
+                crate::minimax::MiniMaxProviderSettings {
+                    base_url: settings.base_url.or_else(|| {
+                        preset::lookup(name).map(|entry| entry.descriptor.base_url.clone())
+                    }),
+                    api_key: settings.api_key,
+                    headers: settings.headers,
+                    name: Some(name.to_owned()),
+                    fetch: settings.fetch,
+                },
+            )?);
+            return Ok(Arc::new(
+                crate::shared::media_overlay::MediaOverlay::with_native_ids(
+                    base,
+                    media,
+                    &crate::minimax::IMAGE_MODEL_IDS,
+                    &crate::minimax::VIDEO_MODEL_IDS,
+                ),
+            ));
+        }
         return Ok(base);
     }
     let PresetSettings {
