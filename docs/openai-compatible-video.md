@@ -71,10 +71,12 @@ already carries keeps the value the gateway sent, and the request carries the
 configured credentials. The name list is a boundary rather than a proof: a
 signature scheme outside it cannot be told from a plain query, so its URL is
 treated as an asset route, gets the configured parameters and credential, and
-the signature may stop verifying. A gateway signing with another name should
-either return a relative reference or have its parameter name added to the
-list. If `url` is absent/null, the provider downloads `/videos/{id}/content`,
-with the configured parameters and credentials.
+the signature may stop verifying. A gateway signing with another name can avoid
+the boundary only by adding that parameter name to the list, by returning no URL
+so the asset is fetched from the authenticated `/videos/{id}/content` endpoint,
+or by serving the asset from another origin, which is downloaded without
+credentials. If `url` is absent/null, the provider downloads
+`/videos/{id}/content`, with the configured parameters and credentials.
 Download requests use the existing SSRF guard, allow the explicitly configured
 origin, and strip caller headers on a redirect to another origin. Non-HTTP
 schemes, foreign protocol-relative references, and URL userinfo are rejected.
