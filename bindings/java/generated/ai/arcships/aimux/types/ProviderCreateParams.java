@@ -7,10 +7,23 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.util.*;
 
+/**
+ * Trusted-caller operation: constructs a provider handle from package settings
+ * and optional `{ "env": ... }` references. Untrusted callers must not be
+ * permitted to supply arbitrary `baseUrl` values with omitted credentials.
+ */
 @JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ProviderCreateParams {
+    /**
+     * Optional allowlist gating explicit `{ "env": "VAR" }` (`StringOrEnv`)
+     * interpolation in `settings`. Does not restrict implicit per-provider
+     * default environment variable fallbacks when credential or `baseUrl`
+     * settings are omitted.
+     */
+    @JsonProperty("envAllowlist")
+    private final List<String> envAllowlist;
     @JsonProperty("package")
     private final String package_;
     @JsonProperty("settings")
@@ -18,19 +31,28 @@ public final class ProviderCreateParams {
 
     @JsonCreator
     public ProviderCreateParams(
+        @JsonProperty(value = "envAllowlist") List<String> envAllowlist,
         @JsonProperty(value = "package", required = true) String package_,
         @JsonProperty(value = "settings") ProviderSettings settings) {
+        this.envAllowlist = envAllowlist == null ? null : Collections.unmodifiableList(new ArrayList<>(envAllowlist));
         this.package_ = package_;
         this.settings = settings;
     }
 
     public static Builder builder() { return new Builder(); }
+    public List<String> getEnvAllowlist() { return envAllowlist; }
     public String getPackage_() { return package_; }
     public ProviderSettings getSettings() { return settings; }
 
     public static final class Builder {
+        private List<String> envAllowlist;
         private String package_;
         private ProviderSettings settings;
+
+        public Builder envAllowlist(List<String> value) {
+            this.envAllowlist = value;
+            return this;
+        }
 
         public Builder package_(String value) {
             this.package_ = value;
@@ -42,6 +64,6 @@ public final class ProviderCreateParams {
             return this;
         }
 
-        public ProviderCreateParams build() { return new ProviderCreateParams(package_, settings); }
+        public ProviderCreateParams build() { return new ProviderCreateParams(envAllowlist, package_, settings); }
     }
 }

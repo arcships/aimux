@@ -56,12 +56,53 @@ pub struct CustomProviderOptions {
 /// A provider built by [`custom_provider`].
 pub struct CustomProvider {
     options: CustomProviderOptions,
+    language_api_models:
+        HashMap<crate::provider::LanguageApi, HashMap<String, Arc<dyn LanguageModel>>>,
 }
 
 /// Create a custom provider from alias tables and an optional fallback.
 #[must_use]
 pub fn custom_provider(options: CustomProviderOptions) -> CustomProvider {
-    CustomProvider { options }
+    CustomProvider {
+        options,
+        language_api_models: HashMap::new(),
+    }
+}
+
+impl CustomProvider {
+    /// Register explicit models for a [`LanguageApi`](crate::provider::LanguageApi)
+    /// constructor (no-op when `models` is empty), without falling back to
+    /// `fallback_provider`.
+    #[must_use]
+    pub fn with_language_api_models(
+        mut self,
+        api: crate::provider::LanguageApi,
+        models: HashMap<String, Arc<dyn LanguageModel>>,
+    ) -> Self {
+        if !models.is_empty() {
+            self.language_api_models
+                .entry(api)
+                .or_default()
+                .extend(models);
+        }
+        self
+    }
+
+    /// Register one explicit model for a [`LanguageApi`](crate::provider::LanguageApi)
+    /// constructor without falling back to `fallback_provider`.
+    #[must_use]
+    pub fn with_language_api_model(
+        mut self,
+        api: crate::provider::LanguageApi,
+        id: impl Into<String>,
+        model: Arc<dyn LanguageModel>,
+    ) -> Self {
+        self.language_api_models
+            .entry(api)
+            .or_default()
+            .insert(id.into(), model);
+        self
+    }
 }
 
 /// The aliased model, else what the fallback offers, else `NoSuchModel`.
@@ -165,6 +206,18 @@ impl Provider for CustomProvider {
         o.skills
             .clone()
             .or_else(|| o.fallback_provider.as_ref()?.skills())
+    }
+
+    fn language_model_with_api(
+        &self,
+        api: crate::provider::LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let models = self.language_api_models.get(&api)?;
+        if let Some(model) = models.get(id) {
+            return Some(Ok(Arc::clone(model)));
+        }
+        Some(Err(AiMuxError::no_such_model(id, api.as_str())))
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {

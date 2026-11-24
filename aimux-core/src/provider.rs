@@ -9,6 +9,8 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
@@ -23,6 +25,36 @@ use crate::skills_model::Skills;
 use crate::speech_model::SpeechModel;
 use crate::transcription_model::TranscriptionModel;
 use crate::video_model::VideoModel;
+
+/// Language-model API variant exposed on a [`Provider`] alongside the default
+/// [`Provider::language_model`] constructor.
+// `#[non_exhaustive]`: more APIs (e.g. `Interactions`) may be added later, so
+// `match` outside this crate requires a wildcard arm. (Kept out of the doc
+// comment, which becomes part of the codegen manifest schema.)
+#[non_exhaustive]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum LanguageApi {
+    Chat,
+    Responses,
+    Completion,
+    Messages,
+}
+
+impl LanguageApi {
+    /// Canonical wire name (`"chat"`, `"responses"`, `"completion"`, `"messages"`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Responses => "responses",
+            Self::Completion => "completion",
+            Self::Messages => "messages",
+        }
+    }
+}
 
 /// A provider factory.
 ///
@@ -136,6 +168,20 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// aimux extension: construct a language model using an explicit
+    /// [`LanguageApi`] variant (such as [`LanguageApi::Chat`] or
+    /// [`LanguageApi::Responses`]).
+    ///
+    /// Returns `None` when this provider does not expose `api`.
+    fn language_model_with_api(
+        &self,
+        api: LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        let _ = (api, id);
+        None
+    }
+
     /// aimux extension: this provider's model-discovery side, when it has one
     /// (see [`ProviderDiscovery`]). `None` for vendors without a `/models`
     /// endpoint.
@@ -203,6 +249,13 @@ impl<P: Provider + ?Sized> Provider for &P {
     }
     fn search_model(&self, id: &str) -> Option<Result<Arc<dyn SearchModel>, AiMuxError>> {
         (**self).search_model(id)
+    }
+    fn language_model_with_api(
+        &self,
+        api: LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        (**self).language_model_with_api(api, id)
     }
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
         (**self).discovery()

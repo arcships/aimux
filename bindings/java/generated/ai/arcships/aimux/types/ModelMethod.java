@@ -10,6 +10,14 @@ import java.util.*;
 public enum ModelMethod {
     @JsonProperty("languageModel")
     LANGUAGE_MODEL,
+    @JsonProperty("chat")
+    CHAT,
+    @JsonProperty("responses")
+    RESPONSES,
+    @JsonProperty("completion")
+    COMPLETION,
+    @JsonProperty("messages")
+    MESSAGES,
     @JsonProperty("embeddingModel")
     EMBEDDING_MODEL,
     @JsonProperty("imageModel")

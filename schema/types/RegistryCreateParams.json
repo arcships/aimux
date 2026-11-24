@@ -13,6 +13,13 @@
     "namespace": {
       "default": "",
       "type": "string"
+    },
+    "separator": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

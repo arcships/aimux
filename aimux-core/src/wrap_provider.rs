@@ -10,7 +10,7 @@ use crate::image_model::ImageModel;
 use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
 use crate::language_model::LanguageModel;
 use crate::language_model_middleware::{LanguageModelMiddleware, wrap_language_model};
-use crate::provider::{Provider, ProviderDiscovery};
+use crate::provider::{LanguageApi, Provider, ProviderDiscovery};
 use crate::reranking_model::RerankingModel;
 use crate::search_model::SearchModel;
 use crate::skills_model::Skills;
@@ -105,6 +105,16 @@ impl Provider for WrappedProvider {
 
     fn search_model(&self, id: &str) -> Option<Result<Arc<dyn SearchModel>, AiMuxError>> {
         self.provider.search_model(id)
+    }
+
+    fn language_model_with_api(
+        &self,
+        api: LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.provider.language_model_with_api(api, id).map(|res| {
+            res.map(|model| wrap_language_model(model, &self.language_model_middleware, None, None))
+        })
     }
 
     fn discovery(&self) -> Option<&dyn ProviderDiscovery> {

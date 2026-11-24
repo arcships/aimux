@@ -127,7 +127,7 @@ pub mod prelude {
         apply_tool_call_repair, apply_tool_call_repair_to_result, tool_call_repair_context,
         tool_call_repair_inputs,
     };
-    pub use crate::provider::Provider;
+    pub use crate::provider::{LanguageApi, Provider};
     pub use crate::reranking_model::{
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
@@ -192,7 +192,7 @@ pub use error::{
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;
-pub use provider::Provider;
+pub use provider::{LanguageApi, Provider};
 pub use provider_registry::{ProviderRegistry, ProviderRegistryOptions, create_provider_registry};
 pub use reranking_model::RerankingModel;
 pub use search_model::SearchModel;

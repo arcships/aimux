@@ -187,6 +187,6 @@ fn misc_metadata_preserves_the_existing_inventory() {
             .as_array()
             .unwrap()
             .len(),
-        72
+        76
     );
 }

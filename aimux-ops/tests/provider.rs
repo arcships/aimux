@@ -179,6 +179,10 @@ async fn every_secondary_slot_hides_foreign_owner_and_matches_unknown() {
             "provider.custom",
             &[
                 "languageModels.*",
+                "chatModels.*",
+                "responsesModels.*",
+                "completionModels.*",
+                "messagesModels.*",
                 "embeddingModels.*",
                 "imageModels.*",
                 "speechModels.*",

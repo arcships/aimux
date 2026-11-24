@@ -33,6 +33,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageResult};
 use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model_middleware::LanguageModelMiddleware;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
@@ -48,6 +49,7 @@ use aimux_core::transcription_model::{
 use aimux_core::video_model::{
     VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus,
 };
+use aimux_core::wrap_provider::wrap_provider;
 use aimux_core::{CustomProviderOptions, custom_provider};
 
 /// A stub whose only identity is the id it was created with; none of its
@@ -207,6 +209,14 @@ impl Provider for Fallback {
         self.record("decision_model", id);
         self.decision
             .then(|| Ok(Arc::new(MockDecision("fallback")) as _))
+    }
+    fn language_model_with_api(
+        &self,
+        api: aimux_core::LanguageApi,
+        id: &str,
+    ) -> Option<Result<Arc<dyn LanguageModel>, AiMuxError>> {
+        self.record("language_model_with_api", id);
+        (api == aimux_core::LanguageApi::Chat).then(|| Ok(Arc::new(MockLanguage("fallback")) as _))
     }
     fn files(&self) -> Option<Arc<dyn Files>> {
         self.record("files", "");
@@ -647,4 +657,190 @@ fn registry_reports_missing_decision_models() {
         "provider:model",
         "decisionModel",
     );
+}
+
+struct OverrideProviderName(&'static str);
+
+impl LanguageModelMiddleware for OverrideProviderName {
+    fn override_provider(&self, _: &dyn LanguageModel) -> Option<String> {
+        Some(self.0.to_string())
+    }
+}
+
+#[test]
+fn custom_provider_explicit_language_apis_do_not_fall_back_to_fallback_provider() {
+    use aimux_core::LanguageApi;
+
+    let fallback = Arc::new(Fallback::default());
+    // Also lock in exhaustive construction of `CustomProviderOptions` without
+    // `..Default::default()` so no breaking pub fields are added.
+    let custom = custom_provider(CustomProviderOptions {
+        language_models: HashMap::new(),
+        embedding_models: HashMap::new(),
+        image_models: HashMap::new(),
+        transcription_models: HashMap::new(),
+        speech_models: HashMap::new(),
+        reranking_models: HashMap::new(),
+        video_models: HashMap::new(),
+        search_models: HashMap::new(),
+        decision_models: HashMap::new(),
+        files: None,
+        skills: None,
+        discovery: None,
+        fallback_provider: Some(fallback.clone()),
+    })
+    .with_language_api_models(
+        LanguageApi::Chat,
+        HashMap::from([(
+            "m1".to_string(),
+            Arc::new(MockLanguage("explicit-chat")) as Arc<dyn LanguageModel>,
+        )]),
+    );
+    let hit = custom
+        .language_model_with_api(LanguageApi::Chat, "m1")
+        .expect("registered chat api")
+        .unwrap();
+    assert_eq!(hit.model_id(), "explicit-chat");
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Responses, "m1")
+            .is_none()
+    );
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Completion, "m1")
+            .is_none()
+    );
+    assert!(
+        custom
+            .language_model_with_api(LanguageApi::Messages, "m1")
+            .is_none()
+    );
+    let miss = custom
+        .language_model_with_api(LanguageApi::Chat, "missing")
+        .expect("registered api rejects missing id");
+    assert_no_such_model(miss, "missing", "chat");
+    assert!(fallback.calls().is_empty());
+
+    let empty_noop = custom_provider(CustomProviderOptions::default())
+        .with_language_api_models(LanguageApi::Chat, HashMap::new())
+        .with_language_api_model(
+            LanguageApi::Responses,
+            "r1",
+            Arc::new(MockLanguage("explicit-responses")),
+        );
+    assert!(
+        empty_noop
+            .language_model_with_api(LanguageApi::Chat, "m1")
+            .is_none()
+    );
+    assert_eq!(
+        empty_noop
+            .language_model_with_api(LanguageApi::Responses, "r1")
+            .unwrap()
+            .unwrap()
+            .model_id(),
+        "explicit-responses"
+    );
+}
+
+#[test]
+fn wrap_provider_wraps_language_api_models_and_preserves_none() {
+    use aimux_core::LanguageApi;
+
+    let inner = Arc::new(Fallback::default());
+    let wrapped = wrap_provider(
+        inner,
+        &[Arc::new(OverrideProviderName("wrapped.provider"))],
+        &[],
+    );
+    let model = wrapped
+        .language_model_with_api(LanguageApi::Chat, "m1")
+        .expect("chat supported")
+        .unwrap();
+    assert_eq!(model.provider(), "wrapped.provider");
+    assert!(
+        wrapped
+            .language_model_with_api(LanguageApi::Responses, "m1")
+            .is_none()
+    );
+}
+
+#[test]
+fn registry_supports_dynamic_mutations_derived_clones_and_language_apis() {
+    use aimux_core::LanguageApi;
+
+    let base = create_provider_registry(
+        BTreeMap::from([(
+            "alpha".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        )]),
+        ProviderRegistryOptions {
+            separator: ":".to_string(),
+            language_model_middleware: vec![Arc::new(OverrideProviderName("reg.wrapped"))],
+            image_model_middleware: Vec::new(),
+        },
+    );
+    assert_eq!(base.separator(), ":");
+    assert!(base.contains_provider("alpha"));
+    assert_eq!(base.len(), 1);
+    assert!(!base.is_empty());
+    assert_eq!(base.provider_ids(), vec!["alpha".to_string()]);
+
+    let chat_model = base
+        .language_model_with_api(LanguageApi::Chat, "alpha:gpt")
+        .unwrap();
+    assert_eq!(chat_model.provider(), "reg.wrapped");
+    assert!(
+        base.language_model_with_api(LanguageApi::Responses, "alpha:gpt")
+            .is_err()
+    );
+
+    let derived = base.with_provider("beta", Arc::new(Fallback::default()));
+    assert!(!base.contains_provider("beta"));
+    assert_eq!(
+        derived.provider_ids(),
+        vec!["alpha".to_string(), "beta".to_string()]
+    );
+    let derived_removed = derived.without_provider("alpha");
+    assert_eq!(derived_removed.provider_ids(), vec!["beta".to_string()]);
+    assert!(derived.contains_provider("alpha"));
+
+    let derived_multi = base.with_providers([
+        (
+            "gamma".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        ),
+        (
+            "delta".to_string(),
+            Arc::new(Fallback::default()) as Arc<dyn Provider>,
+        ),
+    ]);
+    assert_eq!(
+        derived_multi.provider_ids(),
+        vec![
+            "alpha".to_string(),
+            "delta".to_string(),
+            "gamma".to_string()
+        ]
+    );
+
+    assert!(
+        base.register("dyn", Arc::new(Fallback::default()))
+            .is_none()
+    );
+    assert!(base.contains_provider("dyn"));
+    base.extend_providers([(
+        "dyn2".to_string(),
+        Arc::new(Fallback::default()) as Arc<dyn Provider>,
+    )]);
+    assert_eq!(base.len(), 3);
+    assert!(base.unregister("dyn").is_some());
+    assert!(!base.contains_provider("dyn"));
+
+    base.replace_providers(BTreeMap::from([(
+        "only".to_string(),
+        Arc::new(Fallback::default()) as Arc<dyn Provider>,
+    )]));
+    assert_eq!(base.provider_ids(), vec!["only".to_string()]);
 }

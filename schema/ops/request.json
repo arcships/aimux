@@ -690,6 +690,30 @@
         },
         "handle": {
           "$ref": "handle-id.json",
+          "const": "0"
+        },
+        "op": {
+          "const": "provider.descriptors"
+        },
+        "params": {
+          "$ref": "../types/ProviderDescriptorsParams.json"
+        }
+      },
+      "required": [
+        "handle",
+        "op",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "abort": {
+          "$ref": "handle-id.json"
+        },
+        "handle": {
+          "$ref": "handle-id.json",
           "not": {
             "const": "0"
           }
@@ -972,6 +996,56 @@
         },
         "handle": {
           "$ref": "handle-id.json",
+          "const": "0"
+        },
+        "op": {
+          "const": "registry.fromConfig"
+        },
+        "params": {
+          "$ref": "../types/RegistryFromConfigParams.json"
+        }
+      },
+      "required": [
+        "handle",
+        "op",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "abort": {
+          "$ref": "handle-id.json"
+        },
+        "handle": {
+          "$ref": "handle-id.json",
+          "not": {
+            "const": "0"
+          }
+        },
+        "op": {
+          "const": "registry.list"
+        },
+        "params": {
+          "$ref": "../types/RegistryListParams.json"
+        }
+      },
+      "required": [
+        "handle",
+        "op",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "abort": {
+          "$ref": "handle-id.json"
+        },
+        "handle": {
+          "$ref": "handle-id.json",
           "not": {
             "const": "0"
           }
@@ -981,6 +1055,32 @@
         },
         "params": {
           "$ref": "../types/RegistryProviderParams.json"
+        }
+      },
+      "required": [
+        "handle",
+        "op",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "abort": {
+          "$ref": "handle-id.json"
+        },
+        "handle": {
+          "$ref": "handle-id.json",
+          "not": {
+            "const": "0"
+          }
+        },
+        "op": {
+          "const": "registry.update"
+        },
+        "params": {
+          "$ref": "../types/RegistryUpdateParams.json"
         }
       },
       "required": [

@@ -314,21 +314,27 @@ async fn secondary_handles_are_owner_checked_without_disclosure() {
     let foreign = other.provider();
     let unknown = HandleId(u64::MAX);
     let primary = env.insert(Entry::Language(Arc::new(Model)));
-    for name in ["registry.create", "model.wrap"] {
+    for name in ["registry.create", "registry.update", "model.wrap"] {
         let params = |handle| {
             if name == "registry.create" {
                 json!({"entries":[{"key":"p","provider":handle}]})
+            } else if name == "registry.update" {
+                json!({"set":[{"key":"p","provider":handle}]})
             } else {
                 json!({"middleware":[handle]})
             }
         };
-        let primary = if name == "registry.create" {
+        let target = if name == "registry.create" {
             HandleId(0)
+        } else if name == "registry.update" {
+            env.insert(Entry::Registry(Arc::new(
+                aimux_core::create_provider_registry(Default::default(), Default::default()),
+            )))
         } else {
             primary
         };
-        let foreign = env.call(primary, name, params(foreign)).await.unwrap_err();
-        let missing = env.call(primary, name, params(unknown)).await.unwrap_err();
+        let foreign = env.call(target, name, params(foreign)).await.unwrap_err();
+        let missing = env.call(target, name, params(unknown)).await.unwrap_err();
         assert_eq!(foreign.code(), 203);
         assert_eq!(foreign.envelope(), missing.envelope());
         assert!(foreign.envelope().error.get("actual").is_none());
@@ -459,6 +465,7 @@ async fn strict_controls_and_reference_errors_cross_projected_boundary() {
 fn descriptors_publish_real_types_and_secondary_fields() {
     for (name, field) in [
         ("registry.create", "entries.*.provider"),
+        ("registry.update", "set.*.provider"),
         ("model.wrap", "middleware.*"),
     ] {
         let descriptor = aimux_ops::dispatch::descriptor(name).unwrap();
@@ -477,7 +484,10 @@ fn descriptors_publish_real_types_and_secondary_fields() {
     let manifest = aimux_ops::manifest::manifest();
     for name in [
         "registry.create",
+        "registry.fromConfig",
+        "registry.list",
         "registry.provider",
+        "registry.update",
         "model.resolve",
         "model.info",
         "model.wrap",
