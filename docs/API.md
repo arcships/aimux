@@ -1,9 +1,10 @@
 # aimux API Documentation
 
-> **Current release: 0.6.0.** 0.6 is a breaking release: every binding now uses
-> the shared operations ABI (ABI 1 / ops 1.0), and the public JSON follows the
-> Vercel AI SDK V4. Start with the [0.6 upgrade guide](upgrading-to-0.6.md) if
-> you are coming from 0.5.
+> **Current release: 0.7.0.** 0.7 breaks the Rust API (`chrono` → `jiff`,
+> shared `tools`, `HttpRequest.kind`) and the Swift / Flutter `cause` type; the
+> operations ABI (ABI 1 / ops 1.0) and public JSON are unchanged since 0.6.
+> Start with the [0.7 upgrade guide](upgrading-to-0.7.md), or the
+> [0.6 upgrade guide](upgrading-to-0.6.md) if you are coming from 0.5.
 
 aimux is a Rust LLM access layer. Providers are reached through one object-safe
 language-model interface, or through the shared operations dispatcher that the
@@ -23,7 +24,7 @@ bindings ───────────────┼─→ native path: Nod
 - **Rust core** — typed providers, traits, stream parts, errors and recording.
 - **aimux-ops** — operation names, request/response DTOs, handle lifecycle,
   manifest and versions. Every binding calls the same dispatcher.
-- **C ABI** — 14 primitives in `aimux-ffi/include/aimux.h`; opaque handles,
+- **C ABI** — 16 primitives in `aimux-ffi/include/aimux.h` (14 in 0.6, plus `aimux_call_async` / `aimux_stream_async`); opaque handles,
   JSON results and one owned `aimux_error_t *`.
 - **Native bindings** — Node and Python link the Rust crates directly.
 
@@ -96,8 +97,8 @@ binding READMEs.
 
 ## Providers
 
-There are 328 provider names: 282 registry-backed OpenAI-compatible presets and
-46 vendor packages. The generated catalogue is
+There are 329 provider names: 282 registry-backed OpenAI-compatible presets and
+47 vendor packages. The generated catalogue is
 [api/providers.md](api/providers.md).
 
 Rust:

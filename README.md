@@ -4,16 +4,17 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for [328 provider names](docs/api/providers.md).**
+> **A unified LLM access layer written in Rust. One API for [329 provider names](docs/api/providers.md).**
 
-> **0.6.0 is a breaking release.** Every binding now uses the shared operations
-> ABI (ABI 1 / ops 1.0), and public JSON follows the AI SDK V4. See
-> [Upgrading to 0.6](docs/upgrading-to-0.6.md) before moving a 0.5 integration.
+> **0.7.0 is a breaking release** for the Rust API and for the Swift / Flutter
+> `cause` type; the wire protocol and C ABI stay compatible with 0.6. See
+> [Upgrading to 0.7](docs/upgrading-to-0.7.md) before moving a 0.6 integration
+> (and [Upgrading to 0.6](docs/upgrading-to-0.6.md) if you are coming from 0.5).
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-328-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-329-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -36,8 +37,8 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
 
 ## Why aimux
 
-- **328 provider names** — 282 registry-backed OpenAI-compatible presets
-  + 46 vendor packages, covering text and other modalities. Local engines
+- **329 provider names** — 282 registry-backed OpenAI-compatible presets
+  + 47 vendor packages, covering text and other modalities. Local engines
   such as Ollama/vLLM are presets. `provider_names()` lists the Rust names;
   the generated catalogue lives in [docs/api/providers.md](docs/api/providers.md).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
@@ -67,9 +68,33 @@ For planned milestones and their current status, see the [roadmap](ROADMAP.md).
 - **Hermetic tests** — 2,800+ cassettes replay real API responses; no network
   or API keys required.
 
+## Upgrading from 0.6
+
+0.7.0 is a breaking release for the Rust API and two binding types. The main
+changes:
+
+- **`chrono` → `jiff`.** `Timestamp::from_datetime` / `to_datetime` are replaced
+  by `Timestamp::from_timestamp` / `to_timestamp` (`RUSTSEC-2026-0543`).
+- **`tools` is shared.** `GenerateTextOptions.tools` / `CallOptions.tools` take
+  `Option<Arc<[Tool]>>`.
+- **`HttpRequest.kind`** is a new required field; use
+  `.generation_for(&options)` for synchronous image / speech calls.
+- **Typed `cause` in Swift and Flutter** (`ErrorCause?` instead of raw JSON).
+- **`provider.create` validates `settings`** against each package descriptor;
+  `organization` / `project` are accepted only by `openai` / `google_vertex`.
+- **New:** declarative provider configuration (`registry.fromConfig`,
+  `provider.descriptors`, `registry.list` / `registry.update`), direct
+  `chat` / `responses` / `completion` / `messages` model methods, the L0
+  native passthrough endpoint, DeepSeek web search, Codex image models, and
+  MiniMax / ByteDance / OpenAI-compatible video and image models.
+
+Read the full [0.7 upgrade guide](docs/upgrading-to-0.7.md) before moving an
+integration.
+
 ## Upgrading from 0.5
 
-0.6.0 is a breaking release. The main changes:
+0.6.0 was the first breaking release on the shared operations ABI. The main
+changes:
 
 - **Operations replace constructors.** Bindings use `provider.create` +
   `provider.model` and the shared operation names; provider-specific
@@ -378,7 +403,8 @@ Tests run on cassette playback — no network and no keys. See
 | Doc | Contents |
 |-----|----------|
 | [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
-| [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) | **0.6 migration guide** — breaking changes by language |
+| [docs/upgrading-to-0.7.md](docs/upgrading-to-0.7.md) | **0.7 migration guide** — Rust `chrono`→`jiff`, shared `tools`, typed Swift/Flutter `cause`, strict `provider.create` settings |
+| [docs/upgrading-to-0.6.md](docs/upgrading-to-0.6.md) | **0.6 migration guide** — the operations-ABI switch, by language |
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
 | [docs/contributing/adding-a-provider.md](docs/contributing/adding-a-provider.md) | **Adding a provider** — the three-case checklist (registry row / new protocol / single modality) |
 | [docs/api/providers.md](docs/api/providers.md) | **Provider list** — every provider with entry points and the canonical counts (generated) |

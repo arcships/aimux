@@ -6,7 +6,8 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 
 | Doc | Contents |
 |-----|----------|
-| [upgrading-to-0.6.md](upgrading-to-0.6.md) | **0.6 migration guide** — breaking changes by language and the upgrade checklist |
+| [upgrading-to-0.7.md](upgrading-to-0.7.md) | **0.7 migration guide** — Rust `chrono`→`jiff`, shared `tools`, typed Swift/Flutter `cause`, strict `provider.create` settings, and the upgrade checklist |
+| [upgrading-to-0.6.md](upgrading-to-0.6.md) | **0.6 migration guide** — the operations-ABI switch by language |
 | [API.md](API.md) | **API overview** — architecture, language guides, providers, operations, errors |
 | [api/reference.md](api/reference.md) | **API reference index** — generated DTOs, core types, ops and error sources |
 | [api/ops.md](api/ops.md) | **Shared operations** — operation names and families |
