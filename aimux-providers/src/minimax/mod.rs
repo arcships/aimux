@@ -12,11 +12,14 @@
 //!
 //! This package offers the media models. [`crate::create_provider`] combines
 //! them with the existing OpenAI-compatible text preset for `minimax`,
-//! `minimax_cn`, `minimax_coding_plan`, and `minimax_cn_coding_plan`. Chat,
-//! embeddings, and discovery keep the preset behavior; images and videos use
-//! this package. The preset's regional base URL, explicit key, extra headers,
-//! and custom transport also configure the media requests. The optional
-//! `transform_request_body` setting applies only to the text preset.
+//! `minimax_cn`, `minimax_coding_plan`, and `minimax_cn_coding_plan`: the four
+//! preset names route the IDs in `IMAGE_MODEL_IDS` and `VIDEO_MODEL_IDS` to
+//! this package, and every other image or video ID keeps the preset's own factory
+//! (an image model that exists only on a relay still goes to the relay). Chat,
+//! embeddings, and discovery keep the preset behavior. The preset's regional
+//! base URL, explicit key, extra headers, and custom transport also configure
+//! the media requests. The optional `transform_request_body` setting applies
+//! only to the text preset.
 //!
 //! Both generation requests are billable and not idempotent, so a failed
 //! create (video) or generate (image) request is never sent again
@@ -41,6 +44,19 @@ pub use provider::{
     MINIMAX_CN_BASE_URL, MiniMaxProvider, MiniMaxProviderSettings, create_minimax, minimax,
 };
 pub use video_model::MiniMaxVideoModel;
+
+/// The image model IDs the native provider serves, and the only image IDs the
+/// named MiniMax presets route to it.
+pub(crate) const IMAGE_MODEL_IDS: [&str; 2] = ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"];
+
+/// The video model IDs the native provider serves, and the only video IDs the
+/// named MiniMax presets route to it.
+pub(crate) const VIDEO_MODEL_IDS: [&str; 4] = [
+    "MiniMax-H3",
+    "MiniMax-H3-Highspeed",
+    "MiniMax-H3-Lite",
+    "MiniMax-H3-Max",
+];
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 

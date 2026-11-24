@@ -128,7 +128,10 @@ pub fn create_provider(
                 },
             )?);
             return Ok(Arc::new(crate::shared::media_overlay::MediaOverlay::new(
-                base, media,
+                base,
+                media,
+                &crate::minimax::IMAGE_MODEL_IDS,
+                &crate::minimax::VIDEO_MODEL_IDS,
             )));
         }
         return Ok(Arc::new(preset::create(name, settings)?));

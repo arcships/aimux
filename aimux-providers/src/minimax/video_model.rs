@@ -15,7 +15,7 @@ use crate::shared::{EndpointConfig, task_failed, unsupported, video_response};
 
 use super::image_probe::image_dimensions;
 use super::options::{self, NAMESPACE, VideoOptions};
-use super::{BaseResp, encode_path_segment, not_retryable_unless_rate_limited};
+use super::{BaseResp, VIDEO_MODEL_IDS, encode_path_segment, not_retryable_unless_rate_limited};
 
 /// The models and their rules.
 struct ModelSpec {
@@ -30,7 +30,7 @@ struct ModelSpec {
 
 const MODELS: [ModelSpec; 4] = [
     ModelSpec {
-        id: "MiniMax-H3",
+        id: VIDEO_MODEL_IDS[0],
         min_duration: 4,
         default_duration: 4,
         resolutions: &["768P", "2K"],
@@ -38,7 +38,7 @@ const MODELS: [ModelSpec; 4] = [
         prompt_expansion: false,
     },
     ModelSpec {
-        id: "MiniMax-H3-Highspeed",
+        id: VIDEO_MODEL_IDS[1],
         min_duration: 4,
         default_duration: 4,
         resolutions: &["768P", "480P"],
@@ -46,7 +46,7 @@ const MODELS: [ModelSpec; 4] = [
         prompt_expansion: false,
     },
     ModelSpec {
-        id: "MiniMax-H3-Lite",
+        id: VIDEO_MODEL_IDS[2],
         min_duration: 4,
         default_duration: 4,
         resolutions: &["768P", "480P"],
@@ -54,7 +54,7 @@ const MODELS: [ModelSpec; 4] = [
         prompt_expansion: false,
     },
     ModelSpec {
-        id: "MiniMax-H3-Max",
+        id: VIDEO_MODEL_IDS[3],
         min_duration: 5,
         default_duration: 5,
         resolutions: &["768P", "480P"],
@@ -78,7 +78,7 @@ fn spec(model_id: &str) -> Result<&'static ModelSpec, AiMuxError> {
     MODELS.iter().find(|m| m.id == model_id).ok_or_else(|| {
         AiMuxError::invalid_argument(format!(
             "MiniMax video model `{model_id}` is not supported; supported models: {}",
-            MODELS.map(|m| m.id).join(", ")
+            VIDEO_MODEL_IDS.join(", ")
         ))
     })
 }

@@ -17,9 +17,8 @@ use crate::shared::{EndpointConfig, image_response, retry_download, unsupported}
 
 use super::options::{self, ImageOptions, NAMESPACE};
 use super::video_model::{base_resp_error, minimax_failed_response_handler};
-use super::{BaseResp, not_retryable, not_retryable_unless_rate_limited};
+use super::{BaseResp, IMAGE_MODEL_IDS, not_retryable, not_retryable_unless_rate_limited};
 
-const MODELS: [&str; 2] = ["MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"];
 const MAX_PROMPT_CHARS: usize = 32_000;
 const AREAS: [&str; 3] = ["1K", "2K", "4K"];
 const MIN_PIXELS: u64 = 655_360;
@@ -111,10 +110,10 @@ fn build_body(
     model_id: &str,
     options: &ImageCallOptions,
 ) -> Result<(Value, Vec<Warning>), AiMuxError> {
-    if !MODELS.contains(&model_id) {
+    if !IMAGE_MODEL_IDS.contains(&model_id) {
         return Err(AiMuxError::invalid_argument(format!(
             "MiniMax image model `{model_id}` is not supported; supported models: {}",
-            MODELS.join(", ")
+            IMAGE_MODEL_IDS.join(", ")
         )));
     }
     if options.files.as_ref().is_some_and(|f| !f.is_empty()) || options.mask.is_some() {

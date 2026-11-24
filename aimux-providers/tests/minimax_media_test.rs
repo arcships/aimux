@@ -725,6 +725,102 @@ async fn named_minimax_media_keeps_relay_prefix_and_custom_headers() {
     assert_eq!(seen[0].headers["authorization"], "Bearer test-key");
 }
 
+/// A relay's own model IDs stay with the preset's factories; only the H3 IDs
+/// reach the native MiniMax implementations.
+#[tokio::test]
+async fn named_minimax_presets_route_only_h3_ids_to_the_native_media_models() {
+    use aimux_providers::preset::PresetSettings;
+    use aimux_providers::test_support::mock_fetch::{Canned, MockFetch};
+
+    for name in [
+        "minimax",
+        "minimax_cn",
+        "minimax_coding_plan",
+        "minimax_cn_coding_plan",
+    ] {
+        let fetch = MockFetch::new(vec![
+            Canned::json(&json!({"data": []})),
+            Canned::json(&json!({"data": []})),
+            Canned::json(&json!({"task_id": TASK_ID})),
+        ]);
+        let provider = aimux_providers::create_provider(
+            name,
+            PresetSettings {
+                api_key: Some(Resolvable::Value("test-key".into())),
+                base_url: Some("https://relay.example/v1".into()),
+                fetch: Some(fetch.transport()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // A relay-only image ID keeps the preset's OpenAI-compatible image
+        // model: the old body, and an empty batch is a successful call.
+        let relay_image = provider.image_model("relay-image-1").unwrap();
+        assert_eq!(relay_image.model_id(), "relay-image-1", "{name}");
+        let result = relay_image
+            .do_generate(&ImageCallOptions::new("hi"))
+            .await
+            .unwrap();
+        assert!(
+            matches!(result.images, ImageOutputs::Base64(ref images) if images.is_empty()),
+            "{name}"
+        );
+
+        // The H3 image IDs keep the native body; the native model rejects an
+        // empty `data` array where the OpenAI-compatible model accepts it.
+        let native_image = provider.image_model("MiniMax-H3-Image").unwrap();
+        assert_eq!(native_image.model_id(), "MiniMax-H3-Image", "{name}");
+        let error = native_image
+            .do_generate(&ImageCallOptions::new("hi"))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("no image"), "{name}: {error}");
+
+        // Video splits the same way: the preset has no video factory, so a
+        // relay-only video ID is not served, while H3 is.
+        assert!(provider.video_model("relay-video-1").is_none(), "{name}");
+        provider
+            .video_model("MiniMax-H3")
+            .unwrap()
+            .unwrap()
+            .do_start(&VideoCallOptions::new("hi"))
+            .await
+            .unwrap();
+
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 3, "{name}");
+        assert_eq!(
+            seen[0].url, "https://relay.example/v1/images/generations",
+            "{name}"
+        );
+        assert_eq!(
+            seen[0].json_body(),
+            json!({"model": "relay-image-1", "prompt": "hi", "n": 1}),
+            "{name}"
+        );
+        assert_eq!(
+            seen[1].url, "https://relay.example/v1/images/generations",
+            "{name}"
+        );
+        assert_eq!(
+            seen[1].json_body(),
+            json!({
+                "model": "MiniMax-H3-Image",
+                "prompt": "hi",
+                "n": 1,
+                "response_format": "url",
+                "stream": false,
+            }),
+            "{name}"
+        );
+        assert_eq!(
+            seen[2].url, "https://relay.example/v2/video_generation",
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn a_base_url_with_a_query_or_a_fragment_is_rejected() {
     for base_url in [

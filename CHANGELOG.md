@@ -36,9 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   normalized to `https://api.minimax.cn`); a base URL with a query or a
   fragment is rejected. The image prompt limit excludes leading and trailing
   whitespace, as documented. A failed create or image generation is not
-  retried except after an HTTP 429. `create_provider` adds these media
-  models to the four existing `minimax*` presets while preserving their
-  chat, embedding, and discovery behavior.
+  retried except after an HTTP 429. `create_provider` routes these model
+  IDs to the native implementations on the four existing `minimax*`
+  presets; any other image ID keeps the preset's OpenAI-compatible image
+  model, and chat, embedding, and discovery behavior is preserved.
 
 ## [0.6.1] - 2026-11-05
 
