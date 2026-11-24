@@ -23,14 +23,20 @@
 //! come after the server accepted (and billed) the generation, so every
 //! error these models return is non-retryable. A 401 is
 //! [`AiMuxError::TokenExpired`], as for the language models.
+//!
+//! Input images are decoded locally and both exchange kinds carry a hang
+//! guard, so corrupt caller input and a stalled stream fail locally instead of
+//! becoming an opaque error from the billed endpoint.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::ErrorCause;
+use aimux_core::error::{AiMuxError, ApiCallError, ApiCallErrorOrigin};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
@@ -68,6 +74,12 @@ written, preserving all wording, language, punctuation, and visual constraints."
 /// large generation legitimately holds the connection well past the 30 s
 /// default; the Core operation `timeout` stays the caller's outer bound.
 pub(super) const DIRECT_EXCHANGE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Hang guard of the streamed exchange. `post_json_to_api` exempts streaming
+/// handlers from the exchange timeout (their body outlives the call), so the
+/// drain of a `gpt-image-2.5` exchange carries its own bound: a stalled SSE
+/// must not keep `do_generate` waiting forever.
+pub(super) const STREAMED_EXCHANGE_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The providerOptions namespaces these models would read. They take no
 /// options, so any key under them is refused rather than silently dropped.
@@ -337,39 +349,24 @@ impl CodexImageModel {
         .await
         .map_err(no_replay)?;
         let response_headers = response.response_headers;
-        let mut events = response.value;
+        let events = response.value;
 
-        // The first `image_generation_call` item that carried a result.
-        let mut retained: Option<Value> = None;
-        let mut completed: Option<Value> = None;
-        while let Some(event) = events.next().await {
-            let data = match event {
-                Ok(data) => data,
-                Err(error) => return Err(no_replay(error)),
-            };
-            match data.get("type").and_then(Value::as_str).unwrap_or("") {
-                "response.output_item.done" => {
-                    let item = &data["item"];
-                    if retained.is_none() && is_image_call_with_result(item) {
-                        retained = Some(item.clone());
-                    }
-                }
-                "response.completed" => {
-                    completed = Some(data);
-                    break;
-                }
-                "error" | "response.failed" | "response.incomplete" => {
-                    return Err(stream_failure(&data, &endpoint, body, response_headers));
-                }
-                _ => {}
-            }
-        }
+        // The drain owns its bound: `post_json_to_api` exempts streaming
+        // handlers from the exchange timeout, so without this a stalled stream
+        // would keep `do_generate` waiting forever.
+        let ImageStream {
+            retained,
+            saw_image_call,
+            completed,
+        } = drain_image_stream(
+            events,
+            &endpoint,
+            &body,
+            &response_headers,
+            STREAMED_EXCHANGE_TIMEOUT,
+        )
+        .await?;
 
-        let Some(completed) = completed else {
-            return Err(AiMuxError::invalid_response_data(
-                "image stream ended without response.completed",
-            ));
-        };
         let response_object = &completed["response"];
         let status = response_object["status"].as_str().unwrap_or("");
         if status != "completed" {
@@ -380,18 +377,30 @@ impl CodexImageModel {
                 response_headers,
             ));
         }
+        let output = response_object["output"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
         let item = retained
             .or_else(|| {
-                response_object["output"]
-                    .as_array()?
+                output
                     .iter()
-                    .find(|item| item["type"] == "image_generation_call")
+                    .find(|item| is_completed_image_call(item))
                     .cloned()
             })
             .ok_or_else(|| {
-                AiMuxError::invalid_response_data(
-                    "image response contained no image_generation_call item",
-                )
+                if saw_image_call
+                    || output
+                        .iter()
+                        .any(|item| item["type"] == "image_generation_call")
+                {
+                    AiMuxError::invalid_response_data(
+                        "image_generation_call item did not complete with an image result",
+                    )
+                } else {
+                    AiMuxError::invalid_response_data(
+                        "image response contained no image_generation_call item",
+                    )
+                }
             })?;
         let image = item["result"]
             .as_str()
@@ -410,7 +419,7 @@ impl CodexImageModel {
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
-            usage: None,
+            usage: extract_image_usage(response_object),
         })
     }
 }
@@ -492,11 +501,98 @@ fn no_replay(error: AiMuxError) -> AiMuxError {
     }
 }
 
-fn is_image_call_with_result(item: &Value) -> bool {
+fn is_completed_image_call(item: &Value) -> bool {
     item["type"] == "image_generation_call"
+        && item["status"].as_str() == Some("completed")
         && item["result"]
             .as_str()
             .is_some_and(|result| !result.is_empty())
+}
+
+/// The terminal state of an image stream.
+#[derive(Debug)]
+struct ImageStream {
+    /// The first `image_generation_call` item that completed with a result.
+    retained: Option<Value>,
+    /// Whether any `image_generation_call` item was produced at all.
+    saw_image_call: bool,
+    /// The `response.completed` event.
+    completed: Value,
+}
+
+/// Drain the stream until `response.completed`, bounded by `timeout`.
+///
+/// A failure event ends the drain with its error; a stream that ends without
+/// `response.completed` is invalid. The bound exists because
+/// `post_json_to_api` exempts streaming handlers from the exchange timeout.
+async fn drain_image_stream<S>(
+    mut events: S,
+    endpoint: &str,
+    body: &Value,
+    response_headers: &HashMap<String, String>,
+    timeout: Duration,
+) -> Result<ImageStream, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin,
+{
+    let drain = async {
+        let mut retained: Option<Value> = None;
+        let mut saw_image_call = false;
+        while let Some(event) = events.next().await {
+            let data = event.map_err(no_replay)?;
+            match data.get("type").and_then(Value::as_str).unwrap_or("") {
+                "response.output_item.done" => {
+                    let item = &data["item"];
+                    if item["type"] == "image_generation_call" {
+                        saw_image_call = true;
+                        if retained.is_none() && is_completed_image_call(item) {
+                            retained = Some(item.clone());
+                        }
+                    }
+                }
+                "response.completed" => {
+                    return Ok(ImageStream {
+                        retained,
+                        saw_image_call,
+                        completed: data,
+                    });
+                }
+                "error" | "response.failed" | "response.incomplete" => {
+                    return Err(stream_failure(
+                        &data,
+                        endpoint,
+                        body.clone(),
+                        response_headers.clone(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Err(AiMuxError::invalid_response_data(
+            "image stream ended without response.completed",
+        ))
+    };
+    match tokio::time::timeout(timeout, drain).await {
+        Ok(result) => result,
+        Err(_) => Err(stream_timeout(timeout, endpoint, body)),
+    }
+}
+
+/// The error of a stream that outlived its hang guard. Non-retryable like every
+/// other failure these models return: the generation may already be billed.
+fn stream_timeout(timeout: Duration, endpoint: &str, body: &Value) -> AiMuxError {
+    AiMuxError::ApiCall(Box::new(ApiCallError {
+        is_retryable: false,
+        origin: ApiCallErrorOrigin::Local,
+        ..ApiCallError::new(
+            format!(
+                "Request exceeded the {}s streamed exchange response timeout",
+                timeout.as_secs()
+            ),
+            endpoint,
+            aimux_provider_utils::logging::redact_error_context(body.clone()),
+        )
+    }))
 }
 
 /// The error of an in-band failure event (`error`, `response.failed`,
@@ -506,7 +602,7 @@ fn stream_failure(
     event: &Value,
     endpoint: &str,
     body: Value,
-    response_headers: std::collections::HashMap<String, String>,
+    response_headers: HashMap<String, String>,
 ) -> AiMuxError {
     let error = event
         .get("error")
@@ -579,26 +675,26 @@ fn tool_call_metadata(item: &Value, response: &Value) -> SharedProviderMetadata 
 }
 
 /// An input image as a `data:` URL: inline data with its media type (sniffed
-/// when only partial), a `data:` URL as given, and any other URL downloaded
+/// when only partial), a validated `data:` URL, and any other URL downloaded
 /// as `downloadBlob` does (guarded, no provider headers) and inlined.
+///
+/// Every payload is decoded here, so empty or corrupt caller input fails with
+/// `InvalidArgument` instead of reaching the billed endpoint as an opaque
+/// error.
 async fn image_data_url(
     file: &ImageFile,
     options: &ImageCallOptions,
 ) -> Result<String, AiMuxError> {
     match file {
         ImageFile::File { media_type, data } => {
-            let sniff = match data {
-                ImageFileData::Base64(text) => MediaTypeData::Base64(text),
-                ImageFileData::Binary(bytes) => MediaTypeData::Bytes(bytes),
-            };
-            let media_type = full_image_media_type(media_type, sniff)?;
-            Ok(format!(
-                "data:{media_type};base64,{}",
-                aimux_provider_utils::convert_to_base64(data)
-            ))
+            let bytes = decoded_image_data(data)?;
+            let media_type = full_image_media_type(media_type, MediaTypeData::Bytes(&bytes))?;
+            Ok(inline_image_data_url(&media_type, &bytes))
         }
-        ImageFile::Url { url } if url.starts_with("data:") => Ok(url.clone()),
         ImageFile::Url { url } => {
+            if let Some((media_type, bytes)) = parse_image_data_url(url)? {
+                return Ok(inline_image_data_url(&media_type, &bytes));
+            }
             let response =
                 aimux_provider_utils::download_blob(url.clone(), options.abort_signal.clone())
                     .await?;
@@ -607,13 +703,86 @@ async fn image_data_url(
                 .get("content-type")
                 .map(|value| value.split(';').next().unwrap_or("").trim().to_string())
                 .unwrap_or_default();
-            let media_type = full_image_media_type(&header, MediaTypeData::Bytes(&response.value))?;
-            Ok(format!(
-                "data:{media_type};base64,{}",
-                aimux_provider_utils::convert_uint8_array_to_base64(&response.value)
-            ))
+            let bytes = require_image_data(response.value.to_vec())?;
+            let media_type = full_image_media_type(&header, MediaTypeData::Bytes(&bytes))?;
+            Ok(inline_image_data_url(&media_type, &bytes))
         }
     }
+}
+
+/// Inline image bytes as a `data:` URL.
+fn inline_image_data_url(media_type: &str, bytes: &[u8]) -> String {
+    format!(
+        "data:{media_type};base64,{}",
+        aimux_provider_utils::convert_uint8_array_to_base64(bytes)
+    )
+}
+
+/// Decode inline image data: a `Base64` payload is decoded rather than passed
+/// through, so malformed text fails here instead of after the call is billed.
+fn decoded_image_data(data: &ImageFileData) -> Result<Vec<u8>, AiMuxError> {
+    let bytes = match data {
+        ImageFileData::Binary(bytes) => bytes.clone(),
+        ImageFileData::Base64(text) => aimux_provider_utils::convert_base64_to_uint8_array(text)
+            .map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("invalid image base64: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?,
+    };
+    require_image_data(bytes)
+}
+
+/// Refuse empty image data: an empty `data:` URL would only fail at the
+/// endpoint, after the request has been sent.
+fn require_image_data(bytes: Vec<u8>) -> Result<Vec<u8>, AiMuxError> {
+    if bytes.is_empty() {
+        return Err(AiMuxError::invalid_argument("input image data is empty"));
+    }
+    Ok(bytes)
+}
+
+/// The media type and decoded payload of an inline `data:` URL, or `None` for
+/// any other URL.
+///
+/// The scheme is matched case-insensitively. Only base64-encoded
+/// `image/<subtype>` data is accepted; a non-image or partial media type, a
+/// non-base64 payload, and malformed or empty data are refused before the
+/// request is sent.
+fn parse_image_data_url(url: &str) -> Result<Option<(String, Vec<u8>)>, AiMuxError> {
+    let Some((scheme, rest)) = url.split_once(':') else {
+        return Ok(None);
+    };
+    if !scheme.eq_ignore_ascii_case("data") {
+        return Ok(None);
+    }
+    let invalid = |reason: &str| {
+        Err(AiMuxError::invalid_argument(format!(
+            "invalid image `data:` URL: {reason}"
+        )))
+    };
+    let Some((head, payload)) = rest.split_once(',') else {
+        return invalid("missing the `,` separator");
+    };
+    let (media_type, parameters) = head.split_once(';').unwrap_or((head, ""));
+    let image_media_type = media_type
+        .split_once('/')
+        .filter(|(top_level, subtype)| {
+            top_level.eq_ignore_ascii_case("image") && !subtype.is_empty() && *subtype != "*"
+        })
+        .map(|_| media_type.to_ascii_lowercase());
+    let Some(media_type) = image_media_type else {
+        return invalid("the media type is not a full `image/<subtype>`");
+    };
+    if !parameters.eq_ignore_ascii_case("base64") {
+        return invalid("only base64-encoded payloads are accepted");
+    }
+    let bytes = aimux_provider_utils::convert_base64_to_uint8_array(payload).map_err(|error| {
+        AiMuxError::InvalidArgument {
+            message: format!("invalid image base64: {error}"),
+            cause: Some(ErrorCause::source(&error)),
+        }
+    })?;
+    Ok(Some((media_type, require_image_data(bytes)?)))
 }
 
 /// A full `image/<subtype>` media type, sniffed from the data when the given
@@ -719,5 +888,73 @@ mod tests {
             no_replay(unauthorized),
             AiMuxError::TokenExpired(_)
         ));
+    }
+
+    // A stalled stream must not keep the call waiting:
+    // `post_json_to_api` exempts streaming handlers from the exchange timeout,
+    // so the drain carries its own bound.
+    #[tokio::test]
+    async fn stalled_stream_is_bounded_and_not_replayed() {
+        let stalled = futures::stream::pending::<Result<Value, AiMuxError>>();
+        let error = drain_image_stream(
+            stalled,
+            "https://chatgpt.com/backend-api/codex/responses",
+            &json!({ "model": RESPONSES_OUTER_MODEL }),
+            &HashMap::new(),
+            Duration::from_millis(20),
+        )
+        .await
+        .expect_err("a stalled stream must not hang");
+        let AiMuxError::ApiCall(detail) = &error else {
+            panic!("expected ApiCall, got {error:?}");
+        };
+        assert_eq!(detail.origin, ApiCallErrorOrigin::Local);
+        assert!(!detail.is_retryable);
+        assert!(
+            detail
+                .message
+                .contains("streamed exchange response timeout"),
+            "{}",
+            detail.message
+        );
+        assert_eq!(
+            detail.url,
+            "https://chatgpt.com/backend-api/codex/responses"
+        );
+        assert!(STREAMED_EXCHANGE_TIMEOUT >= Duration::from_secs(300));
+    }
+
+    #[test]
+    fn data_urls_are_parsed_only_for_image_payloads() {
+        assert_eq!(
+            parse_image_data_url("https://example.test/a.png").unwrap(),
+            None
+        );
+        let png = Some(("image/png".to_string(), b"Hello".to_vec()));
+        assert_eq!(
+            parse_image_data_url("data:image/png;base64,SGVsbG8=").unwrap(),
+            png
+        );
+        // The scheme, media type and marker are case-insensitive; the rebuilt
+        // data URL is normalized.
+        assert_eq!(
+            parse_image_data_url("DATA:IMAGE/PNG;BASE64,SGVsbG8=").unwrap(),
+            png
+        );
+        for invalid in [
+            "data:text/plain;base64,SGVsbG8=",
+            "data:image;base64,SGVsbG8=",
+            "data:image/*;base64,SGVsbG8=",
+            "data:image/png,SGVsbG8=",
+            "data:image/png;base64,not base64!!",
+            "data:image/png;base64,",
+            "data:image/png",
+        ] {
+            let error = parse_image_data_url(invalid).expect_err(invalid);
+            assert!(
+                matches!(error, AiMuxError::InvalidArgument { .. }),
+                "{invalid}: {error:?}"
+            );
+        }
     }
 }

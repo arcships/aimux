@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CodexProvider::image` / `image_model` serve `gpt-image-2` (JSON
   `/images/generations` and `/images/edits`) and `gpt-image-2.5-flare`,
   `gpt-image-2.5-sunburst` and their `-2026-09-08` snapshots (the streamed
-  Responses `image_generation` tool). Only probed fields are sent; failures
-  are never retryable, so a billed generation is not replayed. API-key mode
-  still serves no image models.
+  Responses `image_generation` tool). Only probed fields are sent; input
+  images are decoded and validated locally, so empty or malformed payloads
+  fail before the request is billed. Both routes carry a 600-second hang
+  guard, report usage, and never retry: a billed generation is not replayed.
+  API-key mode still serves no image models.
 
 ### Breaking
 

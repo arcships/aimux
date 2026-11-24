@@ -109,16 +109,25 @@ fn image_call_done(result: &str) -> Value {
 }
 
 fn completed(output: Value) -> Value {
-    json!({
-        "type": "response.completed",
-        "response": {
-            "id": "resp_img_1",
-            "created_at": 1_763_600_001,
-            "status": "completed",
-            "model": "gpt-5.6-luna",
-            "output": output
-        }
-    })
+    completed_event(output, None)
+}
+
+fn completed_with_usage(output: Value, usage: Value) -> Value {
+    completed_event(output, Some(usage))
+}
+
+fn completed_event(output: Value, usage: Option<Value>) -> Value {
+    let mut response = json!({
+        "id": "resp_img_1",
+        "created_at": 1_763_600_001,
+        "status": "completed",
+        "model": "gpt-5.6-luna",
+        "output": output,
+    });
+    if let Some(usage) = usage {
+        response["usage"] = usage;
+    }
+    json!({ "type": "response.completed", "response": response })
 }
 
 // ── gpt-image-2: direct endpoints ───────────────────────────────────────────
@@ -367,6 +376,89 @@ async fn gpt_image_2_403_is_a_plain_api_error() {
     assert_eq!(detail.message, "no image access");
 }
 
+// ── input image validation ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn corrupt_input_images_are_rejected_before_sending() {
+    for model_id in ["gpt-image-2", "gpt-image-2.5-flare"] {
+        let server = MockServer::start().await;
+        let model = subscription(server.uri()).image_model(model_id).unwrap();
+        for (name, data) in [
+            (
+                "invalid base64",
+                ImageFileData::Base64("not base64!!".to_string()),
+            ),
+            ("empty base64", ImageFileData::Base64(String::new())),
+            ("empty bytes", ImageFileData::Binary(Vec::new())),
+        ] {
+            let mut options = ImageCallOptions::new("make it blue");
+            options.files = Some(vec![ImageFile::File {
+                media_type: "image/png".to_string(),
+                data,
+            }]);
+            let error = model.do_generate(&options).await.expect_err(name);
+            assert!(
+                matches!(error, AiMuxError::InvalidArgument { .. }),
+                "{model_id} {name}: {error:?}"
+            );
+        }
+        assert!(requests(&server).await.is_empty(), "{model_id}");
+    }
+}
+
+#[tokio::test]
+async fn input_data_urls_are_validated_before_sending() {
+    let server = MockServer::start().await;
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2")
+        .unwrap();
+    for (name, url) in [
+        ("non-image media type", "data:text/plain;base64,SGVsbG8="),
+        ("partial media type", "data:image;base64,SGVsbG8="),
+        ("missing base64 marker", "data:image/png,SGVsbG8="),
+        ("invalid base64", "data:image/png;base64,not base64!!"),
+        ("empty payload", "data:image/png;base64,"),
+    ] {
+        let mut options = ImageCallOptions::new("make it blue");
+        options.files = Some(vec![ImageFile::Url {
+            url: url.to_string(),
+        }]);
+        let error = model.do_generate(&options).await.expect_err(name);
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument { .. }),
+            "{name}: {error:?}"
+        );
+    }
+    assert!(requests(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn input_data_url_scheme_is_case_insensitive() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/images/edits"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(image_api_response()))
+        .mount(&server)
+        .await;
+
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2")
+        .unwrap();
+    let mut options = ImageCallOptions::new("make it blue");
+    options.files = Some(vec![ImageFile::Url {
+        // An uppercase scheme must be treated as inline data, not downloaded.
+        url: "DATA:IMAGE/PNG;BASE64,iVBORw0KGgo=".to_string(),
+    }]);
+    model.do_generate(&options).await.expect("edit");
+
+    let seen = requests(&server).await;
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        body_of(&seen[0])["images"][0]["image_url"],
+        json!("data:image/png;base64,iVBORw0KGgo=")
+    );
+}
+
 // ── gpt-image-2.5: Responses image_generation tool ─────────────────────────
 
 #[tokio::test]
@@ -468,6 +560,113 @@ async fn gpt_image_2_5_edit_sends_input_images_and_falls_back_to_the_output() {
             { "type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=" }
         ])
     );
+}
+
+#[tokio::test]
+async fn gpt_image_2_5_reports_usage_from_the_completed_response() {
+    let server = MockServer::start().await;
+    mount_sse(
+        &server,
+        &[
+            image_call_done(PNG_B64),
+            completed_with_usage(
+                json!([]),
+                json!({
+                    "input_tokens": 21,
+                    "input_tokens_details": { "cached_tokens": 0 },
+                    "output_tokens": 4160,
+                    "output_tokens_details": { "reasoning_tokens": 8 },
+                    "total_tokens": 4181
+                }),
+            ),
+        ],
+    )
+    .await;
+
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2.5-flare")
+        .unwrap();
+    let result = model
+        .do_generate(&ImageCallOptions::new("a red fox"))
+        .await
+        .expect("generate");
+    let usage = result.usage.expect("usage reported for the streamed route");
+    assert_eq!(usage.input_tokens, Some(21));
+    assert_eq!(usage.output_tokens, Some(4160));
+    assert_eq!(usage.total_tokens, Some(4181));
+}
+
+#[tokio::test]
+async fn gpt_image_2_5_ignores_an_item_that_did_not_complete() {
+    let server = MockServer::start().await;
+    // A `response.output_item.done` item that is still generating (or failed)
+    // must not be retained; the completed item in the final output is used.
+    mount_sse(
+        &server,
+        &[
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "id": "ig_1",
+                    "type": "image_generation_call",
+                    "status": "generating",
+                    "result": "/9j/4AAQSkZJRg=="
+                }
+            }),
+            completed(json!([{
+                "id": "ig_1",
+                "type": "image_generation_call",
+                "status": "completed",
+                "result": PNG_B64
+            }])),
+        ],
+    )
+    .await;
+
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2.5-flare")
+        .unwrap();
+    let result = model
+        .do_generate(&ImageCallOptions::new("a red fox"))
+        .await
+        .expect("generate");
+    assert!(matches!(&result.images, ImageOutputs::Base64(i) if i == &[PNG_B64.to_string()]));
+}
+
+#[tokio::test]
+async fn gpt_image_2_5_rejects_an_item_that_never_completed() {
+    let server = MockServer::start().await;
+    mount_sse(
+        &server,
+        &[
+            json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "id": "ig_1",
+                    "type": "image_generation_call",
+                    "status": "in_progress",
+                    "result": PNG_B64
+                }
+            }),
+            completed(json!([])),
+        ],
+    )
+    .await;
+
+    let model = subscription(server.uri())
+        .image_model("gpt-image-2.5-flare")
+        .unwrap();
+    let error = generate_image(model.as_ref(), ImageCallOptions::new("a red fox"))
+        .await
+        .expect_err("incomplete item");
+    assert!(
+        matches!(error, AiMuxError::InvalidResponseData { .. }),
+        "{error:?}"
+    );
+    assert!(!error.is_retryable());
+    assert_eq!(requests(&server).await.len(), 1, "not replayed");
 }
 
 #[tokio::test]
