@@ -1,4 +1,6 @@
 //! Compatible gateway video protocol and credential-boundary regressions (#530).
+use std::collections::HashMap;
+
 use aimux_core::provider::Provider;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameImage, VideoFrameType,
@@ -8,7 +10,7 @@ use aimux_providers::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
 use serde_json::{Value, json};
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn provider(server: &MockServer) -> OpenAICompatibleProvider {
@@ -16,6 +18,22 @@ fn provider(server: &MockServer) -> OpenAICompatibleProvider {
         name: "gateway".into(),
         base_url: format!("{}/v1", server.uri()),
         api_key: Some("fixture-key".into()),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+/// The same gateway behind an `api-version` query parameter, as Azure-style
+/// relays and some compatible gateways authenticate.
+fn provider_with_api_version(server: &MockServer) -> OpenAICompatibleProvider {
+    create_openai_compatible(OpenAICompatibleProviderSettings {
+        name: "gateway".into(),
+        base_url: format!("{}/v1", server.uri()),
+        api_key: Some("fixture-key".into()),
+        query_params: Some(HashMap::from([(
+            "api-version".to_string(),
+            "2024-01".to_string(),
+        )])),
         ..Default::default()
     })
     .unwrap()
@@ -80,7 +98,8 @@ async fn multipart_maps_standard_fields_and_repeated_reference_files() {
     );
     let requests = server.received_requests().await.unwrap();
     let body = String::from_utf8_lossy(&requests[0].body);
-    assert_eq!(body.matches("name=\"input_reference\"").count(), 2);
+    assert_eq!(body.matches("name=\"input_references\"").count(), 2);
+    assert!(!body.contains("name=\"input_reference\""));
     assert!(body.find("first").unwrap() < body.find("last").unwrap());
     for (field, value) in [
         ("model", "minimax-h3"),
@@ -97,6 +116,32 @@ async fn multipart_maps_standard_fields_and_repeated_reference_files() {
         );
     }
     assert!(body.contains("\"frame_indices\":[0,-1]"));
+}
+
+#[tokio::test]
+async fn single_reference_uses_the_singular_field() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/videos"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"id":"task","status":"queued"})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut options = VideoCallOptions::new("a moving cat");
+    options.image = Some(image(b"first"));
+    provider(&server)
+        .video("m")
+        .do_start(&options)
+        .await
+        .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    let body = String::from_utf8_lossy(&requests[0].body);
+    // vLLM-Omni reads one file from `input_reference`; a repeated plural part
+    // would leave it unset.
+    assert_eq!(body.matches("name=\"input_reference\"").count(), 1);
+    assert!(!body.contains("name=\"input_references\""));
 }
 
 #[tokio::test]
@@ -126,7 +171,16 @@ async fn core_does_not_resubmit_failed_creation() {
 
 #[tokio::test]
 async fn pending_status_aliases_and_terminal_errors() {
-    for state in ["queued", "pending", "processing", "in_progress", "running"] {
+    for state in [
+        "queued",
+        "pending",
+        "processing",
+        "in_progress",
+        "running",
+        // A gateway alias the model does not know keeps polling instead of
+        // failing the task; the poll timeout bounds it.
+        "gateway_alias",
+    ] {
         let server = MockServer::start().await;
         status(&server, json!({"id":"task","status":state})).await;
         assert!(matches!(
@@ -138,14 +192,7 @@ async fn pending_status_aliases_and_terminal_errors() {
             VideoOperationStatus::Pending
         ));
     }
-    for state in [
-        "failed",
-        "cancelled",
-        "canceled",
-        "expired",
-        "error",
-        "unknown",
-    ] {
+    for state in ["failed", "cancelled", "canceled", "expired", "error"] {
         let server = MockServer::start().await;
         status(
             &server,
@@ -158,15 +205,13 @@ async fn pending_status_aliases_and_terminal_errors() {
             .await
             .unwrap_err();
         assert!(!error.is_retryable());
-        if state != "unknown" {
-            assert!(error.to_string().contains("provider detail"));
-            assert!(error.to_string().contains("quota"));
-        }
+        assert!(error.to_string().contains("provider detail"));
+        assert!(error.to_string().contains("quota"));
     }
 }
 
 #[tokio::test]
-async fn absolute_url_is_returned_without_downloading_with_provider_credentials() {
+async fn foreign_absolute_url_is_returned_without_downloading() {
     let server = MockServer::start().await;
     let asset = MockServer::start().await;
     let url = format!("{}/public.mp4", asset.uri());
@@ -181,6 +226,65 @@ async fn absolute_url_is_returned_without_downloading_with_provider_credentials(
     };
     assert!(matches!(&result.videos[0], VideoData::Url { url: actual, .. } if actual == &url));
     assert!(asset.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn same_origin_absolute_url_is_downloaded_with_credentials() {
+    let server = MockServer::start().await;
+    let url = format!("{}/files/movie.mp4", server.uri());
+    status(&server, json!({"id":"task","status":"completed","url":url})).await;
+    Mock::given(method("GET"))
+        .and(path("/files/movie.mp4"))
+        .and(query_param("api-version", "2024-01"))
+        .and(header("authorization", "Bearer fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+}
+
+#[tokio::test]
+async fn relative_asset_keeps_the_gateway_query_parameters() {
+    let server = MockServer::start().await;
+    status(
+        &server,
+        json!({
+            "id":"task",
+            "status":"succeeded",
+            "url":"assets/movie.mp4?Expires=1&Signature=abc"
+        }),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/assets/movie.mp4"))
+        // The gateway's configured parameter is added, and the signature the
+        // response's own URL carried stays.
+        .and(query_param("api-version", "2024-01"))
+        .and(query_param("Expires", "1"))
+        .and(query_param("Signature", "abc"))
+        .and(header("authorization", "Bearer fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
 }
 
 #[tokio::test]

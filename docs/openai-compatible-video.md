@@ -22,35 +22,46 @@ video per API call; Core batches a larger requested `n`.
   all other JSON values are JSON encoded. Explicit standard call options take
   precedence over the corresponding provider options. `model` and `prompt`
   always come from the selected model and call.
-- `image`, `frame_images`, and `input_references` produce repeated
-  `input_reference` file parts. Role-tagged frames are ordered first frame,
-  last frame, followed by reference inputs. A duplicate first/last frame is
-  rejected before submission. Inline binary/base64 files and downloadable URLs
-  are supported. Input URL downloads carry no provider credentials and use the
-  SSRF guard.
+- `image`, `frame_images`, and `input_references` produce file parts from the
+  reference inputs: one file is sent in the singular `input_reference` part,
+  two or more as repeated `input_references` parts. vLLM-Omni reads one file
+  from the singular name and an ordered list from the plural one; repeated
+  singular parts collapse to the last file, which loses a first frame.
+  Role-tagged frames are ordered first frame, last frame, followed by reference
+  inputs. A duplicate first/last frame is rejected before submission. Inline
+  binary/base64 files and downloadable URLs are supported. Input URL downloads
+  carry no provider credentials and use the SSRF guard.
 
 For MiniMax H3 through vLLM-Omni, put `width`, `height`,
 `num_inference_steps`, `flow_shift`, and `extra_params` in provider options.
 `extra_params` can be an object or an already encoded JSON string. H3-specific
 size, duration, and task constraints belong to the caller or preset; the generic
 model does not impose them. Use `frame_images` to provide first and last frames
-with repeated `input_reference` parts.
+with repeated `input_references` parts.
 
 ## Completion and download
 
 `queued`, `pending`, `processing`, `in_progress`, and `running` mean pending.
 `completed` and `succeeded` mean complete. Terminal failures include the
-provider's error message; unknown statuses and mismatching returned task IDs
-are rejected.
+provider's error message. A status the model does not recognize is treated as
+pending and keeps polling until the poll timeout, so a gateway-specific alias
+does not fail a task that is still running; a returned task ID that does not
+match the operation is rejected.
 
-An absolute HTTP(S) result URL becomes `VideoData::Url`; Core downloads it
-without provider credentials. A relative result URL resolves against the base
-URL as a directory and must remain on the same origin. It is downloaded with
-the configured credentials. If `url` is absent/null, the provider downloads
-`/videos/{id}/content`. Both authenticated paths use the existing SSRF guard,
-allow the explicitly configured origin, and strip caller headers on a redirect
-to another origin. Non-HTTP schemes, foreign protocol-relative references,
-and URL userinfo are rejected.
+An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
+Core downloads it without provider credentials. A result URL on the provider's
+own origin — absolute or relative — is downloaded with the configured
+credentials: a relative one resolves against the base URL as a directory and
+must remain on that origin, and an absolute one is authenticated only while its
+origin matches. If `url` is absent/null, the provider downloads
+`/videos/{id}/content`. Every authenticated asset URL carries the provider's
+configured query parameters (`api-version`, `key`), and a query the response's
+own URL carried is kept alongside them. Authenticated downloads use the
+existing SSRF guard, allow the explicitly configured origin, and strip caller
+headers on a redirect to another origin. Non-HTTP schemes, foreign
+protocol-relative references, and URL userinfo are rejected. Creation and
+content-download exchanges move whole media files, so they use a 600-second
+exchange guard instead of the 30-second default.
 
 Creation errors are non-retryable: a timeout, 5xx or malformed successful
 response may follow an accepted, billable task. Status and content-download

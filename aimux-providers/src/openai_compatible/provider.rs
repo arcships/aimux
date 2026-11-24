@@ -486,6 +486,32 @@ impl CompatModelConfig {
         Ok((url.to_string(), base))
     }
 
+    /// `url` with the configured query parameters laid over it: a configured
+    /// name replaces the value the URL already carried, and parameters only
+    /// the URL carries are kept. Used for asset URLs, where the response's own
+    /// query may be a signature that has to survive alongside the gateway's
+    /// `api-version`.
+    pub(crate) fn overlay_query_params(&self, url: &mut url::Url) {
+        let Some(params) = &self.query_params else {
+            return;
+        };
+        if params.is_empty() {
+            return;
+        }
+        let mut pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect();
+        for (name, value) in params.iter() {
+            match pairs.iter_mut().find(|(existing, _)| existing == name) {
+                Some((_, existing_value)) => *existing_value = value.clone(),
+                None => pairs.push((name.clone(), value.clone())),
+            }
+        }
+        url.set_query(None);
+        url.query_pairs_mut().extend_pairs(pairs);
+    }
+
     /// Resolve the provider headers, layer the per-call headers over them,
     /// then the fetch headers (case-insensitive, later wins, `None` removes),
     /// and return the list that goes on the wire with the fetch headers'

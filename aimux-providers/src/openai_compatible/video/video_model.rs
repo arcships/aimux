@@ -1,5 +1,7 @@
 //! Multipart creation and asynchronous status for compatible `/videos` gateways.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -11,7 +13,15 @@ use aimux_core::video_model::{
 use aimux_provider_utils::{HttpBody, HttpRequest, MultipartForm};
 
 use super::super::CompatModelConfig;
+use super::super::provider::RequestHeaders;
 use super::super::utils::to_camel_case;
+
+/// The exchange guard of the two exchanges that move a whole media file: the
+/// multipart creation (reference files) and the authenticated content
+/// download. The 30s default is a hang guard for JSON exchanges; a transfer of
+/// tens of megabytes can legitimately outlive it, and a creation read as timed
+/// out counts as an accepted, billable task whose result is lost.
+const MEDIA_TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// An asynchronous video model served by an OpenAI-compatible gateway.
 pub struct OpenAICompatibleVideoModel {
@@ -44,10 +54,10 @@ impl OpenAICompatibleVideoModel {
             }
         }
         // A reference is always a file part; a textual provider option with
-        // this name would produce an ambiguous multipart request.
-        if fields.contains_key("input_reference") {
+        // one of these names would produce an ambiguous multipart request.
+        if fields.contains_key("input_reference") || fields.contains_key("input_references") {
             return Err(AiMuxError::invalid_argument(
-                "use image, frameImages or inputReferences for input_reference files",
+                "use image, frameImages or inputReferences for reference file parts",
             ));
         }
         fields.insert("model".into(), json!(self.model_id));
@@ -102,14 +112,19 @@ impl OpenAICompatibleVideoModel {
             );
         }
         files.extend(options.input_references.iter().flatten());
+        // vLLM-Omni's `_parse_video_form` reads a singular `input_reference`
+        // and an ordered `input_references` list; repeated scalar parts
+        // collapse to the last file, which loses the first frame of a
+        // first/last-frame pair. One file therefore goes in the singular
+        // field, two or more in the repeated plural one.
+        let field = if files.len() == 1 {
+            "input_reference"
+        } else {
+            "input_references"
+        };
         for (index, file) in files.into_iter().enumerate() {
             let (bytes, media_type) = file_bytes(file, options).await?;
-            form.file(
-                "input_reference",
-                &format!("reference-{index}"),
-                &media_type,
-                &bytes,
-            )?;
+            form.file(field, &format!("reference-{index}"), &media_type, &bytes)?;
         }
         Ok(form)
     }
@@ -125,7 +140,7 @@ impl OpenAICompatibleVideoModel {
             .url(&format!("/videos/{}/content", encode_id(id)))?;
         let target = match value.get("url") {
             None | Some(Value::Null) => content_url,
-            Some(Value::String(raw)) => match resolve_asset_url(&base, raw)? {
+            Some(Value::String(raw)) => match resolve_asset_url(&self.config, &base, raw)? {
                 AssetUrl::Public(url) => {
                     return Ok(VideoData::Url {
                         url,
@@ -144,13 +159,7 @@ impl OpenAICompatibleVideoModel {
             .config
             .request_headers(options.headers.as_ref())
             .await?;
-        let mut request = self.config.with_transport(
-            HttpRequest::new(target, headers.list, options),
-            base.clone(),
-            headers.fetch_user_agent,
-        );
-        request.validate_url = true;
-        request.trusted_origin = Some(base);
+        let request = self.content_request(target, base, headers, options);
         let response = aimux_provider_utils::get_from_api(
             request,
             aimux_provider_utils::create_binary_response_handler(),
@@ -166,6 +175,40 @@ impl OpenAICompatibleVideoModel {
             data: response.value.to_vec(),
             media_type,
         })
+    }
+
+    /// The multipart creation exchange. It carries the reference files, so it
+    /// gets the media-transfer guard rather than the 30s default.
+    fn creation_request(
+        &self,
+        headers: RequestHeaders,
+        options: &VideoCallOptions,
+    ) -> Result<HttpRequest, AiMuxError> {
+        let mut request = self.config.http_request("/videos", headers, options)?;
+        request.response_timeout = Some(MEDIA_TRANSFER_TIMEOUT);
+        Ok(request)
+    }
+
+    /// The authenticated content download. A video is transferred whole in one
+    /// exchange, so it gets the same guard as the creation upload; the SSRF
+    /// guard and the credentialed-origin gate stay on, as for every download.
+    fn content_request(
+        &self,
+        target: String,
+        base: String,
+        headers: RequestHeaders,
+        options: &VideoCallOptions,
+    ) -> HttpRequest {
+        let trusted_origin = base.clone();
+        let mut request = self.config.with_transport(
+            HttpRequest::new(target, headers.list, options),
+            base,
+            headers.fetch_user_agent,
+        );
+        request.validate_url = true;
+        request.trusted_origin = Some(trusted_origin);
+        request.response_timeout = Some(MEDIA_TRANSFER_TIMEOUT);
+        request
     }
 }
 
@@ -192,7 +235,7 @@ impl VideoModel for OpenAICompatibleVideoModel {
             .await?;
         let (bytes, content_type) = form.finish();
         let response = aimux_provider_utils::post_to_api(
-            self.config.http_request("/videos", headers, options)?,
+            self.creation_request(headers, options)?,
             HttpBody::Bytes(bytes, content_type),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             self.config.failed_response_handler(),
@@ -284,9 +327,12 @@ fn check_status(status: &str, value: &Value) -> Result<bool, AiMuxError> {
                 "video generation failed: {message}"
             )))
         }
-        _ => Err(AiMuxError::invalid_response_data(format!(
-            "unknown video status: {status}"
-        ))),
+        _ => {
+            // A name this list does not know may be a gateway alias for an
+            // in-progress task; keep polling, bounded by the poll timeout, as
+            // the other asynchronous video models do.
+            Ok(false)
+        }
     }
 }
 
@@ -314,41 +360,53 @@ enum AssetUrl {
     Authenticated(String),
 }
 
-fn resolve_asset_url(base: &str, raw: &str) -> Result<AssetUrl, AiMuxError> {
+/// Classify a completed video's `url`. An HTTP(S) URL on the provider's own
+/// origin — absolute or relative — is downloaded with the configured
+/// credentials and the configured query parameters; every other absolute URL
+/// stays public for Core's uncredentialed downloader, and a relative one that
+/// leaves the origin is rejected.
+fn resolve_asset_url(
+    config: &CompatModelConfig,
+    base: &str,
+    raw: &str,
+) -> Result<AssetUrl, AiMuxError> {
     if raw.trim().is_empty() || raw != raw.trim() || raw.chars().any(char::is_control) {
         return Err(AiMuxError::invalid_response_data("invalid video asset URL"));
     }
     let base = url::Url::parse(&format!("{}/", base.trim_end_matches('/')))
         .map_err(|_| AiMuxError::invalid_response_data("invalid video base URL"))?;
-    match url::Url::parse(raw) {
-        Ok(url) => {
-            if !matches!(url.scheme(), "http" | "https")
-                || url.host_str().is_none()
-                || !url.username().is_empty()
-                || url.password().is_some()
-            {
-                return Err(AiMuxError::invalid_response_data(
-                    "video asset requires an HTTP(S) URL without userinfo",
-                ));
-            }
-            Ok(AssetUrl::Public(url.to_string()))
-        }
+    let (mut url, relative) = match url::Url::parse(raw) {
+        Ok(url) => (url, false),
         Err(url::ParseError::RelativeUrlWithoutBase) => {
             let url = base.join(raw).map_err(|_| {
                 AiMuxError::invalid_response_data("invalid relative video asset URL")
             })?;
-            if url.origin() != base.origin()
-                || !url.username().is_empty()
-                || url.password().is_some()
-            {
-                return Err(AiMuxError::invalid_response_data(
-                    "relative video asset URL must stay on the provider origin",
-                ));
-            }
-            Ok(AssetUrl::Authenticated(url.to_string()))
+            (url, true)
         }
-        Err(_) => Err(AiMuxError::invalid_response_data("invalid video asset URL")),
+        Err(_) => return Err(AiMuxError::invalid_response_data("invalid video asset URL")),
+    };
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(AiMuxError::invalid_response_data(
+            "video asset requires an HTTP(S) URL without userinfo",
+        ));
     }
+    if url.origin() != base.origin() {
+        if relative {
+            return Err(AiMuxError::invalid_response_data(
+                "relative video asset URL must stay on the provider origin",
+            ));
+        }
+        return Ok(AssetUrl::Public(url.to_string()));
+    }
+    // The gateway authenticates every request with its configured query
+    // parameters (`api-version`, `key`); the download needs them as well, and
+    // keeps a signature the response's own URL carried.
+    config.overlay_query_params(&mut url);
+    Ok(AssetUrl::Authenticated(url.to_string()))
 }
 
 async fn file_bytes(
@@ -377,5 +435,129 @@ async fn file_bytes(
                 .unwrap_or_else(|| "application/octet-stream".into());
             Ok((response.value.to_vec(), media_type))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use aimux_provider_utils::{Credential, ProviderHeaders};
+
+    use super::super::super::ChatSettings;
+    use super::super::super::provider::BaseUrl;
+    use super::*;
+
+    const BASE_URL: &str = "https://gateway.example/v1";
+
+    /// A model over a gateway that authenticates with an `api-version` query
+    /// parameter, the shape that loses `query_params` on asset resolution.
+    fn model() -> OpenAICompatibleVideoModel {
+        OpenAICompatibleVideoModel::from_config(
+            "model".into(),
+            CompatModelConfig {
+                provider: "gateway.video".into(),
+                base_url: BaseUrl::Fixed(BASE_URL.into()),
+                query_params: Some(Arc::new(vec![("api-version".into(), "2024-01".into())])),
+                headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
+                fetch_headers: None,
+                fetch: None,
+                body_rewrite: None,
+                transform_request_body: None,
+                chat: ChatSettings::default(),
+            },
+        )
+    }
+
+    fn headers() -> RequestHeaders {
+        RequestHeaders {
+            list: Vec::new(),
+            fetch_user_agent: None,
+        }
+    }
+
+    /// Both exchanges move a whole media file, so both declare the media
+    /// guard instead of the 30s default; a creation timed out at 30s counts
+    /// as an accepted, billable task whose result is lost.
+    #[test]
+    fn media_transfers_declare_the_wide_exchange_guard() {
+        let model = model();
+        let options = VideoCallOptions::new("cat");
+        let creation = model.creation_request(headers(), &options).unwrap();
+        assert_eq!(
+            creation.url,
+            "https://gateway.example/v1/videos?api-version=2024-01"
+        );
+        assert_eq!(creation.response_timeout, Some(MEDIA_TRANSFER_TIMEOUT));
+        assert!(MEDIA_TRANSFER_TIMEOUT > Duration::from_secs(30));
+
+        let download = model.content_request(
+            "https://gateway.example/v1/videos/task/content?api-version=2024-01".into(),
+            BASE_URL.into(),
+            headers(),
+            &options,
+        );
+        assert_eq!(download.response_timeout, Some(MEDIA_TRANSFER_TIMEOUT));
+        assert!(download.validate_url);
+        assert_eq!(download.trusted_origin.as_deref(), Some(BASE_URL));
+        assert_eq!(download.credentialed_origin.as_deref(), Some(BASE_URL));
+    }
+
+    /// A gateway serves its assets on its own origin, so an absolute URL there
+    /// is downloaded with the credentials and keeps the configured query.
+    #[test]
+    fn same_origin_asset_is_authenticated_with_the_configured_query() {
+        let resolved = resolve_asset_url(
+            &model().config,
+            BASE_URL,
+            "https://gateway.example/files/movie.mp4?Expires=1&Signature=abc",
+        )
+        .unwrap();
+        let AssetUrl::Authenticated(url) = resolved else {
+            panic!("same-origin asset must stay credentialed")
+        };
+        assert_eq!(
+            url,
+            "https://gateway.example/files/movie.mp4?Expires=1&Signature=abc&api-version=2024-01"
+        );
+    }
+
+    /// A foreign absolute URL stays public: Core downloads it without the
+    /// provider's credentials.
+    #[test]
+    fn foreign_absolute_asset_is_public() {
+        let resolved =
+            resolve_asset_url(&model().config, BASE_URL, "https://cdn.example/movie.mp4").unwrap();
+        let AssetUrl::Public(url) = resolved else {
+            panic!("foreign asset must not be credentialed")
+        };
+        assert_eq!(url, "https://cdn.example/movie.mp4");
+    }
+
+    /// A relative URL resolves against the base as a directory and cannot
+    /// leave the provider's origin.
+    #[test]
+    fn relative_asset_stays_on_the_provider_origin() {
+        let model = model();
+        let AssetUrl::Authenticated(url) =
+            resolve_asset_url(&model.config, BASE_URL, "assets/movie.mp4").unwrap()
+        else {
+            panic!("relative asset must stay credentialed")
+        };
+        assert_eq!(
+            url,
+            "https://gateway.example/v1/assets/movie.mp4?api-version=2024-01"
+        );
+        assert!(resolve_asset_url(&model.config, BASE_URL, "//cdn.example/movie.mp4").is_err());
+    }
+
+    /// An unknown status is a gateway alias this list does not know, not a
+    /// terminal failure.
+    #[test]
+    fn unknown_status_keeps_polling() {
+        assert!(!check_status("gateway_alias", &Value::Null).unwrap());
+        assert!(!check_status("queued", &Value::Null).unwrap());
+        assert!(check_status("completed", &Value::Null).unwrap());
+        assert!(check_status("failed", &Value::Null).is_err());
     }
 }
