@@ -3,7 +3,7 @@
 //! [`create_openai_compatible`] is the Rust form of the AI SDK's
 //! `createOpenAICompatible`: it takes [`OpenAICompatibleProviderSettings`],
 //! validates the base URL and returns an [`OpenAICompatibleProvider`]
-//! whose models speak the chat-completions, embeddings and image endpoints of
+//! whose models speak the chat-completions, embeddings, image and video endpoints of
 //! any OpenAI-compatible server.
 //!
 //! What is fixed when the provider is created, and what is not:
@@ -34,6 +34,7 @@ pub(crate) mod internal;
 mod provider;
 mod request_rewrite;
 mod utils;
+pub mod video;
 
 pub use chat::{
     ConvertUsage, MetadataExtractor, OpenAICompatibleChatModel, StreamMetadataExtractor,
@@ -45,6 +46,7 @@ pub use image::OpenAICompatibleImageModel;
 pub use provider::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
+pub use video::OpenAICompatibleVideoModel;
 
 pub use crate::shared::TransformRequestBody;
 

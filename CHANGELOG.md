@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI-compatible asynchronous video models for `/videos` gateways, with
+  multipart reference files, provider option passthrough, task polling and
+  guarded authenticated content downloads (#530).
+
 ### Breaking
 
 - Replaced `chrono` with `jiff` across all `aimux-*` crates for
