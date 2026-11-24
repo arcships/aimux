@@ -116,7 +116,7 @@ impl OpenAIResponsesModel {
                 &mut unused_warnings,
             )?;
         }
-        for tool in options.tools.iter().flatten() {
+        for tool in options.tools.as_deref().unwrap_or_default() {
             if let aimux_core::tool::Tool::Function(tool) = tool {
                 crate::openai::normalize_json_schema::normalize_json_schema(
                     &tool.input_schema,
@@ -1077,7 +1077,7 @@ fn build_validated_request_body(
     // -- Tools --
     let allowed_tools = openai_option(ns, provider_opts, "allowedTools");
     let prepared = prepare_responses_tools_for(
-        &options.tools,
+        options.tools.as_deref(),
         options.tool_choice.as_ref(),
         allowed_tools.as_ref(),
         caps.supports_configuration_update,

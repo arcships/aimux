@@ -99,15 +99,16 @@ aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint6
     pthread_mutex_unlock(&lock);
     return err;
 }
-aimux_error_t *aimux_stream(uint64_t id, const char *op, const char *params, uint64_t abort_id, aimux_event_cb cb, void *context) {
-    (void)params;
+static aimux_error_t *stream_preflight(uint64_t id, const char *op) {
     pthread_mutex_lock(&lock);
+    aimux_error_t *err = NULL;
     if (!live(id) || !strcmp(op, "test.reject")) {
-        aimux_error_t *err = failure(!live(id) ? 203 : 301, !live(id) ? "binding" : "protocol", !live(id) ? "InvalidHandle" : "InvalidParams");
-        pthread_mutex_unlock(&lock);
-        return err;
+        err = failure(!live(id) ? 203 : 301, !live(id) ? "binding" : "protocol", !live(id) ? "InvalidHandle" : "InvalidParams");
     }
     pthread_mutex_unlock(&lock);
+    return err;
+}
+static void emit_stream(const char *op, uint64_t abort_id, aimux_event_cb cb, void *context) {
     if (!strcmp(op, "test.null")) cb(NULL, context);
     else if (!strcmp(op, "test.bad")) cb("{bad", context);
     else if (!strcmp(op, "test.sequence")) {
@@ -126,10 +127,12 @@ aimux_error_t *aimux_stream(uint64_t id, const char *op, const char *params, uin
         strcpy(buf + strlen(prefix) + length-2, "\"}");
         cb(buf, context);
         free(buf);
-    } else if (!strcmp(op, "test.noend")) return NULL;
-    else if (!strcmp(op, "test.terminalError")) {
+    } else if (!strcmp(op, "test.badEnd")) {
+        cb("{\"type\":\"end\",\"seq\":\"1\",\"outcome\":\"unknown\"}", context);
+        return;
+    } else if (!strcmp(op, "test.terminalError")) {
         cb("{\"type\":\"end\",\"seq\":\"1\",\"outcome\":\"error\",\"error\":{\"kind\":\"aimux\",\"code\":11,\"message\":\"terminal\",\"error\":{\"name\":\"AI_APICallError\",\"isRetryable\":false}}}", context);
-        return NULL;
+        return;
     } else if (!strcmp(op, "test.waitStream")) {
         pthread_mutex_lock(&lock);
         ++waiting_streams;
@@ -153,6 +156,55 @@ aimux_error_t *aimux_stream(uint64_t id, const char *op, const char *params, uin
     int stopped = cancelled(abort_id);
     pthread_mutex_unlock(&lock);
     cb(stopped ? "{\"type\":\"end\",\"seq\":\"1001\",\"outcome\":\"cancelled\"}" : "{\"type\":\"end\",\"seq\":\"1001\",\"outcome\":\"success\"}", context);
+}
+aimux_error_t *aimux_stream(uint64_t id, const char *op, const char *params, uint64_t abort_id, aimux_event_cb cb, void *context) {
+    (void)params;
+    aimux_error_t *err = stream_preflight(id, op);
+    if (err) return err;
+    emit_stream(op, abort_id, cb, context);
+    return NULL;
+}
+
+struct async_job {
+    uint64_t id, abort_id;
+    char *op, *params;
+    aimux_call_callback_t complete;
+    aimux_event_batch_callback_t batch;
+    void *context;
+};
+static void forward_frame(const char *frame, void *data) {
+    struct async_job *job = data;
+    job->batch(&frame, 1, job->context);
+}
+static void *run_job(void *data) {
+    struct async_job *job = data;
+    if (job->complete) {
+        char *out;
+        aimux_error_t *err = aimux_call(job->id, job->op, job->params, job->abort_id, &out);
+        job->complete(out, err, job->context);
+    } else {
+        emit_stream(job->op, job->abort_id, forward_frame, job);
+    }
+    free(job->params);
+    free(job->op);
+    free(job);
+    return NULL;
+}
+static void start_job(struct async_job args) {
+    struct async_job *job = malloc(sizeof(*job));
+    *job = args;
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, run_job, job) || pthread_detach(thread)) abort();
+}
+aimux_error_t *aimux_call_async(uint64_t id, const char *op, const char *params, uint64_t abort_id, aimux_call_callback_t complete, void *context) {
+    start_job((struct async_job){.id=id, .abort_id=abort_id, .op=strdup(op), .params=strdup(params), .complete=complete, .context=context});
+    return NULL;
+}
+aimux_error_t *aimux_stream_async(uint64_t id, const char *op, const char *params, uint64_t abort_id, aimux_event_batch_callback_t batch, void *context) {
+    (void)params;
+    aimux_error_t *err = stream_preflight(id, op);
+    if (err) return err;
+    start_job((struct async_job){.abort_id=abort_id, .op=strdup(op), .batch=batch, .context=context});
     return NULL;
 }
 aimux_error_t *aimux_operation_push(uint64_t id, const uint8_t *data, size_t size) {

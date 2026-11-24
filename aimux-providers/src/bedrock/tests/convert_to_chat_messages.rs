@@ -3526,7 +3526,7 @@ mod bedrock_remaining {
             json!({ "type": "text", "value": "The result is 42" }),
         )])];
         let mut opts = default_options(prompt);
-        opts.tools = Some(vec![test_tool().into()]);
+        opts.tools = Some(vec![test_tool().into()].into());
         let (body, _, _, _) =
             build_request_body_checked("mistral.mistral-large-2402-v1:0", &opts, None).unwrap();
         let messages = &body["messages"];
@@ -3546,7 +3546,7 @@ mod bedrock_remaining {
             json!({ "query": "test" }),
         )])];
         let mut opts = default_options(prompt);
-        opts.tools = Some(vec![test_tool().into()]);
+        opts.tools = Some(vec![test_tool().into()].into());
         let (body, _, _, _) =
             build_request_body_checked("mistral.mistral-large-2402-v1:0", &opts, None).unwrap();
         let messages = &body["messages"];

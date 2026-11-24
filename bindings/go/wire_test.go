@@ -33,7 +33,7 @@ func TestHandleIDDecimalWire(t *testing.T) {
 }
 
 func TestWireJSONValidation(t *testing.T) {
-	for _, raw := range [][]byte{nil, []byte(`{`), []byte(`"\ud800"`), []byte(`"\udfff"`), []byte{'"', 0xff, '"'}} {
+	for _, raw := range [][]byte{nil, []byte(`{`), []byte(`{} null`), []byte(`{} invalid`), []byte(`"\ud800"`), []byte(`"\udfff"`), []byte{'"', 0xff, '"'}} {
 		if _, err := encodeParams("test.echo", json.RawMessage(raw)); err == nil && raw != nil {
 			t.Errorf("accepted %q", raw)
 		}
@@ -47,6 +47,21 @@ func TestWireJSONValidation(t *testing.T) {
 		if _, err := encodeParams("test.echo", json.RawMessage(raw)); err != nil {
 			t.Errorf("rejected %s: %v", raw, err)
 		}
+	}
+}
+
+func TestDecodedWireRejectsMalformedAndTrailingJSON(t *testing.T) {
+	for _, raw := range []string{"{", "{} {}", "{} invalid", `{"message":"\ud800"}`, "{\"message\":\"\xff\"}"} {
+		if _, err := decodeError([]byte(raw)); err == nil {
+			t.Errorf("decoded invalid error envelope %q", raw)
+		}
+		if _, err := validateResult(json.RawMessage(raw), nil); err == nil {
+			t.Errorf("accepted invalid raw result %q", raw)
+		}
+	}
+	const valid = "{\"message\":\"ok\"} \n\t"
+	if e, err := decodeError([]byte(valid)); err != nil || e.Envelope.Message != "ok" {
+		t.Fatalf("decodeError with trailing whitespace = %v, %v", e, err)
 	}
 }
 

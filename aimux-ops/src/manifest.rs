@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 
 use crate::{ABI_VERSION, HandleKind, OPS_VERSION};
 
+pub(crate) const MANIFEST_REVISION: &str = "1";
+
 static MANIFEST_CACHE: OnceLock<(Box<str>, String)> = OnceLock::new();
 
 fn cached_manifest() -> &'static (Box<str>, String) {
@@ -35,7 +37,7 @@ fn cached_manifest() -> &'static (Box<str>, String) {
         let mut value = json!({
             "abiVersion": ABI_VERSION,
             "opsVersion": OPS_VERSION,
-            "manifestRevision": "1",
+            "manifestRevision": MANIFEST_REVISION,
             "ops": ops,
             "handleKinds": HandleKind::ALL,
             "packages": crate::ops::provider::packages(),

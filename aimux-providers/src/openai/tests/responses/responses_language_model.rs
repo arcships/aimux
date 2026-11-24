@@ -12945,10 +12945,13 @@ mod older_upstream_e2e {
         let fetch = MockFetch::new(vec![Canned::json(&response)]);
         let schema = json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false});
         let mut opts = options();
-        opts.tools = Some(vec![Tool::Function(FunctionTool::new(
-            "test-tool",
-            schema.clone(),
-        ))]);
+        opts.tools = Some(
+            vec![Tool::Function(FunctionTool::new(
+                "test-tool",
+                schema.clone(),
+            ))]
+            .into(),
+        );
         let result = provider(&fetch)
             .chat("test-model")
             .do_generate(&opts)
@@ -13605,12 +13608,15 @@ mod older_upstream_e2e {
             json!({"type":"response.completed","response":{"id":"resp_missing_action","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}}}),
         ])]);
         let mut call = options();
-        call.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "openai.web_search".parse().unwrap(),
-            name: "webSearch".into(),
-            args: serde_json::Map::new(),
-            supports_deferred_results: None,
-        })]);
+        call.tools = Some(
+            vec![Tool::Provider(aimux_core::tool::ProviderTool {
+                id: "openai.web_search".parse().unwrap(),
+                name: "webSearch".into(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            })]
+            .into(),
+        );
         let result = provider(&fetch)
             .responses("test-model")
             .do_stream(&call)
@@ -13670,7 +13676,7 @@ mod older_upstream_e2e {
         );
         assert_eq!(openai.tools.apply_patch().supports_deferred_results, None);
         let mut call = options();
-        call.tools = Some(vec![Tool::Provider(tool)]);
+        call.tools = Some(vec![Tool::Provider(tool)].into());
         openai
             .responses("test-model")
             .do_generate(&call)
@@ -13805,7 +13811,7 @@ mod older_upstream_e2e {
             serde_json::from_value(json!({ "vectorStoreIds": ["vs_1"], "maxNumResults": 5 }))
                 .unwrap();
         let mut options = options();
-        options.tools = Some(vec![Tool::Provider(file_search(args).unwrap())]);
+        options.tools = Some(vec![Tool::Provider(file_search(args).unwrap())].into());
         provider(&fetch)
             .responses("test-model")
             .do_generate(&options)
@@ -13871,12 +13877,15 @@ mod older_upstream_e2e {
             "usage": {"input_tokens": 1, "output_tokens": 1}
         }))]);
         let mut options = options();
-        options.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
-            id: "openai.computer_use".parse().unwrap(),
-            name: "computerUse".into(),
-            args: serde_json::Map::new(),
-            supports_deferred_results: None,
-        })]);
+        options.tools = Some(
+            vec![Tool::Provider(aimux_core::tool::ProviderTool {
+                id: "openai.computer_use".parse().unwrap(),
+                name: "computerUse".into(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            })]
+            .into(),
+        );
         let result = provider(&fetch)
             .responses("test-model")
             .do_generate(&options)
@@ -14366,12 +14375,15 @@ mod older_upstream_e2e {
     async fn responses_async_tool_warning_names_the_gpt_6_requirement() {
         let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
         let mut call = options();
-        call.tools = Some(vec![Tool::Function(FunctionTool {
-            provider_options: Some(
-                serde_json::from_value(json!({"openai":{"async":true}})).unwrap(),
-            ),
-            ..FunctionTool::new("weather", json!({"type":"object","properties":{}}))
-        })]);
+        call.tools = Some(
+            vec![Tool::Function(FunctionTool {
+                provider_options: Some(
+                    serde_json::from_value(json!({"openai":{"async":true}})).unwrap(),
+                ),
+                ..FunctionTool::new("weather", json!({"type":"object","properties":{}}))
+            })]
+            .into(),
+        );
         let result = provider(&fetch)
             .responses("gpt-5.6")
             .do_generate(&call)
@@ -14400,18 +14412,21 @@ mod older_upstream_e2e {
     async fn responses_allowed_tools_warnings_quote_the_entry_and_give_the_reason() {
         let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
         let mut call = options();
-        call.tools = Some(vec![
-            Tool::Function(FunctionTool::new(
-                "get_weather",
-                json!({"type":"object","properties":{}}),
-            )),
-            Tool::Function(FunctionTool {
-                provider_options: Some(
-                    serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
-                ),
-                ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
-            }),
-        ]);
+        call.tools = Some(
+            vec![
+                Tool::Function(FunctionTool::new(
+                    "get_weather",
+                    json!({"type":"object","properties":{}}),
+                )),
+                Tool::Function(FunctionTool {
+                    provider_options: Some(
+                        serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+                    ),
+                    ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+                }),
+            ]
+            .into(),
+        );
         call.provider_options = Some(
             serde_json::from_value(
                 json!({"openai":{"allowedTools":{"toolNames":["get_weather","deferred"]}}}),
@@ -14443,12 +14458,15 @@ mod older_upstream_e2e {
     async fn responses_allowed_tools_error_names_the_dropped_entries() {
         let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
         let mut call = options();
-        call.tools = Some(vec![Tool::Function(FunctionTool {
-            provider_options: Some(
-                serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
-            ),
-            ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
-        })]);
+        call.tools = Some(
+            vec![Tool::Function(FunctionTool {
+                provider_options: Some(
+                    serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+                ),
+                ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+            })]
+            .into(),
+        );
         call.provider_options = Some(
             serde_json::from_value(json!({"openai":{"allowedTools":{"toolNames":["deferred"]}}}))
                 .unwrap(),
@@ -14483,10 +14501,13 @@ mod older_upstream_e2e {
             })
         };
         let mut call = options();
-        call.tools = Some(vec![
-            namespaced("get_customer", "CRM tools"),
-            namespaced("list_orders", "Other CRM tools"),
-        ]);
+        call.tools = Some(
+            vec![
+                namespaced("get_customer", "CRM tools"),
+                namespaced("list_orders", "Other CRM tools"),
+            ]
+            .into(),
+        );
         let error = provider(&fetch)
             .responses("gpt-5.4")
             .do_generate(&call)
@@ -14515,7 +14536,7 @@ mod older_upstream_e2e {
         skill_call.tools = Some(vec![
         serde_json::from_value(json!({"type":"provider","id":"openai.shell","name":"shell","args":{"environment":{"type":"containerAuto","skills":[{"type":"skillReference","providerReference":{"anthropic":"skill_abc"}}]}}}))
             .unwrap(),
-    ]);
+    ].into());
         for call in [file_call, skill_call] {
             let error = model.do_generate(&call).await.unwrap_err();
             assert!(
@@ -14579,7 +14600,7 @@ mod older_upstream_e2e {
             json!({"type":"provider","id":"openai.programmatic_tool_calling","name":"program","args":{}}),
         )
         .unwrap(),
-    ]);
+    ].into());
         call.provider_options =
             Some(serde_json::from_value(json!({"openai":{"store":false}})).unwrap());
         provider(&fetch)

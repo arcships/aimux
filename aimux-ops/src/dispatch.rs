@@ -1,4 +1,5 @@
 //! Shared dispatch, validation and error projection for native adapters.
+use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
@@ -7,10 +8,13 @@ use std::time::Duration;
 use futures::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::envelope::{OpsError, ProtocolError, SourceError};
+use crate::envelope::{OpsError, ProtocolError};
 pub use crate::frame::FrameStream;
+use crate::frame::TypedEventStream;
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use crate::op::{Cancellation, OpDescriptor, OpMode};
+pub(crate) use crate::request::decode;
+pub use crate::request::{Params, WireParams};
 
 #[derive(Clone)]
 pub struct Ctx {
@@ -24,13 +28,27 @@ pub enum Target {
     Handle(Entry),
 }
 
-pub type CallFuture = Pin<Box<dyn Future<Output = Result<Value, OpsError>> + Send>>;
+pub type CallFuture<'a> = Pin<Box<dyn Future<Output = Result<String, OpsError>> + Send + 'a>>;
+pub type CallHandler = for<'a> fn(Ctx, Target, Params<'a>) -> CallFuture<'a>;
+
+fn result_serialization(error: serde_json::Error) -> OpsError {
+    OpsError::Binding(crate::envelope::BindingError::result_serialization(&error))
+}
+
+pub(crate) fn serialize_result(value: impl serde::Serialize) -> Result<String, OpsError> {
+    // Unary results can carry attachments and exports. The frame limit is
+    // enforced by the bounded writer at the streaming boundary.
+    serde_json::to_string(&value).map_err(result_serialization)
+}
+
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<Value, OpsError>> + Send>>;
 
 #[derive(Clone, Copy)]
 pub enum Handler {
-    Call(fn(Ctx, Target, Value) -> CallFuture),
+    Call(CallHandler),
+    /// Structured stream seam for callers with prebuilt JSON events.
     Stream(fn(Ctx, Target, Value) -> Result<EventStream, OpsError>),
+    TypedStream(fn(Ctx, Target, Params<'_>) -> Result<TypedEventStream, OpsError>),
 }
 
 /// Owner-aware resolution seam. Production uses HandleRegistry; gates use an isolated registry.
@@ -76,37 +94,53 @@ pub(crate) fn registrations() -> &'static [(&'static OpDescriptor, Handler)] {
 /// Dispatch routes this op itself, before ordinary handle lookup.
 pub const HANDLE_DROP: &str = "handle.drop";
 
+type Registration = (&'static OpDescriptor, Handler);
+
+fn lookup(table: &[Registration], name: &str) -> Option<Registration> {
+    table
+        .binary_search_by(|(descriptor, _)| descriptor.name.cmp(name))
+        .ok()
+        .map(|index| table[index])
+}
+
 #[must_use]
 pub fn descriptor(op: &str) -> Option<&'static OpDescriptor> {
-    registrations()
-        .iter()
-        .find(|(descriptor, _)| descriptor.name == op)
-        .map(|(descriptor, _)| *descriptor)
+    lookup(registrations(), op).map(|(descriptor, _)| descriptor)
 }
 
 /// A dispatcher with explicit registry and registration dependencies.
 pub struct Dispatcher<'a> {
     registry: &'a dyn ResourceRegistry,
-    registrations: &'a [(&'static OpDescriptor, Handler)],
+    registrations: Cow<'a, [Registration]>,
 }
 impl<'a> Dispatcher<'a> {
     #[must_use]
-    pub fn new(
-        registry: &'a dyn ResourceRegistry,
-        registrations: &'a [(&'static OpDescriptor, Handler)],
-    ) -> Self {
+    pub fn new(registry: &'a dyn ResourceRegistry, registrations: &'a [Registration]) -> Self {
+        let registrations = if registrations
+            .windows(2)
+            .all(|pair| pair[0].0.name <= pair[1].0.name)
+        {
+            Cow::Borrowed(registrations)
+        } else {
+            let mut sorted = registrations.to_vec();
+            sorted.sort_by_key(|(descriptor, _)| descriptor.name);
+            Cow::Owned(sorted)
+        };
         Self {
             registry,
             registrations,
         }
     }
 
-    fn registration(&self, name: &str) -> Result<(&'static OpDescriptor, Handler), OpsError> {
-        self.registrations
-            .iter()
-            .find(|(op, _)| op.name == name)
-            .copied()
-            .ok_or_else(|| invalid_op(name))
+    fn global() -> Dispatcher<'static> {
+        Dispatcher {
+            registry: HandleRegistry::global(),
+            registrations: Cow::Borrowed(registrations()),
+        }
+    }
+
+    fn registration(&self, name: &str) -> Result<Registration, OpsError> {
+        lookup(&self.registrations, name).ok_or_else(|| invalid_op(name))
     }
 
     /// # Errors
@@ -118,32 +152,31 @@ impl<'a> Dispatcher<'a> {
         name: &str,
         params: Value,
     ) -> Result<Value, OpsError> {
-        let (descriptor, handler) = self.registration(name)?;
-        self.call_registered(ctx, handle, descriptor, handler, params)
-            .await
+        let json = self.call_params(ctx, handle, name, params.into()).await?;
+        serde_json::from_str(&json).map_err(result_serialization)
     }
 
-    async fn call_registered(
+    async fn call_params(
         &self,
         mut ctx: Ctx,
         handle: HandleId,
-        descriptor: &OpDescriptor,
-        handler: Handler,
-        params: Value,
-    ) -> Result<Value, OpsError> {
-        if !matches!(descriptor.mode, OpMode::Call | OpMode::Poll) {
-            return Err(invalid_op(descriptor.name));
-        }
-        let Handler::Call(handler) = handler else {
-            return Err(invalid_op(descriptor.name));
+        name: &str,
+        params: Params<'_>,
+    ) -> Result<String, OpsError> {
+        let (descriptor, handler) = self.registration(name)?;
+        let Handler::Call(run) = handler else {
+            return Err(invalid_op(name));
         };
-        validate_object(&params)?;
+        if !matches!(descriptor.mode, OpMode::Call | OpMode::Poll) {
+            return Err(invalid_op(name));
+        }
+        params.validate_object()?;
         if descriptor.name == HANDLE_DROP {
             decode::<crate::ops::operation::EmptyParams>(params)?;
             if let Some(Entry::Operation(operation)) = self.registry.remove(ctx.owner, handle) {
                 operation.consumer_close();
             }
-            return Ok(Value::Null);
+            return Ok("null".into());
         }
         let target = resolve(self.registry, &ctx, handle, descriptor)?;
         validate_secondary(self.registry, &mut ctx, descriptor, &params)?;
@@ -151,14 +184,15 @@ impl<'a> Dispatcher<'a> {
             .abort
             .clone()
             .filter(|_| descriptor.cancellation == Cancellation::Abort);
+        let call = async move { run(ctx, target, params).await };
         if let Some(abort) = abort {
             tokio::select! {
                 biased;
                 () = abort.cancelled() => Err(aborted()),
-                result = handler(ctx, target, params) => result,
+                result = call => result,
             }
         } else {
-            handler(ctx, target, params).await
+            call.await
         }
     }
 
@@ -166,29 +200,42 @@ impl<'a> Dispatcher<'a> {
     /// Returns errors before acceptance. Accepted failures become one terminal frame.
     pub fn stream(
         &self,
-        mut ctx: Ctx,
+        ctx: Ctx,
         handle: HandleId,
         name: &str,
         params: Value,
     ) -> Result<FrameStream, OpsError> {
-        (|| {
-            let (descriptor, handler) = self.registration(name)?;
-            if descriptor.mode != OpMode::Stream {
-                return Err(invalid_op(name));
+        self.stream_params(ctx, handle, name, params.into())
+    }
+
+    fn stream_params(
+        &self,
+        mut ctx: Ctx,
+        handle: HandleId,
+        name: &str,
+        params: Params<'_>,
+    ) -> Result<FrameStream, OpsError> {
+        let (descriptor, handler) = self.registration(name)?;
+        if descriptor.mode != OpMode::Stream || matches!(handler, Handler::Call(_)) {
+            return Err(invalid_op(name));
+        }
+        params.validate_object()?;
+        let target = resolve(self.registry, &ctx, handle, descriptor)?;
+        validate_secondary(self.registry, &mut ctx, descriptor, &params)?;
+        let abort = ctx
+            .abort
+            .get_or_insert_with(aimux_core::AbortSignal::new)
+            .clone();
+        match handler {
+            Handler::Stream(run) => Ok(FrameStream::new(
+                run(ctx, target, params.into_value()?)?,
+                Some(abort),
+            )),
+            Handler::TypedStream(run) => {
+                Ok(FrameStream::typed(run(ctx, target, params)?, Some(abort)))
             }
-            let Handler::Stream(handler) = handler else {
-                return Err(invalid_op(name));
-            };
-            validate_object(&params)?;
-            let target = resolve(self.registry, &ctx, handle, descriptor)?;
-            validate_secondary(self.registry, &mut ctx, descriptor, &params)?;
-            let abort = ctx
-                .abort
-                .get_or_insert_with(aimux_core::AbortSignal::new)
-                .clone();
-            let events = handler(ctx, target, params)?;
-            Ok(FrameStream::new(events, Some(abort)))
-        })()
+            Handler::Call(_) => unreachable!("validated stream handler"),
+        }
     }
 }
 
@@ -198,25 +245,6 @@ fn invalid_op(name: &str) -> OpsError {
 fn aborted() -> OpsError {
     OpsError::AiMux(aimux_core::AiMuxError::Aborted("request aborted".into()))
 }
-fn validate_object(params: &Value) -> Result<(), OpsError> {
-    if params.is_object() {
-        Ok(())
-    } else {
-        Err(OpsError::Protocol(ProtocolError::invalid_params(
-            "operation params must be an object",
-        )))
-    }
-}
-
-pub(crate) fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, OpsError> {
-    serde_json::from_value(params).map_err(|error| {
-        OpsError::Protocol(ProtocolError::InvalidParams {
-            message: error.to_string(),
-            cause: Some(SourceError::new(&error)),
-        })
-    })
-}
-
 fn resolve(
     registry: &dyn ResourceRegistry,
     ctx: &Ctx,
@@ -244,45 +272,69 @@ pub fn resolve_secondary(
     registry.get(ctx.owner, handle, allowed)
 }
 
-fn field_values<'a>(value: &'a Value, path: &[&str], result: &mut Vec<&'a Value>) {
-    if path.is_empty() {
-        if !value.is_null() {
-            result.push(value);
-        }
-        return;
-    }
-    if path[0] == "*" {
-        match value {
+fn visit_value(
+    value: &Value,
+    path: &[&str],
+    visit: &mut impl FnMut(&Value) -> Result<(), OpsError>,
+) -> Result<(), OpsError> {
+    match path.split_first() {
+        None if !value.is_null() => visit(value)?,
+        Some((&"*", rest)) => match value {
             Value::Array(values) => {
                 for value in values {
-                    field_values(value, &path[1..], result);
+                    visit_value(value, rest, visit)?;
                 }
             }
             Value::Object(values) => {
                 for value in values.values() {
-                    field_values(value, &path[1..], result);
+                    visit_value(value, rest, visit)?;
                 }
             }
             _ => {}
+        },
+        Some((field, rest)) => {
+            if let Some(value) = value.get(*field) {
+                visit_value(value, rest, visit)?;
+            }
         }
-    } else if let Some(value) = value.get(path[0]) {
-        field_values(value, &path[1..], result);
+        None => {}
     }
+    Ok(())
 }
 
 fn validate_secondary(
     registry: &dyn ResourceRegistry,
     ctx: &mut Ctx,
     descriptor: &OpDescriptor,
-    params: &Value,
+    params: &Params<'_>,
 ) -> Result<(), OpsError> {
-    for (path, allowed) in descriptor.runtime_handle_fields {
-        let mut values = Vec::new();
-        field_values(params, &path.split('.').collect::<Vec<_>>(), &mut values);
-        for value in values {
-            let entry = resolve_secondary(registry, ctx, value, allowed)?;
-            if let ("abort", Entry::Abort(signal)) = (*path, entry) {
-                ctx.abort = Some((*signal).clone());
+    let fields = descriptor.runtime_handle_fields;
+    if fields.is_empty() {
+        return Ok(());
+    }
+    let mut resolve = |path: &[&str], id, allowed: &[HandleKind]| {
+        let entry = registry.get(ctx.owner, id, allowed)?;
+        if let (["abort"], Entry::Abort(signal)) = (path, entry) {
+            ctx.abort = Some((*signal).clone());
+        }
+        Ok(())
+    };
+
+    match params {
+        Params::Wire(wire) => {
+            for ((path, allowed), handles) in
+                fields.iter().zip(crate::request::probe(*wire, fields)?)
+            {
+                for raw in handles {
+                    resolve(path, crate::request::decode_handle(raw)?, allowed)?;
+                }
+            }
+        }
+        Params::Value(value) => {
+            for (path, allowed) in fields {
+                visit_value(value, path, &mut |value| {
+                    resolve(path, decode::<HandleId>(value.clone())?, allowed)
+                })?;
             }
         }
     }
@@ -297,10 +349,23 @@ pub async fn call(
     name: &str,
     params: Value,
 ) -> Result<Value, OpsError> {
-    Dispatcher::new(HandleRegistry::global(), registrations())
-        .call(ctx, handle, name, params)
+    Dispatcher::global().call(ctx, handle, name, params).await
+}
+
+/// Dispatch a native call and return the handler's encoded JSON.
+/// # Errors
+/// Returns a projected error for failed call preflight or execution.
+pub async fn call_wire(
+    ctx: Ctx,
+    handle: HandleId,
+    name: &str,
+    params: WireParams<'_>,
+) -> Result<String, OpsError> {
+    Dispatcher::global()
+        .call_params(ctx, handle, name, Params::Wire(params))
         .await
 }
+
 /// # Errors
 /// Returns a projected error before acceptance.
 pub fn stream(
@@ -309,15 +374,21 @@ pub fn stream(
     name: &str,
     params: Value,
 ) -> Result<FrameStream, OpsError> {
-    Dispatcher::new(HandleRegistry::global(), registrations()).stream(ctx, handle, name, params)
+    Dispatcher::global().stream(ctx, handle, name, params)
 }
 
-#[derive(Debug)]
-pub enum PollResult {
-    Part(Value),
-    Ended,
-    Timeout,
+/// # Errors
+/// Returns a projected error before acceptance.
+pub fn stream_wire(
+    ctx: Ctx,
+    handle: HandleId,
+    name: &str,
+    params: WireParams<'_>,
+) -> Result<FrameStream, OpsError> {
+    Dispatcher::global().stream_params(ctx, handle, name, Params::Wire(params))
 }
+
+pub use crate::operation::PollResult;
 
 /// Admit raw input without a JSON/base64 round trip or an allocation on rejection.
 /// # Errors
@@ -344,18 +415,30 @@ pub async fn operation_next(
     else {
         return Err(invalid_op("operation.next"));
     };
-    next_operation(&operation, timeout).await
+    operation.next(Some(timeout)).await
 }
-pub(crate) async fn next_operation(
-    operation: &crate::operation::Operation,
+
+/// The wire representation of a direct operation poll.
+#[derive(Debug)]
+pub enum WirePollResult {
+    Part(String),
+    Ended,
+    Timeout,
+}
+
+/// Poll an operation, encoding a returned part directly to JSON.
+///
+/// # Errors
+/// Returns the same operation errors as [operation_next], or ResultSerialization.
+pub async fn operation_next_json(
+    ctx: &Ctx,
+    op: HandleId,
     timeout: Duration,
-) -> Result<PollResult, OpsError> {
-    match operation.next(Some(timeout)).await? {
-        crate::operation::PollResult::Part(part) => serde_json::to_value(part)
-            .map(PollResult::Part)
-            .map_err(|error| crate::envelope::BindingError::result_serialization(&error).into()),
-        crate::operation::PollResult::Ended => Ok(PollResult::Ended),
-        crate::operation::PollResult::Timeout => Ok(PollResult::Timeout),
+) -> Result<WirePollResult, OpsError> {
+    match operation_next(ctx, op, timeout).await? {
+        PollResult::Part(part) => serialize_result(part).map(WirePollResult::Part),
+        PollResult::Ended => Ok(WirePollResult::Ended),
+        PollResult::Timeout => Ok(WirePollResult::Timeout),
     }
 }
 
@@ -370,4 +453,141 @@ where
         serde_json::to_value(event?)
             .map_err(|error| crate::envelope::BindingError::result_serialization(&error).into())
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handle::HandleKind::Abort;
+    use std::sync::Arc;
+
+    fn ctx() -> Ctx {
+        Ctx {
+            owner: Owner::CProcess,
+            abort: None,
+        }
+    }
+
+    fn wire(bytes: &[u8]) -> WireParams<'_> {
+        WireParams::new(bytes, "params_json")
+    }
+
+    #[tokio::test]
+    async fn native_call_decodes_direct_json_and_keeps_input_errors() {
+        let request = br#" { "kind": "fetch", "proxy": {"no_proxy":"localhost"} } "#;
+        let output = call_wire(ctx(), HandleId(0), "transport.create", wire(request))
+            .await
+            .unwrap();
+        let output: Value = serde_json::from_str(&output).unwrap();
+        let id: HandleId = decode(output["handle"].clone()).unwrap();
+        assert!(
+            HandleRegistry::global()
+                .get(Owner::CProcess, id, &[HandleKind::Fetch])
+                .is_ok()
+        );
+        assert!(
+            HandleRegistry::global()
+                .remove(Owner::CProcess, id)
+                .is_some()
+        );
+
+        for (input, code) in [
+            (&b"{} {}"[..], 202),
+            (b"{", 202),
+            (b"null", 301),
+            (br#"{"unknown":true}"#, 301),
+        ] {
+            let error = call_wire(ctx(), HandleId(0), "runtime.describe", wire(input))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), code);
+        }
+    }
+
+    #[test]
+    fn probe_skips_unrelated_fields_and_validates_nested_handles_in_descriptor_order() {
+        static DESCRIPTOR: OpDescriptor = OpDescriptor {
+            runtime_handle_fields: &[
+                (&["settings", "groups", "*", "handle"], &[Abort]),
+                (&["settings", "another"], &[Abort]),
+                (&["abort"], &[Abort]),
+            ],
+            ..crate::ops::runtime::OPS[0]
+        };
+        let registry = HandleRegistry::default();
+        let signal = aimux_core::AbortSignal::new();
+        let local = registry
+            .insert(Owner::CProcess, Entry::Abort(Arc::new(signal.clone())))
+            .unwrap();
+        let foreign = registry
+            .insert(
+                Owner::new_node().unwrap(),
+                Entry::Abort(Arc::new(signal.clone())),
+            )
+            .unwrap();
+
+        let input = format!(
+            r#"{{
+            "settings": {{
+                "groups": [
+                    {{"handle": 99, "handle": "{}", "unused":{{"handle": 7}}}},
+                    {{"handle":null}}, {{}}, null, false
+                ],
+                "another":"{}"
+            }},
+            "unused": ["not a handle",{{"abort":0}}],
+            "abort": "{}", "abort":"{}"
+        }}"#,
+            local.0, local.0, foreign.0, local.0
+        );
+        let mut context = ctx();
+        validate_secondary(
+            &registry,
+            &mut context,
+            &DESCRIPTOR,
+            &Params::Wire(wire(input.as_bytes())),
+        )
+        .unwrap();
+        signal.abort();
+        assert!(context.abort.unwrap().is_aborted());
+
+        for input in [
+            r#"{}"#,
+            r#"{"settings":{"groups":{"a":{"handle":42},"a":{}}}}"#,
+            r#"{"settings":{"groups":[{"handle":42}]},"settings":null}"#,
+        ] {
+            validate_secondary(
+                &registry,
+                &mut ctx(),
+                &DESCRIPTOR,
+                &Params::Wire(wire(input.as_bytes())),
+            )
+            .unwrap();
+        }
+
+        for (input, code) in [
+            (r#"{"settings":{"groups":[{"handle":42}]}}"#.to_owned(), 301),
+            (
+                format!(
+                    r#"{{"settings":{{"groups":[{{"handle":"{}"}}]}}}}"#,
+                    foreign.0
+                ),
+                203,
+            ),
+            (
+                format!(r#"{{"abort":3,"settings":{{"another":"{}"}}}}"#, foreign.0),
+                203,
+            ),
+            (r#"{"unused":[1,]}"#.to_owned(), 202),
+        ] {
+            let error = validate_secondary(
+                &registry,
+                &mut ctx(),
+                &DESCRIPTOR,
+                &Params::Wire(wire(input.as_bytes())),
+            )
+            .unwrap_err();
+            assert_eq!(error.code(), code, "{input}");
+        }
+    }
 }

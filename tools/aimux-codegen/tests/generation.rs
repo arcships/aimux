@@ -186,6 +186,8 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
         "aimux_manifest_json",
         "aimux_call",
         "aimux_stream",
+        "aimux_call_async",
+        "aimux_stream_async",
         "aimux_operation_push",
         "aimux_operation_next_part",
         "aimux_abort",

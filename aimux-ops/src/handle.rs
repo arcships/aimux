@@ -30,7 +30,7 @@ fn handle_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema 
 
 impl Serialize for HandleId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0.to_string())
+        serializer.collect_str(&self.0)
     }
 }
 
@@ -48,9 +48,19 @@ impl std::str::FromStr for HandleId {
 
 impl<'de> Deserialize<'de> for HandleId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
+        struct Decimal;
+        impl serde::de::Visitor<'_> for Decimal {
+            type Value = HandleId;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<HandleId, E> {
+                value.parse().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(Decimal)
     }
 }
 

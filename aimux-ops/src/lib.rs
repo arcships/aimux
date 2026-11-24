@@ -8,6 +8,7 @@ pub mod limits;
 pub mod manifest;
 pub mod op;
 pub mod operation;
+mod request;
 
 pub mod ops {
     pub mod composite;

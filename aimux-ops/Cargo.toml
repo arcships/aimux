@@ -18,7 +18,7 @@ aimux-core = { workspace = true }
 aimux-providers = { workspace = true }
 aimux-provider-utils = { workspace = true, features = ["ws"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true }
 futures = { workspace = true }
 sha2 = "0.10"

@@ -7,6 +7,8 @@ const envelope = (kind, code, name, message, fields = {}) => Object.assign(new E
 })
 class Runtime {
   constructor() { this.owner = 1 }
+  abiVersion() { return ops.ABI_VERSION }
+  opsVersion() { return ops.OPS_VERSION }
   manifestJson() { return JSON.stringify({ abiVersion: ops.ABI_VERSION, opsVersion: ops.OPS_VERSION, digest: ops.MANIFEST_DIGEST, manifestRevision: 'fixture', ops: [], handleKinds: [], errorCodes: [] }) }
   manifestDigest() { return ops.MANIFEST_DIGEST }
   create(kind) {
@@ -67,7 +69,17 @@ class Runtime {
       throw: async error => { await iterator.return(); throw error },
       [Symbol.asyncIterator]() { return this },
     }
-    return { [Symbol.asyncIterator]() { return iterator } }
+    return {
+      async nextBatch() {
+        if (closed) return []
+        if (params.pending) return new Promise(resolve => { resolvePending = () => resolve([]) })
+        const end = Math.min(index + 2, values.length)
+        const batch = values.slice(index, end).map(value => JSON.stringify(value))
+        index = end
+        return batch
+      },
+      [Symbol.asyncIterator]() { return iterator },
+    }
   }
   async operationPush(id, data) { this.check(id); this.lastPush = new Uint8Array(data) }
 }

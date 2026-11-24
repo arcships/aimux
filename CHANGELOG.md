@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead (RFC-0046 §4.5).
 - `aimux_provider_utils::HttpRequest` gains `kind: ExchangeKind`; a struct
   literal of `HttpRequest` must set it or use `..Default::default()` (#527).
+- Rust: `GenerateTextOptions.tools` and `CallOptions.tools` now take
+  `Option<Arc<[Tool]>>`, so calls can share tool schemas. Convert an existing
+  vector with `Some(tools.into())`. The wire field remains a JSON array
+  (RFC-0050 §3.1).
+- Rust: `aimux_ops::Handler::Call` now takes `Params<'_>` and returns
+  serialized JSON (`String`), and exhaustive matches need to account for the
+  new `TypedStream` variant.
 
 ### Added
 
@@ -41,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guard, a transport timeout, a connection broken while sending or reading the
   body) is not retryable. A refused connection and HTTP statuses keep their
   retryability (#527).
+- The C ABI exports `aimux_call_async` and `aimux_stream_async`. The Go
+  binding uses them for calls and streams. Accepted streams deliver batches
+  of ready frames followed by a standalone terminal frame.
+
+### Changed
+
+- Node drains ready stream frames in batches while the public iterator yields
+  one frame at a time. Python reads ready frames without reentering the runtime.
+  Native text streams encode each frame directly against the wire size limit.
 
 ### Fixed
 

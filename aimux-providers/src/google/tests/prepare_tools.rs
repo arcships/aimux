@@ -27,7 +27,7 @@ fn prepare(
     tool_choice: Option<LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> Value {
-    let prepared = prepare_all_tools(&tools, tool_choice.as_ref(), model_id);
+    let prepared = prepare_all_tools(tools.as_deref(), tool_choice.as_ref(), model_id);
     let mut result = json!({ "toolWarnings": prepared.warnings });
     if let Some(tools) = prepared.tools {
         result["tools"] = Value::Array(tools);
@@ -46,7 +46,7 @@ fn prepare_vertex(
     model_id: &str,
 ) -> Value {
     let mut options = CallOptions::new(Vec::new());
-    options.tools = tools;
+    options.tools = tools.map(Into::into);
     options.tool_choice = tool_choice;
     let (body, warnings) =
         build_request_body_with_warnings_for_namespace(model_id, &options, Namespace::Vertex);

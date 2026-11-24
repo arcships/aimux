@@ -106,6 +106,9 @@ EXPORT void aimux_dart_finalize(void *ptr) {
 }
 
 typedef void (*notify_fn)(char *owned_frame);
+/* Reserve 3 native messages, 4 Dart credits (aimux.dart), and 1 callback
+ * waiting for space. Each frame is at most 1 MiB. */
+enum { MAX_PENDING_FRAMES = 3 };
 typedef struct bridge {
     mutex_t mutex;
     cond_t ready;
@@ -135,7 +138,7 @@ EXPORT void aimux_dart_bridge_cancel(void *ptr) {
 EXPORT void aimux_dart_bridge_ack(void *ptr) {
     bridge *b = ptr;
     lock(&b->mutex);
-    b->pending = 0;
+    if (b->pending > 0) --b->pending;
     wake(&b->ready);
     unlock(&b->mutex);
 }
@@ -158,7 +161,8 @@ EXPORT void aimux_dart_bridge_event(const char *frame, void *ptr) {
     size_t length = 0;
     if (frame) while (length <= 1048576 && frame[length]) length++;
     lock(&b->mutex);
-    while (b->pending && !b->cancelled) cond_wait(&b->ready, &b->mutex);
+    while (b->pending == MAX_PENDING_FRAMES && !b->cancelled)
+        cond_wait(&b->ready, &b->mutex);
     if (b->cancelled) { unlock(&b->mutex); return; }
     char *copy = frame && length <= 1048576 ? malloc(length + 1) : NULL;
     if (!copy) {
@@ -170,15 +174,12 @@ EXPORT void aimux_dart_bridge_event(const char *frame, void *ptr) {
         return;
     }
     memcpy(copy, frame, length + 1);
-    b->pending = 1; /* Exactly one item/1 MiB of credit, including in-flight. */
+    ++b->pending;
     unlock(&b->mutex);
     b->notify(copy); /* NativeCallable.listener: posts to its owning isolate. */
-    lock(&b->mutex);
-    while (b->pending && !b->cancelled) cond_wait(&b->ready, &b->mutex);
-    unlock(&b->mutex);
 }
 EXPORT void aimux_dart_frame_free(char *frame) { free(frame); }
-/* Producer has returned AND the outstanding listener message was acknowledged. */
+/* Producer has returned AND all outstanding listener messages were acknowledged. */
 EXPORT void aimux_dart_bridge_free(void *ptr) {
     bridge *b = ptr;
     cond_destroy(&b->ready);

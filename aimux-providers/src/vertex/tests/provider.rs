@@ -294,14 +294,17 @@ async fn language_generate_preserves_tool_schema_references() {
         "$defs": {"Locale": {"type": "string", "enum": ["de", "en"]}}
     });
     let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("Hello")]);
-    options.tools = Some(vec![Tool::Function(FunctionTool {
-        name: "format-date".into(),
-        description: Some("Format a date".into()),
-        input_schema: schema.clone(),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    })]);
+    options.tools = Some(
+        vec![Tool::Function(FunctionTool {
+            name: "format-date".into(),
+            description: Some("Format a date".into()),
+            input_schema: schema.clone(),
+            strict: None,
+            provider_options: None,
+            input_examples: None,
+        })]
+        .into(),
+    );
     let result = provider(&fetch)
         .chat("gemini-2.5-flash")
         .do_generate(&options)

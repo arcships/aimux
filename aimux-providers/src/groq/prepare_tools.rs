@@ -23,7 +23,7 @@ pub(crate) fn prepare_tools(options: &CallOptions, model_id: &str) -> PreparedTo
     let mut prepared = PreparedTools::default();
 
     // An empty tools array is the same as none, to prevent errors.
-    let Some(tools) = options.tools.as_ref().filter(|tools| !tools.is_empty()) else {
+    let Some(tools) = options.tools.as_deref().filter(|tools| !tools.is_empty()) else {
         return prepared;
     };
 

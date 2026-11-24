@@ -15,6 +15,8 @@ const PRIMITIVES: &[&str] = &[
     "aimux_manifest_json",
     "aimux_call",
     "aimux_stream",
+    "aimux_call_async",
+    "aimux_stream_async",
     "aimux_operation_push",
     "aimux_operation_next_part",
     "aimux_abort",

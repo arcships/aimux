@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -231,7 +232,7 @@ pub type FetchFunction = Arc<dyn Fetch>;
 
 struct DefaultTransport {
     transport: Arc<ReqwestFetch>,
-    frozen: bool,
+    frozen: AtomicBool,
     configured: bool,
 }
 
@@ -241,7 +242,7 @@ fn default_transport_slot() -> &'static RwLock<DefaultTransport> {
     DEFAULT_TRANSPORT.get_or_init(|| {
         RwLock::new(DefaultTransport {
             transport: Arc::new(ReqwestFetch::default()),
-            frozen: false,
+            frozen: AtomicBool::new(false),
             configured: false,
         })
     })
@@ -269,10 +270,12 @@ impl Fetch for ProcessDefaultFetch {
 }
 
 pub(crate) fn default_transport() -> Arc<ReqwestFetch> {
-    let mut slot = default_transport_slot()
-        .write()
+    let slot = default_transport_slot()
+        .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    slot.frozen = true;
+    // Publish the freeze before releasing the read lock. Configuration
+    // takes the write lock, so it cannot interleave with this acquisition.
+    slot.frozen.store(true, Ordering::Relaxed);
     slot.transport.clone()
 }
 
@@ -294,7 +297,7 @@ pub fn configure_startup_proxy(config: ProxyConfig) -> Result<(), StartupProxyFr
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if slot.transport.proxy() != &config {
-        if slot.frozen {
+        if slot.frozen.load(Ordering::Relaxed) {
             return Err(StartupProxyFrozen);
         }
         slot.transport = Arc::new(ReqwestFetch::new(config));
@@ -313,7 +316,7 @@ pub fn startup_proxy_state() -> (bool, bool) {
     let slot = default_transport_slot()
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    (slot.configured, slot.frozen)
+    (slot.configured, slot.frozen.load(Ordering::Relaxed))
 }
 
 /// The real network leaf: reqwest over rustls, routed by its own
@@ -324,10 +327,17 @@ pub fn startup_proxy_state() -> (bool, bool) {
 /// also serves streaming exchanges, so the non-streaming response bound lives
 /// per exchange in the helper layer and `aimux-core` owns the operation
 /// deadline.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ReqwestFetch {
     proxy: ProxyConfig,
+    pool_max_idle_per_host: usize,
     clients: Arc<Mutex<HashMap<Option<tokio::runtime::Id>, Client>>>,
+}
+
+impl Default for ReqwestFetch {
+    fn default() -> Self {
+        Self::new(ProxyConfig::default())
+    }
 }
 
 impl ReqwestFetch {
@@ -336,8 +346,20 @@ impl ReqwestFetch {
     pub fn new(proxy: ProxyConfig) -> Self {
         Self {
             proxy,
+            pool_max_idle_per_host: 64,
             clients: Arc::default(),
         }
+    }
+
+    /// Set the maximum number of idle connections retained per origin and
+    /// runtime. The default is 64. Setting it to zero disables idle pooling.
+    #[must_use]
+    pub fn with_pool_max_idle_per_host(mut self, limit: usize) -> Self {
+        if self.pool_max_idle_per_host != limit {
+            self.pool_max_idle_per_host = limit;
+            self.clients = Arc::default();
+        }
+        self
     }
 
     /// The proxy routing of this transport.
@@ -363,7 +385,7 @@ impl ReqwestFetch {
         if let Some(client) = clients.get(&key) {
             return Ok(client.clone());
         }
-        let client = build_client(&self.proxy).map_err(|error| {
+        let client = build_client(&self.proxy, self.pool_max_idle_per_host).map_err(|error| {
             FetchError::Other(SourceError::with_cause(
                 format!("HTTP client initialization failed: {error}"),
                 &error,
@@ -502,11 +524,14 @@ fn map_reqwest_error(error: reqwest::Error) -> FetchError {
 // client on its next request.
 const CLIENTS_PER_TRANSPORT: usize = 8;
 
-fn build_client(proxy: &ProxyConfig) -> Result<Client, reqwest::Error> {
+fn build_client(
+    proxy: &ProxyConfig,
+    pool_max_idle_per_host: usize,
+) -> Result<Client, reqwest::Error> {
     let builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_millis(10_000))
-        .pool_max_idle_per_host(10)
+        .pool_max_idle_per_host(pool_max_idle_per_host)
         .pool_idle_timeout(Some(Duration::from_secs(30)))
         .tcp_keepalive(Some(Duration::from_secs(20)));
     apply_proxy(builder, proxy).build()
@@ -596,6 +621,86 @@ mod tests {
         assert_eq!(
             seen.lock().unwrap().as_slice(),
             ["GET http://upstream.invalid/v1/models HTTP/1.1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_pool_reuses_connections_across_bursts() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio::sync::Barrier;
+
+        const BURST: usize = 64;
+        async fn connections_used(transport: ReqwestFetch) -> usize {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let accepted = Arc::new(AtomicUsize::new(0));
+            let count = Arc::clone(&accepted);
+            let server = tokio::spawn(async move {
+                let barrier = Arc::new(Barrier::new(BURST));
+                while let Ok((socket, _)) = listener.accept().await {
+                    count.fetch_add(1, Ordering::Relaxed);
+                    let barrier = Arc::clone(&barrier);
+                    tokio::spawn(async move {
+                        let mut socket = BufReader::new(socket);
+                        let mut line = String::new();
+                        loop {
+                            line.clear();
+                            match socket.read_line(&mut line).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) if line == "\r\n" => {
+                                    // Hold all responses until the whole burst is in
+                                    // flight, forcing one connection per request.
+                                    barrier.wait().await;
+                                    if socket
+                                        .get_mut()
+                                        .write_all(
+                                            b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+                                        )
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                Ok(_) => {}
+                            }
+                        }
+                    });
+                }
+            });
+            for _ in 0..2 {
+                tokio::time::timeout(
+                    Duration::from_secs(10),
+                    futures::future::join_all((0..BURST).map(|_| async {
+                        let response = transport.fetch(get(&url)).await.unwrap();
+                        assert_eq!(response.status(), StatusCode::OK);
+                        let mut body = response.bytes_stream();
+                        assert_eq!(body.next().await.unwrap().unwrap(), "ok");
+                        assert!(body.next().await.is_none());
+                    })),
+                )
+                .await
+                .unwrap();
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            server.abort();
+            accepted.load(Ordering::Relaxed)
+        }
+
+        let direct = ReqwestFetch::new(ProxyConfig {
+            all_url: Some("http://127.0.0.1:9".into()),
+            no_proxy: Some("127.0.0.1".into()),
+            ..ProxyConfig::default()
+        });
+        assert_eq!(connections_used(direct.clone()).await, BURST);
+        assert_eq!(
+            connections_used(direct.clone().with_pool_max_idle_per_host(10)).await,
+            2 * BURST - 10
+        );
+        assert_eq!(
+            connections_used(direct.with_pool_max_idle_per_host(2)).await,
+            2 * BURST - 2
         );
     }
 

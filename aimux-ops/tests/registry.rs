@@ -462,7 +462,7 @@ fn descriptors_publish_real_types_and_secondary_fields() {
         ("model.wrap", "middleware.*"),
     ] {
         let descriptor = aimux_ops::dispatch::descriptor(name).unwrap();
-        assert_eq!(descriptor.runtime_handle_fields[0].0, field);
+        assert_eq!(descriptor.runtime_handle_fields[0].0.join("."), field);
         assert!(
             (descriptor.request_type.id)()
                 .into_owned()
