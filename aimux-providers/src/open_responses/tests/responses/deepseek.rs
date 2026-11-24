@@ -2,11 +2,14 @@
 //! an injected transport. No network or API credential is needed.
 use std::sync::Arc;
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, Source};
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::{RawToolCall, ToolResult};
+use aimux_core::types::ProviderMetadata;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
@@ -253,4 +256,154 @@ async fn replay_is_validated_when_search_is_absent() {
         assert!(model.do_generate(&call).await.is_err());
         assert!(transport.seen().is_empty());
     }
+}
+
+async fn stream_parts(model: &OpenResponsesModel, options: &CallOptions) -> Vec<StreamPart> {
+    model
+        .do_stream(options)
+        .await
+        .unwrap()
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+fn finish_metadata(parts: &[StreamPart]) -> ProviderMetadata {
+    parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Finish {
+                provider_metadata, ..
+            } => provider_metadata.clone(),
+            _ => None,
+        })
+        .unwrap()
+}
+
+fn tool_calls(parts: &[StreamPart]) -> Vec<&RawToolCall> {
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolCall(call) if call.tool_name == "deepseek_web_search" => Some(call),
+            _ => None,
+        })
+        .collect()
+}
+
+fn tool_results(parts: &[StreamPart]) -> Vec<&ToolResult> {
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolResult(result) if result.tool_name == "deepseek_web_search" => {
+                Some(result)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+// A search item that only appears in the terminal `response.output` must still
+// reach the caller, and its recovered id must reach the replay record.
+#[tokio::test]
+async fn terminal_output_publishes_search_items_without_done_events() {
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"答", "annotations":[]}]});
+    let reported = json!({"type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"late"}}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":message}),
+        json!({"type":"response.completed", "response":response(json!([reported, message]))}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    let calls = tool_calls(&parts);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].tool_call_id, "late");
+    let results = tool_results(&parts);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].tool_call_id, "late");
+    let mut persisted = reported.clone();
+    persisted["id"] = json!("late");
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([persisted, message])
+    );
+}
+
+// `"id": null` is missing identity too: the `added` id must be used both on
+// the call and in the stored item, instead of the synthetic fallback id.
+#[tokio::test]
+async fn null_item_id_is_recovered_into_the_replay_record() {
+    let reported = json!({"id":null, "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"q"}});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"real"}}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reported}),
+        json!({"type":"response.completed", "response":response(json!([]))}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    assert_eq!(tool_calls(&parts)[0].tool_call_id, "real");
+    assert_eq!(tool_results(&parts)[0].tool_call_id, "real");
+    let mut persisted = reported.clone();
+    persisted["id"] = json!("real");
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([persisted])
+    );
+}
+
+#[tokio::test]
+async fn non_boolean_option_is_rejected_before_fetch() {
+    let (model, transport) = model("https://api.deepseek.com", "deepseek-flash", vec![]);
+    let mut call = options(None);
+    call.provider_options =
+        Some(serde_json::from_value(json!({"deepseek":{"deepseekWebSearch":"yes"}})).unwrap());
+    let error = model.do_generate(&call).await.unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument { message, .. }
+            if message == "deepseekWebSearch must be a boolean"),
+        "unexpected error: {error:?}"
+    );
+    assert!(transport.seen().is_empty());
+}
+
+// The replay record is attached for the official route even without the search
+// opt-in, because a later turn still replays signed reasoning output; other
+// routes keep their previous `providerMetadata` of `null`.
+#[tokio::test]
+async fn replay_record_is_attached_without_the_search_opt_in() {
+    let items = json!([{"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text", "text":"想"}], "summary":[], "signature":"sig", "kind":"opaque"}]);
+    let (official, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![Canned::json(&response(items.clone()))],
+    );
+    let result = official.do_generate(&options(None)).await.unwrap();
+    assert_eq!(
+        result.provider_metadata.unwrap()["deepseek"]["responseOutput"]["items"],
+        items
+    );
+    let (relay, _) = model(
+        "https://relay.example/v1",
+        "deepseek-flash",
+        vec![Canned::json(&response(items))],
+    );
+    assert!(
+        relay
+            .do_generate(&options(None))
+            .await
+            .unwrap()
+            .provider_metadata
+            .is_none()
+    );
 }

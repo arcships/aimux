@@ -57,10 +57,17 @@ pub(super) fn prepare(
         if body.get("tools").is_none() {
             body["tools"] = json!([]);
         }
-        body["tools"]
-            .as_array_mut()
-            .expect("request tools array")
-            .push(json!({"type": TOOL}));
+        // A caller-supplied `tools` value that is not an array is an argument
+        // error, not a reason to panic.
+        let tools = body
+            .get_mut("tools")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| {
+                AiMuxError::invalid_argument(
+                    "deepseekWebSearch requires request tools to be an array",
+                )
+            })?;
+        tools.push(json!({"type": TOOL}));
     }
 
     // Each replay belongs at one assistant message's position, rather than
@@ -150,6 +157,21 @@ pub(super) fn search_parts(item: &Value, namespace: &str, index: u64) -> (RawToo
     )
 }
 
+/// A finished item can omit its id, or send `null`, while
+/// `response.output_item.added` carries it. Patch the item before it is both
+/// published and stored, so the emitted call id and the persisted replay
+/// record agree.
+fn recover_id(item: &mut Value, index: u64, added: &BTreeMap<u64, Value>) {
+    if !item.is_object() {
+        return;
+    }
+    if item["id"].as_str().is_none()
+        && let Some(id) = added.get(&index).and_then(|added| added["id"].as_str())
+    {
+        item["id"] = Value::String(id.to_owned());
+    }
+}
+
 pub(super) fn metadata(namespace: &str, items: Value) -> Option<ProviderMetadata> {
     provider_namespace(
         namespace,
@@ -177,6 +199,25 @@ impl DeepSeekStream {
         }
     }
 
+    /// Record one finished item, and publish it when it is a server search.
+    /// Both `response.output_item.done` and the terminal `response.output`
+    /// report items, so one that only appears in the latter still reaches the
+    /// caller. The first report of an index wins; a repeated one is the same
+    /// item, not a second call.
+    fn record(&mut self, index: u64, item: Value, namespace: &str, controller: &mut Controller) {
+        if self.output.contains_key(&index) {
+            return;
+        }
+        let mut item = item;
+        recover_id(&mut item, index, &self.added);
+        if item["type"] == "web_search_call" {
+            let (call, result) = search_parts(&item, namespace, index);
+            controller.enqueue(StreamPart::ToolCall(call));
+            controller.enqueue(StreamPart::ToolResult(result));
+        }
+        self.output.insert(index, item);
+    }
+
     pub fn observe(&mut self, event: &Value, namespace: &str, controller: &mut Controller) {
         if !self.enabled {
             return;
@@ -189,18 +230,7 @@ impl DeepSeekStream {
             }
             Some("response.output_item.done") => {
                 if let Some(index) = event["output_index"].as_u64() {
-                    let mut item = event["item"].clone();
-                    if item["type"] == "web_search_call" {
-                        if item.get("id").is_none()
-                            && let Some(id) = self.added.get(&index).and_then(|item| item.get("id"))
-                        {
-                            item["id"] = id.clone();
-                        }
-                        let (call, result) = search_parts(&item, namespace, index);
-                        controller.enqueue(StreamPart::ToolCall(call));
-                        controller.enqueue(StreamPart::ToolResult(result));
-                    }
-                    self.output.insert(index, event["item"].clone());
+                    self.record(index, event["item"].clone(), namespace, controller);
                 }
             }
             Some("response.output_text.annotation.added") => {
@@ -230,9 +260,7 @@ impl DeepSeekStream {
                     .flatten()
                     .enumerate()
                 {
-                    self.output
-                        .entry(index as u64)
-                        .or_insert_with(|| item.clone());
+                    self.record(index as u64, item.clone(), namespace, controller);
                 }
             }
             _ => {}
@@ -248,5 +276,31 @@ impl DeepSeekStream {
                 )
             })
             .flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn enabled_options() -> CallOptions {
+        let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("q")]);
+        options.provider_options =
+            Some(serde_json::from_value(json!({"deepseek": {"deepseekWebSearch": true}})).unwrap());
+        options
+    }
+
+    // A request whose `tools` value is not an array is an argument error, not
+    // a panic.
+    #[test]
+    fn non_array_request_tools_is_an_invalid_argument() {
+        let mut body = json!({"model": MODEL, "tools": "deepseek_web_search"});
+        let error = prepare(MODEL, ENDPOINT, "deepseek", &enabled_options(), &mut body)
+            .expect_err("a non-array tools value is rejected");
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
+                if message == "deepseekWebSearch requires request tools to be an array"),
+            "unexpected error: {error:?}"
+        );
     }
 }

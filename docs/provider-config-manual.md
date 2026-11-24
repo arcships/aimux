@@ -59,7 +59,7 @@ await generateText(model, p, {
 
 搜索完成后返回 `providerExecuted: true` 的 `deepseek_web_search` tool call 及对应 tool result。result 保留整个原始 `web_search_call`，包括 status、action.sources、page、error 等字段；宿主不能将此调用当成本地函数执行。流式 URL citation 通过 `Source::Url` 返回，provider metadata 包含 `itemId`、`outputIndex`、`contentIndex`、`annotationIndex`、`startIndex`、`endIndex` 和 `offsetUnit: "unicode-code-point"`。偏移保留服务端的 Unicode 码点单位，不转换成 UTF-8 字节或 UTF-16 下标。
 
-生成结果的 `providerMetadata.deepseek.responseOutput`（流式则在 `Finish` 的 provider metadata）是 `{modelId, endpoint, items}` 的可持久化回放记录。将它放到后续 prompt 中**对应 assistant 消息**的 `providerOptions.deepseek.responseOutput`：
+生成结果的 `providerMetadata.deepseek.responseOutput`（流式则在 `Finish` 的 provider metadata）是 `{modelId, endpoint, items}` 的可持久化回放记录。只要请求走官方 `/responses` 路由且模型是 `deepseek-flash`，这条记录就会附带，包括没有传 `deepseekWebSearch`（或传 `false`）的调用——回放要用到 reasoning 条目的 `kind`、`signature` 等原始字段，它们不在普通 content 里。其他模型或 endpoint 的 `providerMetadata` 保持为 `null`。将它放到后续 prompt 中**对应 assistant 消息**的 `providerOptions.deepseek.responseOutput`：
 
 ```json
 {

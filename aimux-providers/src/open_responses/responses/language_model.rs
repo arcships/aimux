@@ -141,7 +141,10 @@ impl LanguageModel for OpenResponsesModel {
         validate_file_media(&options.prompt)?;
         let (mut body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
-        let deepseek_enabled = deepseek::prepare(
+        // Opt-in, validation and replay substitution; `true` means this request
+        // is on the official DeepSeek Responses route, so the raw output is the
+        // replay record even when search itself is off for this call.
+        let deepseek_compatible = deepseek::prepare(
             &self.model_id,
             &exchange.url("/responses"),
             &self.provider_options_name,
@@ -228,7 +231,7 @@ impl LanguageModel for OpenResponsesModel {
                             }
                         }
                     }
-                    "web_search_call" if deepseek_enabled => {
+                    "web_search_call" if deepseek_compatible => {
                         let (call, result) =
                             deepseek::search_parts(part, &self.provider_options_name, index as u64);
                         content.push(GenerateContent::ToolCall(call));
@@ -291,7 +294,7 @@ impl LanguageModel for OpenResponsesModel {
             finish_reason,
             usage,
             warnings,
-            provider_metadata: if deepseek_enabled {
+            provider_metadata: if deepseek_compatible {
                 deepseek::metadata(&self.provider_options_name, raw["output"].clone())
             } else {
                 None
@@ -310,7 +313,7 @@ impl LanguageModel for OpenResponsesModel {
         validate_file_media(&options.prompt)?;
         let (mut body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
-        let deepseek_enabled = deepseek::prepare(
+        let deepseek_compatible = deepseek::prepare(
             &self.model_id,
             &exchange.url("/responses"),
             &self.provider_options_name,
@@ -393,7 +396,7 @@ impl LanguageModel for OpenResponsesModel {
                 include_raw_chunks: options.include_raw_chunks == Some(true),
                 strict: options.strict_stream == Some(true),
                 terminal_seen: false,
-                deepseek: DeepSeekStream::new(deepseek_enabled),
+                deepseek: DeepSeekStream::new(deepseek_compatible),
             },
         );
 
