@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- iOS `aimux_ffi.xcframework` now ships dynamic `aimux_ffi.framework` (`cdylib`,
+  fat-LTO, `opt-level = "z"`, `@rpath/aimux_ffi.framework/aimux_ffi`) slices
+  instead of merged static archives, shrinking distributed iOS slices and
+  removing `-force_load` from the Flutter CocoaPods podspec.
 - `aimux_provider_utils::ExchangeKind` and `HttpRequest::generation_for(options)`
   (with `generation(timeout)` available to transport callers):
   mark a synchronous, billable generation exchange. Its hang guard defaults to
