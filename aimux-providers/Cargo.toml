@@ -53,7 +53,8 @@ tokio-tungstenite = { workspace = true }
 aimux-core = { workspace = true }
 serde_json = { workspace = true }
 base64 = "0.22"
-tokio = { workspace = true }
+# `test-util`: paused-clock tests of slow synchronous generations (#527).
+tokio = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
 futures = { workspace = true }
 serial_test = { workspace = true }

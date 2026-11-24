@@ -1,6 +1,7 @@
 package aimux
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -12,13 +13,29 @@ import (
 type Params map[string]json.RawMessage
 
 func validateJSON(name string, data []byte) error {
-	if !utf8.Valid(data) || !json.Valid(data) {
+	if !json.Valid(data) {
 		return localError("binding", 202, "InvalidWireJson", name+": invalid UTF-8 JSON")
 	}
-	if err := checkSurrogates(name, string(data)); err != nil {
+	return validateJSONText(name, data)
+}
+
+func validateJSONText(name string, data []byte) error {
+	if !utf8.Valid(data) {
+		return localError("binding", 202, "InvalidWireJson", name+": invalid UTF-8 JSON")
+	}
+	if err := checkSurrogates(name, data); err != nil {
 		return localError("binding", 202, "InvalidWireJson", err.Error())
 	}
 	return nil
+}
+
+// Unmarshal requires a complete JSON document, including the end of input.
+// encoding/json accepts invalid UTF-8 and surrogate halves, which the wire rejects.
+func decodeJSON(name string, data []byte, dst any) error {
+	if err := json.Unmarshal(data, dst); err != nil {
+		return err
+	}
+	return validateJSONText(name, data)
 }
 
 func encodeParams(op string, params any) ([]byte, error) {
@@ -29,7 +46,7 @@ func encodeParams(op string, params any) ([]byte, error) {
 	if err != nil {
 		return nil, localError("binding", 202, "InvalidWireJson", err.Error())
 	}
-	if err := validateJSON("params", data); err != nil {
+	if err := validateJSONText("params", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -37,14 +54,15 @@ func encodeParams(op string, params any) ([]byte, error) {
 
 // checkSurrogates rejects the \uXXXX escapes serde_json rejects but
 // encoding/json accepts: an unpaired surrogate half (json.Valid passes it,
-// then serde fails in C with a C ABI failure code). Runs after json.Valid, so
-// every backslash here is a well-formed escape inside a string.
-func checkSurrogates(param, s string) error {
-	for i := 0; i+1 < len(s); {
-		if s[i] != '\\' {
-			i++
-			continue
+// then serde fails in C with a C ABI failure code). The caller has already
+// checked JSON syntax through Marshal or decoding.
+func checkSurrogates(param string, s []byte) error {
+	for i := 0; i < len(s); {
+		next := bytes.IndexByte(s[i:], '\\')
+		if next == -1 {
+			break
 		}
+		i += next
 		if s[i+1] != 'u' {
 			i += 2 // \" \\ \/ \b \f \n \r \t — skip the escaped byte
 			continue
@@ -71,11 +89,11 @@ func checkSurrogates(param, s string) error {
 
 // hex4 reads the code point of a \uXXXX escape starting at s[i]; false when
 // s[i:] is not such an escape.
-func hex4(s string, i int) (int, bool) {
+func hex4(s []byte, i int) (int, bool) {
 	if i+6 > len(s) || s[i] != '\\' || s[i+1] != 'u' {
 		return 0, false
 	}
-	n, err := strconv.ParseUint(s[i+2:i+6], 16, 32)
+	n, err := strconv.ParseUint(string(s[i+2:i+6]), 16, 32)
 	if err != nil {
 		return 0, false
 	}

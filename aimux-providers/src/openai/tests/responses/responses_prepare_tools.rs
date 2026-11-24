@@ -18,7 +18,7 @@ fn prepare_with(
     let tool_choice: Option<LanguageModelV4ToolChoice> =
         tool_choice.map(|choice| serde_json::from_value(choice).unwrap());
     let prepared = prepare_responses_tools_for(
-        &tools,
+        tools.as_deref(),
         tool_choice.as_ref(),
         allowed_tools.as_ref(),
         supports_async,

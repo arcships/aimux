@@ -14196,7 +14196,7 @@ mod older_toolset {
         let fetch = MockFetch::new(vec![text_response()]);
         let options = CallOptions {
             max_output_tokens: Some(100),
-            tools,
+            tools: tools.map(Into::into),
             ..CallOptions::new(prompt)
         };
         let result = provider(&fetch)
@@ -14354,7 +14354,9 @@ mod older_toolset {
             }]))),
             text_response(),
         ]);
-        let tools = Some(vec![computer_tool("my_computer")]);
+        let tools = Some(std::sync::Arc::<[Tool]>::from([computer_tool(
+            "my_computer",
+        )]));
         let options = CallOptions {
             max_output_tokens: Some(100),
             tools: tools.clone(),
@@ -14403,7 +14405,7 @@ mod older_toolset {
         let fetch = MockFetch::new(vec![sse(events)]);
         let options = CallOptions {
             max_output_tokens: Some(100),
-            tools: Some(vec![computer_tool("my_computer")]),
+            tools: Some(vec![computer_tool("my_computer")].into()),
             ..CallOptions::new(vec![LanguageModelMessage::user_text("Click")])
         };
         provider(&fetch)
@@ -14723,10 +14725,13 @@ mod older_upstream_e2e {
         let fetch = MockFetch::new(vec![Canned::json(&response)]);
         let schema = json!({"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": false, "$schema": "http://json-schema.org/draft-07/schema#"});
         let mut options = options();
-        options.tools = Some(vec![Tool::Function(FunctionTool::new(
-            "test-tool",
-            schema.clone(),
-        ))]);
+        options.tools = Some(
+            vec![Tool::Function(FunctionTool::new(
+                "test-tool",
+                schema.clone(),
+            ))]
+            .into(),
+        );
         let result = provider(&fetch)
             .messages("test-model")
             .do_generate(&options)
@@ -15042,15 +15047,18 @@ mod older_remaining {
                     ),
                 },
             ]);
-            opts.tools = Some(vec![Tool::Function(
-                FunctionTool::new(
-                    "get_weather",
-                    json!({
-                        "type": "object", "properties": {"city": {"type": "string"}}
-                    }),
-                )
-                .with_description("Get weather"),
-            )]);
+            opts.tools = Some(
+                vec![Tool::Function(
+                    FunctionTool::new(
+                        "get_weather",
+                        json!({
+                            "type": "object", "properties": {"city": {"type": "string"}}
+                        }),
+                    )
+                    .with_description("Get weather"),
+                )]
+                .into(),
+            );
             model.do_generate(&opts).await.unwrap();
             let requests = fetch.seen();
             let body = requests[0].json_body();
@@ -15154,12 +15162,15 @@ mod older_remaining {
             "stop_sequence": null, "usage": { "input_tokens": 1, "output_tokens": 1 }
         }))]);
         let mut opts = default_options(test_prompt());
-        opts.tools = Some(vec![Tool::Provider(ProviderTool {
-            id: "anthropic.web_fetch_20250910".parse().unwrap(),
-            name: "web_fetch".to_string(),
-            args: serde_json::Map::new(),
-            supports_deferred_results: None,
-        })]);
+        opts.tools = Some(
+            vec![Tool::Provider(ProviderTool {
+                id: "anthropic.web_fetch_20250910".parse().unwrap(),
+                name: "web_fetch".to_string(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            })]
+            .into(),
+        );
         let result = make_model_with_config(settings(&fetch))
             .do_generate(&opts)
             .await
@@ -15285,12 +15296,15 @@ mod older_remaining {
         )
         .unwrap(),
     );
-        opts.tools = Some(vec![Tool::Provider(ProviderTool {
-            id: "anthropic.web_fetch_20250910".parse().unwrap(),
-            name: "web_fetch".to_string(),
-            args: serde_json::Map::new(),
-            supports_deferred_results: None,
-        })]);
+        opts.tools = Some(
+            vec![Tool::Provider(ProviderTool {
+                id: "anthropic.web_fetch_20250910".parse().unwrap(),
+                name: "web_fetch".to_string(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            })]
+            .into(),
+        );
         model.do_generate(&opts).await.unwrap();
         assert_eq!(
             fetch.seen()[0].headers["anthropic-beta"],
@@ -15326,12 +15340,15 @@ mod older_remaining {
             json!({ "type": "message_stop" }),
         ])]);
         let mut options = default_options(test_prompt());
-        options.tools = Some(vec![Tool::Provider(ProviderTool {
-            id: "anthropic.code_execution_20250825".parse().unwrap(),
-            name: "code_execution".to_string(),
-            args: serde_json::Map::new(),
-            supports_deferred_results: None,
-        })]);
+        options.tools = Some(
+            vec![Tool::Provider(ProviderTool {
+                id: "anthropic.code_execution_20250825".parse().unwrap(),
+                name: "code_execution".to_string(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            })]
+            .into(),
+        );
         let items = stream_items(&fetch, &options).await;
         let inputs: Vec<_> = items
             .iter()

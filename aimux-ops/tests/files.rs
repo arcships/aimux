@@ -452,7 +452,7 @@ fn files_descriptors_use_concrete_types_and_abort_metadata() {
     assert_eq!(upload.cancellation, Cancellation::Abort);
     assert_eq!(
         upload.runtime_handle_fields,
-        &[("abort", &[HandleKind::Abort][..])]
+        &[(&["abort"][..], &[HandleKind::Abort][..])]
     );
     assert_eq!(
         upload.request_byte_policy,

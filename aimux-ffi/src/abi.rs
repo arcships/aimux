@@ -1,17 +1,21 @@
-//! RFC-0039 synchronous C adapter. Callbacks borrow their frame only until return.
+//! C adapter for the synchronous and incremental async primitives.
 
 use std::ffi::{CStr, CString, c_char, c_void};
-use std::future::Future;
+use std::future::{Future, poll_fn};
+use std::panic::AssertUnwindSafe;
 use std::ptr;
 use std::sync::OnceLock;
+use std::task::Poll;
 use std::time::Duration;
 
-use aimux_ops::dispatch::PollResult;
-use aimux_ops::dispatch::{self, Ctx};
-use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError, ProtocolError, SourceError};
-use aimux_ops::frame::{Outcome, StreamFrame};
+use aimux_ops::dispatch::{self, Ctx, WireParams, WirePollResult};
+use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError, ProtocolError};
+#[cfg(test)]
+use aimux_ops::frame::StreamFrame;
+use aimux_ops::frame::{Outcome, WireFrame};
 use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
+#[cfg(test)]
 use serde_json::Value;
 use tokio::runtime::{Handle, Runtime};
 
@@ -23,6 +27,22 @@ pub struct aimux_error_t {
 
 type Result<T> = std::result::Result<T, OpsError>;
 type EventCallback = extern "C" fn(*const c_char, *mut c_void);
+type CallCallback = extern "C" fn(*mut c_char, *mut aimux_error_t, *mut c_void);
+type EventBatchCallback = extern "C" fn(*const *const c_char, usize, *mut c_void);
+
+const BATCH_FRAMES: usize = 64;
+
+struct CallbackContext(*mut c_void);
+
+// SAFETY: Rust only passes the opaque pointer back to the callback. The caller
+// guarantees that its context can be used on another thread until completion.
+unsafe impl Send for CallbackContext {}
+
+impl CallbackContext {
+    fn get(&self) -> *mut c_void {
+        self.0
+    }
+}
 
 fn null_pointer(argument: &'static str) -> OpsError {
     OpsError::Binding(BindingError::NullPointer { argument })
@@ -55,16 +75,6 @@ unsafe fn text<'a>(value: *const c_char, argument: &'static str) -> Result<&'a s
         .map_err(|_| OpsError::Binding(BindingError::InvalidUtf8 { argument }))
 }
 
-unsafe fn params(value: *const c_char) -> Result<Value> {
-    serde_json::from_str(unsafe { text(value, "params_json")? }).map_err(|error| {
-        OpsError::Binding(BindingError::InvalidWireJson {
-            argument: "params_json".into(),
-            message: error.to_string(),
-            cause: Some(SourceError::new(&error)),
-        })
-    })
-}
-
 unsafe fn clear_string(out: *mut *mut c_char, argument: &'static str) -> Result<()> {
     if out.is_null() {
         return Err(null_pointer(argument));
@@ -79,12 +89,8 @@ fn context(abort: u64) -> Result<Ctx> {
         abort: None,
     };
     if abort != 0 {
-        let entry = dispatch::resolve_secondary(
-            HandleRegistry::global(),
-            &ctx,
-            &Value::String(abort.to_string()),
-            &[HandleKind::Abort],
-        )?;
+        let entry =
+            HandleRegistry::global().get(ctx.owner, HandleId(abort), &[HandleKind::Abort])?;
         if let Entry::Abort(signal) = entry {
             ctx.abort = Some((*signal).clone());
         }
@@ -142,62 +148,83 @@ pub extern "C" fn aimux_call(
     finish((|| {
         unsafe { clear_string(out_json, "out_json")? };
         let op = unsafe { text(op, "op")? };
-        let params = unsafe { params(params_json)? };
-        let value = block_on(async {
-            dispatch::call(context(abort)?, HandleId(handle), op, params).await
+        let params = WireParams::new(
+            unsafe { text(params_json, "params_json")? }.as_bytes(),
+            "params_json",
+        );
+        let result = block_on(async {
+            let ctx = context(abort)?;
+            dispatch::call_wire(ctx, HandleId(handle), op, params).await
         })?;
-        let json = json_string(&value)?;
+        let json = CString::new(result).map_err(serialization)?;
         unsafe { *out_json = json.into_raw() };
         Ok(())
     })())
 }
 
+fn invalid_state(message: &str) -> OpsError {
+    OpsError::Protocol(ProtocolError::InvalidState(message.into()))
+}
+
+/// Submit a call. Accepted submissions transfer one owned result or error to the callback.
+#[must_use]
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_call_async(
+    handle: u64,
+    op: *const c_char,
+    params_json: *const c_char,
+    abort: u64,
+    on_complete: Option<CallCallback>,
+    user_data: *mut c_void,
+) -> *mut aimux_error_t {
+    finish((|| {
+        let callback = on_complete.ok_or_else(|| null_pointer("on_complete"))?;
+        let op = unsafe { text(op, "op")? };
+        let params = unsafe { text(params_json, "params_json")? };
+        let ctx = context(abort)?;
+        let op = op.to_owned();
+        let params = params.to_owned();
+        let user_data = CallbackContext(user_data);
+        runtime()?.spawn(async move {
+            let params = WireParams::new(params.as_bytes(), "params_json");
+            let result = AssertUnwindSafe(dispatch::call_wire(ctx, HandleId(handle), &op, params))
+                .catch_unwind()
+                .await
+                .unwrap_or_else(|_| Err(invalid_state("async call panicked")))
+                .and_then(|json| CString::new(json).map_err(serialization));
+            match result {
+                Ok(json) => callback(json.into_raw(), ptr::null_mut(), user_data.get()),
+                Err(error) => callback(ptr::null_mut(), finish(Err(error)), user_data.get()),
+            }
+        });
+        Ok(())
+    })())
+}
+
 async fn deliver_frames(
-    frames: impl Stream<Item = StreamFrame>,
+    frames: impl Stream<Item = WireFrame>,
     callback: EventCallback,
     context: *mut c_void,
 ) -> Result<()> {
     futures::pin_mut!(frames);
-    let mut next_seq = 0_u64;
     while let Some(frame) = frames.next().await {
-        let terminal = matches!(frame, StreamFrame::End { .. });
-        let (StreamFrame::Event { seq, .. } | StreamFrame::End { seq, .. }) = &frame;
-        if let Ok(seq) = seq.parse::<u64>() {
-            next_seq = seq.saturating_add(1);
-        }
-        // Frame serialization is infallible for the dispatcher's JSON payloads.
-        // If a future serializer changes that, still end the accepted stream.
-        let json = match json_string(&frame) {
-            Ok(json) => json,
-            Err(error) => {
-                let end = StreamFrame::End {
-                    seq: match frame {
-                        StreamFrame::Event { seq, .. } | StreamFrame::End { seq, .. } => seq,
-                    },
-                    outcome: Outcome::Error,
-                    error: Some(error.envelope()),
-                };
-                let json = json_string(&end)?;
+        match frame {
+            WireFrame::Event { json, .. } => {
+                let json = CString::new(json).map_err(serialization)?;
+                callback(json.as_ptr(), context);
+            }
+            WireFrame::End {
+                seq,
+                outcome,
+                error,
+            } => {
+                let json = CString::new(WireFrame::encode_end(seq, outcome, error)?)
+                    .map_err(serialization)?;
                 callback(json.as_ptr(), context);
                 return Ok(());
             }
-        };
-        callback(json.as_ptr(), context);
-        if terminal {
-            return Ok(());
         }
     }
-    // Keep accepted failures in the terminal callback even if dispatch breaks its invariant.
-    let error = OpsError::Protocol(ProtocolError::InvalidState(
-        "accepted stream ended without an End frame".into(),
-    ));
-    let end = StreamFrame::End {
-        seq: next_seq.to_string(),
-        outcome: Outcome::Error,
-        error: Some(error.envelope()),
-    };
-    let json = json_string(&end)?;
-    callback(json.as_ptr(), context);
     Ok(())
 }
 
@@ -215,11 +242,124 @@ pub extern "C" fn aimux_stream(
     finish((|| {
         let callback = on_event.ok_or_else(|| null_pointer("on_event"))?;
         let op = unsafe { text(op, "op")? };
-        let params = unsafe { params(params_json)? };
+        let params = WireParams::new(
+            unsafe { text(params_json, "params_json")? }.as_bytes(),
+            "params_json",
+        );
         block_on(async {
-            let frames = dispatch::stream(context(abort)?, HandleId(handle), op, params)?;
-            deliver_frames(frames, callback, context_ptr).await
+            let ctx = context(abort)?;
+            let frames = dispatch::stream_wire(ctx, HandleId(handle), op, params)?;
+            deliver_frames(frames.into_wire(), callback, context_ptr).await
         })
+    })())
+}
+
+async fn deliver_frame_batches(
+    frames: impl Stream<Item = WireFrame> + Send,
+    callback: EventBatchCallback,
+    user_data: CallbackContext,
+) {
+    let frames = AssertUnwindSafe(frames).catch_unwind();
+    futures::pin_mut!(frames);
+    let mut batch = Vec::with_capacity(BATCH_FRAMES);
+    let mut next_seq = 0;
+    let terminal = loop {
+        // Wait for one frame and poll only immediately ready frames after it,
+        // with the task's real waker. Keep the terminal out of the data batch.
+        let mut frame = frames.next().await;
+        let mut batch_bytes = 0;
+        let terminal = loop {
+            match frame {
+                Some(Ok(WireFrame::Event { seq, json })) => {
+                    next_seq = seq.saturating_add(1);
+                    batch_bytes += json.len();
+                    batch.push(CString::new(json).expect("wire JSON contains no raw NUL"));
+                }
+                Some(Ok(end @ WireFrame::End { .. })) => break Some(end),
+                other => {
+                    let error = invalid_state(if other.is_none() {
+                        "accepted stream ended without an End frame"
+                    } else {
+                        "async stream panicked"
+                    });
+                    break Some(WireFrame::End {
+                        seq: next_seq.to_string(),
+                        outcome: Outcome::Error,
+                        error: Some(error.envelope()),
+                    });
+                }
+            }
+            // Bound retained native bytes for streams of large events too.
+            if batch.len() == BATCH_FRAMES || batch_bytes >= aimux_ops::limits::ITEM_BYTES {
+                break None;
+            }
+            match poll_fn(|cx| Poll::Ready(frames.poll_next_unpin(cx))).await {
+                Poll::Ready(next) => frame = next,
+                Poll::Pending => break None,
+            }
+        };
+        if !batch.is_empty() {
+            // A foreign consumer may apply backpressure. Let Tokio replace
+            // this worker while the callback is running.
+            tokio::task::block_in_place(|| {
+                let mut pointers = [ptr::null(); BATCH_FRAMES];
+                for (pointer, json) in pointers.iter_mut().zip(&batch) {
+                    *pointer = json.as_ptr();
+                }
+                callback(pointers.as_ptr(), batch.len(), user_data.get());
+            });
+            batch.clear();
+        }
+        if let Some(terminal) = terminal {
+            break terminal;
+        }
+        tokio::task::consume_budget().await;
+    };
+    let WireFrame::End {
+        seq,
+        outcome,
+        error,
+    } = terminal
+    else {
+        unreachable!("only End frames can terminate delivery");
+    };
+    let json = WireFrame::encode_end(seq, outcome, error).expect("bounded End frame serializes");
+    let json = CString::new(json).expect("wire JSON contains no raw NUL");
+    tokio::task::block_in_place(|| callback(&json.as_ptr(), 1, user_data.get()));
+}
+
+/// Accept a stream synchronously, then deliver borrowed batches on the shared runtime.
+#[must_use]
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_stream_async(
+    handle: u64,
+    op: *const c_char,
+    params_json: *const c_char,
+    abort: u64,
+    on_batch: Option<EventBatchCallback>,
+    user_data: *mut c_void,
+) -> *mut aimux_error_t {
+    finish((|| {
+        let callback = on_batch.ok_or_else(|| null_pointer("on_batch"))?;
+        let op = unsafe { text(op, "op")? };
+        let params = WireParams::new(
+            unsafe { text(params_json, "params_json")? }.as_bytes(),
+            "params_json",
+        );
+        let ctx = context(abort)?;
+        let runtime = runtime()?;
+        // Entering supplies the runtime context for admission without waiting
+        // on any task. Dispatch returns an owned stream before we spawn it.
+        let frames = {
+            let _entered = runtime.enter();
+            dispatch::stream_wire(ctx, HandleId(handle), op, params)?.into_wire()
+        };
+        runtime.spawn(deliver_frame_batches(
+            frames,
+            callback,
+            CallbackContext(user_data),
+        ));
+        Ok(())
     })())
 }
 
@@ -281,7 +421,7 @@ pub extern "C" fn aimux_operation_next_part(
             ))
         })?;
         let result = block_on(async {
-            dispatch::operation_next(
+            dispatch::operation_next_json(
                 &context(0)?,
                 HandleId(operation),
                 Duration::from_millis(timeout),
@@ -289,9 +429,11 @@ pub extern "C" fn aimux_operation_next_part(
             .await
         })?;
         let (part, state) = match result {
-            PollResult::Part(part) => (json_string(&part)?.into_raw(), 1),
-            PollResult::Ended => (ptr::null_mut(), 2),
-            PollResult::Timeout => (ptr::null_mut(), 3),
+            WirePollResult::Part(part) => {
+                (CString::new(part).map_err(serialization)?.into_raw(), 1)
+            }
+            WirePollResult::Ended => (ptr::null_mut(), 2),
+            WirePollResult::Timeout => (ptr::null_mut(), 3),
         };
         unsafe {
             *out_part = part;
@@ -386,6 +528,65 @@ mod tests {
     use std::sync::Arc;
 
     #[derive(Default)]
+    struct Batches {
+        sizes: Vec<usize>,
+        frames: Vec<(usize, Value)>,
+        abort: u64,
+    }
+
+    extern "C" fn collect_batch(frames: *const *const c_char, count: usize, data: *mut c_void) {
+        let batches = unsafe { &mut *data.cast::<Batches>() };
+        batches.sizes.push(count);
+        for &frame in unsafe { std::slice::from_raw_parts(frames, count) } {
+            let bytes = unsafe { CStr::from_ptr(frame) }.to_bytes();
+            batches
+                .frames
+                .push((bytes.len(), serde_json::from_slice(bytes).unwrap()));
+        }
+        if batches.abort != 0 {
+            aimux_abort(batches.abort);
+        }
+    }
+
+    fn batch_events(
+        events: impl Stream<Item = std::result::Result<Value, OpsError>> + Send + 'static,
+        abort: Option<aimux_core::AbortSignal>,
+        batches: &mut Batches,
+    ) {
+        runtime().unwrap().block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                deliver_frame_batches(
+                    dispatch::FrameStream::new(Box::pin(events), abort).into_wire(),
+                    collect_batch,
+                    CallbackContext(std::ptr::from_mut(batches).cast()),
+                ),
+            )
+            .await
+            .expect("callbacks must complete without waiting to fill a batch");
+        });
+    }
+
+    #[test]
+    fn burst_batches_are_capped_and_terminal_is_standalone_and_ordered() {
+        let mut batches = Batches::default();
+        batch_events(
+            futures::stream::iter((0..200).map(|i| Ok(serde_json::json!({"text": i})))),
+            None,
+            &mut batches,
+        );
+        assert_eq!(batches.sizes, [64, 64, 64, 8, 1]);
+        for (seq, (_, event)) in batches.frames[..200].iter().enumerate() {
+            assert_eq!(event["seq"], seq.to_string());
+            assert_eq!(event["event"]["text"], seq);
+        }
+        assert_eq!(
+            batches.frames[200].1,
+            serde_json::json!({"type":"end","seq":"200","outcome":"success"})
+        );
+    }
+
+    #[derive(Default)]
     struct Consumer {
         frames: Vec<Value>,
         abort: u64,
@@ -452,7 +653,7 @@ mod tests {
         ]);
         assert!(
             block_on(deliver_frames(
-                frames,
+                frames.map(|frame| WireFrame::encode(frame).expect("test frame fits")),
                 consume,
                 (&mut consumer as *mut Consumer).cast()
             ))
@@ -468,31 +669,28 @@ mod tests {
     }
 
     #[test]
-    fn terminal_error_is_only_in_callback_and_missing_end_is_reported_there() {
-        for frames in [
-            vec![StreamFrame::End {
-                seq: "0".into(),
-                outcome: Outcome::Error,
-                error: Some(
-                    OpsError::Protocol(ProtocolError::InvalidState("failed".into())).envelope(),
-                ),
-            }],
-            vec![],
-        ] {
-            let mut consumer = Consumer::default();
-            assert!(
-                block_on(deliver_frames(
-                    futures::stream::iter(frames),
-                    consume,
-                    (&mut consumer as *mut Consumer).cast()
-                ))
-                .is_ok()
-            );
-            assert_eq!(consumer.frames.len(), 1);
-            assert_eq!(consumer.frames[0]["type"], "end");
-            assert_eq!(consumer.frames[0]["outcome"], "error");
-            assert_eq!(consumer.frames[0]["error"]["code"], 304);
-        }
+    fn terminal_error_is_delivered_only_in_callback() {
+        let frames = vec![StreamFrame::End {
+            seq: "0".into(),
+            outcome: Outcome::Error,
+            error: Some(
+                OpsError::Protocol(ProtocolError::InvalidState("failed".into())).envelope(),
+            ),
+        }];
+        let mut consumer = Consumer::default();
+        assert!(
+            block_on(deliver_frames(
+                futures::stream::iter(frames)
+                    .map(|frame| WireFrame::encode(frame).expect("test frame fits")),
+                consume,
+                (&mut consumer as *mut Consumer).cast()
+            ))
+            .is_ok()
+        );
+        assert_eq!(consumer.frames.len(), 1);
+        assert_eq!(consumer.frames[0]["type"], "end");
+        assert_eq!(consumer.frames[0]["outcome"], "error");
+        assert_eq!(consumer.frames[0]["error"]["code"], 304);
     }
 
     struct EchoTranscription;
@@ -548,6 +746,49 @@ mod tests {
                 })
             }))
         }
+    }
+
+    #[test]
+    fn raw_abort_id_cancels_ffi_call_and_preserves_preflight_errors() {
+        let registry = HandleRegistry::global();
+        let model = registry
+            .insert(
+                Owner::CProcess,
+                Entry::Transcription(Arc::new(EchoTranscription)),
+            )
+            .unwrap();
+        let signal = Arc::new(aimux_core::AbortSignal::new());
+        let abort = registry
+            .insert(Owner::CProcess, Entry::Abort(signal.clone()))
+            .unwrap();
+        let foreign_owner = Owner::new_node().unwrap();
+        let foreign = registry
+            .insert(foreign_owner, Entry::Abort(signal))
+            .unwrap();
+        aimux_abort(abort.0);
+
+        for (abort_id, params, code) in [
+            (abort.0, c"{}", 13),
+            (model.0, c"{}", 203),
+            (foreign.0, c"{}", 203),
+            (u64::MAX, c"{}", 203),
+        ] {
+            let mut output = ptr::dangling_mut();
+            let error = aimux_call(
+                model.0,
+                c"transcription.start".as_ptr(),
+                params.as_ptr(),
+                abort_id,
+                &mut output,
+            );
+            assert_eq!(aimux_error_code(error), code);
+            assert!(output.is_null());
+            aimux_error_free(error);
+        }
+
+        aimux_drop(abort.0);
+        aimux_drop(model.0);
+        registry.release_owner(foreign_owner);
     }
 
     #[test]

@@ -26,7 +26,8 @@ export declare class Abort {
  * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Iteration_protocols#the_async_iterator_and_async_iterable_protocols
  */
 export declare class FrameIterator {
-
+  /** Drain ready data after waiting for at most the first frame. */
+  nextBatch(): Promise<string[]>
   [globalThis.Symbol.asyncIterator](): globalThis.__NapiRsAsyncGenerator<FrameIterator, WireResult<string>, void, undefined>
 }
 
@@ -35,6 +36,8 @@ export declare class Runtime {
   constructor()
   /** Nonblocking release for explicit disposal and JS finalization. */
   dropHandle(id: string): WireResult<undefined>
+  abiVersion(): number
+  opsVersion(): string
   manifestJson(): WireResult<string>
   manifestDigest(): string
   call(id: string, op: string, paramsJson: string, abort?: Abort | undefined | null): Promise<string>

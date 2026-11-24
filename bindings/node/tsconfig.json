@@ -11,7 +11,7 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/index.ts", "src/native.ts", "src/types.ts", "src/error.ts"]
 }

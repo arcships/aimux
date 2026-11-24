@@ -264,7 +264,9 @@ final class _NativeStreamProducer implements BlockingStreamProducer {
       } finally {
         bridge.frameFree(pointer);
         bridge.ack(context);
-        if (producerDone && !drained.isCompleted) drained.complete();
+        if (producerDone && bridge.pending(context) == 0) {
+          drained.complete();
+        }
       }
     }
 
@@ -335,7 +337,9 @@ Stream<StreamFrame> _stream(
         request: _StreamRequest(client._libraryPath, client._bridgePath, handle,
             abortId, op, params),
         abort: () => client._native.ffi.abort(abortId),
-        credits: 1,
+        // At most 3 native notifications and 1 blocked callback can also
+        // hold a frame (aimux_dart.c). Together these reserve 8 MiB.
+        credits: 4,
       );
       subscription = bridge.stream.listen(
         (json) => controller.add(

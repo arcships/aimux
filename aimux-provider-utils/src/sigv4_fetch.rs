@@ -504,6 +504,14 @@ impl Fetch for SigV4Fetch {
         }
         self.inner.fetch(request).await
     }
+
+    fn protects_sigv4_headers(&self) -> bool {
+        true
+    }
+
+    fn protected_header_names(&self) -> Vec<http::HeaderName> {
+        self.inner.protected_header_names()
+    }
 }
 
 /// The transport of an AI SDK AWS provider (`amazon-bedrock-sigv4-fetch.ts`,
@@ -584,6 +592,17 @@ impl Fetch for SigV4AuthFetch {
         } else {
             self.signing.fetch(request).await
         }
+    }
+
+    fn protects_sigv4_headers(&self) -> bool {
+        true
+    }
+
+    fn protected_header_names(&self) -> Vec<http::HeaderName> {
+        let mut names = self.signing.protected_header_names();
+        names.extend(self.inner.protected_header_names());
+        names.push(self.api_key_header.clone());
+        names
     }
 }
 

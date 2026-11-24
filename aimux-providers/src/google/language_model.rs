@@ -27,7 +27,10 @@ use aimux_core::types::{
 };
 use aimux_provider_utils::{Transformer, pipe_through};
 
-use super::api_types::{Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk};
+use super::api_types::{
+    Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk, StreamContentPart,
+    StreamText,
+};
 use super::convert_to_messages::convert_to_google_messages_for_namespace;
 use super::convert_usage::convert_usage;
 use super::json_accumulator::{GoogleJsonAccumulator, PartialArg};
@@ -257,7 +260,7 @@ impl LanguageModel for GoogleModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(endpoint.clone(), options),
             body.clone(),
-            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            aimux_provider_utils::create_raw_event_source_response_handler(),
             super::google_failed_response_handler(),
         )
         .await?;
@@ -331,15 +334,15 @@ struct GoogleLanguageModelStream {
 }
 
 impl GoogleLanguageModelStream {
-    fn transform_chunk(&mut self, chunk: Box<StreamChunk>, controller: &mut Controller) {
+    fn transform_chunk(&mut self, chunk: StreamChunk<'_>, controller: &mut Controller) {
         // Emit ResponseMetadata from the first chunk that has
         // a responseId (matches TS behaviour).
         if !self.response_metadata_emitted
-            && let Some(id) = &chunk.response_id
+            && let Some(id) = chunk.response_id
         {
             self.response_metadata_emitted = true;
             controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: Some(id.clone()),
+                id: Some(id.into_owned()),
                 timestamp: None,
                 model_id: None,
             }));
@@ -409,13 +412,17 @@ impl GoogleLanguageModelStream {
             }
         }
 
-        if let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) {
+        if let Some(parts) = candidate.content.and_then(|c| c.parts) {
             for part in parts {
+                let StreamContentPart::Object { text, fields: part } = part else {
+                    continue;
+                };
                 // thoughtSignature → provider_metadata (upstream :778-782)
-                let thought_sig_meta = thought_signature_metadata(self.namespace, part);
+                let signature = part.get("thoughtSignature").and_then(Value::as_str);
+                let thought_sig_meta = thought_signature_metadata(self.namespace, signature);
 
                 // text part
-                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                if let Some(text) = text.and_then(StreamText::into_text) {
                     // An empty part is kept when it carries a signature (#467).
                     if !text.is_empty() || thought_sig_meta.is_some() {
                         let is_thought = part
@@ -438,7 +445,7 @@ impl GoogleLanguageModelStream {
                             if let Some(id) = &self.reasoning_id {
                                 controller.enqueue(StreamPart::ReasoningDelta {
                                     id: id.clone(),
-                                    delta: text.to_string(),
+                                    delta: text.into_owned(),
                                     provider_metadata: thought_sig_meta.clone(),
                                 });
                             }
@@ -459,7 +466,7 @@ impl GoogleLanguageModelStream {
                             if let Some(id) = &self.text_id {
                                 controller.enqueue(StreamPart::TextDelta {
                                     id: id.clone(),
-                                    delta: text.to_string(),
+                                    delta: text.into_owned(),
                                     provider_metadata: thought_sig_meta.clone(),
                                 });
                             }
@@ -526,12 +533,8 @@ impl GoogleLanguageModelStream {
                         .unwrap_or_else(|| (self.ctx.generate_id)());
                     self.last_server_tool_call_id = Some(id.clone());
                     let args = tc.get("args").cloned().unwrap_or(json!({}));
-                    let server_meta = server_tool_metadata(
-                        self.namespace,
-                        &id,
-                        tool_type,
-                        part.get("thoughtSignature").and_then(|v| v.as_str()),
-                    );
+                    let server_meta =
+                        server_tool_metadata(self.namespace, &id, tool_type, signature);
                     controller.enqueue(StreamPart::ToolCall(RawToolCall {
                         tool_call_id: id,
                         tool_name: format!("server:{tool_type}"),
@@ -555,12 +558,8 @@ impl GoogleLanguageModelStream {
                         .filter(|id| !id.is_empty())
                         .unwrap_or_else(|| (self.ctx.generate_id)());
                     let response = tr.get("response").cloned().unwrap_or(json!({}));
-                    let server_meta = server_tool_metadata(
-                        self.namespace,
-                        &id,
-                        tool_type,
-                        part.get("thoughtSignature").and_then(|v| v.as_str()),
-                    );
+                    let server_meta =
+                        server_tool_metadata(self.namespace, &id, tool_type, signature);
                     controller.enqueue(StreamPart::ToolResult(ToolResult {
                         tool_call_id: id,
                         tool_name: format!("server:{tool_type}"),
@@ -608,7 +607,7 @@ impl GoogleLanguageModelStream {
                     if let Some(id) = self.reasoning_id.take() {
                         controller.reasoning_end(id);
                     }
-                    if !self.function_call(call, part, controller) {
+                    if !self.function_call(call, thought_sig_meta, controller) {
                         return;
                     }
                 }
@@ -633,13 +632,17 @@ impl GoogleLanguageModelStream {
     /// or a name with `willContinue`), the empty chunk that ends a streamed
     /// call, or a complete call. `false` when the arguments cannot be
     /// accumulated, which ends the stream.
-    fn function_call(&mut self, call: &Value, part: &Value, controller: &mut Controller) -> bool {
+    fn function_call(
+        &mut self,
+        call: &Value,
+        metadata: Option<ProviderMetadata>,
+        controller: &mut Controller,
+    ) -> bool {
         let field = |name: &str| call.get(name).filter(|value| !value.is_null());
         let name = field("name").and_then(Value::as_str);
         let args = field("args");
         let partial_args = field("partialArgs");
         let will_continue = field("willContinue").and_then(Value::as_bool);
-        let metadata = thought_signature_metadata(self.namespace, part);
         let id = || {
             field("id")
                 .and_then(Value::as_str)
@@ -764,18 +767,24 @@ impl GoogleLanguageModelStream {
 }
 
 impl Transformer for GoogleLanguageModelStream {
-    type Input = Result<Value, AiMuxError>;
+    type Input = Result<String, AiMuxError>;
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
-        let event = match event {
-            Ok(raw_value) => {
-                self.ctx.raw(&raw_value, controller);
-                serde_json::from_value::<GoogleStreamEvent>(raw_value).map_err(AiMuxError::from)
+    fn transform(&mut self, item: Self::Input, controller: &mut Controller) {
+        let event = match item {
+            Ok(ref data) => {
+                let (raw, event) = crate::stream::decode_sse_event::<GoogleStreamEvent<'_>>(
+                    data,
+                    self.ctx.include_raw_chunks,
+                );
+                if let Some(raw) = &raw {
+                    self.ctx.raw(raw, controller);
+                }
+                event
             }
             Err(error) => Err(error),
         };
@@ -868,9 +877,11 @@ impl GoogleLanguageModelStream {
 
 /// `{ thoughtSignature }` under the namespace keys, when the part carries a
 /// non-empty signature.
-fn thought_signature_metadata(namespace: Namespace, part: &Value) -> Option<ProviderMetadata> {
-    part.get("thoughtSignature")
-        .and_then(Value::as_str)
+fn thought_signature_metadata(
+    namespace: Namespace,
+    signature: Option<&str>,
+) -> Option<ProviderMetadata> {
+    signature
         .filter(|signature| !signature.is_empty())
         .map(|signature| namespace.metadata(json!({ "thoughtSignature": signature })))
 }
@@ -940,7 +951,10 @@ fn extract_content_from_candidate(
     if let Some(parts) = parts {
         for part in parts {
             // thoughtSignature → provider_metadata (upstream :448-451)
-            let thought_sig_meta = thought_signature_metadata(namespace, part);
+            let thought_sig_meta = thought_signature_metadata(
+                namespace,
+                part.get("thoughtSignature").and_then(Value::as_str),
+            );
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall
@@ -1488,7 +1502,11 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
         }
     }
 
-    let prepared = prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id);
+    let prepared = prepare_all_tools(
+        options.tools.as_deref(),
+        options.tool_choice.as_ref(),
+        model_id,
+    );
     if let Some(tools) = prepared.tools {
         body.insert("tools".to_string(), Value::Array(tools));
     }

@@ -446,6 +446,6 @@ fn registrations_publish_complete_metadata() {
         dispatch::descriptor("middleware.create")
             .unwrap()
             .runtime_handle_fields,
-        [("traceStore", &[HandleKind::TraceStore][..])]
+        [(&["traceStore"][..], &[HandleKind::TraceStore][..])]
     );
 }

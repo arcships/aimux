@@ -267,8 +267,16 @@ impl OpenAIModelConfig {
         &self,
         call_headers: Option<&HashMap<String, String>>,
     ) -> Result<Vec<(String, String)>, AiMuxError> {
+        let [provider, call] = self.request_header_layers(call_headers).await?;
+        Ok(normalize_headers(combine_headers(&[&provider, &call])))
+    }
+
+    pub(crate) async fn request_header_layers(
+        &self,
+        call_headers: Option<&HashMap<String, String>>,
+    ) -> Result<[HeaderMapOpt; 2], AiMuxError> {
         let provider = self.headers.resolve().await?;
-        let call: HeaderMapOpt = call_headers
+        let mut call: HeaderMapOpt = call_headers
             .map(|headers| {
                 headers
                     .iter()
@@ -276,18 +284,22 @@ impl OpenAIModelConfig {
                     .collect()
             })
             .unwrap_or_default();
-        let mut headers = combine_headers(&[&provider, &call]);
-        if let Some(token) = &self.token_provider
-            && !headers
-                .iter()
-                .any(|(name, value)| name.eq_ignore_ascii_case("authorization") && value.is_some())
-        {
-            headers.insert(
-                "authorization".to_string(),
-                Some(format!("Bearer {}", token.resolve().await?)),
-            );
+        if let Some(token) = &self.token_provider {
+            let authorization = [&call, &provider].into_iter().find_map(|layer| {
+                layer
+                    .iter()
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                    .max_by_key(|(name, _)| *name)
+                    .map(|(_, value)| value)
+            });
+            if authorization.is_none_or(Option::is_none) {
+                call.insert(
+                    "authorization".to_string(),
+                    Some(format!("Bearer {}", token.resolve().await?)),
+                );
+            }
         }
-        Ok(normalize_headers(headers))
+        Ok([provider, call])
     }
 
     /// An exchange that inherits the operation's cancellation and recording

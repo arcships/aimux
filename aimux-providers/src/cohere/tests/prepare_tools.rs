@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 /// upstream: @ai-sdk/cohere src/cohere-prepare-tools.test.ts › should return undefined tools when no tools are provided
 #[test]
 fn should_return_undefined_tools_when_no_tools_are_provided() {
-    let result = prepare_tools(&Some(Vec::new()), None);
+    let result = prepare_tools(Some(&[]), None);
 
     assert_eq!(result.tools, None);
     assert_eq!(result.tool_choice, None);
@@ -31,7 +31,7 @@ fn should_process_function_tools_correctly() {
         .with_description("test description"),
     );
 
-    let result = prepare_tools(&Some(vec![function_tool]), None);
+    let result = prepare_tools(Some(&[function_tool]), None);
 
     assert_eq!(
         result.tools,
@@ -58,7 +58,7 @@ fn should_add_warnings_for_provider_defined_tools() {
         supports_deferred_results: None,
     });
 
-    let result = prepare_tools(&Some(vec![provider_tool]), None);
+    let result = prepare_tools(Some(&[provider_tool]), None);
 
     // Inline snapshot: `toolChoice: undefined`, `tools: []`, and one
     // unsupported warning with no `details`.
@@ -103,7 +103,7 @@ mod tool_choice_handling {
     #[test]
     fn should_handle_auto_tool_choice() {
         let result = prepare_tools(
-            &Some(vec![basic_tool()]),
+            Some(&[basic_tool()]),
             Some(&LanguageModelV4ToolChoice::Auto),
         );
 
@@ -114,7 +114,7 @@ mod tool_choice_handling {
     #[test]
     fn should_handle_none_tool_choice() {
         let result = prepare_tools(
-            &Some(vec![basic_tool()]),
+            Some(&[basic_tool()]),
             Some(&LanguageModelV4ToolChoice::None),
         );
 
@@ -127,7 +127,7 @@ mod tool_choice_handling {
     #[test]
     fn should_handle_required_tool_choice() {
         let result = prepare_tools(
-            &Some(vec![basic_tool()]),
+            Some(&[basic_tool()]),
             Some(&LanguageModelV4ToolChoice::Required),
         );
 
@@ -140,7 +140,7 @@ mod tool_choice_handling {
     #[test]
     fn should_handle_tool_type_tool_choice_by_filtering_tools() {
         let result = prepare_tools(
-            &Some(vec![basic_tool()]),
+            Some(&[basic_tool()]),
             Some(&LanguageModelV4ToolChoice::Tool {
                 tool_name: "testFunction".into(),
             }),

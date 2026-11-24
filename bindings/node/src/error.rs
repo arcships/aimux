@@ -1,6 +1,8 @@
 //! Project the shared envelope once, then materialize it on the JS thread.
 
-use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError, SourceError};
+#[cfg(feature = "contract-tests")]
+use aimux_ops::envelope::SourceError;
+use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError};
 use napi::bindgen_prelude::*;
 use napi::{Env, sys};
 
@@ -10,6 +12,7 @@ pub(crate) fn envelope(error: OpsError) -> ErrorEnvelope {
     error.envelope()
 }
 
+#[cfg(feature = "contract-tests")]
 pub(crate) fn parse(
     argument: &str,
     json: &str,
@@ -27,7 +30,9 @@ pub(crate) fn serialize(
     value: &impl serde::Serialize,
 ) -> std::result::Result<String, ErrorEnvelope> {
     serde_json::to_string(value).map_err(|error| {
-        envelope(OpsError::Binding(BindingError::result_serialization(&error)))
+        envelope(OpsError::Binding(BindingError::result_serialization(
+            &error,
+        )))
     })
 }
 

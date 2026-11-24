@@ -41,9 +41,10 @@ pub(crate) struct MessageResponse {
     #[serde(default)]
     pub reasoning_content: Option<String>,
     /// Refusal text (OpenAI Chat `refusal`), visible output like `content`
-    /// (#461).
+    /// (#461). Raw JSON: a compatible server may send a non-string here, which
+    /// reads as no refusal.
     #[serde(default)]
-    pub refusal: Option<String>,
+    pub refusal: Option<Value>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCallResponse>>,
     /// Annotations (URL citations), kept as raw JSON.
@@ -132,9 +133,10 @@ pub(crate) struct Delta {
     #[serde(default)]
     pub reasoning_content: Option<String>,
     /// Refusal text (OpenAI Chat `refusal`), visible output like `content`
-    /// (#461).
+    /// (#461). Raw JSON: a compatible server may send a non-string here, which
+    /// reads as no refusal.
     #[serde(default)]
-    pub refusal: Option<String>,
+    pub refusal: Option<Value>,
     #[serde(default)]
     pub tool_calls: Option<Vec<DeltaToolCall>>,
     #[serde(default)]

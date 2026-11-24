@@ -106,6 +106,71 @@ fn read_recording(directory: &std::path::Path) -> Recording {
 
 #[tokio::test]
 #[serial]
+async fn records_layered_headers_with_transport_precedence_and_redaction() {
+    use aimux_provider_utils::{HttpBody, post_to_api_with_header_layers};
+    use wiremock::matchers::{header, header_exists};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/layered"))
+        .and(header("x-test", "latest"))
+        .and(header("authorization", "Bearer sentinel"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(header_exists("x-deleted"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let (recorder, directory) = recorder("layered");
+    let request = HttpRequest {
+        headers: Vec::new(),
+        ..request(
+            format!("{}/layered", server.uri()),
+            "call-layered",
+            recorder.clone(),
+        )
+    };
+    let provider = [
+        ("X-Test".into(), Some("older".into())),
+        ("X-Deleted".into(), Some("older".into())),
+        ("Authorization".into(), Some("Bearer sentinel".into())),
+    ]
+    .into_iter()
+    .collect();
+    let call = [
+        ("X-Test".into(), Some("overridden".into())),
+        ("x-test".into(), Some("latest".into())),
+        ("x-deleted".into(), None),
+    ]
+    .into_iter()
+    .collect();
+    post_to_api_with_header_layers(
+        request,
+        Some(Arc::from([provider, call])),
+        HttpBody::Json(json!({"prompt":"hi"})),
+        create_json_response_handler::<Reply>(),
+        failed(),
+    )
+    .await
+    .unwrap();
+    finish_call(recorder.as_ref(), "call-layered");
+
+    let recording = read_recording(&directory);
+    assert_eq!(
+        recording.exchanges[0].request.headers,
+        [
+            ("authorization".into(), "[REDACTED]".into()),
+            ("x-test".into(), "latest".into()),
+        ]
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[tokio::test]
+#[serial]
 async fn one_helper_call_records_one_finalized_exchange() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

@@ -1,11 +1,14 @@
 //! Process runtime discovery and startup configuration.
 
 use crate::envelope::ProtocolError;
+use crate::handle::HandleKind;
+use crate::manifest::{MANIFEST_REVISION, manifest_digest};
 use aimux_provider_utils::{ProxyConfig, fetch, logging};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Value, json};
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as parse};
+use crate::dispatch::{
+    CallFuture, Ctx, Handler, Params, Target, decode as parse, serialize_result,
+};
 use crate::op::{
     ABI_VERSION, Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef,
 };
@@ -109,56 +112,55 @@ fn deserialize_proxy<'de, D>(deserializer: D) -> Result<Option<ProxyConfig>, D::
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let fields = value
-        .as_object()
-        .ok_or_else(|| serde::de::Error::custom("proxy must be an object"))?;
-    for key in fields.keys() {
-        if !matches!(
-            key.as_str(),
-            "http_url" | "https_url" | "all_url" | "no_proxy"
-        ) {
-            return Err(serde::de::Error::custom("unknown proxy configuration key"));
-        }
-    }
-    serde_json::from_value(value)
-        .map(Some)
-        .map_err(serde::de::Error::custom)
+    Option::<super::handles::ProxySettings>::deserialize(deserializer)
+        .map(|settings| settings.map(|settings| settings.0))
 }
 
-fn describe(_ctx: Ctx, _target: Target, params: Value) -> CallFuture {
+fn describe(_ctx: Ctx, _target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: RuntimeDescribeParams = parse(params)?;
-        let manifest = crate::manifest::manifest();
-        Ok(description(&manifest, crate::manifest::manifest_digest()))
+        serialize_result(description())
     })
 }
 
-fn description(manifest: &Value, digest: String) -> Value {
-    let operations: Vec<&str> = manifest["ops"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|op| op["name"].as_str())
-        .collect();
-    json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "abiVersion": ABI_VERSION,
-        "opsVersion": OPS_VERSION,
-        "manifestRevision": manifest["manifestRevision"],
-        "manifestDigest": digest,
-        "capabilities": {
-            "operations": operations,
-            "handleKinds": manifest["handleKinds"],
-            "packages": manifest["packages"],
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Description {
+    version: &'static str,
+    abi_version: u32,
+    ops_version: &'static str,
+    manifest_revision: &'static str,
+    manifest_digest: String,
+    capabilities: RuntimeCapabilities,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCapabilities {
+    operations: Vec<&'static str>,
+    handle_kinds: &'static [HandleKind],
+    packages: Vec<&'static str>,
+}
+
+fn description() -> Description {
+    Description {
+        version: env!("CARGO_PKG_VERSION"),
+        abi_version: ABI_VERSION,
+        ops_version: OPS_VERSION,
+        manifest_revision: MANIFEST_REVISION,
+        manifest_digest: manifest_digest(),
+        capabilities: RuntimeCapabilities {
+            operations: crate::dispatch::registrations()
+                .iter()
+                .map(|(descriptor, _)| descriptor.name)
+                .collect(),
+            handle_kinds: HandleKind::ALL,
+            packages: crate::ops::provider::packages(),
         },
-    })
+    }
 }
 
-fn configure(_ctx: Ctx, _target: Target, params: Value) -> CallFuture {
+fn configure(_ctx: Ctx, _target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: RuntimeConfigureParams = parse(params)?;
         if let Some(config) = params.logging {
@@ -170,10 +172,32 @@ fn configure(_ctx: Ctx, _target: Target, params: Value) -> CallFuture {
                 .map_err(|_| ProtocolError::InvalidState("startup proxy is frozen".into()))?;
         }
         let (configured, frozen) = fetch::startup_proxy_state();
-        Ok(json!({
-            "logging": {"requestedLevel": logging::requested_logging_level(), "frozen": logging::logging_initialized()},
-            "proxy": {"configured": configured, "frozen": frozen},
-        }))
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Logging {
+            requested_level: Option<&'static str>,
+            frozen: bool,
+        }
+
+        #[derive(Serialize)]
+        struct Proxy {
+            configured: bool,
+            frozen: bool,
+        }
+
+        #[derive(Serialize)]
+        struct Configuration {
+            logging: Logging,
+            proxy: Proxy,
+        }
+
+        serialize_result(Configuration {
+            logging: Logging {
+                requested_level: logging::requested_logging_level(),
+                frozen: logging::logging_initialized(),
+            },
+            proxy: Proxy { configured, frozen },
+        })
     })
 }
 
@@ -181,6 +205,7 @@ fn configure(_ctx: Ctx, _target: Target, params: Value) -> CallFuture {
 mod tests {
     use super::*;
     use crate::envelope::{OpsError, ProtocolError};
+    use serde_json::{Value, json};
 
     #[test]
     fn controls_reject_unknown_keys_and_wrong_types() {
@@ -221,24 +246,24 @@ mod tests {
 
     #[test]
     fn description_uses_manifest_capabilities_and_digest() {
-        let result = description(
-            &json!({
-                "manifestRevision": "revision",
-                "ops": [{"name": "runtime.describe"}, {"name": "text.generate"}],
-                "handleKinds": ["Language"],
-                "packages": ["jev", "openai"],
-            }),
-            "digest".into(),
-        );
-        assert_eq!(result["abiVersion"], ABI_VERSION);
-        assert_eq!(result["opsVersion"], OPS_VERSION);
-        assert_eq!(result["manifestDigest"], "digest");
+        let manifest = crate::manifest::manifest();
+        let expected = json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "abiVersion": ABI_VERSION,
+            "opsVersion": OPS_VERSION,
+            "manifestRevision": manifest["manifestRevision"],
+            "manifestDigest": manifest["digest"],
+            "capabilities": {
+                "operations": manifest["ops"].as_array().unwrap().iter()
+                    .map(|op| &op["name"]).collect::<Vec<_>>(),
+                "handleKinds": manifest["handleKinds"],
+                "packages": manifest["packages"],
+            },
+        });
         assert_eq!(
-            result["capabilities"]["operations"],
-            json!(["runtime.describe", "text.generate"])
+            serialize_result(description()).unwrap(),
+            expected.to_string()
         );
-        assert_eq!(result["capabilities"]["handleKinds"], json!(["Language"]));
-        assert_eq!(result["capabilities"]["packages"], json!(["jev", "openai"]));
     }
 
     #[test]

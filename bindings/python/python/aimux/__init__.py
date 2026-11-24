@@ -16,19 +16,37 @@ from ._errors import *
 from ._errors import __all__ as _error_names, from_envelope as _from_envelope
 
 
-def verify_contract(expected_digest=EXPECTED_MANIFEST_DIGEST):
-    """Check runtime version and, when supplied, the consumer's pinned digest."""
-    description = json.loads(manifest_json())
+def _verify_runtime(expected_digest):
     if ABI_VERSION != EXPECTED_ABI_VERSION or OPS_VERSION != EXPECTED_OPS_VERSION:
         raise ImportError("aimux ABI/ops version differs from the Python binding")
-    if description["abiVersion"] != ABI_VERSION or description["opsVersion"] != OPS_VERSION:
-        raise ImportError("aimux manifest version differs from the native module")
     if expected_digest is not None and manifest_digest() != expected_digest:
         raise ImportError("aimux manifest digest differs from the consumer's pinned contract")
+
+
+def _read_manifest():
+    description = json.loads(manifest_json())
+    if description["abiVersion"] != ABI_VERSION or description["opsVersion"] != OPS_VERSION:
+        raise ImportError("aimux manifest version differs from the native module")
     return description
 
 
-manifest = verify_contract()
+def verify_contract(expected_digest=EXPECTED_MANIFEST_DIGEST):
+    """Check runtime version and, when supplied, the consumer's pinned digest."""
+    _verify_runtime(expected_digest)
+    return _read_manifest()
+
+
+_verify_runtime(EXPECTED_MANIFEST_DIGEST)
+
+
+def __getattr__(name):
+    if name == "manifest":
+        return globals().setdefault(name, _read_manifest())
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(globals().keys() | {"manifest"})
 
 
 def _wire(value):

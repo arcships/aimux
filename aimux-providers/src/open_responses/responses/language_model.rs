@@ -993,21 +993,21 @@ fn build_request_body(
         })
         .unwrap_or_default();
 
-    let converted_tool_choice: Option<Value> = match &options.tool_choice {
-        None => None,
-        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
-        Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
-        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
-        // A provider tool's choice is omitted, as it has no encoding.
-        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
-            let provider_tool = options
-                .tools
-                .iter()
-                .flatten()
-                .any(|tool| matches!(tool, Tool::Provider(tool) if &tool.name == tool_name));
-            (!provider_tool).then(|| json!({ "type": "function", "name": tool_name }))
-        }
-    };
+    let converted_tool_choice: Option<Value> =
+        match &options.tool_choice {
+            None => None,
+            Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
+            Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
+            Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
+            // A provider tool's choice is omitted, as it has no encoding.
+            Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+                let provider_tool =
+                    options.tools.as_deref().unwrap_or_default().iter().any(
+                        |tool| matches!(tool, Tool::Provider(tool) if &tool.name == tool_name),
+                    );
+                (!provider_tool).then(|| json!({ "type": "function", "name": tool_name }))
+            }
+        };
 
     // Convert response format (text format).
     let text_format: Option<Value> = match &options.response_format {

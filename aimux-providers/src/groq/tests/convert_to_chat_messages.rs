@@ -57,7 +57,8 @@ mod user_messages {
             ),
         ]);
 
-        let result = convert_to_groq_chat_messages(&prompt).expect("convertible prompt");
+        let result =
+            convert_to_groq_chat_messages(&prompt, &mut Vec::new()).expect("convertible prompt");
 
         assert_eq!(
             json!(result),
@@ -149,7 +150,8 @@ mod top_level_only_media_type_resolution {
 
     /// The image part of the single user message of `prompt`.
     fn first_image_part(prompt: &LanguageModelPrompt) -> Value {
-        let result = convert_to_groq_chat_messages(prompt).expect("convertible prompt");
+        let result =
+            convert_to_groq_chat_messages(prompt, &mut Vec::new()).expect("convertible prompt");
         result[0]["content"][0].clone()
     }
 

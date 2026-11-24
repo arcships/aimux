@@ -26,8 +26,8 @@ XCFRAMEWORK_FILES = [
     "aimux_ffi.xcframework/Info.plist",
     "aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi",
     "aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/Info.plist",
-    "aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi",
-    "aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/Info.plist",
+    "aimux_ffi.xcframework/ios-arm64_x86_64-simulator/aimux_ffi.framework/aimux_ffi",
+    "aimux_ffi.xcframework/ios-arm64_x86_64-simulator/aimux_ffi.framework/Info.plist",
 ]
 NODE_FILES = ["aimux.linux-x64-gnu.node", "aimux.darwin-arm64.node"]
 

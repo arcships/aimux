@@ -44,7 +44,7 @@ pub(crate) fn tool_choice_value(choice: &LanguageModelV4ToolChoice) -> Value {
 /// endpoint and warned about (the AI SDK's `prepareTools`).
 pub(crate) fn prepare_function_tools(options: &CallOptions) -> PreparedTools {
     let mut prepared = PreparedTools::default();
-    let Some(tools) = options.tools.as_ref().filter(|tools| !tools.is_empty()) else {
+    let Some(tools) = options.tools.as_deref().filter(|tools| !tools.is_empty()) else {
         return prepared;
     };
     let mut wire = Vec::new();

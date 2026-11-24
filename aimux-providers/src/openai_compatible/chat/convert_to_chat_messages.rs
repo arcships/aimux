@@ -7,6 +7,7 @@ use aimux_core::language_model_message::{
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
+use aimux_core::types::Warning;
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Map, Value, json};
 
@@ -41,10 +42,11 @@ fn with_metadata(mut object: Value, metadata: Map<String, Value>) -> Value {
 pub(crate) fn convert_messages(
     prompt: &LanguageModelPrompt,
     spec: &MessageSpec<'_>,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     let mut out = Vec::new();
     for message in prompt {
-        out.extend(convert_message(message, spec)?);
+        out.extend(convert_message(message, spec, warnings)?);
     }
     Ok(out)
 }
@@ -52,6 +54,7 @@ pub(crate) fn convert_messages(
 fn convert_message(
     message: &LanguageModelMessage,
     spec: &MessageSpec<'_>,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Value>, AiMuxError> {
     match message {
         LanguageModelMessage::System {
@@ -91,6 +94,7 @@ fn convert_message(
                 // convert-to-openai-compatible-chat-messages.ts:284-321: a
                 // `content` output is an array of content parts only when
                 // the provider supports multi-part tool content.
+                aimux_provider_utils::warn_tool_result_error_flag(output, warnings);
                 let content = match output {
                     ToolResultOutput::Content { value, .. }
                         if spec.supports_multi_part_tool_content =>

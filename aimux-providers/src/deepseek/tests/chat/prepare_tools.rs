@@ -151,7 +151,7 @@ mod prepare_tools {
             input_examples: None,
         };
         let mut options = options();
-        options.tools = Some(vec![Tool::from(tool)]);
+        options.tools = Some(vec![Tool::from(tool)].into());
         let body = generate_body("deepseek-chat", &options).await;
 
         assert_eq!(
@@ -182,7 +182,7 @@ mod prepare_tools {
             input_examples: None,
         };
         let mut options = options();
-        options.tools = Some(vec![Tool::from(tool)]);
+        options.tools = Some(vec![Tool::from(tool)].into());
         let body = generate_body("deepseek-chat", &options).await;
 
         assert_eq!(

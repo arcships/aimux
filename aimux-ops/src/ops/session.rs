@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use aimux_core::session::{SessionStore, init_session_infer, init_session_store};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
+use crate::dispatch::serialize_result as json;
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode};
 use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
@@ -118,11 +118,6 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     r.push((&OPS[3], Handler::Call(calls)));
 }
 
-fn json(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
-}
-
 fn store(target: Target) -> Result<Arc<SessionStore>, OpsError> {
     match target {
         Target::Handle(Entry::SessionStore(store)) => Ok(store),
@@ -136,7 +131,7 @@ fn store(target: Target) -> Result<Arc<SessionStore>, OpsError> {
     }
 }
 
-fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: SessionStoreCreateParams = decode(value)?;
         let handle = HandleRegistry::global().insert(
@@ -149,15 +144,15 @@ fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn attach(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn attach(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(value)?;
         init_session_store(store(target)?);
-        Ok(Value::Null)
+        json(())
     })
 }
 
-fn list(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn list(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(value)?;
         let sessions: SessionViews = store(target)?.list_sessions();
@@ -165,7 +160,7 @@ fn list(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn calls(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn calls(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: SessionStoreCallsParams = decode(value)?;
         let calls: SessionCalls = store(target)?.session_calls(&request.session_id);

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +141,68 @@ func TestNativeStreamAdmissionAndTerminal(t *testing.T) {
 	}
 	if activeCallbacks.Load() != 0 {
 		t.Fatal("native callback handle leaked")
+	}
+}
+
+func TestNativeAsyncCancellation(t *testing.T) {
+	started := make(chan struct{}, 2)
+	releaseStream := make(chan struct{})
+	model := loopbackModel(t, func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Stream bool }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		started <- struct{}{}
+		if req.Stream {
+			select {
+			case <-releaseStream:
+			case <-r.Context().Done():
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, strings.Repeat(sseDelta, 128))
+			w.(http.Flusher).Flush()
+		}
+		<-r.Context().Done()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	callDone := make(chan struct{})
+	var callErr error
+	go func() {
+		_, callErr = model.Call(ctx, generated.OP_TEXT_GENERATE, json.RawMessage(benchRequest))
+		close(callDone)
+	}()
+	await(t, started)
+	cancel()
+	await(t, callDone)
+	checkCode(t, callErr, "aimux", 13)
+
+	streamCtx, cancelStream := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelStream()
+	// The server has yet to send headers or a frame at synchronous acceptance.
+	s, err := model.Stream(streamCtx, generated.OP_TEXT_STREAM, json.RawMessage(benchRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	await(t, started)
+	close(releaseStream)
+	deadline := time.Now().Add(3 * time.Second)
+	for len(s.Events()) != streamBufferSize {
+		if time.Now().After(deadline) {
+			t.Fatal("event queue did not fill")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancelStream()
+	await(t, s.Done())
+	terminal, err := s.Terminal()
+	checkCode(t, err, "aimux", 13)
+	if terminal == nil || terminal.Outcome != "cancelled" || activeCallbacks.Load() != 0 {
+		t.Fatalf("lost terminal or leaked callback: %+v", terminal)
 	}
 }
 

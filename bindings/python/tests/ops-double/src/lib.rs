@@ -51,11 +51,31 @@ pub mod envelope {
         pub message: String,
         pub error: Value,
     }
+    #[derive(Debug, serde::Serialize)]
+    pub struct SourceError {
+        message: String,
+    }
+    impl SourceError {
+        pub fn new(error: &dyn std::error::Error) -> Self {
+            Self {
+                message: error.to_string(),
+            }
+        }
+    }
     #[derive(Debug)]
     pub enum BindingError {
-        InvalidWireJson { argument: String, message: String },
+        InvalidWireJson {
+            argument: String,
+            message: String,
+            cause: Option<SourceError>,
+        },
         ResultSerialization(String),
         CallbackFailure(String),
+    }
+    impl BindingError {
+        pub fn result_serialization(error: &dyn std::error::Error) -> Self {
+            Self::ResultSerialization(error.to_string())
+        }
     }
     #[derive(Debug)]
     pub enum ProtocolError {
@@ -63,6 +83,11 @@ pub mod envelope {
         InvalidState(String),
         ResourceLimit(String),
         ConcurrentConsumer,
+    }
+    impl ProtocolError {
+        pub fn invalid_params(message: impl Into<String>) -> Self {
+            Self::InvalidParams(message.into())
+        }
     }
     #[derive(Debug)]
     pub enum OpsError {
@@ -75,10 +100,14 @@ pub mod envelope {
         pub fn envelope(&self) -> ErrorEnvelope {
             let (kind, code, error) = match self {
                 Self::AiMux(error) => ("aimux", 18, serde_json::to_value(error).unwrap()),
-                Self::Binding(BindingError::InvalidWireJson { argument, message }) => (
+                Self::Binding(BindingError::InvalidWireJson {
+                    argument,
+                    message,
+                    cause,
+                }) => (
                     "binding",
                     202,
-                    json!({"name":"InvalidWireJson", "argument":argument,"message":message}),
+                    json!({"name":"InvalidWireJson", "argument":argument,"message":message,"cause":cause}),
                 ),
                 Self::Binding(BindingError::ResultSerialization(message)) => (
                     "binding",
@@ -129,6 +158,15 @@ pub mod frame {
             error: Option<ErrorEnvelope>,
         },
     }
+    pub enum WireFrame {
+        Event {
+            json: String,
+        },
+        End {
+            outcome: Outcome,
+            error: Option<ErrorEnvelope>,
+        },
+    }
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Outcome {
@@ -173,13 +211,69 @@ pub mod dispatch {
     }
 
     use super::*;
-    use envelope::{OpsError, ProtocolError};
-    use frame::{Outcome, StreamFrame};
+    use envelope::{BindingError, OpsError, ProtocolError};
+    use frame::{Outcome, StreamFrame, WireFrame};
+    use futures::{StreamExt, stream::BoxStream};
     pub struct Ctx {
         pub owner: handle::Owner,
         pub abort: Option<aimux_core::AbortSignal>,
     }
-    pub type FrameStream = std::pin::Pin<Box<dyn futures::Stream<Item = StreamFrame> + Send>>;
+    pub struct FrameStream(BoxStream<'static, StreamFrame>);
+
+    impl FrameStream {
+        pub fn into_wire(self) -> BoxStream<'static, WireFrame> {
+            Box::pin(self.0.map(|frame| match frame {
+                frame @ StreamFrame::Event { .. } => {
+                    let json = serde_json::to_string(&frame).expect("test frame serializes");
+                    if json.len() > 1024 * 1024 {
+                        let error = OpsError::Protocol(ProtocolError::ResourceLimit(
+                            "wire item exceeds byte budget".into(),
+                        ));
+                        WireFrame::End {
+                            outcome: Outcome::Error,
+                            error: Some(error.envelope()),
+                        }
+                    } else {
+                        WireFrame::Event { json }
+                    }
+                }
+                StreamFrame::End { outcome, error, .. } => WireFrame::End { outcome, error },
+            }))
+        }
+    }
+
+    pub struct WireParams<'a> {
+        bytes: &'a [u8],
+        argument: &'static str,
+    }
+
+    impl<'a> WireParams<'a> {
+        pub fn new(bytes: &'a [u8], argument: &'static str) -> Self {
+            Self { bytes, argument }
+        }
+
+        fn parse(&self) -> Result<Value, OpsError> {
+            serde_json::from_slice(self.bytes).map_err(|error| {
+                OpsError::Binding(BindingError::InvalidWireJson {
+                    argument: self.argument.into(),
+                    message: error.to_string(),
+                    cause: Some(envelope::SourceError::new(&error)),
+                })
+            })
+        }
+    }
+
+    pub async fn call_wire(
+        ctx: Ctx,
+        id: handle::HandleId,
+        op: &str,
+        params: WireParams<'_>,
+    ) -> Result<String, OpsError> {
+        let result = call(ctx, id, op, params.parse()?).await?;
+        serde_json::to_string(&result)
+            .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
+    }
+
     fn validate(ctx: &Ctx, id: handle::HandleId) -> Result<(), OpsError> {
         if id.0 != 0 && handles().lock().unwrap().get(&id.0) != Some(&ctx.owner) {
             return Err(OpsError::Fixture(fixture_error(
@@ -236,12 +330,13 @@ pub mod dispatch {
             ACTIVE.fetch_sub(1, Ordering::SeqCst);
         }
     }
-    pub fn stream(
+    pub fn stream_wire(
         ctx: Ctx,
         id: handle::HandleId,
         _op: &str,
-        params: Value,
+        params: WireParams<'_>,
     ) -> Result<FrameStream, OpsError> {
+        let params = params.parse()?;
         validate(&ctx, id)?;
         std::thread::sleep(std::time::Duration::from_millis(
             params["acceptDelayMs"].as_u64().unwrap_or(0),
@@ -258,7 +353,7 @@ pub mod dispatch {
         let outcome = params["outcome"].as_str().unwrap_or("success").to_owned();
         let size = params["bytes"].as_u64().unwrap_or(0) as usize;
         let recoverable = params["recoverableError"].as_bool().unwrap_or(false);
-        Ok(Box::pin(futures::stream::unfold(
+        Ok(FrameStream(Box::pin(futures::stream::unfold(
             (0, guard, outcome),
             move |(seq, guard, outcome)| async move {
                 if seq > count || (seq == count && outcome == "missing") {
@@ -291,6 +386,42 @@ pub mod dispatch {
                 };
                 Some((frame, (seq + 1, guard, outcome)))
             },
-        )))
+        ))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dispatch::{Ctx, WireParams, call_wire};
+    use super::handle::{HandleId, Owner};
+
+    #[tokio::test]
+    async fn wire_dispatch_preserves_params_and_projects_syntax_errors() {
+        let context = || Ctx {
+            owner: Owner::CProcess,
+            abort: None,
+        };
+        let output = call_wire(
+            context(),
+            HandleId(0),
+            "test.echo",
+            WireParams::new(br#"{"delayMs":0,"prompt":"hello"}"#, "params_json"),
+        )
+        .await
+        .unwrap();
+        let output: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(output["params"]["prompt"], "hello");
+
+        let error = call_wire(
+            context(),
+            HandleId(0),
+            "test.echo",
+            WireParams::new(b"{", "params_json"),
+        )
+        .await
+        .unwrap_err()
+        .envelope();
+        assert_eq!(error.code, 202);
+        assert_eq!(error.error["argument"], "params_json");
     }
 }
