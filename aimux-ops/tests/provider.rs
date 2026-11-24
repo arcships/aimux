@@ -201,7 +201,7 @@ async fn every_secondary_slot_hides_foreign_owner_and_matches_unknown() {
             descriptor
                 .runtime_handle_fields
                 .iter()
-                .map(|(path, _)| *path)
+                .map(|(path, _)| path.join("."))
                 .collect::<Vec<_>>(),
             paths
         );

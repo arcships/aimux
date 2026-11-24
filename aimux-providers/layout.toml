@@ -712,6 +712,11 @@ rust = "openai_compatible/request_rewrite.rs"
 status = "aimux"
 reason = "closed enum of host body rewrites for OpenAICompatibleConfig (RFC-0046 §3.5)"
 
+[[openai_compatible.files]]
+rust = "openai_compatible/video/video_model.rs"
+status = "aimux"
+reason = "asynchronous multipart /videos gateway protocol, including authenticated asset download (#530)"
+
 [groq]
 package = "@ai-sdk/groq"
 

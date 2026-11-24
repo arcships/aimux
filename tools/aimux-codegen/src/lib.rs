@@ -276,7 +276,43 @@ fn header(manifest: &Manifest, digest: &str) -> Result<String> {
             error.code
         ));
     }
-    text.push_str("\n} aimux_error_code_t;\n\ntypedef enum aimux_poll_state {\n    AIMUX_POLL_PART = 1,\n    AIMUX_POLL_ENDED = 2,\n    AIMUX_POLL_TIMEOUT = 3\n} aimux_poll_state_t;\n\n/* frame_json is borrowed until the callback returns; copy it to retain it.\n * context must remain valid until aimux_stream returns. */\ntypedef void (*aimux_event_cb)(const char *frame_json, void *context);\n\n/* ABI = (major << 16) | minor. Verify ABI and manifest before calling ops.\n * JSON inputs are borrowed NUL-terminated UTF-8, never implicit empty objects.\n * Handle 0 is global scope; nonzero IDs are process-owned and never reused.\n * Fallible calls return NULL on success or an owned error on failure.\n * Outputs are reset to NULL/0 before validation, including on failure.\n * All output JSON and error getter strings are owned: aimux_free_string.\n * Release errors with aimux_error_free. Do not free callback JSON.\n * Blocking calls cannot be reentered from a callback (ReentrantCall). */\nuint32_t aimux_abi_version(void);\naimux_error_t *aimux_manifest_json(char **out_json);\naimux_error_t *aimux_call(uint64_t handle, const char *op,\n                         const char *params_json, uint64_t abort, char **out_json);\naimux_error_t *aimux_stream(uint64_t handle, const char *op,\n                           const char *params_json, uint64_t abort,\n                           aimux_event_cb on_event, void *context);\n/* Input bytes are copied/consumed before return. NULL is valid only at length 0. */\naimux_error_t *aimux_operation_push(uint64_t operation,\n                                   const uint8_t *data, size_t length);\n/* PART allocates out_part; ENDED/TIMEOUT do not. timeout_ms must be nonnegative. */\naimux_error_t *aimux_operation_next_part(uint64_t operation, int64_t timeout_ms,\n                                        char **out_part, int32_t *out_state);\n/* Signal only; callback-safe. Use abort.signal to report an invalid handle. */\nvoid aimux_abort(uint64_t abort);\n/* Drop is idempotent, accepts 0, and cancels resources without implying flush. */\nvoid aimux_drop(uint64_t handle);\n/* Non-blocking finalizer; token encodes the handle in uintptr_t (never dereferenced). */\nvoid aimux_handle_finalizer(void *token);\n/* NULL-safe. Each owned allocation must be freed exactly once. */\nvoid aimux_free_string(char *string);\nvoid aimux_error_free(aimux_error_t *error);\nint32_t aimux_error_code(const aimux_error_t *error);\nchar *aimux_error_message(const aimux_error_t *error);\nchar *aimux_error_json(const aimux_error_t *error);\n\n#ifdef __cplusplus\n}\n#endif\n\n#endif /* AIMUX_H */\n");
+    text.push_str("\n} aimux_error_code_t;\n\ntypedef enum aimux_poll_state {\n    AIMUX_POLL_PART = 1,\n    AIMUX_POLL_ENDED = 2,\n    AIMUX_POLL_TIMEOUT = 3\n} aimux_poll_state_t;\n\n/* frame_json is borrowed until the callback returns; copy it to retain it.\n * context must remain valid until aimux_stream returns. */\ntypedef void (*aimux_event_cb)(const char *frame_json, void *context);\n\n/* ABI = (major << 16) | minor. Verify ABI and manifest before calling ops.\n * JSON inputs are borrowed NUL-terminated UTF-8, never implicit empty objects.\n * Handle 0 is global scope; nonzero IDs are process-owned and never reused.\n * Fallible calls return NULL on success or an owned error on failure.\n * Outputs are reset to NULL/0 before validation, including on failure.\n * All output JSON and error getter strings are owned: aimux_free_string.\n * Release errors with aimux_error_free. Do not free borrowed callback JSON.\n * Blocking calls cannot be reentered from a callback (ReentrantCall). */\nuint32_t aimux_abi_version(void);\naimux_error_t *aimux_manifest_json(char **out_json);\naimux_error_t *aimux_call(uint64_t handle, const char *op,\n                         const char *params_json, uint64_t abort, char **out_json);\naimux_error_t *aimux_stream(uint64_t handle, const char *op,\n                           const char *params_json, uint64_t abort,\n                           aimux_event_cb on_event, void *context);\n/* Input bytes are copied/consumed before return. NULL is valid only at length 0. */\naimux_error_t *aimux_operation_push(uint64_t operation,\n                                   const uint8_t *data, size_t length);\n/* PART allocates out_part; ENDED/TIMEOUT do not. timeout_ms must be nonnegative. */\naimux_error_t *aimux_operation_next_part(uint64_t operation, int64_t timeout_ms,\n                                        char **out_part, int32_t *out_state);\n/* Signal only; callback-safe. Use abort.signal to report an invalid handle. */\nvoid aimux_abort(uint64_t abort);\n/* Drop is idempotent, accepts 0, and cancels resources without implying flush. */\nvoid aimux_drop(uint64_t handle);\n/* Non-blocking finalizer; token encodes the handle in uintptr_t (never dereferenced). */\nvoid aimux_handle_finalizer(void *token);\n/* NULL-safe. Each owned allocation must be freed exactly once. */\nvoid aimux_free_string(char *string);\nvoid aimux_error_free(aimux_error_t *error);\nint32_t aimux_error_code(const aimux_error_t *error);\nchar *aimux_error_message(const aimux_error_t *error);\nchar *aimux_error_json(const aimux_error_t *error);\n");
+    text.push_str(
+        r#"
+/* Exactly one of result_json and error is non-NULL. The callback owns that
+ * allocation and releases it with aimux_free_string or aimux_error_free. */
+typedef void (*aimux_call_callback_t)(char *result_json, aimux_error_t *error,
+                                      void *user_data);
+
+/* The array and its NUL-terminated frames are borrowed until the callback
+ * returns. Copy any data you want to retain. count is between 1 and 64. */
+typedef void (*aimux_event_batch_callback_t)(const char *const *frames,
+                                             size_t count, void *user_data);
+
+/* Async submissions consume/copy both input strings before returning.
+ * NULL means accepted. An owned submission error means zero callbacks.
+ * Callbacks may start before submission returns and run on runtime threads.
+ * Keep user_data valid through the final callback. aimux_abort is callback-safe.
+ * aimux_call_async calls on_complete once with the dispatch result or error.
+ * Return promptly from on_complete so the runtime worker can resume dispatch.
+ * On builds with panic=abort, an internal Rust panic terminates the process.
+ * aimux_stream_async validates stream acceptance before returning. Accepted
+ * streams deliver ordered data batches and one standalone End frame last. */
+aimux_error_t *aimux_call_async(uint64_t handle, const char *op,
+                               const char *params_json, uint64_t abort,
+                               aimux_call_callback_t on_complete, void *user_data);
+aimux_error_t *aimux_stream_async(uint64_t handle, const char *op,
+                                 const char *params_json, uint64_t abort,
+                                 aimux_event_batch_callback_t on_batch,
+                                 void *user_data);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AIMUX_H */
+"#,
+    );
     Ok(text)
 }
 

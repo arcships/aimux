@@ -102,7 +102,7 @@ fn fixture_weather_tool() -> Tool {
 /// the upstream tool-call cases.
 fn fixture_tool_options() -> CallOptions {
     let mut call = fixture_options();
-    call.tools = Some(vec![fixture_weather_tool()]);
+    call.tools = Some(vec![fixture_weather_tool()].into());
     call.provider_options = Some(
         serde_json::from_value(json!({ "deepseek": { "thinking": { "type": "enabled" } } }))
             .unwrap(),
@@ -358,7 +358,7 @@ mod deep_seek_chat_language_model {
             #[tokio::test]
             async fn text_should_reject_strict_tools_on_the_standard_endpoint_before_fetching() {
                 let mut options = options();
-                options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
+                options.tools = Some(vec![strict_tool("getWeather", Some(true))].into());
                 let message = generate_error("deepseek-chat", &options).await;
                 assert!(
                     message.contains(
@@ -373,7 +373,7 @@ mod deep_seek_chat_language_model {
             async fn text_should_send_all_strict_tools_on_the_beta_endpoint() {
                 let server = json_server(text_response()).await;
                 let mut options = options();
-                options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
+                options.tools = Some(vec![strict_tool("getWeather", Some(true))].into());
                 let body = beta_chat(&server, "deepseek-chat")
                     .do_generate(&options)
                     .await
@@ -391,10 +391,13 @@ mod deep_seek_chat_language_model {
             async fn text_should_reject_mixed_strict_tools_in_streaming_requests() {
                 let server = sse_server(text_chunks()).await;
                 let mut options = options();
-                options.tools = Some(vec![
-                    strict_tool("strictTool", Some(true)),
-                    strict_tool("nonStrictTool", None),
-                ]);
+                options.tools = Some(
+                    vec![
+                        strict_tool("strictTool", Some(true)),
+                        strict_tool("nonStrictTool", None),
+                    ]
+                    .into(),
+                );
                 let Err(error) = beta_chat(&server, "deepseek-chat")
                     .do_stream(&options)
                     .await
@@ -1590,12 +1593,15 @@ async fn tool_call_should_send_the_tool_choice() {
 async fn tool_call_should_warn_about_provider_defined_tools() {
     use aimux_core::tool::ProviderTool;
     let mut options = options();
-    options.tools = Some(vec![Tool::Provider(ProviderTool {
-        id: "test.search".parse().unwrap(),
-        name: "search".to_string(),
-        args: serde_json::Map::new(),
-        supports_deferred_results: None,
-    })]);
+    options.tools = Some(
+        vec![Tool::Provider(ProviderTool {
+            id: "test.search".parse().unwrap(),
+            name: "search".to_string(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })]
+        .into(),
+    );
     let result = generate_result("deepseek-chat", &options).await;
     assert_eq!(
         warning_values(&result.warnings),

@@ -213,8 +213,14 @@ pub mod luma;
 pub mod prodia;
 pub mod replicate;
 
+// Native image and video protocols.
+pub mod bytedance;
+
 // Video-only providers.
 pub mod klingai;
+
+// Image and video media providers (text models stay on the registry rows).
+pub mod minimax;
 
 // Generic Responses API wrapper.
 pub mod open_responses;
@@ -236,6 +242,10 @@ pub use azure::{
 pub use bedrock::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,
     BedrockModel, BedrockRerankingModel, amazon_bedrock, create_amazon_bedrock,
+};
+pub use bytedance::{
+    ByteDanceImageModel, ByteDanceProvider, ByteDanceProviderSettings, ByteDanceVideoModel,
+    bytedance, create_bytedance,
 };
 pub use cohere::{
     CohereEmbeddingModel, CohereModel, CohereProvider, CohereProviderSettings,
@@ -319,6 +329,10 @@ pub use klingai::{
     KlingAIProvider, KlingAIProviderSettings, KlingAIVideoModel, create_klingai, klingai,
 };
 pub use luma::{LumaImageModel, LumaProvider, LumaProviderSettings, create_luma, luma};
+pub use minimax::{
+    MiniMaxImageModel, MiniMaxProvider, MiniMaxProviderSettings, MiniMaxVideoModel, create_minimax,
+    minimax,
+};
 pub use prodia::{
     ProdiaImageModel, ProdiaProvider, ProdiaProviderSettings, ProdiaVideoModel, create_prodia,
     prodia,

@@ -4,9 +4,10 @@
 
 use aimux_core::language_model_message::{FilePart, TextPart, ToolResultContent, ToolResultOutput};
 use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
-use crate::{tool_result_content_value, tool_result_to_content};
+use crate::{tool_result_content_value, tool_result_to_content, warn_tool_result_error_flag};
 
 fn output(value: Value) -> ToolResultOutput {
     serde_json::from_value(value).expect("valid tool result output")
@@ -111,4 +112,49 @@ fn stringifies_content_parts_as_upstream_serializes_them() {
         }),
         json!(expected.to_string())
     );
+}
+
+// aimux extension (#470): a content output's error flag is not representable
+// here; it is warned about, once per such result, and not sent.
+#[test]
+fn warns_once_about_an_error_flag_it_cannot_send() {
+    let failed = ToolResultOutput::Content {
+        value: vec![ToolResultContent::Text(TextPart {
+            text: "boom".into(),
+            provider_options: None,
+        })],
+        is_error: Some(true),
+    };
+    let mut warnings = Vec::new();
+    warn_tool_result_error_flag(&failed, &mut warnings);
+    assert_eq!(
+        tool_result_to_content(&failed),
+        json!(r#"[{"type":"text","text":"boom"}]"#)
+    );
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        matches!(&warnings[0], Warning::Other { message } if message.contains("isError")),
+        "{warnings:?}"
+    );
+
+    let mut warnings = Vec::new();
+    warn_tool_result_error_flag(
+        &output(json!({ "type": "error-text", "value": "x" })),
+        &mut warnings,
+    );
+    warn_tool_result_error_flag(
+        &ToolResultOutput::Content {
+            value: Vec::new(),
+            is_error: Some(false),
+        },
+        &mut warnings,
+    );
+    warn_tool_result_error_flag(
+        &ToolResultOutput::Content {
+            value: Vec::new(),
+            is_error: None,
+        },
+        &mut warnings,
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

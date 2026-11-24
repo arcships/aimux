@@ -40,22 +40,25 @@ async fn should_preserve_local_json_schema_references_in_tool_requests() {
     })
     .unwrap();
     let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("Hello")]);
-    options.tools = Some(vec![Tool::Function(FunctionTool {
-        name: "format-date".into(),
-        description: Some("Format a date".into()),
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "locale": {"$ref": "#/$defs/Locale", "description": "Locale for formatting"},
-            },
-            "required": ["locale"],
-            "additionalProperties": false,
-            "$defs": {"Locale": {"type": "string", "enum": ["de", "en"]}},
-        }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    })]);
+    options.tools = Some(
+        vec![Tool::Function(FunctionTool {
+            name: "format-date".into(),
+            description: Some("Format a date".into()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "locale": {"$ref": "#/$defs/Locale", "description": "Locale for formatting"},
+                },
+                "required": ["locale"],
+                "additionalProperties": false,
+                "$defs": {"Locale": {"type": "string", "enum": ["de", "en"]}},
+            }),
+            strict: None,
+            provider_options: None,
+            input_examples: None,
+        })]
+        .into(),
+    );
     provider
         .call("gemini-2.5-flash")
         .do_generate(&options)

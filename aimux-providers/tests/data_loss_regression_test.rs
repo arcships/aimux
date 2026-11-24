@@ -140,7 +140,7 @@ fn opts() -> CallOptions {
 
 fn opts_with_tools(tools: Vec<Tool>) -> CallOptions {
     let mut o = opts();
-    o.tools = Some(tools);
+    o.tools = Some(tools.into());
     o.tool_choice = Some(aimux_core::tool::LanguageModelV4ToolChoice::Auto);
     o
 }

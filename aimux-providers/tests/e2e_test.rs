@@ -241,20 +241,23 @@ async fn e2e_openai_generate_with_tools() {
         &model,
         vec![ModelMessage::user("What's the weather in Tokyo?")],
         GenerateTextOptions {
-            tools: Some(vec![Tool::Function(FunctionTool {
-                name: "get_weather".to_string(),
-                description: Some("Get weather for a location".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string"}
-                    },
-                    "required": ["location"]
-                }),
-                strict: None,
-                provider_options: None,
-                input_examples: None,
-            })]),
+            tools: Some(
+                vec![Tool::Function(FunctionTool {
+                    name: "get_weather".to_string(),
+                    description: Some("Get weather for a location".to_string()),
+                    input_schema: json!({
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string"}
+                        },
+                        "required": ["location"]
+                    }),
+                    strict: None,
+                    provider_options: None,
+                    input_examples: None,
+                })]
+                .into(),
+            ),
             ..Default::default()
         },
     )
@@ -643,7 +646,7 @@ async fn e2e_openai_tool_call_round_trip() {
         &model,
         vec![ModelMessage::user("What's the weather in Tokyo?")],
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
     )
@@ -680,7 +683,7 @@ async fn e2e_openai_tool_call_round_trip() {
         &model,
         messages,
         GenerateTextOptions {
-            tools: Some(vec![weather_tool()]),
+            tools: Some(vec![weather_tool()].into()),
             ..Default::default()
         },
     )
@@ -828,7 +831,7 @@ async fn e2e_openai_tool_choice_required() {
         &model,
         "What's the weather in Tokyo?",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool]),
+            tools: Some(vec![weather_tool].into()),
             tool_choice: Some(ToolChoice::Required),
             ..Default::default()
         },
@@ -896,7 +899,7 @@ async fn e2e_openai_stream_tool_calls() {
         &model,
         "What's the weather in Tokyo?",
         GenerateTextOptions {
-            tools: Some(vec![weather_tool]),
+            tools: Some(vec![weather_tool].into()),
             ..Default::default()
         },
     )

@@ -1,11 +1,10 @@
 //! File access and uploads use the canonical core DTOs without upload retries.
 
-use aimux_core::files_model::UploadFileCallOptions;
+use aimux_core::files_model::{UploadFileCallOptions, UploadFileData};
 use serde::Deserialize;
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode};
+use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
@@ -52,7 +51,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         required_capabilities: &["uploadFile"],
         cancellation: Cancellation::Abort,
         side_effects: true,
@@ -71,7 +70,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     r.push((&OPS[1], Handler::Call(upload)));
 }
 
-fn provider_files(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn provider_files(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         decode::<super::operation::EmptyParams>(params)?;
         let Target::Handle(Entry::Provider(provider)) = target else {
@@ -87,34 +86,38 @@ fn provider_files(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-// Core business DTOs stay open; close their control keys at the ops boundary.
-fn parse_options(params: Value) -> Result<UploadFileParams, OpsError> {
-    reject_unknown(
-        &params,
-        &["data", "mediaType", "filename", "providerOptions", "abort"],
-    )?;
-    if let Some(data) = params.get("data") {
-        let fields: &[&str] = match data.get("type").and_then(Value::as_str) {
-            Some("data") => &["type", "data"],
-            Some("text") => &["type", "text"],
-            _ => &["type"],
-        };
-        reject_unknown(data, fields)?;
-    }
-    decode(params)
+// The wire reader closes the upload data variant without buffering the
+// surrounding request through the schema's flattened options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UploadFileWire {
+    data: UploadDataWire,
+    media_type: String,
+    filename: Option<String>,
+    provider_options: Option<aimux_core::shared::SharedProviderOptions>,
+    #[serde(rename = "abort")]
+    _abort: Option<HandleId>,
 }
 
-fn reject_unknown(value: &Value, allowed: &[&str]) -> Result<(), OpsError> {
-    if let Some(fields) = value.as_object() {
-        for field in fields.keys() {
-            if !allowed.contains(&field.as_str()) {
-                return Err(
-                    ProtocolError::invalid_params(format!("unknown field `{field}`")).into(),
-                );
-            }
-        }
-    }
-    Ok(())
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+enum UploadDataWire {
+    Data { data: aimux_core::shared::FileBytes },
+    Text { text: String },
+}
+
+fn options(params: Params<'_>) -> Result<UploadFileCallOptions, OpsError> {
+    let wire: UploadFileWire = decode(params)?;
+    Ok(UploadFileCallOptions {
+        data: match wire.data {
+            UploadDataWire::Data { data } => UploadFileData::Data { data },
+            UploadDataWire::Text { text } => UploadFileData::Text { text },
+        },
+        media_type: wire.media_type,
+        filename: wire.filename,
+        provider_options: wire.provider_options,
+        abort_signal: None,
+    })
 }
 
 fn invalid_target(target: &Target, expected: HandleKind) -> OpsError {
@@ -128,16 +131,14 @@ fn invalid_target(target: &Target, expected: HandleKind) -> OpsError {
     .into()
 }
 
-fn serialize(value: impl serde::Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
-}
+use crate::dispatch::serialize_result as serialize;
 
-fn upload(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn upload(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let Target::Handle(Entry::Files(model)) = target else {
             return Err(invalid_target(&target, HandleKind::Files));
         };
-        let mut options = parse_options(params)?.options;
+        let mut options = options(params)?;
         // Dispatch has resolved the optional abort handle with the caller's owner.
         options.abort_signal = ctx.abort;
         let result = model.upload_file(&options).await?;

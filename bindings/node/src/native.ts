@@ -17,24 +17,39 @@ export interface Manifest {
   [key: string]: unknown
 }
 
-export function verifyManifest(manifest: Manifest): void {
-  for (const [field, expected] of Object.entries({ abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST })) {
-    if (manifest[field] !== expected) {
-      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest ${field}: expected ${expected}, received ${String(manifest[field])}`)
+export function verifyManifest(manifest: Pick<Manifest, 'abiVersion' | 'opsVersion' | 'digest'>): void {
+  const expected = { abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST }
+  for (const field of ['abiVersion', 'opsVersion', 'digest'] as const) {
+    if (manifest[field] !== expected[field]) {
+      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest ${field}: expected ${expected[field]}, received ${String(manifest[field])}`)
     }
   }
 }
 
 export class Runtime {
   readonly #inner: NativeRuntime
-  readonly manifest: Manifest
+  readonly manifest!: Manifest
+  #manifest?: Manifest
   readonly manifestDigest: string
 
   constructor() {
     this.#inner = new NativeRuntime()
-    this.manifest = JSON.parse(this.#inner.manifestJson()) as Manifest
-    verifyManifest(this.manifest)
+    Object.defineProperty(this, 'manifest', { enumerable: true, get: () => this.readManifest() })
     this.manifestDigest = this.#inner.manifestDigest()
+    verifyManifest({
+      abiVersion: this.#inner.abiVersion(),
+      opsVersion: this.#inner.opsVersion(),
+      digest: this.manifestDigest,
+    })
+  }
+
+  private readManifest(): Manifest {
+    if (this.#manifest === undefined) {
+      const manifest = JSON.parse(this.#inner.manifestJson()) as Manifest
+      verifyManifest(manifest)
+      this.#manifest = manifest
+    }
+    return this.#manifest
   }
 
   abort(signal?: AbortSignal): NativeAbort { return new NativeAbort(this.#inner, signal) }
@@ -48,16 +63,46 @@ export class Runtime {
   }
 
   async stream(handle: string, op: string, paramsJson: string, abort?: NativeAbort): Promise<AsyncIterableIterator<string>> {
-    let inner: AsyncIterableIterator<string>
-    try { inner = (await this.#inner.stream(handle, op, paramsJson, abort))[Symbol.asyncIterator]() } catch (error) { rethrow(error) }
+    let native: Awaited<ReturnType<NativeRuntime['stream']>>
+    try { native = await this.#inner.stream(handle, op, paramsJson, abort) } catch (error) { rethrow(error) }
+    const inner = native[Symbol.asyncIterator]()
+    let batch: Array<string | undefined> = []
+    let cursor = 0
+    let reading = false
+    let closed = false
+    const close = () => { closed = true; batch = [] }
     // This is deliberately an explicit iterator: return() must cancel while next() is pending.
     const iterator: AsyncIterableIterator<string> = {
-      async next() { try { return await inner.next() } catch (error) { rethrow(error) } },
-      async return() { try { return inner.return ? await inner.return() : { done: true as const, value: undefined } } catch (error) { rethrow(error) } },
-      async throw(error?: unknown) {
+      async next() {
+        if (closed) return { done: true, value: undefined }
+        if (reading) throw protocolError(303, 'ConcurrentConsumer', 'stream already has a pending consumer')
+        if (cursor === batch.length) {
+          reading = true
+          try {
+            const frames = await native.nextBatch()
+            if (closed || frames.length === 0) {
+              close()
+              return { done: true, value: undefined }
+            }
+            batch = frames
+            cursor = 0
+          } catch (error) { rethrow(error) } finally { reading = false }
+        }
+        const value = batch[cursor]!
+        batch[cursor++] = undefined
+        return { done: false, value }
+      },
+      async return() {
+        close()
         try {
-          if (inner.throw) return await inner.throw(error)
-          if (inner.return) await inner.return()
+          await inner.return()
+          return { done: true, value: undefined }
+        } catch (error) { rethrow(error) }
+      },
+      async throw(error?: unknown) {
+        close()
+        try {
+          await inner.throw(error)
           throw error
         } catch (error) { rethrow(error) }
       },

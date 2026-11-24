@@ -1,0 +1,93 @@
+# OpenAI-compatible video gateways
+
+`create_openai_compatible(settings).video(model_id)` and the provider trait's
+`video_model(model_id)` expose asynchronous `/videos` gateways (vLLM-Omni,
+New API and compatible relays). Registry presets using the compatible provider
+also expose this model; the selected endpoint must implement this protocol.
+This does not add a video model to the official `openai` package.
+
+Use `aimux_core::video_model::generate_video` for the Core-owned polling loop.
+The provider sends `POST {base}/videos` as multipart and polls
+`GET {base}/videos/{id}`. The model reports `"{name}.video"` and produces one
+video per API call; Core batches a larger requested `n`.
+
+## Request fields
+
+- `prompt` and `model` are sent as text fields.
+- `duration` maps to `seconds`; `resolution` maps to `size`.
+- `aspect_ratio`, `fps`, `seed`, and `generate_audio` map to the corresponding
+  multipart fields when present.
+- Provider options merge `openaiCompatible`, the configured provider name, and
+  its camelCase spelling (later namespaces win). String values pass unchanged;
+  all other JSON values are JSON encoded. Explicit standard call options take
+  precedence over the corresponding provider options. `model` and `prompt`
+  always come from the selected model and call.
+- `image`, `frame_images`, and `input_references` produce file parts from the
+  reference inputs: one file is sent in the singular `input_reference` part,
+  two or more as repeated `input_references` parts. vLLM-Omni reads one file
+  from the singular name and an ordered list from the plural one; repeated
+  singular parts collapse to the last file, which loses a first frame.
+  Role-tagged frames are ordered first frame, last frame, followed by reference
+  inputs. A duplicate first/last frame is rejected before submission. Inline
+  binary/base64 files and downloadable URLs are supported. Input URL downloads
+  carry no provider credentials and use the SSRF guard.
+
+For MiniMax H3 through vLLM-Omni, put `width`, `height`,
+`num_inference_steps`, `flow_shift`, and `extra_params` in provider options.
+`extra_params` can be an object or an already encoded JSON string. H3-specific
+size, duration, and task constraints belong to the caller or preset; the generic
+model does not impose them. Use `frame_images` to provide first and last frames
+with repeated `input_references` parts.
+
+## Completion and download
+
+`queued`, `pending`, `processing`, `in_progress`, and `running` mean pending.
+`completed` and `succeeded` mean complete. Terminal failures carry the
+provider's error message and the terminal status as `providerCode`. A status
+the model does not recognize is treated as pending and keeps polling until the
+poll timeout, so a gateway-specific alias does not fail a task that is still
+running; a returned task ID that does not match the operation is rejected.
+
+An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
+Core downloads it without provider credentials. A result URL on the provider's
+own origin is downloaded by the provider, and whether the gateway's configured
+query parameters (`api-version`, `key`) and credentials are added depends on
+whether the URL's own query authenticates it. A query that carries a signature
+or token parameter makes the reference self-authenticating; the recognized
+names cover the presigning schemes gateways commonly put in front of media —
+SigV4 `X-Amz-*`, `X-Goog-*`, `Signature`, `sig`, `Policy`, `Key-Pair-Id`, an
+access token, and an Akamai `hdnts`, `hmac`, `jwt`, `credential` or `auth`
+parameter. A relative reference of that kind is only resolved against the base
+URL, and an absolute one is sent exactly as received; neither gets a configured
+parameter, and neither gets a provider credential, because a configured
+parameter would change a canonical query the signature covers and a credential
+next to the target's own is a second authentication scheme. Every other
+reference on that origin addresses the gateway's API: a relative reference
+resolves against the base URL as a directory and must remain on that origin,
+and an absolute URL keeps the path and query it was received with. The
+configured parameters such a URL lacks are appended after the query bytes it
+carries, the received pairs keep their order and encoding, a parameter the URL
+already carries keeps the value the gateway sent, and the request carries the
+configured credentials. The name list is a boundary rather than a proof: a
+signature scheme outside it cannot be told from a plain query, so its URL is
+treated as an asset route, gets the configured parameters and credential, and
+the signature may stop verifying. A gateway signing with another name can avoid
+the boundary only by adding that parameter name to the list, by returning no URL
+so the asset is fetched from the authenticated `/videos/{id}/content` endpoint,
+or by serving the asset from another origin, which is downloaded without
+credentials. If `url` is absent/null, the provider downloads
+`/videos/{id}/content`, with the configured parameters and credentials.
+Download requests use the existing SSRF guard, allow the explicitly configured
+origin, and strip caller headers on a redirect to another origin. Non-HTTP
+schemes, foreign protocol-relative references, and URL userinfo are rejected.
+Creation and content-download exchanges move whole media files, so they use a
+600-second exchange guard instead of the 30-second default.
+
+A creation the gateway refused is not replayed, because a timeout, 5xx or
+malformed successful response may follow an accepted, billable task; a
+rate-limited creation (HTTP 429) queued no task and stays retryable. Status
+failures keep the usual retry classification. An authenticated content
+download retries a transient failure a bounded number of times and is
+non-retryable once those attempts are exhausted; retrying the status or
+download phase never creates another task. No cancellation endpoint is
+provided.

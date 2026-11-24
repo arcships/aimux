@@ -12,40 +12,39 @@ use aimux_core::wrap_provider::wrap_provider;
 use aimux_provider_utils::Resolvable;
 use aimux_providers::preset::PresetSettings;
 use serde::Deserialize;
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode, serialize_result};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
-const CREATE_HANDLES: &[(&str, &[HandleKind])] = &[
-    ("settings.fetch", &[HandleKind::Fetch]),
-    ("settings.webSocket", &[HandleKind::WebSocket]),
+const CREATE_HANDLES: &[crate::op::HandleField] = &[
+    (&["settings", "fetch"], &[HandleKind::Fetch]),
+    (&["settings", "webSocket"], &[HandleKind::WebSocket]),
     (
-        "settings.credentialResolver",
+        &["settings", "credentialResolver"],
         &[HandleKind::CredentialResolver],
     ),
 ];
-const INVOKE_HANDLES: &[(&str, &[HandleKind])] = &[("abort", &[HandleKind::Abort])];
-const WRAP_HANDLES: &[(&str, &[HandleKind])] = &[
-    ("languageModelMiddleware.*", &[HandleKind::Middleware]),
-    ("imageModelMiddleware.*", &[HandleKind::Middleware]),
+const INVOKE_HANDLES: &[crate::op::HandleField] = &[(&["abort"], &[HandleKind::Abort])];
+const WRAP_HANDLES: &[crate::op::HandleField] = &[
+    (&["languageModelMiddleware", "*"], &[HandleKind::Middleware]),
+    (&["imageModelMiddleware", "*"], &[HandleKind::Middleware]),
 ];
-const CUSTOM_HANDLES: &[(&str, &[HandleKind])] = &[
-    ("languageModels.*", &[HandleKind::Language]),
-    ("embeddingModels.*", &[HandleKind::Embedding]),
-    ("imageModels.*", &[HandleKind::Image]),
-    ("speechModels.*", &[HandleKind::Speech]),
-    ("transcriptionModels.*", &[HandleKind::Transcription]),
-    ("rerankingModels.*", &[HandleKind::Reranking]),
-    ("videoModels.*", &[HandleKind::Video]),
-    ("searchModels.*", &[HandleKind::Search]),
-    ("decisionModels.*", &[HandleKind::Decision]),
-    ("files", &[HandleKind::Files]),
-    ("fallbackProvider", &[HandleKind::Provider]),
-    ("languageModelMiddleware.*", &[HandleKind::Middleware]),
-    ("imageModelMiddleware.*", &[HandleKind::Middleware]),
+const CUSTOM_HANDLES: &[crate::op::HandleField] = &[
+    (&["languageModels", "*"], &[HandleKind::Language]),
+    (&["embeddingModels", "*"], &[HandleKind::Embedding]),
+    (&["imageModels", "*"], &[HandleKind::Image]),
+    (&["speechModels", "*"], &[HandleKind::Speech]),
+    (&["transcriptionModels", "*"], &[HandleKind::Transcription]),
+    (&["rerankingModels", "*"], &[HandleKind::Reranking]),
+    (&["videoModels", "*"], &[HandleKind::Video]),
+    (&["searchModels", "*"], &[HandleKind::Search]),
+    (&["decisionModels", "*"], &[HandleKind::Decision]),
+    (&["files"], &[HandleKind::Files]),
+    (&["fallbackProvider"], &[HandleKind::Provider]),
+    (&["languageModelMiddleware", "*"], &[HandleKind::Middleware]),
+    (&["imageModelMiddleware", "*"], &[HandleKind::Middleware]),
 ];
 
 #[allow(clippy::too_many_arguments)]
@@ -57,7 +56,7 @@ const fn descriptor(
     side_effects: bool,
     cancellable: bool,
     source_symbols: &'static [&'static str],
-    runtime_handle_fields: &'static [(&'static str, &'static [HandleKind])],
+    runtime_handle_fields: &'static [crate::op::HandleField],
 ) -> OpDescriptor {
     OpDescriptor {
         name,
@@ -154,7 +153,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 ];
 
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
-    let handlers: [fn(Ctx, Target, Value) -> CallFuture; 6] =
+    let handlers: [crate::dispatch::CallHandler; 6] =
         [create, default_provider, model, invoke, wrap, custom];
     r.extend(
         OPS.iter()
@@ -324,7 +323,7 @@ fn insert_provider(
     owner: Owner,
     provider: Arc<dyn Provider>,
     default_method: Option<ModelMethod>,
-) -> Result<Value, OpsError> {
+) -> Result<String, OpsError> {
     {
         let mut descriptors = descriptors().lock().map_err(|_| invalid_state())?;
         descriptors.retain(|d| d.provider.strong_count() != 0);
@@ -366,25 +365,24 @@ fn provider(target: Target) -> Result<Arc<dyn Provider>, OpsError> {
     }
 }
 
-fn insert(owner: Owner, entry: Entry) -> Result<Value, OpsError> {
+fn insert(owner: Owner, entry: Entry) -> Result<String, OpsError> {
     let kind = entry.kind();
     let handle = HandleRegistry::global().insert(owner, entry)?;
-    serde_json::to_value(HandleResult { handle, kind })
-        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
+    serialize_result(HandleResult { handle, kind })
 }
 
 fn get(owner: Owner, handle: HandleId, kind: HandleKind) -> Result<Entry, OpsError> {
     HandleRegistry::global().get(owner, handle, &[kind])
 }
 
-fn create(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
+fn create(ctx: Ctx, _entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderCreateParams = decode(params)?;
         create_package(ctx.owner, &params.package, params.settings)
     })
 }
 
-fn default_provider(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
+fn default_provider(ctx: Ctx, _entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderDefaultParams = decode(params)?;
         create_package(ctx.owner, &params.package, ProviderSettings::default())
@@ -395,7 +393,7 @@ fn create_package(
     owner: Owner,
     package: &str,
     settings: ProviderSettings,
-) -> Result<Value, OpsError> {
+) -> Result<String, OpsError> {
     // Resolve every runtime slot before constructing anything. A valid but
     // unavailable slot is a capability error, never silently ignored.
     let fetch = match settings.fetch {
@@ -479,7 +477,7 @@ fn create_package(
     insert_provider(owner, provider, method)
 }
 
-fn model(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
+fn model(ctx: Ctx, entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderModelParams = decode(params)?;
         let provider = provider(entry)?;
@@ -539,7 +537,7 @@ fn model(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
     })
 }
 
-fn invoke(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
+fn invoke(ctx: Ctx, entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderInvokeParams = decode(params)?;
         if params.method != "listModels" {
@@ -557,8 +555,7 @@ fn invoke(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
             },
             None => discovery.list_models().await,
         }.map_err(OpsError::AiMux)?;
-        serde_json::to_value(models)
-            .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
+        serialize_result(models)
     })
 }
 
@@ -596,7 +593,7 @@ fn middleware(
     Ok((language, image))
 }
 
-fn wrap(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
+fn wrap(ctx: Ctx, entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderWrapParams = decode(params)?;
         let provider = provider(entry)?;
@@ -610,7 +607,7 @@ fn wrap(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
     })
 }
 
-fn custom(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
+fn custom(ctx: Ctx, _entry: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ProviderCustomParams = decode(params)?;
         let mut options = CustomProviderOptions::default();
@@ -674,6 +671,7 @@ fn custom(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 

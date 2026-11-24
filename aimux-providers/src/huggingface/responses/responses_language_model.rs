@@ -27,7 +27,7 @@ use super::convert_responses_usage::convert_usage;
 use super::convert_to_responses_messages::convert_to_huggingface_responses_messages;
 use super::map_responses_finish_reason::map_finish_reason;
 use super::responses_language_model_options as options;
-use super::responses_prepare_tools::prepare_responses_tools;
+use super::responses_prepare_tools::prepare_responses_tools_slice;
 use crate::huggingface::error::huggingface_failed_response_handler;
 
 fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
@@ -676,7 +676,7 @@ pub fn build_request_body_with_warnings(
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
-        prepare_responses_tools(&options.tools, options.tool_choice.as_ref());
+        prepare_responses_tools_slice(options.tools.as_deref(), options.tool_choice.as_ref());
     warnings.extend(tool_warnings);
 
     // Assemble the body. Key insertion order follows the TS `baseArgs` object

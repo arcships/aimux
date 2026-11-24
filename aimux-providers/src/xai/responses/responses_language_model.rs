@@ -41,7 +41,7 @@ use super::convert_to_responses_input::convert_to_xai_responses_input;
 use super::map_responses_finish_reason::map_xai_responses_finish_reason;
 use super::responses_api as types;
 use super::responses_language_model_options::{validate_response_options, xai_option};
-use super::responses_prepare_tools::prepare_responses_tools;
+use super::responses_prepare_tools::prepare_responses_tools_slice;
 
 /// Global counter for generating unique source IDs.
 static SOURCE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1355,7 +1355,8 @@ pub fn build_responses_request_body(
     let (input, input_warnings) = convert_to_xai_responses_input(&options.prompt)?;
     warnings.extend(input_warnings);
 
-    let prepared = prepare_responses_tools(&options.tools, options.tool_choice.as_ref())?;
+    let prepared =
+        prepare_responses_tools_slice(options.tools.as_deref(), options.tool_choice.as_ref())?;
     for tw in &prepared.tool_warnings {
         warnings.push(tw.clone());
     }

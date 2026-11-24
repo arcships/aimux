@@ -67,7 +67,7 @@ enum Blocking {
     // cooperative executor and the main actor never perform those waits.
     static func run<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global().async(flags: .assignCurrentContext) {
                 do { continuation.resume(returning: try body()) }
                 catch { continuation.resume(throwing: error) }
             }
@@ -75,7 +75,7 @@ enum Blocking {
     }
     static func drop(_ id: UInt64) {
         guard id != 0 else { return }
-        DispatchQueue.global(qos: .utility).async { aimux_drop(id) }
+        DispatchQueue.global().async(flags: .assignCurrentContext) { aimux_drop(id) }
     }
 }
 
@@ -231,7 +231,7 @@ final class HandleState: @unchecked Sendable {
         let value = id
         users += 1
         lock.unlock()
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global().async(flags: .assignCurrentContext) {
             _ = try? nativeCall(value, AimuxOps.OP_OPERATION_CANCEL, "{}")
             self.end(nil)
         }

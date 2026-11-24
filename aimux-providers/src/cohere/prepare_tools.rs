@@ -28,10 +28,10 @@ pub struct PreparedTools {
 /// - `LanguageModelV4ToolChoice::Tool` → filter tools and use `"REQUIRED"`
 #[must_use]
 pub fn prepare_tools(
-    tools: &Option<Vec<Tool>>,
+    tools: Option<&[Tool]>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
 ) -> PreparedTools {
-    let non_empty = tools.as_ref().filter(|t| !t.is_empty());
+    let non_empty = tools.filter(|t| !t.is_empty());
 
     let mut tool_warnings: Vec<Warning> = Vec::new();
 

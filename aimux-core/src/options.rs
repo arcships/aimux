@@ -3,6 +3,7 @@
 //! Aligned with V4 `LanguageModelV4CallOptions`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -133,7 +134,7 @@ pub struct CallOptions {
 
     /// Tools available to the model (function tools and/or provider-defined tools).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
+    pub tools: Option<Arc<[Tool]>>,
 
     /// How the model should choose tools. `generate_text` / `stream_text`
     /// always set it through [`prepare_tool_choice`], as the AI SDK does.

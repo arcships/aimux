@@ -4,11 +4,15 @@ use aimux_core::{
     embedding_model, image_model, reranking_model, search_model, speech_model, transcription_model,
     video_model,
 };
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde::de::{
+    DeserializeOwned, DeserializeSeed, IgnoredAny, IntoDeserializer, MapAccess, Visitor,
+    value::MapAccessDeserializer,
+};
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+use crate::request::Key;
+
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target};
+use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleKind};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
@@ -30,7 +34,7 @@ const fn operation(
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         required_capabilities: &[],
         cancellation: Cancellation::Abort,
         result_ownership: "owned",
@@ -133,41 +137,160 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     ]);
 }
 
-// Core options are canonical DTOs with open providerOptions/JSON fields. Keep
-// their serde implementations, but reject unknown operation-level control keys.
-fn check_fields(params: &Value, fields: &[&str]) -> Result<(), OpsError> {
-    let object = params.as_object().ok_or_else(|| {
-        OpsError::Protocol(ProtocolError::invalid_params("expected an options object"))
-    })?;
-    for key in object.keys() {
-        if !fields.contains(&key.as_str()) {
-            return Err(OpsError::Protocol(ProtocolError::invalid_params(format!(
-                "unknown field `{key}`"
-            ))));
+// Feed the canonical options DTO directly from the map, lifting the runtime
+// control out as we read it. Nested controls must be JSON objects (or null).
+fn options<T: DeserializeOwned>(params: Params<'_>, fields: &[&str]) -> Result<T, OpsError> {
+    struct Options<'a, T> {
+        fields: &'a [&'a str],
+        output: std::marker::PhantomData<T>,
+    }
+    impl<'de, T: DeserializeOwned> Visitor<'de> for Options<'_, T> {
+        type Value = T;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a model options object")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<T, M::Error> {
+            T::deserialize(MapAccessDeserializer::new(OptionFields {
+                map,
+                fields: self.fields,
+                nested_control: false,
+            }))
         }
     }
-    Ok(())
+    struct NestedControl<V>(V);
+    impl<'de, V: DeserializeSeed<'de>> DeserializeSeed<'de> for NestedControl<V> {
+        type Value = V::Value;
+
+        fn deserialize<D: serde::Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            deserializer.deserialize_any(self)
+        }
+    }
+    impl<'de, V: DeserializeSeed<'de>> Visitor<'de> for NestedControl<V> {
+        type Value = V::Value;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("an options object")
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            struct NoneValue<E>(std::marker::PhantomData<E>);
+            impl<'de, E: serde::de::Error> serde::Deserializer<'de> for NoneValue<E> {
+                type Error = E;
+                fn deserialize_any<W: Visitor<'de>>(self, visitor: W) -> Result<W::Value, E> {
+                    visitor.visit_unit()
+                }
+                fn deserialize_option<W: Visitor<'de>>(self, visitor: W) -> Result<W::Value, E> {
+                    visitor.visit_none()
+                }
+                serde::forward_to_deserialize_any! {
+                    bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+                    bytes byte_buf unit unit_struct newtype_struct seq tuple tuple_struct
+                    map struct enum identifier ignored_any
+                }
+            }
+            self.0.deserialize(NoneValue(std::marker::PhantomData))
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+            struct SomeMap<M>(M);
+            impl<'de, M: MapAccess<'de>> serde::Deserializer<'de> for SomeMap<M> {
+                type Error = M::Error;
+                fn deserialize_any<W: Visitor<'de>>(
+                    self,
+                    visitor: W,
+                ) -> Result<W::Value, M::Error> {
+                    visitor.visit_map(self.0)
+                }
+                fn deserialize_option<W: Visitor<'de>>(
+                    self,
+                    visitor: W,
+                ) -> Result<W::Value, M::Error> {
+                    visitor.visit_some(MapAccessDeserializer::new(self.0))
+                }
+                serde::forward_to_deserialize_any! {
+                    bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+                    bytes byte_buf unit unit_struct newtype_struct seq tuple tuple_struct
+                    map struct enum identifier ignored_any
+                }
+            }
+            self.0.deserialize(SomeMap(map))
+        }
+    }
+    struct OptionFields<'a, M> {
+        map: M,
+        fields: &'a [&'a str],
+        nested_control: bool,
+    }
+    impl<'de, M: MapAccess<'de>> MapAccess<'de> for OptionFields<'_, M> {
+        type Error = M::Error;
+
+        fn next_key_seed<K: DeserializeSeed<'de>>(
+            &mut self,
+            seed: K,
+        ) -> Result<Option<K::Value>, M::Error> {
+            while let Some(Key(key)) = self.map.next_key()? {
+                if key == "abort" {
+                    self.map.next_value::<IgnoredAny>()?;
+                    continue;
+                }
+                if !self.fields.contains(&key.as_ref()) {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "unknown field `{key}`"
+                    )));
+                }
+                self.nested_control = matches!(key.as_ref(), "timeout" | "poll");
+                return match key {
+                    std::borrow::Cow::Borrowed(key) => {
+                        seed.deserialize(serde::de::value::BorrowedStrDeserializer::new(key))
+                    }
+                    std::borrow::Cow::Owned(key) => seed.deserialize(key.into_deserializer()),
+                }
+                .map(Some);
+            }
+            Ok(None)
+        }
+
+        fn next_value_seed<V: DeserializeSeed<'de>>(
+            &mut self,
+            seed: V,
+        ) -> Result<V::Value, M::Error> {
+            if self.nested_control {
+                self.map.next_value_seed(NestedControl(seed))
+            } else {
+                self.map.next_value_seed(seed)
+            }
+        }
+    }
+
+    let visitor = Options {
+        fields,
+        output: std::marker::PhantomData,
+    };
+    match params {
+        Params::Wire(wire) => {
+            let mut deserializer = serde_json::Deserializer::from_slice(wire.bytes());
+            let value = serde::Deserializer::deserialize_map(&mut deserializer, visitor)
+                .map_err(|error| wire.decode_error(&error))?;
+            deserializer
+                .end()
+                .map_err(|error| wire.decode_error(&error))?;
+            Ok(value)
+        }
+        Params::Value(value) => serde::Deserializer::deserialize_map(value, visitor)
+            .map_err(|error| crate::request::invalid_params(&error)),
+    }
 }
 
-fn options<T: DeserializeOwned>(params: Value, fields: &[&str]) -> Result<T, OpsError> {
-    check_fields(&params, fields)?;
-    if let Some(timeout) = params.get("timeout").filter(|value| !value.is_null()) {
-        check_fields(timeout, &["totalMs", "stepMs", "firstChunkMs", "chunkMs"])?;
-    }
-    if let Some(poll) = params.get("poll").filter(|value| !value.is_null()) {
-        check_fields(poll, &["intervalMs", "timeoutMs"])?;
-    }
-    decode(params)
-}
-
-fn result(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
-}
+use crate::dispatch::serialize_result as result;
 
 macro_rules! model_call {
     ($name:ident, $kind:ident, $module:ident, $options:ident, $call:ident, [$($field:literal),* $(,)?]) => {
-        fn $name(ctx: Ctx, target: Target, mut params: Value) -> CallFuture {
+        fn $name(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
             Box::pin(async move {
                 let model = match target {
                     Target::Handle(Entry::$kind(model)) => model,
@@ -181,9 +304,6 @@ macro_rules! model_call {
                 };
                 // Dispatch has resolved this control through the owner-aware
                 // resolver and put its signal in Ctx. Core DTOs stay handle-free.
-                if let Some(object) = params.as_object_mut() {
-                    object.remove("abort");
-                }
                 let mut options: $module::$options = options(params, &[
                     $($field,)* "maxRetries", "timeout", "providerOptions", "headers",
                 ])?;
@@ -290,8 +410,10 @@ model_call!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::envelope::ProtocolError;
     use aimux_core::{AbortSignal, error::AiMuxError};
-    use serde_json::json;
+    use serde::Serialize;
+    use serde_json::{Value, json};
     use std::{
         future::Future,
         pin::Pin,
@@ -481,14 +603,21 @@ mod tests {
     }
 
     async fn invoke(op: &str, entry: Entry, params: Value) -> Result<Value, OpsError> {
-        let mut registered = vec![];
-        register(&mut registered);
-        let registry = crate::handle::HandleRegistry::default();
-        let ctx = context();
+        let registry = crate::handle::HandleRegistry::global();
+        let mut ctx = context();
+        ctx.owner = crate::handle::Owner::new_node().unwrap();
         let handle = registry.insert(ctx.owner, entry).unwrap();
-        crate::dispatch::Dispatcher::new(&registry, &registered)
-            .call(ctx, handle, op, params)
-            .await
+        let owner = ctx.owner;
+        let params = params.to_string();
+        let result = crate::dispatch::call_wire(
+            ctx,
+            handle,
+            op,
+            crate::dispatch::WireParams::new(params.as_bytes(), "params_json"),
+        )
+        .await;
+        registry.release_owner(owner);
+        result.map(|json| serde_json::from_str(&json).unwrap())
     }
 
     fn controls(mut params: Value) -> Value {
@@ -745,7 +874,7 @@ mod tests {
         let error = search(
             ctx,
             Target::Handle(Entry::Search(model.clone())),
-            json!({"query": "q"}),
+            json!({"query": "q"}).into(),
         )
         .await;
         assert!(matches!(
@@ -765,7 +894,10 @@ mod tests {
             response: Default::default(),
             provider_metadata: None,
         };
-        assert_eq!(result(speech).unwrap()["audio"], "AAH/");
+        assert_eq!(
+            serde_json::from_str::<Value>(&result(speech).unwrap()).unwrap()["audio"],
+            "AAH/"
+        );
         let image = image_model::ImageResult {
             images: image_model::ImageOutputs::Binary(vec![vec![0, 1, 255]]),
             warnings: vec![],
@@ -773,9 +905,12 @@ mod tests {
             provider_metadata: None,
             usage: None,
         };
-        assert_eq!(result(image).unwrap()["images"], json!(["AAH/"]));
+        assert_eq!(
+            serde_json::from_str::<Value>(&result(image).unwrap()).unwrap()["images"],
+            json!(["AAH/"])
+        );
         let options: transcription_model::TranscriptionCallOptions = options(
-            json!({"audio": "AAH/", "mediaType": "audio/wav"}),
+            json!({"audio": "AAH/", "mediaType": "audio/wav"}).into(),
             &["audio", "mediaType"],
         )
         .unwrap();

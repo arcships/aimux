@@ -386,7 +386,7 @@ async fn do_generate_extracts_tool_call() {
         }),
     );
     let options = CallOptions {
-        tools: Some(vec![Tool::from(tool)]),
+        tools: Some(vec![Tool::from(tool)].into()),
         ..default_options(test_prompt())
     };
 
@@ -489,7 +489,7 @@ async fn do_stream_emits_tool_call() {
         json!({"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}),
     );
     let options = CallOptions {
-        tools: Some(vec![Tool::from(tool)]),
+        tools: Some(vec![Tool::from(tool)].into()),
         ..default_options(test_prompt())
     };
     let result = model
