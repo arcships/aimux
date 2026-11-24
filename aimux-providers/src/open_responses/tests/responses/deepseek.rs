@@ -478,6 +478,79 @@ async fn empty_terminal_output_clears_the_replay_record() {
     );
 }
 
+// A terminal event without an `output` array leaves the earlier done events in
+// charge of the replay record: they keep output-index order and the id
+// recovered from the added item, and every index still publishes once.
+#[tokio::test]
+async fn terminal_event_without_output_array_replays_the_reported_items() {
+    let search = json!({"type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"答", "annotations":[]}]});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"s"}}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"message", "id":"m"}}),
+        // The later item completes first; the fallback record still keeps
+        // output-index order, not completion order.
+        json!({"type":"response.output_item.done", "output_index":1, "item":message}),
+        // The done item lost its id, so the fallback record recovers the id
+        // from the added item, the same one the call was published with.
+        json!({"type":"response.output_item.done", "output_index":0, "item":search}),
+        json!({"type":"response.completed", "response":{"id":"r1", "model":"deepseek-flash", "status":"completed"}}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    let calls = tool_calls(&parts);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].tool_call_id, "s");
+    let results = tool_results(&parts);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].tool_call_id, "s");
+    let mut persisted = search.clone();
+    persisted["id"] = json!("s");
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([persisted, message])
+    );
+}
+
+// A stream that ends without a terminal event falls back to the reported items
+// in output-index order, and every index still publishes once.
+#[tokio::test]
+async fn stream_without_terminal_event_replays_the_reported_items() {
+    let reasoning = json!({"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text", "text":"想"}], "summary":[], "signature":"sig", "kind":"opaque"});
+    let search = json!({"id":"s", "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"答", "annotations":[]}]});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"web_search_call", "id":"s"}}),
+        json!({"type":"response.output_item.added", "output_index":2, "item":{"type":"message", "id":"m"}}),
+        // Completion order is the reverse of output order, and no terminal
+        // event follows.
+        json!({"type":"response.output_item.done", "output_index":2, "item":message}),
+        json!({"type":"response.output_item.done", "output_index":1, "item":search}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reasoning}),
+    ];
+    let (model, _) = model(
+        "https://api.deepseek.com",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&model, &options(Some(true))).await;
+    let calls = tool_calls(&parts);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].tool_call_id, "s");
+    let results = tool_results(&parts);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].tool_call_id, "s");
+    assert_eq!(
+        finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+        json!([reasoning, search, message])
+    );
+}
+
 // `"id": null` is missing identity too: the `added` id must be used both on
 // the call and in the stored item, instead of the synthetic fallback id.
 #[tokio::test]
