@@ -50,15 +50,19 @@ running; a returned task ID that does not match the operation is rejected.
 
 An absolute HTTP(S) result URL on another origin becomes `VideoData::Url`;
 Core downloads it without provider credentials. A result URL on the provider's
-own origin — absolute or relative — is downloaded with the configured
-credentials: a relative one resolves against the base URL as a directory and
-must remain on that origin, and an absolute one is authenticated only while its
-origin matches. If `url` is absent/null, the provider downloads
-`/videos/{id}/content`. Every authenticated asset URL carries the provider's
-configured query parameters (`api-version`, `key`), and a query the response's
-own URL carried is kept alongside them. Authenticated downloads use the
-existing SSRF guard, allow the explicitly configured origin, and strip caller
-headers on a redirect to another origin. Non-HTTP schemes, foreign
+own origin — absolute or relative — is downloaded by the provider: a relative
+one resolves against the base URL as a directory and must remain on that
+origin, and an absolute one is downloaded only while its origin matches. If
+`url` is absent/null, the provider downloads `/videos/{id}/content`. An
+unsigned asset URL carries the provider's configured query parameters
+(`api-version`, `key`) and the configured credentials. A URL whose own query
+authenticates it — a presigned link, such as SigV4 `X-Amz-Signature`, a
+`Signature`, `sig` or token parameter — is requested exactly as received: its
+path and query are neither modified nor re-encoded, and no provider credential
+is attached, because a signature covers the whole canonical query and a second
+authentication scheme next to it is an auth conflict. Download requests use
+the existing SSRF guard, allow the explicitly configured origin, and strip
+caller headers on a redirect to another origin. Non-HTTP schemes, foreign
 protocol-relative references, and URL userinfo are rejected. Creation and
 content-download exchanges move whole media files, so they use a 600-second
 exchange guard instead of the 30-second default.

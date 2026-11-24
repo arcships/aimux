@@ -285,6 +285,21 @@ async fn same_origin_absolute_url_is_downloaded_with_credentials() {
     assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
 }
 
+/// Rejects any request whose path and query differ from `target` in any way:
+/// an added, replaced, reordered or re-encoded parameter, or a different path,
+/// does not match.
+struct ExactTarget(String);
+
+impl wiremock::Match for ExactTarget {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        let actual = match request.url.query() {
+            Some(query) => format!("{}?{query}", request.url.path()),
+            None => request.url.path().to_owned(),
+        };
+        actual == self.0
+    }
+}
+
 #[tokio::test]
 async fn relative_asset_keeps_the_gateway_query_parameters() {
     let server = MockServer::start().await;
@@ -293,17 +308,16 @@ async fn relative_asset_keeps_the_gateway_query_parameters() {
         json!({
             "id":"task",
             "status":"succeeded",
-            "url":"assets/movie.mp4?Expires=1&Signature=abc"
+            "url":"assets/movie.mp4?Expires=1"
         }),
     )
     .await;
     Mock::given(method("GET"))
         .and(path("/v1/assets/movie.mp4"))
-        // The gateway's configured parameter is added, and the signature the
-        // response's own URL carried stays.
+        // The gateway's configured parameter is added next to the query the
+        // response's own URL carried.
         .and(query_param("api-version", "2024-01"))
         .and(query_param("Expires", "1"))
-        .and(query_param("Signature", "abc"))
         .and(header("authorization", "Bearer fixture-key"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
         .expect(1)
@@ -318,6 +332,85 @@ async fn relative_asset_keeps_the_gateway_query_parameters() {
         panic!()
     };
     assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+}
+
+/// A result URL that authenticates itself is a presigned target. The fixture
+/// only answers the exact path and query it was given, so adding, replacing,
+/// reordering or re-encoding a parameter, or attaching a second credential,
+/// fails the download instead of being tolerated.
+#[tokio::test]
+async fn signed_result_target_is_requested_exactly_as_received() {
+    let server = MockServer::start().await;
+    let target = "/files/movie.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={{SECRET_7tlqstmj}}&response-content-disposition=attachment%3B%20filename%3D%22movie.mp4%22";
+    status(
+        &server,
+        json!({"id":"task","status":"completed","url": format!("{}{target}", server.uri())}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(ExactTarget(target.into()))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+    let requests = server.received_requests().await.unwrap();
+    let download = requests
+        .iter()
+        .find(|request| request.url.path() == "/files/movie.mp4")
+        .unwrap();
+    assert_eq!(
+        download.url.query(),
+        Some(&target[target.find('?').unwrap() + 1..])
+    );
+    assert!(!download.headers.contains_key("authorization"));
+}
+
+/// A relative signed asset is resolved against the base and keeps its own
+/// path and query, without the gateway's configured parameters.
+#[tokio::test]
+async fn relative_signed_target_is_resolved_and_preserved() {
+    let server = MockServer::start().await;
+    let raw = "assets/movie.mp4?X-Amz-Signature=abc%2Fdef&X-Amz-Expires=900";
+    let target = "/v1/assets/movie.mp4?X-Amz-Signature=abc%2Fdef&X-Amz-Expires=900";
+    status(
+        &server,
+        json!({"id":"task","status":"succeeded","url": raw}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(ExactTarget(target.into()))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"video".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let VideoOperationStatus::Completed(result) = provider_with_api_version(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(matches!(&result.videos[0], VideoData::Binary { data, .. } if data == b"video"));
+    let requests = server.received_requests().await.unwrap();
+    let download = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/assets/movie.mp4")
+        .unwrap();
+    assert_eq!(
+        download.url.query(),
+        Some(&target[target.find('?').unwrap() + 1..])
+    );
+    assert!(!download.headers.contains_key("authorization"));
 }
 
 #[tokio::test]
@@ -380,6 +473,19 @@ async fn invalid_asset_urls_are_not_credentialed_requests() {
         assert!(!error.is_retryable(), "{url}");
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
+}
+
+#[tokio::test]
+async fn non_string_asset_url_is_rejected() {
+    let server = MockServer::start().await;
+    status(&server, json!({"id":"task","status":"completed","url":42})).await;
+    let error = provider(&server)
+        .video("m")
+        .do_status(&json!({"id":"task"}), &VideoCallOptions::new("x"))
+        .await
+        .unwrap_err();
+    assert!(!error.is_retryable());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
