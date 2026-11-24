@@ -159,7 +159,8 @@ impl ImageModel for OpenAICompatibleImageModel {
                 let (bytes, content_type) = form.finish();
                 let resp = aimux_provider_utils::post_to_api(
                     self.config
-                        .http_request("/images/edits", headers, options)?,
+                        .http_request("/images/edits", headers, options)?
+                        .generation_for(options),
                     HttpBody::Bytes(bytes, content_type),
                     aimux_provider_utils::create_json_response_handler(),
                     self.config.failed_response_handler(),
@@ -180,7 +181,8 @@ impl ImageModel for OpenAICompatibleImageModel {
                 let body = Value::Object(body);
                 let resp = aimux_provider_utils::post_json_to_api(
                     self.config
-                        .http_request("/images/generations", headers, options)?,
+                        .http_request("/images/generations", headers, options)?
+                        .generation_for(options),
                     body,
                     aimux_provider_utils::create_json_response_handler(),
                     self.config.failed_response_handler(),

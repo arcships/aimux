@@ -1,7 +1,7 @@
 //! Dispatch, ownership and error projection invariants, with no provider I/O.
 use aimux_core::error::ApiCallError;
 use aimux_core::{AbortSignal, AiMuxError};
-use aimux_ops::dispatch::{CallFuture, Ctx, Dispatcher, EventStream, Handler, Target};
+use aimux_ops::dispatch::{CallFuture, Ctx, Dispatcher, EventStream, Handler, Params, Target};
 use aimux_ops::envelope::{BindingError, OpsError, ProtocolError};
 use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use aimux_ops::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
@@ -46,10 +46,10 @@ fn unknown(error: &OpsError) {
         OpsError::Binding(BindingError::InvalidHandle { actual: None, .. })
     ));
 }
-fn success(_: Ctx, target: Target, _: Value) -> CallFuture {
+fn success(_: Ctx, target: Target, _: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         assert!(matches!(target, Target::Global));
-        Ok(Value::Null)
+        Ok("null".into())
     })
 }
 
@@ -103,17 +103,17 @@ async fn global_target_and_mode_preflight_are_explicit_and_projected() {
 }
 
 static SECONDARY_CALLS: AtomicUsize = AtomicUsize::new(0);
-fn with_abort(ctx: Ctx, _: Target, _: Value) -> CallFuture {
+fn with_abort(ctx: Ctx, _: Target, _: Params<'_>) -> CallFuture<'_> {
     SECONDARY_CALLS.fetch_add(1, Ordering::SeqCst);
     Box::pin(async move {
         assert!(ctx.abort.is_some());
-        Ok(Value::Null)
+        Ok("null".into())
     })
 }
 #[tokio::test]
 async fn secondary_handles_use_the_same_owner_resolver_before_handler_entry() {
     static SECONDARY: OpDescriptor = OpDescriptor {
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         ..descriptor("test.secondary", OpMode::Call, &[])
     };
     let registry = HandleRegistry::default();
@@ -162,7 +162,7 @@ async fn secondary_handles_use_the_same_owner_resolver_before_handler_entry() {
     assert_eq!(SECONDARY_CALLS.load(Ordering::SeqCst), 1);
 }
 
-fn api_failure(_: Ctx, _: Target, _: Value) -> CallFuture {
+fn api_failure(_: Ctx, _: Target, _: Params<'_>) -> CallFuture<'_> {
     Box::pin(async {
         let mut api = ApiCallError::new("retry later", "https://mock.invalid", json!({}));
         api.response_headers = Some(std::collections::HashMap::from([(

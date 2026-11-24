@@ -9,6 +9,8 @@
 
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -46,10 +48,10 @@ pub struct GenerateContentResponse {
 
 /// A single candidate in the response.
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Candidate {
+#[serde(rename_all = "camelCase", bound(deserialize = "P: Deserialize<'de>"))]
+pub struct Candidate<P = Value> {
     #[serde(default)]
-    pub content: Option<CandidateContent>,
+    pub content: Option<CandidateContent<P>>,
     /// `STOP`, `MAX_TOKENS`, `SAFETY`, `RECITATION`, …
     #[serde(default)]
     pub finish_reason: Option<String>,
@@ -67,9 +69,10 @@ pub struct Candidate {
 
 /// `candidate.content` — a role plus an ordered list of parts.
 #[derive(Debug, Deserialize)]
-pub struct CandidateContent {
+#[serde(bound(deserialize = "P: Deserialize<'de>"))]
+pub struct CandidateContent<P = Value> {
     #[serde(default)]
-    pub parts: Option<Vec<Value>>,
+    pub parts: Option<Vec<P>>,
     #[serde(default)]
     pub role: Option<String>,
 }
@@ -128,24 +131,72 @@ pub struct TokenDetail {
 /// missing on keep-alive chunks).
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StreamChunk {
-    #[serde(default)]
-    pub response_id: Option<String>,
-    #[serde(default)]
-    pub candidates: Option<Vec<Candidate>>,
-    #[serde(default)]
+pub struct StreamChunk<'a> {
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub response_id: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    pub candidates: Option<Vec<Candidate<StreamContentPart<'a>>>>,
+    #[serde(default, deserialize_with = "lenient_stream_usage")]
     pub usage_metadata: Option<GoogleUsageMetadata>,
     #[serde(default)]
     pub prompt_feedback: Option<Value>,
-    #[serde(default)]
-    pub model_version: Option<String>,
+    #[serde(
+        default,
+        borrow,
+        deserialize_with = "crate::stream::deserialize_optional_cow"
+    )]
+    pub model_version: Option<Cow<'a, str>>,
+}
+
+/// Keep text borrowed and preserve the open-ended shapes of all other parts.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum StreamContentPart<'a> {
+    Object {
+        #[serde(default, borrow)]
+        text: Option<StreamText<'a>>,
+        #[serde(flatten)]
+        fields: serde_json::Map<String, Value>,
+    },
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum StreamText<'a> {
+    Text(#[serde(borrow)] Cow<'a, str>),
+    Other(serde::de::IgnoredAny),
+}
+
+impl<'a> StreamText<'a> {
+    pub(super) fn into_text(self) -> Option<Cow<'a, str>> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Other(_) => None,
+        }
+    }
 }
 
 /// One Google SSE event. Error envelopes must be attempted before the very
 /// permissive chunk shape, whose fields are all optional.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum GoogleStreamEvent {
+// Keep the common chunk inline to avoid allocating a box for every SSE event.
+#[allow(clippy::large_enum_variant)]
+pub enum GoogleStreamEvent<'a> {
     Error(GoogleErrorEnvelope),
-    Chunk(Box<StreamChunk>),
+    Chunk(#[serde(borrow)] StreamChunk<'a>),
+}
+
+fn lenient_stream_usage<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<GoogleUsageMetadata>, D::Error> {
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value
+        .as_ref()
+        .and_then(|raw| GoogleUsageMetadata::deserialize(raw).ok()))
 }

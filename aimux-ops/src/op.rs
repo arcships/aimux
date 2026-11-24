@@ -54,7 +54,8 @@ pub struct OpDescriptor {
     pub event_type: Option<TypeRef>,
     pub scope: Scope,
     pub terminal_type: Option<TypeRef>,
-    pub runtime_handle_fields: &'static [(&'static str, &'static [HandleKind])],
+    #[serde(serialize_with = "serialize_handle_fields")]
+    pub runtime_handle_fields: &'static [HandleField],
     pub required_capabilities: &'static [&'static str],
     pub cancellation: Cancellation,
     pub result_ownership: &'static str,
@@ -84,4 +85,14 @@ pub enum RequestBytePolicy {
     Json,
     JsonWithBase64,
     Binary,
+}
+
+/// An operation's pre-split secondary handle path and its allowed kinds.
+pub type HandleField = (&'static [&'static str], &'static [HandleKind]);
+
+fn serialize_handle_fields<S: Serializer>(
+    fields: &[HandleField],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(fields.iter().map(|(path, kinds)| (path.join("."), kinds)))
 }

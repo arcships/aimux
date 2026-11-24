@@ -1402,17 +1402,20 @@ mod hugging_face_responses_language_model {
             let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
 
             let mut options = default_options(test_prompt());
-            options.tools = Some(vec![Tool::from(
-                FunctionTool::new(
-                    "getWeather",
-                    json!({
-                        "type": "object",
-                        "properties": { "location": { "type": "string" } },
-                        "required": ["location"]
-                    }),
-                )
-                .with_description("Get weather information"),
-            )]);
+            options.tools = Some(
+                vec![Tool::from(
+                    FunctionTool::new(
+                        "getWeather",
+                        json!({
+                            "type": "object",
+                            "properties": { "location": { "type": "string" } },
+                            "required": ["location"]
+                        }),
+                    )
+                    .with_description("Get weather information"),
+                )]
+                .into(),
+            );
             options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "getWeather".to_string(),
             });
@@ -1475,10 +1478,13 @@ mod hugging_face_responses_language_model {
 
             // Test auto
             let mut options = default_options(test_prompt());
-            options.tools = Some(vec![Tool::from(FunctionTool::new(
-                "test",
-                json!({ "type": "object" }),
-            ))]);
+            options.tools = Some(
+                vec![Tool::from(FunctionTool::new(
+                    "test",
+                    json!({ "type": "object" }),
+                ))]
+                .into(),
+            );
             options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
 
             let result = model.do_generate(&options).await.expect("should succeed");
@@ -1490,10 +1496,13 @@ mod hugging_face_responses_language_model {
 
             // Test required
             let mut options = default_options(test_prompt());
-            options.tools = Some(vec![Tool::from(FunctionTool::new(
-                "test",
-                json!({ "type": "object" }),
-            ))]);
+            options.tools = Some(
+                vec![Tool::from(FunctionTool::new(
+                    "test",
+                    json!({ "type": "object" }),
+                ))]
+                .into(),
+            );
             options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
 
             let result = model.do_generate(&options).await.expect("should succeed");

@@ -193,7 +193,7 @@ impl DeepSeekChatLanguageModel {
         }
 
         let prepared = prepare_tools(
-            options.tools.as_ref(),
+            options.tools.as_deref(),
             options.tool_choice.as_ref(),
             self.config.supports_strict_tool_calls,
         )?;

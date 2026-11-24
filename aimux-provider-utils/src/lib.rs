@@ -32,6 +32,7 @@ pub mod map_reasoning_to_provider;
 pub mod media_type;
 pub mod multipart;
 pub mod parse_provider_options;
+pub mod passthrough;
 pub mod post_to_api;
 pub mod provider_headers;
 pub mod read_response_with_size_limit;
@@ -71,7 +72,7 @@ pub use get_from_api::get_from_api;
 pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
-pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
+pub use http::{ExchangeContext, ExchangeKind, HttpBody, HttpRequest, sleep_or_abort};
 pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
 pub use is_valid_hostname_part::is_valid_hostname_part;
 pub use logging::{init_logging, redact_error_context};
@@ -87,7 +88,15 @@ pub use multipart::{MultipartForm, media_type_to_extension};
 pub use parse_provider_options::{
     nullish_positive, optional_field, parse_option_fields, parse_provider_options,
 };
-pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
+pub use passthrough::{
+    DEFAULT_MAX_BUFFER_BYTES, DEFAULT_MAX_RECORDED_BYTES, MAX_ALLOWED_BUFFER_BYTES,
+    NativeBodyStream, NativeContext, NativeEndpoint, NativeError, NativeExchangeFinished,
+    NativeExchangeObserver, NativeExchangeOutcome, NativeExchangeStarted, NativeRequest,
+    NativeResponse, NativeRetryPolicy, SIGV4_PROTECTED_HEADERS, SafeRetryOptions, native_request,
+};
+pub use post_to_api::{
+    post_form_data_to_api, post_json_to_api, post_to_api, post_to_api_with_header_layers,
+};
 pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
@@ -95,12 +104,15 @@ pub use response_handler::{
     ProviderErrorParts, RequestBodySource, ResponseHandler, ResponseHandlerInput,
     ResponseHandlerOutput, create_binary_response_handler, create_event_source_response_handler,
     create_json_bytes_response_handler, create_json_error_response_handler,
-    create_json_response_handler, create_status_code_error_response_handler,
-    invalid_response_api_call, public_error_body,
+    create_json_response_handler, create_json_response_handler_with_body,
+    create_raw_event_source_response_handler, create_status_code_error_response_handler,
+    invalid_response_api_call, parse_sse_json, public_error_body,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4AuthFetch, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;
-pub use tool_result_to_content::{tool_result_content_value, tool_result_to_content};
+pub use tool_result_to_content::{
+    tool_result_content_value, tool_result_to_content, warn_tool_result_error_flag,
+};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use uint8_utils::{
     Base64OrBytes, InvalidBase64Error, convert_base64_to_uint8_array, convert_to_base64,

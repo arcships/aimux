@@ -299,7 +299,7 @@ mod do_generate {
             let result = provider(&fetch)
                 .chat(MODEL)
                 .do_generate(&CallOptions {
-                    tools: Some(vec![test_tool()]),
+                    tools: Some(vec![test_tool()].into()),
                     ..options()
                 })
                 .await
@@ -340,16 +340,19 @@ mod do_generate {
             let result = provider(&fetch)
                 .chat(MODEL)
                 .do_generate(&CallOptions {
-                    tools: Some(vec![Tool::Function(FunctionTool::new(
-                        "currentTime",
-                        json!({
-                            "type": "object",
-                            "properties": {},
-                            "required": [],
-                            "additionalProperties": false,
-                            "$schema": "http://json-schema.org/draft-07/schema#"
-                        }),
-                    ))]),
+                    tools: Some(
+                        vec![Tool::Function(FunctionTool::new(
+                            "currentTime",
+                            json!({
+                                "type": "object",
+                                "properties": {},
+                                "required": [],
+                                "additionalProperties": false,
+                                "$schema": "http://json-schema.org/draft-07/schema#"
+                            }),
+                        ))]
+                        .into(),
+                    ),
                     ..CallOptions::new(vec![LanguageModelMessage::user_text(
                         "What is the current time?",
                     )])
@@ -656,7 +659,7 @@ mod do_generate {
                 .chat(MODEL)
                 .do_generate(&CallOptions {
                     tool_choice: Some(LanguageModelV4ToolChoice::None),
-                    tools: Some(vec![test_tool()]),
+                    tools: Some(vec![test_tool()].into()),
                     ..options()
                 })
                 .await
@@ -1123,7 +1126,7 @@ mod do_stream {
             let result = provider(&fetch)
                 .chat(MODEL)
                 .do_stream(&CallOptions {
-                    tools: Some(vec![test_tool()]),
+                    tools: Some(vec![test_tool()].into()),
                     include_raw_chunks: Some(false),
                     ..options()
                 })
@@ -1163,15 +1166,18 @@ mod do_stream {
             let result = provider(&fetch)
                 .chat(MODEL)
                 .do_stream(&CallOptions {
-                    tools: Some(vec![Tool::Function(FunctionTool::new(
-                        "test-tool",
-                        json!({
-                            "type": "object",
-                            "properties": {},
-                            "additionalProperties": true,
-                            "$schema": "http://json-schema.org/draft-07/schema#"
-                        }),
-                    ))]),
+                    tools: Some(
+                        vec![Tool::Function(FunctionTool::new(
+                            "test-tool",
+                            json!({
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true,
+                                "$schema": "http://json-schema.org/draft-07/schema#"
+                            }),
+                        ))]
+                        .into(),
+                    ),
                     include_raw_chunks: Some(false),
                     ..options()
                 })
@@ -1200,16 +1206,19 @@ mod do_stream {
             let result = provider(&fetch)
                 .chat(MODEL)
                 .do_stream(&CallOptions {
-                    tools: Some(vec![Tool::Function(FunctionTool::new(
-                        "test-tool",
-                        json!({
-                            "type": "object",
-                            "properties": {},
-                            "required": [],
-                            "additionalProperties": false,
-                            "$schema": "http://json-schema.org/draft-07/schema#"
-                        }),
-                    ))]),
+                    tools: Some(
+                        vec![Tool::Function(FunctionTool::new(
+                            "test-tool",
+                            json!({
+                                "type": "object",
+                                "properties": {},
+                                "required": [],
+                                "additionalProperties": false,
+                                "$schema": "http://json-schema.org/draft-07/schema#"
+                            }),
+                        ))]
+                        .into(),
+                    ),
                     include_raw_chunks: Some(false),
                     ..options()
                 })

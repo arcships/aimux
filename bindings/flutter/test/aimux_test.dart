@@ -279,8 +279,9 @@ void main() {
     final before = (await stats())['produced'];
     await Future<void>.delayed(const Duration(milliseconds: 50));
     expect((await stats())['produced'], before);
-    // One transport credit plus the next C callback, waiting for credit.
-    expect(before, 2);
+    // Four Dart credits, three unacknowledged C notifications, and the
+    // next C callback waiting for space.
+    expect(before, 8);
     sub.resume();
     await done.future;
     expect(frames.whereType<StreamFrameEvent>().length, 1000);

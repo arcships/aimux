@@ -374,7 +374,7 @@ pub(super) fn tool_options() -> CallOptions {
         options(),
         json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
     );
-    options.tools = Some(vec![Tool::Function(weather_tool())]);
+    options.tools = Some(vec![Tool::Function(weather_tool())].into());
     options
 }
 

@@ -30,6 +30,7 @@ fn request(
         call_id: None,
         recording_context: None,
         response_timeout: None,
+        kind: aimux_provider_utils::ExchangeKind::Standard,
         max_json_response_bytes: None,
         validate_url: true,
         trusted_origin: trusted_origin.map(str::to_owned),

@@ -103,13 +103,14 @@ impl LanguageModel for OpenAIModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self
             .config
-            .request_headers(options.headers.as_ref())
+            .request_header_layers(options.headers.as_ref())
             .await?;
         let http =
             self.config
-                .http_request(self.config.url("/chat/completions")?, headers, options);
+                .http_request(self.config.url("/chat/completions")?, Vec::new(), options);
         execute_generate(
             http,
+            Some(headers.into()),
             &self.model_id,
             options,
             self.config.transform_request_body.as_ref(),
@@ -121,13 +122,14 @@ impl LanguageModel for OpenAIModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self
             .config
-            .request_headers(options.headers.as_ref())
+            .request_header_layers(options.headers.as_ref())
             .await?;
         let http =
             self.config
-                .http_request(self.config.url("/chat/completions")?, headers, options);
+                .http_request(self.config.url("/chat/completions")?, Vec::new(), options);
         execute_stream(
             http,
+            Some(headers.into()),
             &self.model_id,
             options,
             self.config.transform_request_body.as_ref(),
@@ -157,6 +159,7 @@ impl LanguageModel for OpenAIModel {
 /// `choices` is empty.
 pub(crate) async fn execute_generate(
     http: HttpRequest,
+    header_layers: Option<std::sync::Arc<[aimux_provider_utils::HeaderMapOpt]>>,
     model_id: &str,
     options: &CallOptions,
     transform_request_body: Option<&TransformRequestBody>,
@@ -169,9 +172,10 @@ pub(crate) async fn execute_generate(
         None => request_result.body,
     };
 
-    let resp = aimux_provider_utils::post_json_to_api(
+    let resp = aimux_provider_utils::post_to_api_with_header_layers(
         http,
-        body.clone(),
+        header_layers,
+        aimux_provider_utils::HttpBody::Json(body.clone()),
         aimux_provider_utils::create_json_response_handler::<ChatCompletionResponse>(),
         crate::openai::error::openai_failed_response_handler(),
     )
@@ -179,9 +183,7 @@ pub(crate) async fn execute_generate(
 
     let response_headers = resp.response_headers;
 
-    // Parse the raw body once: the `Value` keeps the provider's original
-    // fields (incl. vendor-specific usage fields) for `Usage.raw` (M10).
-    let response_value = resp.raw_value.unwrap_or(Value::Null);
+    let response_body = resp.raw_value;
     let data = resp.value;
 
     let choice = data.choices.into_iter().next().ok_or_else(|| {
@@ -262,9 +264,9 @@ pub(crate) async fn execute_generate(
         .unwrap_or(FINISH_OTHER);
 
     let usage = data.usage.as_ref().map_or_else(Usage::default, |usage| {
-        convert_usage(usage, response_value.get("usage"))
+        convert_usage(&usage.typed, Some(&usage.raw))
     });
-    let raw_usage = data.usage.unwrap_or_default();
+    let raw_usage = data.usage.map(|usage| usage.typed).unwrap_or_default();
 
     // Build provider metadata: logprobs + prediction tokens.
     let mut pm_openai = serde_json::json!({});
@@ -291,7 +293,7 @@ pub(crate) async fn execute_generate(
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
             headers: Some(response_headers),
-            body: Some(response_value),
+            body: response_body,
             // `created || undefined`: Azure content-filter chunks use 0 as a
             // placeholder (openai chat/get-response-metadata.ts).
             ..aimux_provider_utils::create_language_model_response_metadata(
@@ -319,6 +321,7 @@ pub(crate) async fn execute_generate(
 /// stream fails; transport errors surface as `Err` items in the stream.
 pub(crate) async fn execute_stream(
     http: HttpRequest,
+    header_layers: Option<std::sync::Arc<[aimux_provider_utils::HeaderMapOpt]>>,
     model_id: &str,
     options: &CallOptions,
     transform_request_body: Option<&TransformRequestBody>,
@@ -335,10 +338,11 @@ pub(crate) async fn execute_stream(
     };
     let endpoint = http.url.clone();
 
-    let resp = aimux_provider_utils::post_json_to_api(
+    let resp = aimux_provider_utils::post_to_api_with_header_layers(
         http,
-        body.clone(),
-        aimux_provider_utils::create_event_source_response_handler::<Value>(),
+        header_layers,
+        aimux_provider_utils::HttpBody::Json(body.clone()),
+        aimux_provider_utils::create_raw_event_source_response_handler(),
         crate::openai::error::openai_failed_response_handler(),
     )
     .await?;
@@ -356,7 +360,8 @@ pub(crate) async fn execute_stream(
         Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
         first_event => first_event,
     };
-    if let Some(Ok(ref event)) = first_event
+    if let Some(Ok(ref data)) = first_event
+        && let Ok(event) = serde_json::from_str::<Value>(data)
         && let Some(err_obj) = event.get("error").filter(|error| !error.is_null())
     {
         return Err(crate::openai::stream_error::openai_stream_error(
@@ -414,10 +419,30 @@ pub(crate) struct OpenAIChatStream {
 pub(crate) fn chat_test_stream(
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
-    OpenAIChatStream {
+    struct TestStream(OpenAIChatStream);
+
+    impl Transformer for TestStream {
+        type Input = Result<Value, AiMuxError>;
+        type Output = StreamPart;
+
+        fn start(&mut self, controller: &mut Controller) {
+            self.0.start(controller);
+        }
+
+        fn transform(&mut self, event: Self::Input, controller: &mut Controller) {
+            self.0
+                .transform(event.map(|value| value.to_string()), controller);
+        }
+
+        fn flush(self, controller: &mut Controller) {
+            self.0.flush(controller);
+        }
+    }
+
+    TestStream(OpenAIChatStream {
         tool_calls: ChatToolCalls::new(generate_id),
         ..OpenAIChatStream::default()
-    }
+    })
 }
 
 impl OpenAIChatStream {
@@ -430,33 +455,32 @@ impl OpenAIChatStream {
 }
 
 impl Transformer for OpenAIChatStream {
-    type Input = Result<Value, AiMuxError>;
+    type Input = Result<String, AiMuxError>;
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
-        let parsed = match event {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                let recoverable = error.is_recoverable_stream_error();
-                self.stream_errored = true;
-                controller.enqueue(StreamPart::Error { error });
-                if !recoverable {
-                    controller.terminate();
-                }
-                return;
-            }
+    fn transform(&mut self, event: Result<String, AiMuxError>, controller: &mut Controller) {
+        let (raw, chunk) = match event {
+            Ok(ref data) => crate::stream::decode_sse_event::<StreamChunk<'_>>(
+                data,
+                self.ctx.include_raw_chunks,
+            ),
+            Err(error) => (None, Err(error)),
         };
+        if let Some(raw) = &raw {
+            self.ctx.raw(raw, controller);
+        }
 
-        // M2 (RFC-0016): emit the raw provider chunk for debugging before it
-        // is consumed below.
-        self.ctx.raw(&parsed, controller);
-
-        // Check for mid-stream error.
-        if let Some(err_obj) = parsed.get("error").filter(|error| !error.is_null()) {
+        if let Some(err_obj) = chunk
+            .as_ref()
+            .ok()
+            .and_then(|chunk| chunk.error.as_ref())
+            .or_else(|| raw.as_ref().and_then(|raw| raw.get("error")))
+            .filter(|error| !error.is_null())
+        {
             controller.enqueue(StreamPart::Error {
                 error: crate::openai::stream_error::openai_stream_error(
                     err_obj,
@@ -469,19 +493,15 @@ impl Transformer for OpenAIChatStream {
             return;
         }
 
-        // The chunk's top-level `usage`, taken from the raw JSON before the
-        // chunk is consumed below. `chunk_usage_raw` keeps the provider's
-        // original object for `Usage.raw` (M10).
-        let chunk_usage_raw: Option<Value> = parsed.get("usage").cloned();
-        let chunk_usage: Option<UsageResponse> = chunk_usage_raw
-            .as_ref()
-            .and_then(|u| serde_json::from_value(u.clone()).ok());
-
-        let chunk: StreamChunk = match serde_json::from_value(parsed) {
-            Ok(c) => c,
-            Err(e) => {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                let recoverable = error.is_recoverable_stream_error();
                 self.stream_errored = true;
-                controller.enqueue(StreamPart::Error { error: e.into() });
+                controller.enqueue(StreamPart::Error { error });
+                if !recoverable {
+                    controller.terminate();
+                }
                 return;
             }
         };
@@ -495,8 +515,8 @@ impl Transformer for OpenAIChatStream {
             self.response_metadata_emitted = true;
             controller.enqueue(StreamPart::ResponseMetadata(
                 aimux_provider_utils::create_language_model_response_metadata(
-                    chunk.id.clone(),
-                    chunk.model.clone(),
+                    chunk.id.map(std::borrow::Cow::into_owned),
+                    chunk.model.map(std::borrow::Cow::into_owned),
                     chunk
                         .created
                         .filter(|created| *created != 0)
@@ -506,9 +526,11 @@ impl Transformer for OpenAIChatStream {
         }
 
         // Update usage from the chunk that carries it.
-        if let Some(usage) = &chunk_usage {
-            self.final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
-            self.final_usage_raw = Some(usage.clone());
+        if let Some(raw_usage) = &chunk.usage
+            && let Ok(usage) = <UsageResponse as serde::Deserialize>::deserialize(raw_usage)
+        {
+            self.final_usage = convert_usage(&usage, Some(raw_usage));
+            self.final_usage_raw = Some(usage);
         }
 
         for choice in chunk.choices {
@@ -518,11 +540,7 @@ impl Transformer for OpenAIChatStream {
             }
 
             // Reasoning delta: prefer reasoning_content over reasoning.
-            let reasoning_delta = choice
-                .delta
-                .reasoning_content
-                .clone()
-                .or_else(|| choice.delta.reasoning.clone());
+            let reasoning_delta = choice.delta.reasoning_content.or(choice.delta.reasoning);
             if let Some(reasoning) = reasoning_delta
                 && !reasoning.is_empty()
             {
@@ -971,7 +989,7 @@ fn apply_tools(
     for tool in function_tools.iter_mut().flatten() {
         tool.input_schema = normalize_json_schema(&tool.input_schema, warnings)?;
     }
-    for tool in options.tools.iter().flatten() {
+    for tool in options.tools.as_deref().unwrap_or_default() {
         if matches!(tool, Tool::Provider(_)) {
             warnings.push(Warning::Unsupported {
                 feature: "tool type: provider".into(),
@@ -1078,8 +1096,11 @@ pub(crate) fn build_request_body_with_chat_options(
             });
         }
     }
-    let messages =
-        convert_prompt_to_openai_messages_with_mode_fallible(&options.prompt, system_message_mode)?;
+    let messages = convert_prompt_to_openai_messages_with_mode_fallible(
+        &options.prompt,
+        system_message_mode,
+        &mut warnings,
+    )?;
 
     let mut body = json!({
         "model": model_id,

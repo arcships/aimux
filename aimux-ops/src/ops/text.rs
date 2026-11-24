@@ -16,12 +16,14 @@ use aimux_core::openai_output::{
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::{AbortSignal, AiMuxError, LanguageModel};
 use futures::{Stream, StreamExt};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
 use tokio::sync::oneshot;
 
-use crate::dispatch::{CallFuture, Ctx, EventStream, Handler, Target, decode as params};
+use crate::dispatch::{
+    CallFuture, Ctx, Handler, Params, Target, decode as params, serialize_result,
+};
 use crate::envelope::{BindingError, OpsError};
+use crate::frame::{StreamEvent, TypedEventStream};
 use crate::handle::{Entry, HandleId, HandleKind};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
@@ -49,7 +51,7 @@ const fn descriptor(
         } else {
             None
         },
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         required_capabilities: &[],
         cancellation: Cancellation::Abort,
         result_ownership: "owned",
@@ -120,8 +122,8 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
         (&OPS[1], Handler::Call(generate_object)),
         (&OPS[2], Handler::Call(consume)),
         (&OPS[3], Handler::Call(generate_openai)),
-        (&OPS[4], Handler::Stream(stream)),
-        (&OPS[5], Handler::Stream(stream_openai)),
+        (&OPS[4], Handler::TypedStream(stream)),
+        (&OPS[5], Handler::TypedStream(stream_openai)),
     ]);
 }
 
@@ -170,11 +172,6 @@ impl Default for StreamOptions {
     }
 }
 
-fn json<T: Serialize>(value: T) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
-}
-
 fn language(target: Target) -> Result<Arc<dyn LanguageModel>, OpsError> {
     match target {
         Target::Handle(Entry::Language(model)) => Ok(model),
@@ -211,12 +208,12 @@ async fn cancellable<T>(
     }
 }
 
-fn generate(ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn generate(ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let model = language(target)?;
         let request = params::<TextRequest>(value)?.lift(&ctx);
-        json(
-            cancellable(
+        serialize_result(
+            &cancellable(
                 request.options.core.abort_signal.clone(),
                 generate_text(model.as_ref(), request.prompt, request.options.core),
             )
@@ -226,12 +223,12 @@ fn generate(ctx: Ctx, target: Target, value: Value) -> CallFuture {
 }
 
 #[allow(deprecated)]
-fn generate_object(ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn generate_object(ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let model = language(target)?;
         let request = params::<TextRequest>(value)?.lift(&ctx);
-        json(
-            cancellable(
+        serialize_result(
+            &cancellable(
                 request.options.core.abort_signal.clone(),
                 aimux_core::generate::generate_object(
                     model.as_ref(),
@@ -244,12 +241,12 @@ fn generate_object(ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn consume(ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn consume(ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let model = language(target)?;
         let request = params::<TextRequest>(value)?.lift(&ctx);
-        json(
-            cancellable(request.options.core.abort_signal.clone(), async move {
+        serialize_result(
+            &cancellable(request.options.core.abort_signal.clone(), async move {
                 stream_text(model.as_ref(), request.prompt, request.options.core)
                     .await?
                     .consume()
@@ -260,12 +257,12 @@ fn consume(ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn generate_openai(ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn generate_openai(ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let model = language(target)?;
         let request = params::<TextRequest>(value)?.lift(&ctx);
-        json(
-            cancellable(
+        serialize_result(
+            &cancellable(
                 request.options.core.abort_signal.clone(),
                 generate_text_as_openai(model.as_ref(), request.prompt, request.options.core),
             )
@@ -274,13 +271,17 @@ fn generate_openai(ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn stream(ctx: Ctx, target: Target, value: Value) -> Result<EventStream, OpsError> {
+fn stream(ctx: Ctx, target: Target, value: Params<'_>) -> Result<TypedEventStream, OpsError> {
     let model = language(target)?;
     let request = params::<TextRequest>(value)?.lift(&ctx);
     Ok(start_stream(model, request, None))
 }
 
-fn stream_openai(ctx: Ctx, target: Target, value: Value) -> Result<EventStream, OpsError> {
+fn stream_openai(
+    ctx: Ctx,
+    target: Target,
+    value: Params<'_>,
+) -> Result<TypedEventStream, OpsError> {
     let model = language(target)?;
     let request: OpenAiTextRequest = params(value)?;
     let options = OpenAiStreamOptions {
@@ -300,7 +301,7 @@ fn start_stream(
     model: Arc<dyn LanguageModel>,
     request: TextRequest,
     openai: Option<OpenAiStreamOptions>,
-) -> EventStream {
+) -> TypedEventStream {
     let signal = request.options.core.abort_signal.clone();
     let setup = async move {
         // The OpenAI chunks carry the response id and model the provider reports.
@@ -312,7 +313,7 @@ fn start_stream(
         )
         .await?;
         let native = NativeEvents::new(result.stream, signal);
-        let events: EventStream = match openai {
+        let events: TypedEventStream = match openai {
             Some(options) => {
                 let (sender, terminal) = oneshot::channel();
                 let input = TerminalGuard {
@@ -331,7 +332,9 @@ fn start_stream(
                     ended: false,
                 })
             }
-            None => Box::pin(native.map(json_part)),
+            None => {
+                Box::pin(native.map(|part| part.map(StreamEvent::Text).map_err(OpsError::AiMux)))
+            }
         };
         Ok(events)
     };
@@ -339,16 +342,11 @@ fn start_stream(
         futures::stream::once(setup)
             .map(|result| match result {
                 Ok(events) => events,
-                Err(error) => {
-                    Box::pin(futures::stream::once(std::future::ready(Err(error)))) as EventStream
-                }
+                Err(error) => Box::pin(futures::stream::once(std::future::ready(Err(error))))
+                    as TypedEventStream,
             })
             .flatten(),
     )
-}
-
-fn json_part(part: Result<TextStreamPart, AiMuxError>) -> Result<Value, OpsError> {
-    json(part.map_err(OpsError::AiMux)?)
 }
 
 type NativeStream = Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>;
@@ -442,7 +440,7 @@ struct OpenAiEvents {
 }
 
 impl Stream for OpenAiEvents {
-    type Item = Result<Value, OpsError>;
+    type Item = Result<StreamEvent, OpsError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
@@ -455,7 +453,7 @@ impl Stream for OpenAiEvents {
             return Poll::Ready(Some(Err(OpsError::AiMux(error))));
         }
         match next {
-            Poll::Ready(Some(Ok(chunk))) => Poll::Ready(Some(json(chunk))),
+            Poll::Ready(Some(Ok(chunk))) => Poll::Ready(Some(Ok(StreamEvent::OpenAi(chunk)))),
             Poll::Ready(Some(Err(error))) => {
                 this.ended = true;
                 Poll::Ready(Some(Err(OpsError::AiMux(error))))
@@ -477,6 +475,7 @@ mod tests {
     use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
     use aimux_core::stream_part::StreamPart;
     use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+    use serde_json::Value;
     use serde_json::json;
     use std::sync::Mutex;
 
@@ -610,6 +609,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wire_stream_decodes_text_request_before_acceptance() {
+        let context = ctx();
+        let registry = HandleRegistry::global();
+        let model = registry
+            .insert(
+                context.owner,
+                Entry::Language(Arc::new(MockModel::new("wire"))),
+            )
+            .unwrap();
+        let input = br#"{"prompt":"hello","options":{"maxRetries":0}}"#;
+        let frames = crate::dispatch::stream_wire(
+            context.clone(),
+            model,
+            "text.stream",
+            crate::dispatch::WireParams::new(input, "params_json"),
+        )
+        .unwrap()
+        .into_wire()
+        .collect::<Vec<_>>()
+        .await;
+        assert!(frames.iter().any(|frame| matches!(
+            frame, crate::frame::WireFrame::Event { json, .. }
+                if json.contains(r#""text":"wire""#)
+        )));
+        assert!(matches!(
+            frames.last(),
+            Some(crate::frame::WireFrame::End {
+                outcome: crate::frame::Outcome::Success,
+                ..
+            })
+        ));
+        let malformed = br#"{"prompt":"hello"} true"#;
+        let error = crate::dispatch::stream_wire(
+            context.clone(),
+            model,
+            "text.stream",
+            crate::dispatch::WireParams::new(malformed, "params_json"),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code(), 202);
+        assert!(registry.remove(context.owner, model).is_some());
+    }
+
+    #[tokio::test]
     async fn calls_reuse_core_results_and_options() {
         let model = MockModel::new("你好 🌏");
         let result = generate(
@@ -619,33 +663,49 @@ mod tests {
                 "prompt":[{"role":"user","content":"hi"}],
                 "options":{"maxRetries":0,"maxOutputTokens":7,"temperature":0.2,
                     "providerOptions":{"custom":{"anything":{"x":1}}}}
-            }),
+            })
+            .into(),
         )
         .await
         .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(result["text"], "你好 🌏");
         assert_eq!(result["steps"].as_array().unwrap().len(), 1);
         let seen = model.seen.lock().unwrap().clone().unwrap();
         assert_eq!(seen.max_output_tokens, Some(7));
         assert_eq!(seen.temperature, Some(0.2));
         assert_eq!(seen.provider_options.unwrap()["custom"]["anything"]["x"], 1);
-        let result = consume(ctx(), model.entry(), request()).await.unwrap();
-        assert_eq!(result["text"], "你好 🌏");
-        let result = generate_openai(ctx(), model.entry(), request())
+        let result = consume(ctx(), model.entry(), request().into())
             .await
             .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(result["text"], "你好 🌏");
+        let result = generate_openai(ctx(), model.entry(), request().into())
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(result["object"], "chat.completion");
         assert_eq!(result["choices"][0]["message"]["content"], "你好 🌏");
     }
 
     #[tokio::test]
     async fn object_generation_uses_core_validation() {
-        let result = generate_object(ctx(), MockModel::new(r#"{"answer":42}"#).entry(), request())
-            .await
-            .unwrap();
+        let result = generate_object(
+            ctx(),
+            MockModel::new(r#"{"answer":42}"#).entry(),
+            request().into(),
+        )
+        .await
+        .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(result["object"], json!({"answer":42}));
         assert!(matches!(
-            generate_object(ctx(), MockModel::new("invalid JSON").entry(), request()).await,
+            generate_object(
+                ctx(),
+                MockModel::new("invalid JSON").entry(),
+                request().into()
+            )
+            .await,
             Err(OpsError::AiMux(_))
         ));
     }
@@ -658,7 +718,7 @@ mod tests {
             json!({"prompt":"x","options":{"abortSignal":{}}}),
             json!({"prompt":"x","abort":7}),
         ] {
-            assert!(stream(ctx(), MockModel::new("x").entry(), value).is_err());
+            assert!(stream(ctx(), MockModel::new("x").entry(), value.into()).is_err());
         }
         assert!(
             stream_openai(
@@ -667,6 +727,7 @@ mod tests {
                 json!({
                     "prompt":"x","streamOptions":{"typo":true}
                 })
+                .into()
             )
             .is_err()
         );
@@ -677,6 +738,7 @@ mod tests {
                 json!({
                     "prompt":"x", "options":{"providerOptions":{"custom":{"unknown":true}}}
                 })
+                .into()
             )
             .is_ok()
         );
@@ -694,12 +756,15 @@ mod tests {
         model
             .parts
             .insert(2, Err(AiMuxError::json_parse("malformed frame")));
-        let events = stream(ctx(), model.entry(), request())
+        let events = stream(ctx(), model.entry(), request().into())
             .unwrap()
             .collect::<Vec<_>>()
             .await;
         assert!(events.iter().all(Result::is_ok));
-        let events = events.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+        let events = events
+            .into_iter()
+            .map(|event| serde_json::to_value(event.unwrap()).unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(events.iter().filter(|v| v["type"] == "error").count(), 2);
         assert!(
             events
@@ -717,9 +782,9 @@ mod tests {
                 .parts
                 .insert(3, Err(AiMuxError::other("connection lost")));
             let mut events = if openai {
-                stream_openai(ctx(), model.entry(), request())
+                stream_openai(ctx(), model.entry(), request().into())
             } else {
-                stream(ctx(), model.entry(), request())
+                stream(ctx(), model.entry(), request().into())
             }
             .unwrap();
             let mut errors = 0;
@@ -741,9 +806,9 @@ mod tests {
             let mut model = MockModel::new("x");
             model.setup_error = true;
             let events = if openai {
-                stream_openai(ctx(), model.entry(), request())
+                stream_openai(ctx(), model.entry(), request().into())
             } else {
-                stream(ctx(), model.entry(), request())
+                stream(ctx(), model.entry(), request().into())
             }
             .unwrap()
             .collect::<Vec<_>>()
@@ -766,13 +831,17 @@ mod tests {
             model.entry(),
             json!({
                 "prompt":"x", "streamOptions":{"includeUsage":false,"includeReasoning":false}
-            }),
+            })
+            .into(),
         )
         .unwrap()
         .collect::<Vec<_>>()
         .await;
         assert!(events.iter().all(Result::is_ok));
-        let events = events.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+        let events = events
+            .into_iter()
+            .map(|event| serde_json::to_value(event.unwrap()).unwrap())
+            .collect::<Vec<_>>();
         assert!(
             events
                 .iter()
@@ -797,11 +866,14 @@ mod tests {
                 model_id: Some("gpt-4o-2026-08-06".into()),
             })),
         );
-        let events = stream_openai(ctx(), model.entry(), request())
+        let events = stream_openai(ctx(), model.entry(), request().into())
             .unwrap()
             .collect::<Vec<_>>()
             .await;
-        let events = events.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+        let events = events
+            .into_iter()
+            .map(|event| serde_json::to_value(event.unwrap()).unwrap())
+            .collect::<Vec<_>>();
         assert!(!events.is_empty());
         for event in &events {
             assert_eq!(event["id"], "chatcmpl-upstream");
@@ -816,7 +888,7 @@ mod tests {
         let signal = AbortSignal::new();
         let mut context = ctx();
         context.abort = Some(signal.clone());
-        let pending = generate(context, model.entry(), request());
+        let pending = generate(context, model.entry(), request().into());
         signal.abort();
         assert!(matches!(
             pending.await,
@@ -827,9 +899,9 @@ mod tests {
             let mut context = ctx();
             context.abort = Some(signal.clone());
             let mut events = if openai {
-                stream_openai(context, model.entry(), request())
+                stream_openai(context, model.entry(), request().into())
             } else {
-                stream(context, model.entry(), request())
+                stream(context, model.entry(), request().into())
             }
             .unwrap();
             let cancel = async {
@@ -859,7 +931,7 @@ mod tests {
             stream(
                 ctx(),
                 Target::Handle(Entry::Abort(Arc::new(AbortSignal::new()))),
-                request()
+                request().into()
             ),
             Err(OpsError::Binding(BindingError::InvalidHandle { .. }))
         ));
@@ -868,7 +940,7 @@ mod tests {
                 stream(
                     ctx(),
                     MockModel::new("x").entry(),
-                    json!({"prompt":"x","abort":abort})
+                    json!({"prompt":"x","abort":abort}).into()
                 )
                 .is_err()
             );
@@ -912,7 +984,7 @@ mod tests {
         let signal = AbortSignal::new();
         let mut context = ctx();
         context.abort = Some(signal.clone());
-        let mut events = stream_openai(context, model.entry(), request()).unwrap();
+        let mut events = stream_openai(context, model.entry(), request().into()).unwrap();
         let cancel = async {
             tokio::task::yield_now().await;
             signal.abort();

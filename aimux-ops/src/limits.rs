@@ -430,39 +430,86 @@ fn ensure_open<T, E>(state: &State<T, E>) -> Result<(), OpsError> {
 /// # Errors
 /// Returns ResourceLimit above the item bound or ResultSerialization for a serializer error.
 pub fn check_wire_item(value: &impl serde::Serialize, maximum: usize) -> Result<usize, OpsError> {
-    struct Counter {
-        bytes: usize,
-        maximum: usize,
-        exceeded: bool,
-    }
-    impl std::io::Write for Counter {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            match self.bytes.checked_add(bytes.len()) {
-                Some(total) if total <= self.maximum => {
-                    self.bytes = total;
-                    Ok(bytes.len())
-                }
-                _ => {
-                    self.exceeded = true;
-                    Err(std::io::Error::other("wire item exceeds byte budget"))
-                }
+    write_wire_item(None, value, maximum)
+}
+
+/// Encode JSON without writing more than the wire byte limit.
+/// # Errors
+/// Returns ResourceLimit above the item bound or ResultSerialization for a serializer error.
+pub fn encode_wire_item(value: &impl serde::Serialize, maximum: usize) -> Result<String, OpsError> {
+    let mut output = Vec::with_capacity(maximum.min(128));
+    write_wire_item(Some(&mut output), value, maximum)?;
+    String::from_utf8(output)
+        .map_err(|error| crate::envelope::BindingError::result_serialization(&error).into())
+}
+
+struct WireWriter<'a> {
+    output: Option<&'a mut Vec<u8>>,
+    bytes: usize,
+    maximum: usize,
+    exceeded: bool,
+}
+
+impl std::io::Write for WireWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.maximum - self.bytes {
+            self.exceeded = true;
+            return Err(std::io::Error::other("wire item exceeds byte budget"));
+        }
+        let total = self.bytes + bytes.len();
+        if let Some(output) = &mut self.output {
+            if total > output.capacity() {
+                let capacity = output
+                    .capacity()
+                    .saturating_mul(2)
+                    .max(total)
+                    .min(self.maximum);
+                output.reserve_exact(capacity - output.len());
             }
+            output.extend_from_slice(bytes);
         }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
+        self.bytes = total;
+        Ok(bytes.len())
     }
-    let mut counter = Counter {
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn write_wire_item(
+    output: Option<&mut Vec<u8>>,
+    value: &impl serde::Serialize,
+    maximum: usize,
+) -> Result<usize, OpsError> {
+    let mut writer = WireWriter {
+        output,
         bytes: 0,
         maximum,
         exceeded: false,
     };
-    if let Err(error) = serde_json::to_writer(&mut counter, value) {
-        return if counter.exceeded {
-            Err(resource_limit("wire item exceeds byte budget"))
-        } else {
-            Err(crate::envelope::BindingError::result_serialization(&error).into())
-        };
+    let result = serde_json::to_writer(&mut writer, value);
+    if writer.exceeded {
+        return Err(resource_limit("wire item exceeds byte budget"));
     }
-    Ok(counter.bytes)
+    result.map_err(|error| crate::envelope::BindingError::result_serialization(&error))?;
+    Ok(writer.bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounded_json_writer_enforces_exact_byte_budget() {
+        let payload = "x".repeat(ITEM_BYTES - 2);
+        assert_eq!(
+            encode_wire_item(&payload, ITEM_BYTES).unwrap().len(),
+            ITEM_BYTES
+        );
+        assert!(matches!(
+            encode_wire_item(&(payload + "x"), ITEM_BYTES),
+            Err(OpsError::Protocol(ProtocolError::ResourceLimit(_)))
+        ));
+    }
 }

@@ -323,7 +323,9 @@ impl ImageModel for LumaImageModel {
         // Submit. This is the only request that creates a generation: nothing
         // below sends it again.
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(generations_url(None), options),
+            exchange
+                .request(generations_url(None), options)
+                .generation_for(options),
             Value::Object(body),
             aimux_provider_utils::create_json_response_handler::<LumaGenerationResponse>(),
             luma_failed_response_handler(),

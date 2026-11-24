@@ -11,9 +11,9 @@
 //!    `streamText` do (ai@7.0.127 `generate-text/generate-text.ts`,
 //!    `generate-text/stream-text.ts`). Aimux runs one step per call.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use futures::{Stream, StreamExt};
@@ -144,7 +144,7 @@ pub struct GenerateTextOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
+    pub tools: Option<Arc<[Tool]>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1910,8 +1910,8 @@ async fn stream_in_operation(
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
             // The text and reasoning parts started and not yet ended
             // (`activeTextContent`, `activeReasoningContent`).
-            let mut active_text: HashSet<String> = HashSet::new();
-            let mut active_reasoning: HashSet<String> = HashSet::new();
+            let mut active_text: Vec<String> = Vec::new();
+            let mut active_reasoning: Vec<String> = Vec::new();
             let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
@@ -2056,20 +2056,24 @@ async fn stream_in_operation(
                                 // that was never started is followed by an error part.
                                 let missing = match &part {
                                     TextStreamPart::TextStart { id, .. } => {
-                                        active_text.insert(id.clone());
+                                        if !active_text.contains(id) {
+                                            active_text.push(id.clone());
+                                        }
                                         None
                                     }
                                     TextStreamPart::TextDelta { id, .. } => (!active_text.contains(id))
                                         .then(|| format!("text part {id} not found")),
-                                    TextStreamPart::TextEnd { id, .. } => (!active_text.remove(id))
+                                    TextStreamPart::TextEnd { id, .. } => (!remove_active_part(&mut active_text, id))
                                         .then(|| format!("text part {id} not found")),
                                     TextStreamPart::ReasoningStart { id, .. } => {
-                                        active_reasoning.insert(id.clone());
+                                        if !active_reasoning.contains(id) {
+                                            active_reasoning.push(id.clone());
+                                        }
                                         None
                                     }
                                     TextStreamPart::ReasoningDelta { id, .. } => (!active_reasoning.contains(id))
                                         .then(|| format!("reasoning part {id} not found")),
-                                    TextStreamPart::ReasoningEnd { id, .. } => (!active_reasoning.remove(id))
+                                    TextStreamPart::ReasoningEnd { id, .. } => (!remove_active_part(&mut active_reasoning, id))
                                         .then(|| format!("reasoning part {id} not found")),
                                     _ => None,
                                 };
@@ -2428,6 +2432,16 @@ impl StreamedContent {
 mod pipeline_tests;
 #[cfg(test)]
 mod tests;
+
+fn remove_active_part(active: &mut Vec<String>, id: &str) -> bool {
+    active
+        .iter()
+        .position(|part| part == id)
+        .is_some_and(|index| {
+            active.swap_remove(index);
+            true
+        })
+}
 
 /// A malformed individual frame does not prove that the transport is dead:
 /// SSE framing lets a later event still be valid. `Finish` and transport/Core

@@ -1038,7 +1038,7 @@ mod do_generate {
             }),
         );
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             tool_choice: Some(LanguageModelV4ToolChoice::Tool {
                 tool_name: "test-tool".to_string(),
             }),
@@ -1334,7 +1334,7 @@ mod do_stream {
             &[],
         )]);
         let mut opts = options();
-        opts.tools = Some(vec![search_google_tool()]);
+        opts.tools = Some(vec![search_google_tool()].into());
         let result = model(&fetch).do_stream(&opts).await.unwrap();
         assert_eq!(
             Value::Array(stream_parts(result).await),
@@ -1434,7 +1434,7 @@ mod do_stream {
         let payloads: Vec<&str> = payloads.iter().map(String::as_str).collect();
         let fetch = MockFetch::new(vec![sse_response(&payloads, &[])]);
         let mut opts = options();
-        opts.tools = Some(vec![test_tool()]);
+        opts.tools = Some(vec![test_tool()].into());
         let result = model(&fetch).do_stream(&opts).await.unwrap();
 
         let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
@@ -1479,7 +1479,7 @@ mod do_stream {
             &[],
         )]);
         let mut opts = options();
-        opts.tools = Some(vec![test_tool()]);
+        opts.tools = Some(vec![test_tool()].into());
         let result = model(&fetch).do_stream(&opts).await.unwrap();
         let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
         assert_eq!(
@@ -1682,7 +1682,7 @@ mod do_stream {
             }),
         );
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             ..default_options(test_prompt())
         };
         let result = model.do_stream(&options).await.unwrap();
@@ -1777,7 +1777,7 @@ mod do_stream {
             json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}),
         );
         let options = CallOptions {
-            tools: Some(vec![Tool::from(tool)]),
+            tools: Some(vec![Tool::from(tool)].into()),
             ..default_options(test_prompt())
         };
         let result = model.do_stream(&options).await.unwrap();

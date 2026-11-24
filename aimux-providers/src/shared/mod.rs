@@ -12,6 +12,7 @@ mod exchange;
 mod factory;
 mod image_size;
 mod media;
+pub(crate) mod media_overlay;
 mod poll;
 mod provider_options;
 mod results;

@@ -312,7 +312,7 @@ mod do_generate {
     async fn should_pass_tools_and_tool_choice() {
         let fetch = json_fetch(&json_value(TEXT_FIXTURE));
         let mut opts = options();
-        opts.tools = Some(vec![test_tool()]);
+        opts.tools = Some(vec![test_tool()].into());
         opts.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
             tool_name: "test-tool".into(),
         });
@@ -495,7 +495,7 @@ mod do_generate {
     async fn should_pass_parallel_tool_calls_option() {
         let fetch = json_fetch(&json_value(TEXT_FIXTURE));
         let mut opts = options();
-        opts.tools = Some(vec![test_tool()]);
+        opts.tools = Some(vec![test_tool()].into());
         opts.provider_options =
             Some(serde_json::from_value(json!({"mistral": {"parallelToolCalls": false}})).unwrap());
         provider(&fetch)

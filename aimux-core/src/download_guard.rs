@@ -216,6 +216,13 @@ fn is_public_download_address(address: IpAddr) -> bool {
 /// forwarded to a provider-supplied host. Mirrors AI SDK's download header
 /// policy (auth headers survive; the redirect loop clears them cross-origin).
 pub fn sanitize_download_headers(headers: &mut Vec<(String, String)>) {
+    headers.retain(|(name, _)| is_download_header_allowed(name));
+}
+
+/// Whether the download header policy permits this name.
+#[doc(hidden)]
+#[must_use]
+pub fn is_download_header_allowed(name: &str) -> bool {
     const BLOCKED: &[&str] = &[
         "connection",
         "keep-alive",
@@ -238,11 +245,9 @@ pub fn sanitize_download_headers(headers: &mut Vec<(String, String)>) {
         "cookie",
         "set-cookie",
     ];
-    headers.retain(|(name, _)| {
-        !BLOCKED
-            .iter()
-            .any(|blocked| name.eq_ignore_ascii_case(blocked))
-    });
+    !BLOCKED
+        .iter()
+        .any(|blocked| name.eq_ignore_ascii_case(blocked))
 }
 
 /// Drop caller headers except `User-Agent` when a redirect crosses origin.

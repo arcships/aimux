@@ -495,7 +495,7 @@ jobs:
             targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           - platform: ios
             host: macos-latest
-            targets: aarch64-apple-ios aarch64-apple-ios-sim
+            targets: aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

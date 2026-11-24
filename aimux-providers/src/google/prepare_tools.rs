@@ -95,7 +95,7 @@ pub struct PreparedToolsWithWarnings {
 /// `google.file_search`) and the Gemini 3 combined function+provider shape.
 #[must_use]
 pub fn prepare_all_tools(
-    tools: &Option<Vec<Tool>>,
+    tools: Option<&[Tool]>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> PreparedToolsWithWarnings {
@@ -103,7 +103,7 @@ pub fn prepare_all_tools(
     let mut warnings: Vec<Warning> = Vec::new();
 
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
-    let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
+    let non_empty = tools.filter(|t| !t.is_empty());
     let Some(tools) = non_empty else {
         return PreparedToolsWithWarnings::default();
     };

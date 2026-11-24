@@ -16,9 +16,9 @@ use aimux_core::recording::{
     ResponseRecord, RingRecorder,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as params};
+use crate::dispatch::serialize_result as result;
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode as params};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
@@ -222,10 +222,6 @@ enum RecorderStats {
     },
 }
 
-fn result(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
-}
-
 fn recorder_entry(target: Target) -> Result<Arc<dyn Recorder>, OpsError> {
     match target {
         Target::Handle(Entry::Recorder(recorder)) => Ok(recorder),
@@ -262,7 +258,7 @@ async fn blocking<T: Send + 'static>(
     })?
 }
 
-fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params = params(value)?;
         blocking(move || {
@@ -274,43 +270,43 @@ fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn attach(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn attach(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let recorder = recorder_entry(target)?;
         blocking(move || {
             recording::init_recording(Some(recorder));
-            Ok(Value::Null)
+            result(())
         })
         .await
     })
 }
 
-fn stop(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn stop(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let recorder = recorder_entry(target)?;
         blocking(move || {
             drop(recording::detach_recording_if(&recorder));
-            Ok(Value::Null)
+            result(())
         })
         .await
     })
 }
 
-fn flush(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn flush(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let recorder = recorder_entry(target)?;
         blocking(move || {
             recorder.try_flush().map_err(OpsError::Recording)?;
-            Ok(Value::Null)
+            result(())
         })
         .await
     })
 }
 
-fn stats(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn stats(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let recorder = recorder_entry(target)?;
@@ -318,7 +314,7 @@ fn stats(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn export(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn export(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let recorder = recorder_entry(target)?;
@@ -420,8 +416,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 ];
 
 pub(crate) fn register(registry: &mut Vec<(&'static OpDescriptor, Handler)>) {
-    let handlers: [fn(Ctx, Target, Value) -> CallFuture; 6] =
-        [create, attach, stop, flush, stats, export];
+    let handlers: [crate::dispatch::CallHandler; 6] = [create, attach, stop, flush, stats, export];
     registry.extend(
         OPS.iter()
             .zip(handlers)
@@ -431,6 +426,10 @@ pub(crate) fn register(registry: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 #[cfg(test)]
 mod tests {
+    fn parse_result(json: String) -> serde_json::Value {
+        serde_json::from_str(&json).unwrap()
+    }
+
     use super::*;
     use aimux_core::recording::{OutcomeStatus, Recording};
     use serde_json::json;
@@ -511,8 +510,14 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].call_id, "second");
         assert!(records.iter().all(|r| r.complete));
-        assert_eq!(result(recorder.stats()).unwrap()["dropped"], 1);
-        assert_eq!(result(recorder.stats()).unwrap()["pending"], 0);
+        assert_eq!(
+            parse_result(result(recorder.stats()).unwrap())["dropped"],
+            1
+        );
+        assert_eq!(
+            parse_result(result(recorder.stats()).unwrap())["pending"],
+            0
+        );
     }
 
     #[test]
@@ -530,8 +535,14 @@ mod tests {
         );
         recorder.record_exchange("stream", &exchange);
         record(&recorder, "stream");
-        assert_eq!(result(recorder.stats()).unwrap()["completed"], 0);
-        assert_eq!(result(recorder.stats()).unwrap()["pending"], 1);
+        assert_eq!(
+            parse_result(result(recorder.stats()).unwrap())["completed"],
+            0
+        );
+        assert_eq!(
+            parse_result(result(recorder.stats()).unwrap())["pending"],
+            1
+        );
         let response: ResponseRecord = serde_json::from_value(json!({
             "status": 200, "headers": [], "body": "completed", "streamChunks": 2
         }))
@@ -636,7 +647,7 @@ mod tests {
             flush(
                 context(),
                 Target::Handle(Entry::Recorder(recorder.clone())),
-                json!({})
+                json!({}).into()
             )
             .await,
             Err(OpsError::Recording(RecordingError::Write(_)))
@@ -654,7 +665,7 @@ mod tests {
             attach(
                 context(),
                 Target::Handle(Entry::Recorder(first.clone())),
-                json!({}),
+                json!({}).into(),
             )
             .await
             .unwrap();
@@ -662,41 +673,50 @@ mod tests {
             attach(
                 context(),
                 Target::Handle(Entry::Recorder(second.clone())),
-                json!({}),
+                json!({}).into(),
             )
             .await
             .unwrap();
-            stop(context(), Target::Handle(Entry::Recorder(first)), json!({}))
-                .await
-                .unwrap();
+            stop(
+                context(),
+                Target::Handle(Entry::Recorder(first)),
+                json!({}).into(),
+            )
+            .await
+            .unwrap();
             let second_trait: Arc<dyn Recorder> = second.clone();
             assert!(Arc::ptr_eq(&recording::recorder().unwrap(), &second_trait));
             stop(
                 context(),
                 Target::Handle(Entry::Recorder(second.clone())),
-                json!({}),
+                json!({}).into(),
             )
             .await
             .unwrap();
             assert!(recording::recorder().is_none());
             assert!(!Arc::ptr_eq(&snapshot, &second_trait));
             record(&second, "after-stop");
-            assert_eq!(result(second.stats()).unwrap()["completed"], 1);
             assert_eq!(
-                stats(
-                    context(),
-                    Target::Handle(Entry::Recorder(second.clone())),
-                    json!({})
-                )
-                .await
-                .unwrap()["completed"],
+                parse_result(result(second.stats()).unwrap())["completed"],
+                1
+            );
+            assert_eq!(
+                parse_result(
+                    stats(
+                        context(),
+                        Target::Handle(Entry::Recorder(second.clone())),
+                        json!({}).into()
+                    )
+                    .await
+                    .unwrap()
+                )["completed"],
                 1
             );
             assert!(
                 export(
                     context(),
                     Target::Handle(Entry::Recorder(second)),
-                    json!({"extra": true})
+                    json!({"extra": true}).into()
                 )
                 .await
                 .is_err()

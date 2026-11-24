@@ -1441,44 +1441,33 @@ pub(crate) async fn anthropic_stream_core(
     let tool_names = anthropic_tool_name_mapping(options.tools.as_deref());
     let mark_code_execution_dynamic =
         has_dynamic_filtering_web_tool_without_code_execution(options.tools.as_deref());
-    let include_raw_chunks = options.include_raw_chunks == Some(true);
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
     let resp = aimux_provider_utils::post_json_to_api(
         request,
         body.clone(),
-        aimux_provider_utils::create_event_source_response_handler::<Value>(),
+        aimux_provider_utils::create_raw_event_source_response_handler(),
         config.failed_response_handler(),
     )
     .await?;
 
     let response_headers = resp.response_headers;
-    // Each event as the AI SDK's `ParseResult`: the raw JSON when the data
-    // parsed as JSON, and the chunk schema's result.
-    let mut sse_stream = resp.value.map(move |item| match item {
-        Ok(raw) if include_raw_chunks => {
-            let event =
-                serde_json::from_value::<StreamEvent>(raw.clone()).map_err(AiMuxError::from);
-            (Some(raw), event)
-        }
-        Ok(raw) => (
-            None,
-            serde_json::from_value::<StreamEvent>(raw).map_err(AiMuxError::from),
-        ),
-        Err(error) => (None, Err(error)),
-    });
+    let mut sse_stream = resp.value;
     let first_event = match sse_stream.next().await {
-        Some((_, Err(error @ AiMuxError::ApiCall(_)))) => return Err(error),
+        Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
         first_event => first_event,
     };
-    if let Some((_, Ok(StreamEvent::Error { error }))) = first_event.as_ref() {
+    if let Some(Ok(data)) = &first_event
+        && let (_, Ok(StreamEvent::Error { error })) =
+            crate::stream::decode_sse_event::<StreamEvent<'_>>(data, false)
+    {
         // The thrown `APICallError` (anthropic-language-model.ts:3150-3160):
         // `statusCode: error.statusCode ?? 500`, `responseBody:
         // JSON.stringify(error.data)`, `isRetryable: error.isRetryable ?? false`.
-        let mut thrown = anthropic_stream_error(error, &endpoint, body.clone(), response_headers);
+        let mut thrown = anthropic_stream_error(&error, &endpoint, body.clone(), response_headers);
         if let AiMuxError::ApiCall(details) = &mut thrown {
             details.status_code.get_or_insert(500);
-            details.response_body = Some(stream_error_data(error).to_string());
+            details.response_body = Some(stream_error_data(&error).to_string());
         }
         return Err(thrown);
     }
@@ -1845,7 +1834,7 @@ impl AnthropicMessagesStream {
     fn content_block_delta(
         &mut self,
         index: usize,
-        delta: DeltaBlock,
+        delta: DeltaBlock<'_>,
         controller: &mut Controller,
     ) {
         if !self.uses_json_response_tool
@@ -1900,10 +1889,10 @@ impl AnthropicMessagesStream {
                                 partial.strip_prefix('{').unwrap_or(&partial)
                             )
                         } else {
-                            partial
+                            partial.into_owned()
                         }
                     } else {
-                        partial
+                        partial.into_owned()
                     };
                     accumulated_json.push_str(&emitted_delta);
                     *first_delta = false;
@@ -2023,20 +2012,21 @@ impl AnthropicMessagesStream {
 }
 
 impl Transformer for AnthropicMessagesStream {
-    /// Each event as the AI SDK's `ParseResult`: the raw JSON (kept only when
-    /// raw chunks are requested) and the chunk schema's result.
-    type Input = (Option<Value>, Result<StreamEvent, AiMuxError>);
+    type Input = Result<String, AiMuxError>;
     type Output = StreamPart;
 
     fn start(&mut self, controller: &mut Controller) {
         self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        (raw, event): (Option<Value>, Result<StreamEvent, AiMuxError>),
-        controller: &mut Controller,
-    ) {
+    fn transform(&mut self, item: Self::Input, controller: &mut Controller) {
+        let (raw, event) = match item {
+            Ok(ref data) => crate::stream::decode_sse_event::<StreamEvent<'_>>(
+                data,
+                self.ctx.include_raw_chunks,
+            ),
+            Err(error) => (None, Err(error)),
+        };
         // Every chunk, valid or not, is forwarded first when raw chunks are
         // requested (anthropic@4.0.71 `anthropic-language-model.ts:1956-1958`);
         // a chunk that is not JSON has no raw value.

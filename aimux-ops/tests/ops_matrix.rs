@@ -55,9 +55,9 @@ impl ResourceRegistry for Registry {
     }
 }
 static CALLS: AtomicUsize = AtomicUsize::new(0);
-fn probe(_: Ctx, _: Target, _: Value) -> CallFuture {
+fn probe(_: Ctx, _: Target, _: dispatch::Params<'_>) -> CallFuture<'_> {
     CALLS.fetch_add(1, Ordering::SeqCst);
-    Box::pin(async { Ok(Value::Null) })
+    Box::pin(async { Ok("null".into()) })
 }
 fn stream_probe(_: Ctx, _: Target, _: Value) -> Result<EventStream, OpsError> {
     CALLS.fetch_add(1, Ordering::SeqCst);

@@ -6,10 +6,7 @@
 
 use aimux_core::AiMuxError;
 
-use crate::{
-    HeaderMapOpt, Resolvable, combine_headers, load_api_key, normalize_headers,
-    with_user_agent_suffix,
-};
+use crate::{HeaderMapOpt, Resolvable, load_api_key};
 
 /// Where the credential of a provider comes from.
 #[derive(Clone, Debug)]
@@ -133,30 +130,62 @@ impl ProviderHeaders {
     ///
     /// The credential's error, as [`Credential::secret`] returns it.
     pub async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
-        let mut layer = HeaderMapOpt::new();
+        let mut layer: Vec<(&str, Option<String>)> = Vec::with_capacity(1 + self.fixed.len());
         if let Some(secret) = self.credential.secret().await? {
             let (name, value) = match self.scheme {
                 AuthScheme::Bearer => ("Authorization", format!("Bearer {secret}")),
                 AuthScheme::Header(name) => (name, secret),
                 AuthScheme::Scheme(scheme) => ("Authorization", format!("{scheme} {secret}")),
             };
-            layer.insert(name.to_string(), Some(value));
+            layer.push((name, Some(value)));
         }
         for (name, value) in &self.fixed {
-            layer.insert(name.clone(), Some(value.clone()));
+            if let Some(slot) = layer.iter_mut().find(|(key, _)| *key == name.as_str()) {
+                slot.1 = Some(value.clone());
+            } else {
+                layer.push((name.as_str(), Some(value.clone())));
+            }
         }
-        let headers = match &self.user {
-            Some(user) => combine_headers(&[&layer, user]),
-            None => layer,
-        };
-        let Some((package, version)) = self.user_agent else {
-            return Ok(headers);
-        };
-        let mut headers = normalize_headers(headers).into_iter().collect();
-        with_user_agent_suffix(&mut headers, &format!("ai-sdk-{package}/{version}"));
-        Ok(headers
-            .into_iter()
-            .map(|(name, value)| (name, Some(value)))
-            .collect())
+        let normalize = self.user.is_some() || self.user_agent.is_some();
+        if normalize && layer.len() > 1 {
+            layer.sort_unstable_by(|a, b| a.0.cmp(b.0));
+        }
+        let mut out = HeaderMapOpt::with_capacity(
+            layer.len()
+                + self.user.as_ref().map_or(0, HeaderMapOpt::len)
+                + usize::from(self.user_agent.is_some()),
+        );
+        for (name, value) in layer {
+            let key = if normalize {
+                name.to_ascii_lowercase()
+            } else {
+                name.to_owned()
+            };
+            out.insert(key, value);
+        }
+        if let Some(user) = &self.user {
+            let mut entries: Vec<_> = user.iter().collect();
+            if entries.len() > 1 {
+                entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
+            }
+            for (name, value) in entries {
+                let key = name.to_ascii_lowercase();
+                if self.user_agent.is_some() && value.is_none() {
+                    out.remove(&key);
+                } else {
+                    out.insert(key, value.clone());
+                }
+            }
+        }
+        if let Some((package, version)) = self.user_agent {
+            let ua = match out.get("user-agent").and_then(Option::as_deref) {
+                Some(current) if !current.is_empty() => {
+                    format!("{current} ai-sdk-{package}/{version}")
+                }
+                _ => format!("ai-sdk-{package}/{version}"),
+            };
+            out.insert("user-agent".to_string(), Some(ua));
+        }
+        Ok(out)
     }
 }

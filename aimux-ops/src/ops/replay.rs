@@ -6,10 +6,9 @@ use std::sync::Arc;
 use aimux_core::recording::{Recording, RecordingOperation};
 use aimux_core::replay::{MockReplayModel, replay_decision_with_model, replay_with_model};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, decode};
+use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
@@ -103,14 +102,14 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         terminal_type: None,
         runtime_handle_fields: &[
             (
-                "target.handle",
+                &["target", "handle"],
                 &[
                     HandleKind::Language,
                     HandleKind::Decision,
                     HandleKind::Registry,
                 ],
             ),
-            ("abort", &[HandleKind::Abort]),
+            (&["abort"], &[HandleKind::Abort]),
         ],
         required_capabilities: &[],
         cancellation: Cancellation::Abort,
@@ -124,8 +123,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     for (op, handler) in OPS
         .iter()
-        .zip([create, capabilities, inspect, dry_run, live]
-            as [fn(Ctx, Target, Value) -> CallFuture; 5])
+        .zip([create, capabilities, inspect, dry_run, live] as [crate::dispatch::CallHandler; 5])
     {
         r.push((op, Handler::Call(handler)));
     }
@@ -202,9 +200,7 @@ fn invalid(message: impl Into<String>) -> OpsError {
     ProtocolError::invalid_params(message).into()
 }
 
-fn serialize(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
-}
+use crate::dispatch::serialize_result as serialize;
 
 fn session(target: Target) -> Result<Arc<MockReplayModel>, OpsError> {
     match target {
@@ -239,7 +235,7 @@ fn from_jsonl(jsonl: &str) -> Result<MockReplayModel, OpsError> {
     ))
 }
 
-fn create(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
+fn create(ctx: Ctx, _target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ReplayCreateParams = decode(params)?;
         let session = from_jsonl(&params.recordings_jsonl)?;
@@ -249,7 +245,7 @@ fn create(ctx: Ctx, _target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn capabilities(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn capabilities(_ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(params)?;
         let _session = session(target)?;
@@ -260,7 +256,7 @@ fn capabilities(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn inspect(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn inspect(_ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(params)?;
         let session = session(target)?;
@@ -281,7 +277,7 @@ fn inspect(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn dry_run(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn dry_run(_ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = decode(params)?;
         let session = session(target)?;
@@ -301,7 +297,7 @@ fn dry_run(_ctx: Ctx, target: Target, params: Value) -> CallFuture {
     })
 }
 
-fn live(ctx: Ctx, target: Target, params: Value) -> CallFuture {
+fn live(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params: ReplayLiveParams = decode(params)?;
         let session = session(target)?;
@@ -318,8 +314,7 @@ fn live(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             LiveTarget::Model { handle } => (handle, model_kind),
             LiveTarget::Registry { handle } => (handle, HandleKind::Registry),
         };
-        let entry =
-            resolve_secondary(HandleRegistry::global(), &ctx, &serialize(handle)?, &[kind])?;
+        let entry = HandleRegistry::global().get(ctx.owner, handle, &[kind])?;
         let result = match entry {
             Entry::Language(model) => ReplayLiveResult::Language(
                 replay_with_model(recording, model.as_ref(), None).await?,

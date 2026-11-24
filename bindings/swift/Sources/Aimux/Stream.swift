@@ -218,7 +218,7 @@ func startStream(_ state: HandleState, _ op: String, _ params: JSONValue, _ limi
     let stream = try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { continuation in
             let ready = StreamReady(AimuxStream(channel), continuation)
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global().async(flags: .assignCurrentContext) {
                 defer { state.end(ticket); cancellation.finish() }
                 let bridge = StreamBridge(channel, ready, cancellation, limits)
                 let retained = Unmanaged.passRetained(bridge)

@@ -34,7 +34,7 @@ use super::chat::{ChatSettings, ConvertUsage, MetadataExtractor, SupportedUrlsFn
 use super::request_rewrite::CompatibleBodyRewrite;
 use super::{
     OpenAICompatibleChatModel, OpenAICompatibleCompletionModel, OpenAICompatibleEmbeddingModel,
-    OpenAICompatibleImageModel, TransformRequestBody,
+    OpenAICompatibleImageModel, OpenAICompatibleVideoModel, TransformRequestBody,
 };
 
 /// Settings of [`create_openai_compatible`] (the AI SDK's
@@ -300,6 +300,12 @@ impl OpenAICompatibleProvider {
         OpenAICompatibleImageModel::from_config(model_id.to_string(), self.model_config("image"))
     }
 
+    /// An asynchronous video model; `provider()` is `"{name}.video"`.
+    #[must_use]
+    pub fn video(&self, model_id: &str) -> OpenAICompatibleVideoModel {
+        OpenAICompatibleVideoModel::from_config(model_id.to_string(), self.model_config("video"))
+    }
+
     /// The provider as a function: the default language model for an id, the
     /// chat model. The AI SDK's callable provider.
     #[must_use]
@@ -323,6 +329,13 @@ impl Provider for OpenAICompatibleProvider {
 
     fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
         Ok(Arc::new(self.image(model_id)))
+    }
+
+    fn video_model(
+        &self,
+        model_id: &str,
+    ) -> Option<Result<Arc<dyn aimux_core::video_model::VideoModel>, AiMuxError>> {
+        Some(Ok(Arc::new(self.video(model_id))))
     }
 
     /// Native decisions of the official runtimes (Ollama, llama.cpp, LocalAI,
@@ -471,6 +484,39 @@ impl CompatModelConfig {
             }
         }
         Ok((url.to_string(), base))
+    }
+
+    /// `url` with the configured query parameters it does not already carry
+    /// appended after the query it was received with. The received pairs keep
+    /// their bytes and their order, and a parameter the URL already carries
+    /// keeps the value it was sent with: a URL taken from a provider response
+    /// is only ever extended, so a value or an encoding the gateway chose is
+    /// never rewritten.
+    pub(crate) fn with_configured_query(&self, url: &url::Url) -> String {
+        let Some(params) = &self.query_params else {
+            return url.to_string();
+        };
+        let missing: Vec<(&str, &str)> = params
+            .iter()
+            .filter(|(name, _)| {
+                !url.query_pairs()
+                    .any(|(received, _)| received == name.as_str())
+            })
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return url.to_string();
+        }
+        let appended = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(missing)
+            .finish();
+        let query = match url.query() {
+            Some(received) if !received.is_empty() => format!("{received}&{appended}"),
+            _ => appended,
+        };
+        let mut url = url.clone();
+        url.set_query(Some(&query));
+        url.to_string()
     }
 
     /// Resolve the provider headers, layer the per-call headers over them,

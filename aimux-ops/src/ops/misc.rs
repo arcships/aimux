@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::{
-    dispatch::{CallFuture, Ctx, Handler, Target},
+    dispatch::{CallFuture, Ctx, Handler, Params, Target},
     envelope::{BindingError, OpsError, ProtocolError},
     handle::{Entry, HandleId, HandleKind},
     op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef},
@@ -31,7 +31,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("abort", &[HandleKind::Abort])],
+        runtime_handle_fields: &[(&["abort"], &[HandleKind::Abort])],
         required_capabilities: &[],
         cancellation: Cancellation::Abort,
         result_ownership: "owned",
@@ -138,7 +138,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
 ];
 
 pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
-    let handlers: [fn(Ctx, Target, Value) -> CallFuture; 6] = [
+    let handlers: [crate::dispatch::CallHandler; 6] = [
         catalogue_fetch,
         repair_context,
         repair_apply,
@@ -205,21 +205,19 @@ struct OpenAiOutputRequest {
     metadata_namespace: String,
 }
 
-fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
+fn params<'a, T: DeserializeOwned>(value: impl Into<Params<'a>>) -> Result<T, OpsError> {
     // Avoid including request values (especially refresh tokens) in error messages.
-    serde_json::from_value(value).map_err(|_| {
-        OpsError::Protocol(ProtocolError::invalid_params(
-            "request does not match the operation schema",
-        ))
+    crate::dispatch::decode(value).map_err(|error| match error {
+        OpsError::Protocol(_) => {
+            ProtocolError::invalid_params("request does not match the operation schema").into()
+        }
+        other => other,
     })
 }
 
-fn output(value: &impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
-}
+use crate::dispatch::serialize_result as output;
 
-fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn catalogue_fetch(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: CatalogueFetchRequest = params(value)?;
         // Keep the existing source/default, parser and 60s exchange timeout while
@@ -269,7 +267,7 @@ struct ToolRepairContextSchema {
     instructions: Option<String>,
 }
 
-fn repair_context(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn repair_context(_ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: ToolRepairContextRequest = params(value)?;
         let (messages, instructions, tools) =
@@ -281,11 +279,11 @@ fn repair_context(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             instructions,
         )
         .map_err(OpsError::AiMux)?;
-        output(&ToolRepairContextResult(context))
+        output(ToolRepairContextResult(context))
     })
 }
 
-fn repair_apply(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn repair_apply(_ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: ToolRepairApplyRequest = params(value)?;
         let repaired = parse_tool_call::apply_tool_call_repair(
@@ -294,24 +292,25 @@ fn repair_apply(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             request.reply,
         )
         .map_err(OpsError::AiMux)?;
-        output(&aimux_core::wire::Tagged(&repaired))
+        output(aimux_core::wire::Tagged(&repaired))
     })
 }
 
-fn repair_apply_result(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn repair_apply_result(_ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: ToolRepairApplyResultRequest = params(value)?;
-        parse_tool_call::apply_tool_call_repair_to_result(
+        let result = parse_tool_call::apply_tool_call_repair_to_result(
             &request.result,
             request.options.tools.as_deref(),
             &request.tool_call_id,
             request.reply,
         )
-        .map_err(OpsError::AiMux)
+        .map_err(OpsError::AiMux)?;
+        output(result)
     })
 }
 
-fn codex_refresh(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn codex_refresh(_ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: CodexRefreshRequest = params(value)?;
         // Exactly one refresh grant. The host owns token storage and retries.
@@ -323,7 +322,7 @@ fn codex_refresh(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn to_openai(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn to_openai(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let Target::Handle(Entry::Language(model)) = target else {
             return Err(OpsError::Binding(BindingError::InvalidHandle {
@@ -340,9 +339,10 @@ fn to_openai(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
                 "metadataNamespace must not be empty",
             )));
         }
-        // Core's result facts remain private. Restrict the canonical wire
-        // snapshot and lift it back before calling its existing converter.
-        let mut result = output(&request.result)?;
+        // Core's result facts remain private. Restrict the wire
+        // facts and lift it back before calling its existing converter.
+        let mut result = serde_json::to_value(&request.result)
+            .map_err(|error| BindingError::result_serialization(&error))?;
         if let Some(steps) = result.get_mut("steps").and_then(Value::as_array_mut) {
             for step in steps {
                 if let Some(metadata) = step
@@ -355,7 +355,7 @@ fn to_openai(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
         }
         let result: GenerateTextResult = params(result)?;
         output(
-            &aimux_core::generate::generate_text_result_to_chat_completion(
+            aimux_core::generate::generate_text_result_to_chat_completion(
                 &result,
                 model.model_id(),
             ),
@@ -471,14 +471,23 @@ mod tests {
             parse_tool_call::tool_call_repair_context(&call, tools, &messages, instructions)
                 .unwrap();
         assert_eq!(
-            repair_context(ctx(), entry(), request).await.unwrap(),
+            serde_json::from_str::<Value>(
+                &repair_context(ctx(), entry(), request.into())
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
             json!(expected)
         );
         assert_eq!(
-            repair_context(ctx(), entry(), json!({"toolCall":call,"prompt":"hello"}))
-                .await
-                .unwrap(),
-            Value::Null
+            repair_context(
+                ctx(),
+                entry(),
+                json!({"toolCall":call,"prompt":"hello"}).into()
+            )
+            .await
+            .unwrap(),
+            "null"
         );
     }
 
@@ -499,15 +508,21 @@ mod tests {
             let actual = repair_apply(
                 ctx(),
                 entry(),
-                json!({"toolCall":call,"options":{"tools":tools()},"reply":reply}),
+                json!({"toolCall":call,"options":{"tools":tools()},"reply":reply}).into(),
             )
             .await
             .unwrap();
+            let actual: Value = serde_json::from_str(&actual).unwrap();
             assert_eq!(actual, json!(aimux_core::wire::Tagged(&expected)));
             assert_eq!(actual["type"], "tool-call");
         }
         assert!(matches!(
-            repair_apply(ctx(), entry(), json!({"toolCall":call,"reply":reply()})).await,
+            repair_apply(
+                ctx(),
+                entry(),
+                json!({"toolCall":call,"reply":reply()}).into()
+            )
+            .await,
             Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
         ));
     }
@@ -554,10 +569,12 @@ mod tests {
             ctx(),
             entry(),
             json!({"result":result,"options":{"tools":tools()},
-            "toolCallId":"call-1","reply":reply()}),
+            "toolCallId":"call-1","reply":reply()})
+            .into(),
         )
         .await
         .unwrap();
+        let actual: Value = serde_json::from_str(&actual).unwrap();
         assert_eq!(actual, expected);
         assert_eq!(actual["toolCalls"][0]["input"], json!({"city":"Tokyo"}));
         assert_eq!(
@@ -575,7 +592,7 @@ mod tests {
             "http://localhost/catalogue",
         ] {
             assert!(matches!(
-                catalogue_fetch(ctx(), entry(), json!({"sourceUrl":url})).await,
+                catalogue_fetch(ctx(), entry(), json!({"sourceUrl":url}).into()).await,
                 Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
             ));
         }

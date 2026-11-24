@@ -122,21 +122,35 @@ async fn catalogue_secondary_abort_hides_foreign_owners_and_supports_cancellatio
 }
 
 #[tokio::test]
-async fn invalid_auth_request_error_has_no_token_values() {
+async fn rejected_credentials_and_tokens_have_identical_redacted_wire_errors() {
     let owner = Owner::new_node().unwrap();
-    let error = dispatch::call(
-        ctx(owner),
-        HandleId(0),
-        "auth.codexRefresh",
-        json!({
-            "refreshToken":"secret-token", "clientId":"client", "secret-field":true
-        }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(error.code(), 301);
-    let envelope = error.envelope();
-    assert!(!serde_json::to_string(&envelope).unwrap().contains("secret"));
+    for (op, request) in [
+        (
+            "credential.create",
+            json!({"kind":"static","secret":"secret-sentinel"}),
+        ),
+        (
+            "auth.codexRefresh",
+            json!({"refreshToken":"secret-sentinel","clientId":"client","extra":true}),
+        ),
+    ] {
+        let wire = serde_json::to_string(&request).unwrap();
+        let value = dispatch::call(ctx(owner), HandleId(0), op, request)
+            .await
+            .unwrap_err();
+        let wire = dispatch::call_wire(
+            ctx(owner),
+            HandleId(0),
+            op,
+            dispatch::WireParams::new(wire.as_bytes(), "params_json"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(wire.code(), 301);
+        let envelope = serde_json::to_string(&wire.envelope()).unwrap();
+        assert_eq!(envelope, serde_json::to_string(&value.envelope()).unwrap());
+        assert!(!envelope.contains("secret-sentinel"));
+    }
 }
 
 #[test]
@@ -166,7 +180,7 @@ fn misc_metadata_preserves_the_existing_inventory() {
         dispatch::descriptor("catalogue.fetch")
             .unwrap()
             .runtime_handle_fields,
-        &[("abort", &[HandleKind::Abort][..])]
+        &[(&["abort"][..], &[HandleKind::Abort][..])]
     );
     assert_eq!(
         aimux_ops::manifest::manifest()["ops"]

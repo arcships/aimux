@@ -973,10 +973,13 @@ mod bedrock_upstream_e2e {
         };
         let fetch = MockFetch::new(vec![]);
         let mut call = options();
-        call.tools = Some(vec![tool(
-            "anthropic.web_fetch_20250910",
-            json!({"maxUses": "3"}),
-        )]);
+        call.tools = Some(
+            vec![tool(
+                "anthropic.web_fetch_20250910",
+                json!({"maxUses": "3"}),
+            )]
+            .into(),
+        );
         let error = provider(&fetch)
             .chat("anthropic.model")
             .do_generate(&call)
@@ -992,10 +995,13 @@ mod bedrock_upstream_e2e {
             "output":{"message":{"role":"assistant","content":[{"text":"Hi"}]}},
             "usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"stopReason":"end_turn"
         }))]);
-        call.tools = Some(vec![tool(
-            "anthropic.web_search_20250305",
-            json!({"maxUses": "3"}),
-        )]);
+        call.tools = Some(
+            vec![tool(
+                "anthropic.web_search_20250305",
+                json!({"maxUses": "3"}),
+            )]
+            .into(),
+        );
         let result = provider(&fetch)
             .chat("anthropic.model")
             .do_generate(&call)

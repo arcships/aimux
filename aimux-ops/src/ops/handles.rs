@@ -8,10 +8,9 @@ use aimux_provider_utils::fetch::{ProxyConfig, ReqwestFetch};
 use aimux_provider_utils::ws::TungsteniteConnector;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use crate::dispatch::{CallFuture, Ctx, Handler, Target, resolve_secondary};
-use crate::envelope::{BindingError, OpsError, ProtocolError};
+use crate::dispatch::{CallFuture, Ctx, Handler, Params, Target, serialize_result};
+use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
 use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
@@ -55,8 +54,7 @@ enum TransportParams {
     },
 }
 
-// ProxyConfig is the canonical settings type, but its serde reader is open.
-// Close the control object without defining a second transport settings type.
+// The schema uses the canonical proxy configuration, with a closed object.
 #[derive(schemars::JsonSchema)]
 #[schemars(schema_with = "transport_proxy_schema")]
 pub(super) struct TransportProxy;
@@ -67,23 +65,33 @@ fn transport_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars
     schema
 }
 
+pub(super) struct ProxySettings(pub ProxyConfig);
+
+impl<'de> Deserialize<'de> for ProxySettings {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Settings {
+            http_url: Option<String>,
+            https_url: Option<String>,
+            all_url: Option<String>,
+            no_proxy: Option<String>,
+        }
+        let settings: Settings = crate::request::deserialize_object(deserializer)?;
+        Ok(Self(ProxyConfig {
+            http_url: settings.http_url,
+            https_url: settings.https_url,
+            all_url: settings.all_url,
+            no_proxy: settings.no_proxy,
+        }))
+    }
+}
+
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<ProxyConfig, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| <D::Error as serde::de::Error>::custom("expected proxy settings"))?;
-    if object.keys().any(|key| {
-        !matches!(
-            key.as_str(),
-            "http_url" | "https_url" | "all_url" | "no_proxy"
-        )
-    }) {
-        return Err(serde::de::Error::custom("unknown proxy setting"));
-    }
-    serde_json::from_value(value).map_err(serde::de::Error::custom)
+    ProxySettings::deserialize(deserializer).map(|settings| settings.0)
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -101,31 +109,32 @@ struct MiddlewareParams {
     audit_mode: Option<AuditMode>,
 }
 
-fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
+fn params<'a, T: DeserializeOwned>(value: impl Into<Params<'a>>) -> Result<T, OpsError> {
     // Do not echo caller-supplied data (in particular credential material).
-    serde_json::from_value(value)
-        .map_err(|_| OpsError::Protocol(ProtocolError::invalid_params("invalid parameters")))
+    crate::dispatch::decode(value).map_err(|error| match error {
+        OpsError::Protocol(_) => ProtocolError::invalid_params("invalid parameters").into(),
+        other => other,
+    })
 }
 
 fn unsupported(message: &'static str) -> OpsError {
     OpsError::AiMux(AiMuxError::UnsupportedFunctionality(message.into()))
 }
 
-fn insert(ctx: &Ctx, entry: Entry) -> Result<Value, OpsError> {
+fn insert(ctx: &Ctx, entry: Entry) -> Result<String, OpsError> {
     let kind = entry.kind();
     let id = HandleRegistry::global().insert(ctx.owner, entry)?;
-    serde_json::to_value(HandleResult { handle: id, kind })
-        .map_err(|error| BindingError::result_serialization(&error).into())
+    serialize_result(HandleResult { handle: id, kind })
 }
 
-fn abort_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn abort_create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         insert(&ctx, Entry::Abort(Arc::new(AbortSignal::new())))
     })
 }
 
-fn abort_signal(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
+fn abort_signal(_ctx: Ctx, target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let _: EmptyParams = params(value)?;
         let Target::Handle(Entry::Abort(signal)) = target else {
@@ -134,11 +143,11 @@ fn abort_signal(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
             )));
         };
         signal.abort();
-        Ok(Value::Null)
+        serialize_result(())
     })
 }
 
-fn transport_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn transport_create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let entry = match params::<TransportParams>(value)? {
             TransportParams::Fetch { proxy } => Entry::Fetch(Arc::new(ReqwestFetch::new(proxy))),
@@ -156,7 +165,7 @@ fn transport_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn credential_create(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn credential_create(_ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: CredentialParams = params(value)?;
         let _ = request.kind;
@@ -166,7 +175,7 @@ fn credential_create(_ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     })
 }
 
-fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
+fn middleware_create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let request: MiddlewareParams = params(value)?;
         if request.kind != "trace" {
@@ -179,13 +188,8 @@ fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
         })?;
         // Use the same owner-aware resolver as dispatch, including when the
         // store is dropped between preflight and handler execution.
-        let Entry::TraceStore(store) = resolve_secondary(
-            HandleRegistry::global(),
-            &ctx,
-            &serde_json::to_value(id)
-                .map_err(|error| BindingError::result_serialization(&error))?,
-            &[HandleKind::TraceStore],
-        )?
+        let Entry::TraceStore(store) =
+            HandleRegistry::global().get(ctx.owner, id, &[HandleKind::TraceStore])?
         else {
             unreachable!("typed resolver returned a different kind")
         };
@@ -236,7 +240,7 @@ impl aimux_core::language_model_middleware::LanguageModelMiddleware for TraceMid
 }
 
 // Dispatch owns raw-ID admission and teardown before ordinary handle lookup.
-fn drop_requires_id(_ctx: Ctx, _target: Target, _value: Value) -> CallFuture {
+fn drop_requires_id(_ctx: Ctx, _target: Target, _value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async {
         Err(OpsError::Protocol(ProtocolError::InvalidState(
             "dispatch must route handle.drop before handle lookup".into(),
@@ -336,7 +340,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
-        runtime_handle_fields: &[("traceStore", &[HandleKind::TraceStore])],
+        runtime_handle_fields: &[(&["traceStore"], &[HandleKind::TraceStore])],
         required_capabilities: &[],
         cancellation: Cancellation::None,
         side_effects: true,

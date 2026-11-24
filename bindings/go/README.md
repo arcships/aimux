@@ -5,7 +5,8 @@
 > [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
 
 Go bindings for the operation C ABI. Requires cgo, Go 1.24+, the matching
-generated `aimux-ffi/include/aimux.h`, and a matching Rust library.
+generated `aimux-ffi/include/aimux.h`, and a matching Rust library
+with the `aimux_call_async` and `aimux_stream_async` symbols.
 Provider-specific constructors have been replaced by operation calls.
 
 ```go
@@ -56,8 +57,8 @@ delivered once by polling and remains available through Status.
 
 `Handle.Stream` returns copied event JSON through `Events()`. The queue holds
 seven events plus one pending producer, with at most 1 MiB per event and
-bounded frame overhead. The producer alone closes the channel after callbacks
-return. `Cancel` releases a full queue even without a consumer. `Err` and
+bounded frame overhead. The producer closes the channel after terminal callback
+delivery. `Cancel` releases a full queue even without a consumer. `Err` and
 `Terminal` wait for producer completion; drain Events first or cancel when
 abandoning consumption. Terminal control state is stored separately from data.
 A late cancellation preserves the recorded native outcome. Always close an
@@ -99,7 +100,8 @@ AIMUX_LIBRARY_DIR=/absolute/path/to/target/debug ./test-native.sh -count=1
 This runs `go test -race -timeout 60s ./...` against Rust, including manifest
 checks, provider/model/composite ownership, concurrent Close/call dispatch,
 stream admission and terminal errors, and persistent operation errors. Tests
-use local validation and unsupported operations without network I/O.
+use local validation, unsupported operations, and a loopback cancellation test.
+Set `GOEXPERIMENT=cgocheck2` for strict cgo pointer checking.
 
 `./test-abi.sh -count=1` builds a deterministic C double against the production
 header in a temporary directory. It tests cgo ownership, borrowed-memory
@@ -109,3 +111,23 @@ Rust integration tests skip against the double. Both suites include bridge
 race tests and typed DTO round trips. Live provider calls, successful audio
 transport, cross-platform packaging and Go 1.24 itself require separate
 verification.
+
+## Async ABI benchmarks
+
+Run each arm in a fresh process so threads created by one arm do not carry
+over to the other. Alternate the order within each pair of runs.
+
+```sh
+go test -c -o ../../target/aimux-go-bench.test
+for arm in CallFanOut/sync CallFanOut/async StreamBurst/per_frame StreamBurst/batch; do
+    ../../target/aimux-go-bench.test -test.run '^$' \
+        -test.bench "^Benchmark${arm%%/*}$/^${arm#*/}$" -test.benchtime 10x
+done
+```
+
+Fan-out submits 64 requests to a loopback server with a 25 ms response delay.
+An untimed warm-up samples threads and goroutines after all 64 requests reach
+the server. The stream fixture sends 5,000 SSE text deltas. Both stream arms
+use the same frame decoder and inline consumer to measure bridge costs with
+identical work. The reported frame rate and callback count include the final
+`End` and any other native control frames.

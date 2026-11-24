@@ -81,7 +81,8 @@ impl SpeechModel for OpenAISpeechModel {
 
         let resp = aimux_provider_utils::post_json_to_api(
             self.config
-                .http_request(self.config.url("/audio/speech")?, headers, options),
+                .http_request(self.config.url("/audio/speech")?, headers, options)
+                .generation_for(options),
             body.clone(),
             aimux_provider_utils::create_binary_response_handler(),
             crate::openai::error::openai_failed_response_handler(),

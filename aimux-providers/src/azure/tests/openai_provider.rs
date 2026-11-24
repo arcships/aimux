@@ -1552,20 +1552,23 @@ mod responses {
             let result = provider
                 .responses("test-deployment")
                 .do_generate(&CallOptions {
-                    tools: Some(vec![Tool::Provider(
-                        provider
-                            .tools
-                            .file_search(FileSearchArgs {
-                                vector_store_ids: vec!["vs_123".into(), "vs_456".into()],
-                                max_num_results: Some(10),
-                                ranking: Some(FileSearchRanking {
-                                    ranker: Some("auto".into()),
-                                    score_threshold: None,
-                                }),
-                                filters: None,
-                            })
-                            .unwrap(),
-                    )]),
+                    tools: Some(
+                        vec![Tool::Provider(
+                            provider
+                                .tools
+                                .file_search(FileSearchArgs {
+                                    vector_store_ids: vec!["vs_123".into(), "vs_456".into()],
+                                    max_num_results: Some(10),
+                                    ranking: Some(FileSearchRanking {
+                                        ranker: Some("auto".into()),
+                                        score_threshold: None,
+                                    }),
+                                    filters: None,
+                                })
+                                .unwrap(),
+                        )]
+                        .into(),
+                    ),
                     ..test_prompt()
                 })
                 .await
@@ -1625,7 +1628,7 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_generate(&CallOptions {
-                        tools: Some(vec![code_interpreter_tool(&provider)]),
+                        tools: Some(vec![code_interpreter_tool(&provider)].into()),
                         ..test_prompt()
                     })
                     .await
@@ -1675,7 +1678,7 @@ mod responses {
                     let result = provider
                         .responses("test-deployment")
                         .do_generate(&CallOptions {
-                            tools: Some(vec![file_search_tool(&provider, true)]),
+                            tools: Some(vec![file_search_tool(&provider, true)].into()),
                             ..test_prompt()
                         })
                         .await
@@ -1728,7 +1731,7 @@ mod responses {
                     let result = provider
                         .responses("test-deployment")
                         .do_generate(&CallOptions {
-                            tools: Some(vec![file_search_tool(&provider, true)]),
+                            tools: Some(vec![file_search_tool(&provider, true)].into()),
                             provider_options: Some(provider_options(
                                 "azure",
                                 json!({"include": ["file_search_call.results"]}),
@@ -1788,7 +1791,7 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_generate(&CallOptions {
-                        tools: Some(vec![web_search_preview_tool(&provider)]),
+                        tools: Some(vec![web_search_preview_tool(&provider)].into()),
                         ..test_prompt()
                     })
                     .await
@@ -1814,7 +1817,7 @@ mod responses {
                 let result = provider(&fetch)
                     .responses("test-deployment")
                     .do_generate(&CallOptions {
-                        tools: Some(vec![calculator_tool()]),
+                        tools: Some(vec![calculator_tool()].into()),
                         provider_options: Some(provider_options(
                             "azure",
                             json!({
@@ -1850,7 +1853,7 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_generate(&CallOptions {
-                        tools: Some(vec![image_generation_tool(&provider)]),
+                        tools: Some(vec![image_generation_tool(&provider)].into()),
                         ..test_prompt()
                     })
                     .await
@@ -2049,7 +2052,7 @@ mod responses {
             let result = provider
                 .responses("test-deployment")
                 .do_stream(&CallOptions {
-                    tools: Some(vec![code_interpreter_tool(&provider)]),
+                    tools: Some(vec![code_interpreter_tool(&provider)].into()),
                     ..test_prompt()
                 })
                 .await
@@ -2070,7 +2073,7 @@ mod responses {
             let result = provider(&fetch)
                 .responses("test-deployment")
                 .do_stream(&CallOptions {
-                    tools: Some(vec![calculator_tool()]),
+                    tools: Some(vec![calculator_tool()].into()),
                     provider_options: Some(provider_options(
                         "openai",
                         json!({
@@ -2106,19 +2109,22 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_stream(&CallOptions {
-                        tools: Some(vec![Tool::Provider(
-                            provider
-                                .tools
-                                .file_search(FileSearchArgs {
-                                    vector_store_ids: vec![
-                                        "vs_68caad8bd5d88191ab766cf043d89a18".into(),
-                                    ],
-                                    max_num_results: None,
-                                    ranking: None,
-                                    filters: None,
-                                })
-                                .unwrap(),
-                        )]),
+                        tools: Some(
+                            vec![Tool::Provider(
+                                provider
+                                    .tools
+                                    .file_search(FileSearchArgs {
+                                        vector_store_ids: vec![
+                                            "vs_68caad8bd5d88191ab766cf043d89a18".into(),
+                                        ],
+                                        max_num_results: None,
+                                        ranking: None,
+                                        filters: None,
+                                    })
+                                    .unwrap(),
+                            )]
+                            .into(),
+                        ),
                         ..test_prompt()
                     })
                     .await
@@ -2141,19 +2147,22 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_stream(&CallOptions {
-                        tools: Some(vec![Tool::Provider(
-                            provider
-                                .tools
-                                .file_search(FileSearchArgs {
-                                    vector_store_ids: vec![
-                                        "vs_68caad8bd5d88191ab766cf043d89a18".into(),
-                                    ],
-                                    max_num_results: None,
-                                    ranking: None,
-                                    filters: None,
-                                })
-                                .unwrap(),
-                        )]),
+                        tools: Some(
+                            vec![Tool::Provider(
+                                provider
+                                    .tools
+                                    .file_search(FileSearchArgs {
+                                        vector_store_ids: vec![
+                                            "vs_68caad8bd5d88191ab766cf043d89a18".into(),
+                                        ],
+                                        max_num_results: None,
+                                        ranking: None,
+                                        filters: None,
+                                    })
+                                    .unwrap(),
+                            )]
+                            .into(),
+                        ),
                         provider_options: Some(provider_options(
                             "openai",
                             json!({"include": ["file_search_call.results"]}),
@@ -2184,7 +2193,7 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_stream(&CallOptions {
-                        tools: Some(vec![web_search_preview_tool(&provider)]),
+                        tools: Some(vec![web_search_preview_tool(&provider)].into()),
                         ..test_prompt()
                     })
                     .await
@@ -2210,7 +2219,7 @@ mod responses {
                 let result = provider
                     .responses("test-deployment")
                     .do_stream(&CallOptions {
-                        tools: Some(vec![image_generation_tool(&provider)]),
+                        tools: Some(vec![image_generation_tool(&provider)].into()),
                         ..test_prompt()
                     })
                     .await
@@ -2712,7 +2721,7 @@ async fn provider_tools_member_makes_the_azure_tool_subset() {
     let tool = azure.tools.web_search(Default::default()).unwrap();
     assert_eq!(tool.id, "openai.web_search");
     let mut options = prompt();
-    options.tools = Some(vec![aimux_core::options::Tool::Provider(tool)]);
+    options.tools = Some(vec![aimux_core::options::Tool::Provider(tool)].into());
     azure
         .responses("test-deployment")
         .do_generate(&options)

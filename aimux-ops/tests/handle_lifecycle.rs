@@ -398,10 +398,14 @@ fn dispatch_releases_registry_lock_before_calling_model_code() {
 
 // Use the actual model.info descriptor with a reentrant probe to isolate
 // registry lock behavior from model metadata.
-fn info_probe(_: Ctx, target: dispatch::Target, _: serde_json::Value) -> dispatch::CallFuture {
+fn info_probe(
+    _: Ctx,
+    target: dispatch::Target,
+    _: dispatch::Params<'_>,
+) -> dispatch::CallFuture<'_> {
     Box::pin(async move {
         if let dispatch::Target::Handle(Entry::Language(model)) = target {
-            Ok(json!({"provider": model.provider()}))
+            Ok(json!({"provider": model.provider()}).to_string())
         } else {
             panic!("expected language target")
         }

@@ -28,14 +28,22 @@
 //! [`AiMuxError::TokenExpired`](aimux_core::error::AiMuxError::TokenExpired)
 //! so the integrator can refresh and rebuild the provider.
 //!
+//! Image models ([`CodexProvider::image`], [`CodexImageModel`]) are served on
+//! the subscription channel only: `gpt-image-2` through the direct image
+//! endpoints, the `gpt-image-2.5` family through the Responses
+//! `image_generation` tool. Their failures are never replayed, since a
+//! failed exchange may already have been accepted and billed.
+//!
 //! Scope boundaries (RFC-0018): no account pools, no quota rotation, no
 //! reselling — single account, single user.
 
+mod image_model;
 mod oauth;
 mod provider;
 mod responses_model;
 
 pub use crate::shared::TransformRequestBody;
+pub use image_model::CodexImageModel;
 pub use oauth::{CODEX_OAUTH_TOKEN_URL, codex_refresh, codex_refresh_at};
 pub use provider::{
     CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_SUBSCRIPTION_BASE_URL, CodexMode,

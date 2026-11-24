@@ -62,7 +62,7 @@ impl CodexModel {
     /// the subscription channel is the account token, so any 401 from the
     /// endpoint (read from the `status_code` field) means the token is
     /// invalid/expired.
-    fn map_subscription_401(error: AiMuxError) -> AiMuxError {
+    pub(super) fn map_subscription_401(error: AiMuxError) -> AiMuxError {
         match error {
             AiMuxError::ApiCall(d) if d.status_code == Some(401) => {
                 AiMuxError::TokenExpired(d.message)

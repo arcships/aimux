@@ -2,10 +2,13 @@
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr;
 use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
+use std::time::Duration;
 
 use aimux_core::AbortSignal;
 use aimux_ffi::{
-    aimux_error_code, aimux_error_free, aimux_error_message, aimux_error_t, aimux_free_string,
+    aimux_call_async, aimux_error_code, aimux_error_free, aimux_error_message, aimux_error_t,
+    aimux_free_string, aimux_stream_async,
 };
 use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use serde_json::Value;
@@ -68,6 +71,193 @@ fn check_error(error: *mut aimux_error_t, code: i32, name: &str) {
         take_string(second)
     });
     aimux_error_free(error);
+}
+
+extern "C" fn unexpected_completion(_: *mut c_char, _: *mut aimux_error_t, _: *mut c_void) {
+    panic!("rejected call invoked its callback");
+}
+
+extern "C" fn unexpected_batch(_: *const *const c_char, _: usize, _: *mut c_void) {
+    panic!("rejected stream invoked its callback");
+}
+
+#[test]
+fn async_boundary_rejects_invalid_submissions_without_callbacks() {
+    let invalid_utf8 = [0xff_u8, 0];
+    for (op, params, abort, code, name) in [
+        (ptr::null(), c"{}".as_ptr(), 0, 200, "NullPointer"),
+        (c"text.stream".as_ptr(), ptr::null(), 0, 200, "NullPointer"),
+        (
+            invalid_utf8.as_ptr().cast(),
+            c"{}".as_ptr(),
+            0,
+            201,
+            "InvalidUtf8",
+        ),
+        (
+            c"text.stream".as_ptr(),
+            invalid_utf8.as_ptr().cast(),
+            0,
+            201,
+            "InvalidUtf8",
+        ),
+        (
+            c"text.stream".as_ptr(),
+            c"{}".as_ptr(),
+            u64::MAX,
+            203,
+            "InvalidHandle",
+        ),
+    ] {
+        check_error(
+            aimux_call_async(
+                0,
+                op,
+                params,
+                abort,
+                Some(unexpected_completion),
+                ptr::null_mut(),
+            ),
+            code,
+            name,
+        );
+        check_error(
+            aimux_stream_async(
+                0,
+                op,
+                params,
+                abort,
+                Some(unexpected_batch),
+                ptr::null_mut(),
+            ),
+            code,
+            name,
+        );
+    }
+    check_error(
+        aimux_call_async(
+            0,
+            c"runtime.describe".as_ptr(),
+            c"{}".as_ptr(),
+            0,
+            None,
+            ptr::null_mut(),
+        ),
+        200,
+        "NullPointer",
+    );
+    check_error(
+        aimux_stream_async(
+            0,
+            c"text.stream".as_ptr(),
+            c"{}".as_ptr(),
+            0,
+            None,
+            ptr::null_mut(),
+        ),
+        200,
+        "NullPointer",
+    );
+    for (op, code, name) in [
+        (c"runtime.describe", 300, "InvalidOp"),
+        (c"text.stream", 203, "InvalidHandle"),
+    ] {
+        check_error(
+            aimux_stream_async(
+                0,
+                op.as_ptr(),
+                c"{}".as_ptr(),
+                0,
+                Some(unexpected_batch),
+                ptr::null_mut(),
+            ),
+            code,
+            name,
+        );
+    }
+}
+
+type Completion = std::result::Result<Value, Value>;
+
+extern "C" fn complete(result: *mut c_char, error: *mut aimux_error_t, data: *mut c_void) {
+    // Take back the sender the submission handed over, so it outlives `send`: the runtime
+    // thread can still be inside that call after the receiver has woken up.
+    let sender = unsafe { Box::from_raw(data.cast::<Sender<Completion>>()) };
+    assert_ne!(result.is_null(), error.is_null());
+    let completion = if error.is_null() {
+        Ok(serde_json::from_str(&unsafe { take_string(result) }).unwrap())
+    } else {
+        let json = unsafe { take_string(aimux_error_json(error)) };
+        aimux_error_free(error);
+        Err(serde_json::from_str(&json).unwrap())
+    };
+    sender.send(completion).unwrap();
+}
+
+#[tokio::test]
+async fn async_calls_fan_out_from_another_runtime_and_own_the_inputs() {
+    let (send, receive) = mpsc::channel::<Completion>();
+    for _ in 0..64 {
+        let op = CString::new("runtime.describe").unwrap();
+        let params = CString::new("{}").unwrap();
+        let context = Box::into_raw(Box::new(send.clone())).cast();
+        let submission =
+            aimux_call_async(0, op.as_ptr(), params.as_ptr(), 0, Some(complete), context);
+        if !submission.is_null() {
+            // A rejected submission never invokes the callback, so reclaim the sender here.
+            drop(unsafe { Box::from_raw(context.cast::<Sender<Completion>>()) });
+        }
+        assert!(submission.is_null());
+    }
+    for _ in 0..64 {
+        assert!(
+            receive
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap()
+                .is_object()
+        );
+    }
+    assert!(receive.try_recv().is_err());
+}
+
+#[test]
+fn accepted_async_calls_report_dispatch_errors_and_abort_once() {
+    let registry = HandleRegistry::global();
+    let abort = registry
+        .insert(Owner::CProcess, Entry::Abort(Arc::new(AbortSignal::new())))
+        .unwrap();
+    unsafe { aimux_abort(abort.0) };
+    let (send, receive) = mpsc::channel::<Completion>();
+    for (op, params, abort, code) in [
+        (c"not.an.op", c"{}", 0, 300),
+        (c"runtime.describe", c"{", 0, 202),
+        (c"catalogue.fetch", c"{}", abort.0, 13),
+    ] {
+        let context = Box::into_raw(Box::new(send.clone())).cast();
+        let submission = aimux_call_async(
+            0,
+            op.as_ptr(),
+            params.as_ptr(),
+            abort,
+            Some(complete),
+            context,
+        );
+        if !submission.is_null() {
+            // A rejected submission never invokes the callback, so reclaim the sender here.
+            drop(unsafe { Box::from_raw(context.cast::<Sender<Completion>>()) });
+        }
+        assert!(submission.is_null());
+        assert_eq!(
+            receive
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap_err()["code"],
+            code
+        );
+    }
+    assert!(receive.try_recv().is_err());
+    unsafe { aimux_drop(abort.0) };
 }
 
 #[test]
