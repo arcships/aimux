@@ -11,6 +11,7 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 | [api/reference.md](api/reference.md) | **API reference index** — generated DTOs, core types, ops and error sources |
 | [api/ops.md](api/ops.md) | **Shared operations** — operation names and families |
 | [api/providers.md](api/providers.md) | **Provider list** — every provider with entry points and the canonical counts (generated) |
+| [api/bytedance-media.md](api/bytedance-media.md) | **ByteDance Ark media** — Seedance video and Seedream image models on the `bytedance` provider: request shapes, provider options, and retry behavior |
 | [api/gaps.md](api/gaps.md) | **Archived** — historical 0.5 binding gap list; current capabilities live in each binding README and `runtime.describe` |
 | [api/](api/) | **Per-language guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter, Java |
 | [error-model.md](error-model.md) | **错误模型** — 错误域、跨语言映射、cause 链与兼容性约定 |

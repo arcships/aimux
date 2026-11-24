@@ -14,6 +14,7 @@
 | Non-registry: Speech-only providers (TTS) | 4 |
 | Non-registry: Transcription-only providers (STT) | 5 |
 | Non-registry: Image-only providers | 4 |
+| Non-registry: Native image and video protocols | 1 |
 | Non-registry: Video-only providers | 1 |
 | Non-registry: Generic Responses API wrapper | 1 |
 | Non-registry: Modality-specific providers (non-language, e.g. rerank-only) | 1 |
@@ -22,9 +23,9 @@
 | Non-registry: Stability image provider (image modality only) | 1 |
 | Non-registry: Video-only provider (runwayml) | 1 |
 | Non-registry: Search-only providers (web search modality) | 11 |
-| **Total providers** | **327** |
+| **Total providers** | **328** |
 
-**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **45 non-registry providers** (construct via the typed factories listed below).
+**282 registry-backed OpenAI-compatible providers** (create presets by name via `provider.create` + `provider.model`) + **46 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 282
 
@@ -363,6 +364,12 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `luma` | `LumaProvider` / `LumaProviderSettings` / `create_luma` |
 | `prodia` | `ProdiaProvider` / `ProdiaProviderSettings` / `create_prodia` |
 | `replicate` | `ReplicateProvider` / `ReplicateProviderSettings` / `create_replicate` |
+
+### Native image and video protocols — 1
+
+| module | typed entry points |
+|--------|--------------------|
+| `bytedance` | `ByteDanceProvider` / `ByteDanceProviderSettings` / `create_bytedance` |
 
 ### Video-only providers — 1
 
