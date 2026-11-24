@@ -336,6 +336,50 @@ async fn terminal_output_publishes_search_items_without_done_events() {
     );
 }
 
+// A completed item is normally reported twice: once by the per-item done
+// event and again inside the terminal `response.output`. Both paths feed one
+// collector, so an `output_index` publishes one call and one result no matter
+// which path reports it first.
+#[tokio::test]
+async fn item_reported_by_done_and_terminal_output_is_published_once() {
+    let search = json!({"id":"s", "type":"web_search_call", "status":"completed", "action":{"type":"search", "query":"火星", "sources":[{"url":"https://example.com/a"}]}});
+    let message = json!({"id":"m", "type":"message", "role":"assistant", "content":[{"type":"output_text", "text":"答", "annotations":[]}]});
+    let terminal = response(json!([search, message]));
+    let added = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":{"type":"web_search_call", "id":"s"}}),
+        json!({"type":"response.output_item.added", "output_index":1, "item":{"type":"message", "id":"m"}}),
+    ];
+    let done = vec![
+        json!({"type":"response.output_item.done", "output_index":1, "item":message}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":search}),
+    ];
+    let completed = json!({"type":"response.completed", "response":terminal});
+    let mut done_first = added.clone();
+    done_first.extend(done.iter().cloned());
+    done_first.push(completed.clone());
+    let mut terminal_first = added;
+    terminal_first.push(completed);
+    terminal_first.extend(done);
+    for events in [done_first, terminal_first] {
+        let (model, _) = model(
+            "https://api.deepseek.com",
+            "deepseek-flash",
+            vec![sse(&events)],
+        );
+        let parts = stream_parts(&model, &options(Some(true))).await;
+        let calls = tool_calls(&parts);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_call_id, "s");
+        let results = tool_results(&parts);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].tool_call_id, "s");
+        assert_eq!(
+            finish_metadata(&parts)["deepseek"]["responseOutput"]["items"],
+            json!([search, message])
+        );
+    }
+}
+
 // `"id": null` is missing identity too: the `added` id must be used both on
 // the call and in the stored item, instead of the synthetic fallback id.
 #[tokio::test]
@@ -406,4 +450,50 @@ async fn replay_record_is_attached_without_the_search_opt_in() {
             .provider_metadata
             .is_none()
     );
+}
+
+// The stream `Finish` carries the same replay record, including when the
+// search opt-in is absent or `false`; other endpoints keep it `null`.
+#[tokio::test]
+async fn stream_finish_keeps_the_replay_record_without_the_search_opt_in() {
+    let reasoning = json!({"id":"r", "type":"reasoning", "content":[{"type":"reasoning_text", "text":"想"}], "summary":[], "signature":"sig", "kind":"opaque"});
+    let events = vec![
+        json!({"type":"response.output_item.added", "output_index":0, "item":reasoning}),
+        json!({"type":"response.output_item.done", "output_index":0, "item":reasoning}),
+        json!({"type":"response.completed", "response":response(json!([reasoning]))}),
+    ];
+    let expected = json!({
+        "modelId": "deepseek-flash",
+        "endpoint": "https://api.deepseek.com/responses",
+        "items": [reasoning],
+    });
+    for search in [None, Some(false)] {
+        let (official, transport) = model(
+            "https://api.deepseek.com",
+            "deepseek-flash",
+            vec![sse(&events)],
+        );
+        let parts = stream_parts(&official, &options(search)).await;
+        assert!(transport.seen()[0].json_body().get("tools").is_none());
+        assert_eq!(
+            finish_metadata(&parts)["deepseek"]["responseOutput"],
+            expected
+        );
+    }
+    let (relay, _) = model(
+        "https://relay.example/v1",
+        "deepseek-flash",
+        vec![sse(&events)],
+    );
+    let parts = stream_parts(&relay, &options(None)).await;
+    let finish = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Finish {
+                provider_metadata, ..
+            } => Some(provider_metadata.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert!(finish.is_none(), "unexpected metadata: {finish:?}");
 }
