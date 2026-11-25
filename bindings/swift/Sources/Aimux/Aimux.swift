@@ -91,12 +91,49 @@ private func nativeManifest() throws -> JSONValue {
     return value
 }
 
+private func findMismatchedTypes(_ types: JSONValue?) -> [String]? {
+    guard !AimuxOps.TYPE_SCHEMA_HASHES.isEmpty,
+          case .array(let entries) = types,
+          !entries.isEmpty else {
+        return nil
+    }
+    var actual: [String: String] = [:]
+    actual.reserveCapacity(entries.count)
+    for entry in entries {
+        if case .string(let id) = entry["id"],
+           case .string(let schemaHash) = entry["schemaHash"] {
+            actual[id] = schemaHash
+        }
+    }
+    var mismatches: [String] = []
+    for (id, expectedHash) in AimuxOps.TYPE_SCHEMA_HASHES {
+        if actual[id] != expectedHash {
+            mismatches.append(id)
+        }
+    }
+    mismatches.sort()
+    return mismatches
+}
+
 func validateManifest(_ value: JSONValue, version: UInt32) throws {
     guard value["opsVersion"] == .string(AimuxOps.OPS_VERSION),
-          value["abiVersion"] == .integer(Int64(version)),
-          value["digest"] == .string(AimuxOps.MANIFEST_DIGEST) else {
+          value["abiVersion"] == .integer(Int64(version)) else {
         throw AimuxError.state("Incompatible manifest: opsVersion \(String(describing: value["opsVersion"])) (expected \(AimuxOps.OPS_VERSION)), digest \(String(describing: value["digest"])) (expected \(AimuxOps.MANIFEST_DIGEST))", code: 302)
     }
+    if value["digest"] == .string(AimuxOps.MANIFEST_DIGEST) {
+        return
+    }
+    let mismatches = findMismatchedTypes(value["types"])
+    if let mismatches, mismatches.isEmpty {
+        return
+    }
+    let detail: String
+    if let mismatches, !mismatches.isEmpty {
+        detail = " (incompatible types: \(mismatches.prefix(5).joined(separator: ", ")))"
+    } else {
+        detail = ""
+    }
+    throw AimuxError.state("Incompatible manifest: opsVersion \(String(describing: value["opsVersion"])) (expected \(AimuxOps.OPS_VERSION)), digest \(String(describing: value["digest"])) (expected \(AimuxOps.MANIFEST_DIGEST))\(detail)", code: 302)
 }
 
 private enum RuntimeMetadata {

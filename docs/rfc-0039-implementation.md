@@ -214,7 +214,7 @@ Recording requires explicit `capturePolicy: "full"`; there is no audit-only
 recording format. Trace stores support off/shared/strict audit policy; trace
 middleware inherits it unless disabled/shared/strict is supplied explicitly.
 
-## C ABI: fourteen exports
+## C ABI: sixteen exports
 
 The generated authority is [aimux.h](../aimux-ffi/include/aimux.h); implementations
 are in `aimux-ffi/src/abi.rs`. All fallible functions return NULL on success or
@@ -226,6 +226,8 @@ an owned `aimux_error_t*` on failure. Outputs are reset before validation.
 | `aimux_manifest_json(char **out_json)` | Allocates manifest JSON. |
 | `aimux_call(uint64_t, const char*, const char*, uint64_t, char**)` | Blocking call; last handle is optional Abort (0 = none). |
 | `aimux_stream(uint64_t, const char*, const char*, uint64_t, aimux_event_cb, void*)` | Blocking stream; callback receives borrowed frame JSON and context. |
+| `aimux_call_async(uint64_t, const char*, const char*, uint64_t, aimux_call_callback_t, void*)` | Non-blocking call; invokes callback once on a runtime thread with owned result JSON or error. |
+| `aimux_stream_async(uint64_t, const char*, const char*, uint64_t, aimux_event_batch_callback_t, void*)` | Non-blocking stream; validates acceptance synchronously and delivers ordered borrowed frame batches ending with a standalone End frame. |
 | `aimux_operation_push(uint64_t, const uint8_t*, size_t)` | Validates and copies/consumes input before return; NULL is valid only with length 0. |
 | `aimux_operation_next_part(uint64_t, int64_t, char**, int32_t*)` | Nonnegative timeout; PART=1 allocates JSON; ENDED=2/TIMEOUT=3 allocate none; errors clear both outputs. |
 | `aimux_abort(uint64_t)` | Callback-safe signal without block_on; invalid handles are ignored. |
@@ -241,10 +243,12 @@ The pointer-encoded finalizer token is limited to uintptr_t width. Dart uses
 its own allocated uint64 token and native queue trampoline on 32-bit targets.
 
 Inputs are borrowed NUL-terminated UTF-8. Do not pass invalid owned pointers,
-double-free, or omit terminators: these are caller violations. Free every owned
-JSON/getter string with aimux_free_string and every owned error with
-aimux_error_free; never free callback JSON. Copy callback bytes before return
-and retain context until aimux_stream returns. Blocking reentry, including from
+double-free, or omit terminators: these are caller violations. Free every owned JSON/getter string with `aimux_free_string` and every owned error with
+`aimux_error_free`. Stream callbacks (`aimux_stream` and `aimux_stream_async`) receive
+borrowed frames that must never be freed; copy any retained bytes before return.
+`aimux_call_async` completion callbacks receive an owned `result_json` or `error` and
+must release it once with `aimux_free_string` or `aimux_error_free`. Retain context until
+the stream finishes or the final async callback returns. Blocking reentry, including from
 a Tokio caller, returns ReentrantCall. Abort is safe inside a callback. Host
 exceptions must be latched by adapters and raised after native return; a
 callback that never returns cannot be forcibly interrupted.
@@ -334,7 +338,10 @@ Recorder I/O uses spawn_blocking, and registry locks do not cross await/join.
 ⑤ language loaders/bridges + handwritten facades consume shared dispatch/ABI
 ```
 
-The digest excludes its own digest field; array order is preserved. Each type
+The digest removes top-level `digest` (and `inputHash` in emitted
+`schema/manifest.json`), sorts `ops` by `name`, and recursively sorts all
+object keys before hashing compact UTF-8 JSON with SHA-256 (non-`ops` arrays
+preserve their order). Each type
 entry has an ID and Rust path; ops-owned controls/wrappers carry schemas and
 embedded business fields have x-aimux-type references. Schema IDs use JSON Schema
 2020-12 with local resolvable refs. Strict controls reject unknown keys while
@@ -358,9 +365,13 @@ and tested against the primitive signatures, not emitted by aimux-codegen.
 
 The generated file set is checked against the live manifest by the commands below;
 this documentation audit does not claim a successful generator run.
-Every adapter requires the exact generated ABI version, ops version and manifest
-digest at load. No adapter can claim per-consumed-business-type hash validation
-until that metadata exists. Schema presence does not validate live handles,
+At load, Node, Python, and Java (+ Kotlin) check the exact `ABI_VERSION` while Go,
+Swift, and Flutter check ABI major compatibility (`>> 16`), and every adapter checks exact
+`opsVersion`. For
+manifest compatibility, adapters prefer an exact generated `MANIFEST_DIGEST`
+match and fall back to verifying every entry in the generated `TYPE_SCHEMA_HASHES`
+table against `manifest.types[].schemaHash` (per-type `revision` and transitive
+`schemaHash` metadata live in `schema/manifest.json`). Schema presence does not validate live handles,
 owner isolation, capabilities or state transitions.
 
 ## Verification gates
@@ -417,6 +428,7 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **D18 — JNA declarations (§9.3):** The Java binding's JNA declarations for the 14 C ABI primitives (`bindings/java/src/main/java/ai/arcships/aimux/AimuxFFI.java`) are written by hand; `AbiContractTest` pins the exact set of 14 primitives and the portable `size_t` width and exercises them against the C fixture library; the generator owns the header, constants and DTOs. The primitive set is small and frozen with the ABI version, so a generated copy would add an emitter without removing a source of drift.
 - **D19 — Reference docs (§10.1, §10.2):** API reference pages under `docs/api/` are handwritten prose that links to the generated type files; only `docs/api/providers.md` is generated, by `scripts/gen_providers_doc.py`, and checked by the CI step "Providers doc generator drift". `aimux-codegen --check` therefore covers every generated code, schema and constant file but no document table.
 - **D20 — Provider descriptors and config-driven registry operations:** Four additional operations (`provider.descriptors`, `registry.fromConfig`, `registry.list`, `registry.update`) extend the runtime manifest beyond the Decision addition (`D2`, 72 operations) to 76 operations so callers can inspect static `PackageDescriptor` metadata for all 329 packages, build `Registry` handles directly from declarative configuration documents, enumerate registered keys, and apply in-place or derived registry updates.
+- **D21 — Hand-authored registrations and language facades (§10.1):** Operation descriptors and dispatch registrations in `aimux-ops/src/ops/` as well as each binding's idiomatic wrapper/facade layer (`bindings/node/src/native.ts`, `bindings/python/python/aimux/__init__.py`, `bindings/go/aimux.go`, `bindings/java/src/main/java/ai/arcships/aimux/Aimux.java`, `bindings/swift/Sources/Aimux/Aimux.swift`, `bindings/flutter/lib/src/native.dart`) are hand-authored rather than generated. The runtime manifest (`aimux-ops/src/manifest.rs` / `schema/manifest.json`) is projected from the Rust registrations, and `aimux-codegen` derives headers, op constants, JSON schemas, and DTO types/codecs from that manifest (see also D18 and R160).
 
 ## Registered gaps
 
@@ -427,6 +439,6 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
 - **G-f — Provider metadata (partially closed):** Static package descriptors (`provider.descriptors`), authoritative default methods for all 329 packages, and direct language-model method dispatch (`Provider::language_model_with_api`, `provider.model`, `model.resolve`) are now delivered; per-handle construction provenance beyond owner-scoped model reference summaries, non-language vendor extension methods (`provider.invoke` accepts only `listModels`), and direct string/registry model lifting in `text.*` requests remain absent because entries retain canonical Arcs and text requests still require resolved model handles.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.
-- **G-h — Generated-product consistency:** Per-business-type revision/hash checks are unavailable because consumed-type metadata is incomplete; every adapter already pins the exact ABI version, ops version and manifest digest.
+- **G-h — Generated-product consistency:** Partially closed for schema metadata and load negotiation: `schema/manifest.json` emits per-type `revision` and transitive `schemaHash` for every manifest type, generated bindings emit `TYPE_SCHEMA_HASHES` and fall back to checking every generated `TYPE_SCHEMA_HASHES` entry against `manifest.types[].schemaHash` on whole-manifest digest mismatch (consumed-type subset negotiation via `hello` remains deferred with D10), and `aimux-codegen` generates DTO schemas and parity vectors across bindings. Remaining G-h scope covers a raw C per-type hash helper (R116), optional `hello`/`requiredTypeCapabilities` subset negotiation (D10), and per-platform installed-asset and distribution verification.
 - **G-i — Cross-language and platform conformance:** Exhaustive eight-language business-vector execution, same-source release evidence, installed-wheel checks and all platform sanitizer/link/install results are not established here because narrower local and fixture suites do not prove the full matrix; Dart Windows streaming is explicitly unsupported.
 - **G-k — Offline mock-model migration:** The old MockReplayModel constructor has no exposed replacement for offline text generation because replay.create returns ReplaySession, text operations admit only Language, and replay.live requires a separate caller-supplied target.

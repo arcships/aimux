@@ -1,22 +1,54 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dtoTags, dtoTypeNames } from '../src/generated/dto_vectors.ts'
+import { NonIntegerNumber, dtoTags, dtoTypeNames, validateDto } from '../src/generated/dto_vectors.ts'
 import type { DtoTypes } from '../src/generated/dto_vectors.ts'
 
 function isDtoType(type: string): type is keyof DtoTypes {
   return (dtoTypeNames as readonly string[]).includes(type)
 }
 
+function parseExactInteger(source: string): bigint | null {
+  const match = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(source)
+  if (!match) return null
+  const frac = match[3] ?? ''
+  const digits = match[2] + frac
+  if (/^0+$/.test(digits)) return 0n
+  const exp = match[4] ? Number(match[4]) : 0
+  if (!Number.isSafeInteger(exp)) return null
+  const shift = exp - frac.length
+  if (shift < 0) {
+    const cut = Math.max(0, digits.length + shift)
+    if (!/^0*$/.test(digits.slice(cut))) return null
+    const value = BigInt(digits.slice(0, cut) || '0')
+    return match[1] === '-' ? -value : value
+  }
+  if (shift > 30) return null
+  const value = BigInt(digits) * (10n ** BigInt(shift))
+  return match[1] === '-' ? -value : value
+}
+
+function parseForValidation(json: string): unknown {
+  return JSON.parse(json, (_key: string, value: unknown, context?: { source?: string }) => {
+    if (typeof value === 'number' && Number.isFinite(value) && typeof context?.source === 'string') {
+      const exact = parseExactInteger(context.source)
+      return exact !== null ? exact : new NonIntegerNumber(value)
+    }
+    return value
+  })
+}
+
 export function roundTrip<K extends keyof DtoTypes>(type: K, json: string): DtoTypes[K] {
-  const value = JSON.parse(json) as DtoTypes[K]
+  const exact = parseForValidation(json)
   const tagged = dtoTags[type]
   if (tagged) {
-    const tag: unknown = value !== null && typeof value === 'object'
-      ? (value as Record<string, unknown>)[tagged.tag] : undefined
+    const tag: unknown = exact !== null && typeof exact === 'object'
+      ? (exact as Record<string, unknown>)[tagged.tag] : undefined
     if (typeof tag !== 'string' || !tagged.values.includes(tag)) {
       throw new Error(`Unknown ${type} tag: ${String(tag)}`)
     }
   }
+  validateDto(type, exact)
+  const value = JSON.parse(json) as DtoTypes[K]
   return JSON.parse(JSON.stringify(value)) as DtoTypes[K]
 }
 

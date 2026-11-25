@@ -604,6 +604,7 @@ fn update(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
             });
         }
 
+        let reservation = HandleRegistry::global().reserve()?;
         let derived = registry.with_updated_providers(&params.remove, resolved_set, params.replace);
         let keys = derived.provider_ids();
         let namespace = match metadata(ctx.owner, &entry, None) {
@@ -613,7 +614,7 @@ fn update(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
         let new_entry = Entry::Registry(Arc::new(derived));
         metadata(ctx.owner, &new_entry, Some(Metadata::Namespace(namespace)));
         let kind = new_entry.kind();
-        let id = HandleRegistry::global().insert(ctx.owner, new_entry)?;
+        let id = HandleRegistry::global().commit(ctx.owner, reservation, new_entry);
         serialize_result(RegistryUpdateResult {
             keys,
             handle: Some(id),

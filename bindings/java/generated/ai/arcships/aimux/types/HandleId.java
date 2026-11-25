@@ -16,7 +16,7 @@ public final class HandleId {
     private final String value;
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public HandleId(String value) { this.value = value; }
+    public HandleId(String value) { DtoJson.u64(value); this.value = value; }
 
     public String getValue() { return value; }
 }

@@ -1,6 +1,6 @@
 // Raw JSON entrypoint. The adapter is asynchronous and never calls the C ABI.
 import { Runtime as NativeRuntime, Abort as NativeAbort } from '../index.js'
-import { ABI_VERSION, OPS_VERSION, MANIFEST_DIGEST } from './generated/ops.ts'
+import { ABI_VERSION, OPS_VERSION, MANIFEST_DIGEST, TYPE_SCHEMA_HASHES } from './generated/ops.ts'
 import { rethrow, protocolError } from './error.ts'
 export * from './error.ts'
 export type { FrameIterator } from '../index.js'
@@ -14,16 +14,54 @@ export interface Manifest {
   ops: ReadonlyArray<{ name: string; mode: string; [key: string]: unknown }>
   handleKinds: ReadonlyArray<unknown>
   errorCodes: ReadonlyArray<unknown>
+  types?: ReadonlyArray<{ id?: unknown; schemaHash?: unknown; [key: string]: unknown }>
   [key: string]: unknown
 }
 
-export function verifyManifest(manifest: Pick<Manifest, 'abiVersion' | 'opsVersion' | 'digest'>): void {
-  const expected = { abiVersion: ABI_VERSION, opsVersion: OPS_VERSION, digest: MANIFEST_DIGEST }
-  for (const field of ['abiVersion', 'opsVersion', 'digest'] as const) {
-    if (manifest[field] !== expected[field]) {
-      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest ${field}: expected ${expected[field]}, received ${String(manifest[field])}`)
+function findMismatchedTypes(types: unknown): string[] | null {
+  const expectedEntries = Object.entries(TYPE_SCHEMA_HASHES)
+  if (expectedEntries.length === 0 || !Array.isArray(types) || types.length === 0) {
+    return null
+  }
+  const actual = new Map<string, string>()
+  for (const entry of types) {
+    if (entry !== null && typeof entry === 'object') {
+      const record = entry as { id?: unknown; schemaHash?: unknown }
+      if (typeof record.id === 'string' && typeof record.schemaHash === 'string') {
+        actual.set(record.id, record.schemaHash)
+      }
     }
   }
+  const mismatches: string[] = []
+  for (const [id, expectedHash] of expectedEntries) {
+    if (actual.get(id) !== expectedHash) {
+      mismatches.push(id)
+    }
+  }
+  return mismatches
+}
+
+function verifyVersions(abiVersion: unknown, opsVersion: unknown): void {
+  const expected = { abiVersion: ABI_VERSION, opsVersion: OPS_VERSION }
+  const actual = { abiVersion, opsVersion }
+  for (const field of ['abiVersion', 'opsVersion'] as const) {
+    if (actual[field] !== expected[field]) {
+      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest ${field}: expected ${expected[field]}, received ${String(actual[field])}`)
+    }
+  }
+}
+
+export function verifyManifest(manifest: Pick<Manifest, 'abiVersion' | 'opsVersion' | 'digest'> & Partial<Pick<Manifest, 'types'>>): void {
+  verifyVersions(manifest.abiVersion, manifest.opsVersion)
+  if (manifest.digest === MANIFEST_DIGEST) {
+    return
+  }
+  const mismatches = findMismatchedTypes(manifest.types)
+  if (mismatches !== null && mismatches.length === 0) {
+    return
+  }
+  const detail = mismatches && mismatches.length > 0 ? ` (incompatible types: ${mismatches.slice(0, 5).join(', ')})` : ''
+  throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest digest: expected ${MANIFEST_DIGEST}, received ${String(manifest.digest)}${detail}`)
 }
 
 export class Runtime {
@@ -36,18 +74,29 @@ export class Runtime {
     this.#inner = new NativeRuntime()
     Object.defineProperty(this, 'manifest', { enumerable: true, get: () => this.readManifest() })
     this.manifestDigest = this.#inner.manifestDigest()
-    verifyManifest({
-      abiVersion: this.#inner.abiVersion(),
-      opsVersion: this.#inner.opsVersion(),
-      digest: this.manifestDigest,
-    })
+    const abiVersion = this.#inner.abiVersion()
+    const opsVersion = this.#inner.opsVersion()
+    verifyVersions(abiVersion, opsVersion)
+    if (this.manifestDigest !== MANIFEST_DIGEST) {
+      this.#manifest = this.parseAndVerifyManifest(abiVersion, opsVersion)
+    }
+  }
+
+  private parseAndVerifyManifest(expectedAbi: number, expectedOps: string): Manifest {
+    const manifest = JSON.parse(this.#inner.manifestJson()) as Manifest
+    if (manifest.abiVersion !== expectedAbi || manifest.opsVersion !== expectedOps) {
+      verifyVersions(manifest.abiVersion, manifest.opsVersion)
+    }
+    if (manifest.digest !== this.manifestDigest) {
+      throw protocolError(302, 'UnsupportedOpsVersion', `Incompatible manifest digest: expected ${this.manifestDigest}, received ${String(manifest.digest)}`)
+    }
+    verifyManifest(manifest)
+    return manifest
   }
 
   private readManifest(): Manifest {
     if (this.#manifest === undefined) {
-      const manifest = JSON.parse(this.#inner.manifestJson()) as Manifest
-      verifyManifest(manifest)
-      this.#manifest = manifest
+      this.#manifest = this.parseAndVerifyManifest(ABI_VERSION, OPS_VERSION)
     }
     return this.#manifest
   }

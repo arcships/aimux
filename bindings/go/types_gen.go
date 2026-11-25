@@ -1410,6 +1410,20 @@ const (
 	APICallErrorOriginUnknown      APICallErrorOrigin = "unknown"
 )
 
+func (v *APICallErrorOrigin) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch APICallErrorOrigin(s) {
+	case APICallErrorOriginTransport, APICallErrorOriginHTTPResponse, APICallErrorOriginStreamEvent, APICallErrorOriginLocal, APICallErrorOriginUnknown:
+		*v = APICallErrorOrigin(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid APICallErrorOrigin: %q", s)
+	}
+}
+
 // Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
 //
 // Newtype that enforces the `W:H` format used by V4 image and video
@@ -1927,6 +1941,30 @@ type BackendConfigVariantRing struct {
 	Capacity *uint64 `json:"capacity,omitzero"`
 }
 
+func (v *BackendConfigVariantRing) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for BackendConfigVariantRing, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "capacity", "type":
+		default:
+			return fmt.Errorf("unknown field %q in BackendConfigVariantRing", key)
+		}
+	}
+	type alias BackendConfigVariantRing
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = BackendConfigVariantRing(tmp)
+	return nil
+}
+
 func (BackendConfigVariantRing) isBackendConfig() {}
 
 func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
@@ -1939,6 +1977,40 @@ func (v BackendConfigVariantRing) MarshalJSON() ([]byte, error) {
 
 type BackendConfigVariantJsonl struct {
 	Directory string `json:"directory"`
+}
+
+func (v *BackendConfigVariantJsonl) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for BackendConfigVariantJsonl, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "directory", "type":
+		default:
+			return fmt.Errorf("unknown field %q in BackendConfigVariantJsonl", key)
+		}
+	}
+	for _, req := range []string{"directory"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in BackendConfigVariantJsonl", req)
+		}
+	}
+	for _, req := range []string{"directory"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in BackendConfigVariantJsonl must not be null", req)
+		}
+	}
+	type alias BackendConfigVariantJsonl
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = BackendConfigVariantJsonl(tmp)
+	return nil
 }
 
 func (BackendConfigVariantJsonl) isBackendConfig() {}
@@ -1960,6 +2032,20 @@ const (
 	BreakKindUnknown           BreakKind = "Unknown"
 )
 
+func (v *BreakKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch BreakKind(s) {
+	case BreakKindSystemChanged, BreakKindToolsChanged, BreakKindConversationReset, BreakKindUnknown:
+		*v = BreakKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid BreakKind: %q", s)
+	}
+}
+
 type CancelResult string
 
 const (
@@ -1968,11 +2054,39 @@ const (
 	CancelResultAlreadyTerminal  CancelResult = "alreadyTerminal"
 )
 
+func (v *CancelResult) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch CancelResult(s) {
+	case CancelResultFirst, CancelResultAlreadyRequested, CancelResultAlreadyTerminal:
+		*v = CancelResult(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid CancelResult: %q", s)
+	}
+}
+
 type CapturePolicy string
 
 const (
 	CapturePolicyFull CapturePolicy = "full"
 )
+
+func (v *CapturePolicy) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch CapturePolicy(s) {
+	case CapturePolicyFull:
+		*v = CapturePolicy(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid CapturePolicy: %q", s)
+	}
+}
 
 // In-memory catalogue: per-provider model specs, keyed by aimux provider
 // name then model id.
@@ -1990,6 +2104,30 @@ type CatalogueFetchRequest struct {
 	SourceURL *string        `json:"sourceUrl,omitzero"`
 }
 
+func (v *CatalogueFetchRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CatalogueFetchRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "sourceUrl":
+		default:
+			return fmt.Errorf("unknown field %q in CatalogueFetchRequest", key)
+		}
+	}
+	type alias CatalogueFetchRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CatalogueFetchRequest(tmp)
+	return nil
+}
+
 // Where a [`ModelSpec`] came from.
 type CatalogueSource string
 
@@ -1998,6 +2136,20 @@ const (
 	CatalogueSourceModelsDev CatalogueSource = "ModelsDev"
 	CatalogueSourceManual    CatalogueSource = "Manual"
 )
+
+func (v *CatalogueSource) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch CatalogueSource(s) {
+	case CatalogueSourceAnya2a, CatalogueSourceModelsDev, CatalogueSourceManual:
+		*v = CatalogueSource(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid CatalogueSource: %q", s)
+	}
+}
 
 // A complete Chat Completion response (non-streaming).
 //
@@ -2127,6 +2279,30 @@ type CodexModeSpecVariantAPIKey struct {
 	APIKey *StringOrEnv `json:"apiKey,omitzero"`
 }
 
+func (v *CodexModeSpecVariantAPIKey) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CodexModeSpecVariantAPIKey, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "apiKey", "type":
+		default:
+			return fmt.Errorf("unknown field %q in CodexModeSpecVariantAPIKey", key)
+		}
+	}
+	type alias CodexModeSpecVariantAPIKey
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CodexModeSpecVariantAPIKey(tmp)
+	return nil
+}
+
 func (CodexModeSpecVariantAPIKey) isCodexModeSpec() {}
 
 func (v CodexModeSpecVariantAPIKey) MarshalJSON() ([]byte, error) {
@@ -2142,6 +2318,40 @@ type CodexModeSpecVariantChatGptAccount struct {
 	Token     StringOrEnv `json:"token"`
 }
 
+func (v *CodexModeSpecVariantChatGptAccount) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CodexModeSpecVariantChatGptAccount, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "accountId", "token", "type":
+		default:
+			return fmt.Errorf("unknown field %q in CodexModeSpecVariantChatGptAccount", key)
+		}
+	}
+	for _, req := range []string{"token"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in CodexModeSpecVariantChatGptAccount", req)
+		}
+	}
+	for _, req := range []string{"token"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in CodexModeSpecVariantChatGptAccount must not be null", req)
+		}
+	}
+	type alias CodexModeSpecVariantChatGptAccount
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CodexModeSpecVariantChatGptAccount(tmp)
+	return nil
+}
+
 func (CodexModeSpecVariantChatGptAccount) isCodexModeSpec() {}
 
 func (v CodexModeSpecVariantChatGptAccount) MarshalJSON() ([]byte, error) {
@@ -2155,6 +2365,40 @@ func (v CodexModeSpecVariantChatGptAccount) MarshalJSON() ([]byte, error) {
 type CodexRefreshRequest struct {
 	ClientID     string `json:"clientId"`
 	RefreshToken string `json:"refreshToken"`
+}
+
+func (v *CodexRefreshRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CodexRefreshRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "clientId", "refreshToken":
+		default:
+			return fmt.Errorf("unknown field %q in CodexRefreshRequest", key)
+		}
+	}
+	for _, req := range []string{"clientId", "refreshToken"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in CodexRefreshRequest", req)
+		}
+	}
+	for _, req := range []string{"clientId", "refreshToken"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in CodexRefreshRequest must not be null", req)
+		}
+	}
+	type alias CodexRefreshRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CodexRefreshRequest(tmp)
+	return nil
 }
 
 // Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
@@ -2886,8 +3130,76 @@ type CreateRecorderParams struct {
 	CapturePolicy CapturePolicy `json:"capturePolicy"`
 }
 
+func (v *CreateRecorderParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CreateRecorderParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "backend", "capturePolicy":
+		default:
+			return fmt.Errorf("unknown field %q in CreateRecorderParams", key)
+		}
+	}
+	for _, req := range []string{"backend", "capturePolicy"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in CreateRecorderParams", req)
+		}
+	}
+	for _, req := range []string{"backend", "capturePolicy"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in CreateRecorderParams must not be null", req)
+		}
+	}
+	type alias CreateRecorderParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CreateRecorderParams(tmp)
+	return nil
+}
+
 type CredentialParams struct {
 	Kind string `json:"kind"`
+}
+
+func (v *CredentialParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for CredentialParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "kind":
+		default:
+			return fmt.Errorf("unknown field %q in CredentialParams", key)
+		}
+	}
+	for _, req := range []string{"kind"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in CredentialParams", req)
+		}
+	}
+	for _, req := range []string{"kind"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in CredentialParams must not be null", req)
+		}
+	}
+	type alias CredentialParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = CredentialParams(tmp)
+	return nil
 }
 
 // Provider-specific content identified by its provider and kind.
@@ -2907,6 +3219,40 @@ type DecideOptions struct {
 	State           DecisionInput                         `json:"state"`
 	// Operation deadline (aimux extension).
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
+}
+
+func (v *DecideOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for DecideOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "maxRetries", "providerOptions", "questions", "state", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in DecideOptions", key)
+		}
+	}
+	for _, req := range []string{"questions", "state"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in DecideOptions", req)
+		}
+	}
+	for _, req := range []string{"questions", "state"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in DecideOptions must not be null", req)
+		}
+	}
+	type alias DecideOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = DecideOptions(tmp)
+	return nil
 }
 
 // The result of [`decide`] (`DecisionResult` of
@@ -3035,12 +3381,70 @@ type DecisionBooleanCriteria struct {
 	True  Field[*DecisionInput] `json:"true,omitzero"`
 }
 
+func (v *DecisionBooleanCriteria) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for DecisionBooleanCriteria, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "false", "true":
+		default:
+			return fmt.Errorf("unknown field %q in DecisionBooleanCriteria", key)
+		}
+	}
+	type alias DecisionBooleanCriteria
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = DecisionBooleanCriteria(tmp)
+	return nil
+}
+
 // Runtime controls surround the canonical business options; only the control
 // object rejects unknown fields. Dispatch resolves `abort` with the caller's
 // owner before entering the handler and supplies its signal in `Ctx`.
 type DecisionDecideRequest struct {
 	Abort   *HandleIdInput `json:"abort,omitzero"`
 	Options DecideOptions  `json:"options"`
+}
+
+func (v *DecisionDecideRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for DecisionDecideRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options":
+		default:
+			return fmt.Errorf("unknown field %q in DecisionDecideRequest", key)
+		}
+	}
+	for _, req := range []string{"options"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in DecisionDecideRequest", req)
+		}
+	}
+	for _, req := range []string{"options"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in DecisionDecideRequest must not be null", req)
+		}
+	}
+	type alias DecisionDecideRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = DecisionDecideRequest(tmp)
+	return nil
 }
 
 // Shared state or structured instructions for a decision
@@ -3220,6 +3624,40 @@ type EmbeddingCallOptions struct {
 	Values []string `json:"values"`
 }
 
+func (v *EmbeddingCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for EmbeddingCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "maxRetries", "providerOptions", "timeout", "values":
+		default:
+			return fmt.Errorf("unknown field %q in EmbeddingCallOptions", key)
+		}
+	}
+	for _, req := range []string{"values"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in EmbeddingCallOptions", req)
+		}
+	}
+	for _, req := range []string{"values"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in EmbeddingCallOptions must not be null", req)
+		}
+	}
+	type alias EmbeddingCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = EmbeddingCallOptions(tmp)
+	return nil
+}
+
 // Debugging response info specific to embedding calls.
 type EmbeddingResponse struct {
 	// The response body (opaque JSON).
@@ -3252,9 +3690,57 @@ type EmbeddingUsage struct {
 
 type EmptyParams struct{}
 
+func (v *EmptyParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for EmptyParams, got null")
+	}
+	if len(raw) > 0 {
+		return fmt.Errorf("unknown field in EmptyParams")
+	}
+	return nil
+}
+
 // Reference to an environment variable carrying a credential or secret.
 type EnvVarRef struct {
 	Env string `json:"env"`
+}
+
+func (v *EnvVarRef) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for EnvVarRef, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "env":
+		default:
+			return fmt.Errorf("unknown field %q in EnvVarRef", key)
+		}
+	}
+	for _, req := range []string{"env"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in EnvVarRef", req)
+		}
+	}
+	for _, req := range []string{"env"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in EnvVarRef must not be null", req)
+		}
+	}
+	type alias EnvVarRef
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = EnvVarRef(tmp)
+	return nil
 }
 
 // The error another error was built from: the AI SDK's `cause`.
@@ -3364,6 +3850,20 @@ const (
 	ErrorDomainProtocol  ErrorDomain = "protocol"
 )
 
+func (v *ErrorDomain) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ErrorDomain(s) {
+	case ErrorDomainAimux, ErrorDomainRecording, ErrorDomainBinding, ErrorDomainProtocol:
+		*v = ErrorDomain(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ErrorDomain: %q", s)
+	}
+}
+
 // Keep the payload open so newer error variants, provider data, and explicit
 // JSON nulls survive decoding and re-encoding by an older adapter.
 type ErrorEnvelope struct {
@@ -3379,6 +3879,20 @@ const (
 	FallbackOnError Fallback = "on-error"
 	FallbackNone    Fallback = "none"
 )
+
+func (v *Fallback) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch Fallback(s) {
+	case FallbackOnError, FallbackNone:
+		*v = Fallback(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid Fallback: %q", s)
+	}
+}
 
 // Either raw bytes or a base64-encoded string (the AI SDK's
 // `Uint8Array | string`).
@@ -3600,6 +4114,20 @@ const (
 	FinishReasonUnifiedError         FinishReasonUnified = "error"
 	FinishReasonUnifiedOther         FinishReasonUnified = "other"
 )
+
+func (v *FinishReasonUnified) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch FinishReasonUnified(s) {
+	case FinishReasonUnifiedStop, FinishReasonUnifiedLength, FinishReasonUnifiedContentFilter, FinishReasonUnifiedToolCalls, FinishReasonUnifiedError, FinishReasonUnifiedOther:
+		*v = FinishReasonUnified(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid FinishReasonUnified: %q", s)
+	}
+}
 
 // A tool definition passed to the model in `CallOptions.tools`.
 type FunctionTool struct {
@@ -3990,6 +4518,30 @@ type GenerateTextOptions struct {
 	TopP       *float64              `json:"topP,omitzero"`
 }
 
+func (v *GenerateTextOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for GenerateTextOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		default:
+			return fmt.Errorf("unknown field %q in GenerateTextOptions", key)
+		}
+	}
+	type alias GenerateTextOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = GenerateTextOptions(tmp)
+	return nil
+}
+
 // Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
 // `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
 //
@@ -4169,6 +4721,20 @@ const (
 	HandleKindReplaySession      HandleKind = "ReplaySession"
 )
 
+func (v *HandleKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch HandleKind(s) {
+	case HandleKindProvider, HandleKindRegistry, HandleKindLanguage, HandleKindEmbedding, HandleKindImage, HandleKindSpeech, HandleKindTranscription, HandleKindReranking, HandleKindVideo, HandleKindSearch, HandleKindDecision, HandleKindFiles, HandleKindOperation, HandleKindAbort, HandleKindFetch, HandleKindWebSocket, HandleKindDownload, HandleKindCredentialResolver, HandleKindMiddleware, HandleKindTraceStore, HandleKindRecorder, HandleKindSessionStore, HandleKindReplaySession:
+		*v = HandleKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid HandleKind: %q", s)
+	}
+}
+
 type HandleResult struct {
 	Handle HandleID   `json:"handle"`
 	Kind   HandleKind `json:"kind"`
@@ -4233,6 +4799,40 @@ type ImageCallOptions struct {
 	Size *Size `json:"size,omitzero"`
 	// Per-call operation timeout.
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
+}
+
+func (v *ImageCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ImageCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aspectRatio", "files", "headers", "mask", "maxRetries", "n", "prompt", "providerOptions", "seed", "size", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in ImageCallOptions", key)
+		}
+	}
+	for _, req := range []string{"n", "providerOptions"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ImageCallOptions", req)
+		}
+	}
+	for _, req := range []string{"n", "providerOptions"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ImageCallOptions must not be null", req)
+		}
+	}
+	type alias ImageCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ImageCallOptions(tmp)
+	return nil
 }
 
 // An image file used for image editing or variation generation.
@@ -4368,6 +4968,40 @@ type InputAudioFormat struct {
 	Rate *uint32 `json:"rate,omitzero"`
 }
 
+func (v *InputAudioFormat) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for InputAudioFormat, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "formatType", "rate":
+		default:
+			return fmt.Errorf("unknown field %q in InputAudioFormat", key)
+		}
+	}
+	for _, req := range []string{"formatType"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in InputAudioFormat", req)
+		}
+	}
+	for _, req := range []string{"formatType"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in InputAudioFormat must not be null", req)
+		}
+	}
+	type alias InputAudioFormat
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = InputAudioFormat(tmp)
+	return nil
+}
+
 // ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 type InputRecord struct {
 	Operation *RecordingOperation `json:"operation,omitzero"`
@@ -4400,6 +5034,20 @@ const (
 	LanguageAPICompletion LanguageAPI = "completion"
 	LanguageAPIMessages   LanguageAPI = "messages"
 )
+
+func (v *LanguageAPI) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch LanguageAPI(s) {
+	case LanguageAPIChat, LanguageAPIResponses, LanguageAPICompletion, LanguageAPIMessages:
+		*v = LanguageAPI(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid LanguageAPI: %q", s)
+	}
+}
 
 // A file in a provider's output: `LanguageModelV4File` /
 // `LanguageModelV4ReasoningFile` (`provider`
@@ -4886,6 +5534,40 @@ type LiveTargetVariantModel struct {
 	Handle HandleIdInput `json:"handle"`
 }
 
+func (v *LiveTargetVariantModel) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for LiveTargetVariantModel, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "handle", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in LiveTargetVariantModel", key)
+		}
+	}
+	for _, req := range []string{"handle"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in LiveTargetVariantModel", req)
+		}
+	}
+	for _, req := range []string{"handle"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in LiveTargetVariantModel must not be null", req)
+		}
+	}
+	type alias LiveTargetVariantModel
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = LiveTargetVariantModel(tmp)
+	return nil
+}
+
 func (LiveTargetVariantModel) isLiveTarget() {}
 
 func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
@@ -4898,6 +5580,40 @@ func (v LiveTargetVariantModel) MarshalJSON() ([]byte, error) {
 
 type LiveTargetVariantRegistry struct {
 	Handle HandleIdInput `json:"handle"`
+}
+
+func (v *LiveTargetVariantRegistry) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for LiveTargetVariantRegistry, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "handle", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in LiveTargetVariantRegistry", key)
+		}
+	}
+	for _, req := range []string{"handle"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in LiveTargetVariantRegistry", req)
+		}
+	}
+	for _, req := range []string{"handle"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in LiveTargetVariantRegistry must not be null", req)
+		}
+	}
+	type alias LiveTargetVariantRegistry
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = LiveTargetVariantRegistry(tmp)
+	return nil
 }
 
 func (LiveTargetVariantRegistry) isLiveTarget() {}
@@ -4921,8 +5637,56 @@ const (
 	LogLevelTrace LogLevel = "trace"
 )
 
+func (v *LogLevel) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch LogLevel(s) {
+	case LogLevelOff, LogLevelError, LogLevelWarn, LogLevelInfo, LogLevelDebug, LogLevelTrace:
+		*v = LogLevel(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid LogLevel: %q", s)
+	}
+}
+
 type LoggingConfig struct {
 	Level LogLevel `json:"level"`
+}
+
+func (v *LoggingConfig) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for LoggingConfig, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "level":
+		default:
+			return fmt.Errorf("unknown field %q in LoggingConfig", key)
+		}
+	}
+	for _, req := range []string{"level"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in LoggingConfig", req)
+		}
+	}
+	for _, req := range []string{"level"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in LoggingConfig must not be null", req)
+		}
+	}
+	type alias LoggingConfig
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = LoggingConfig(tmp)
+	return nil
 }
 
 type MiddlewareAuditMode string
@@ -4933,11 +5697,59 @@ const (
 	MiddlewareAuditModeStrict   MiddlewareAuditMode = "strict"
 )
 
+func (v *MiddlewareAuditMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch MiddlewareAuditMode(s) {
+	case MiddlewareAuditModeDisabled, MiddlewareAuditModeShared, MiddlewareAuditModeStrict:
+		*v = MiddlewareAuditMode(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid MiddlewareAuditMode: %q", s)
+	}
+}
+
 type MiddlewareParams struct {
 	AuditMode  *MiddlewareAuditMode `json:"auditMode,omitzero"`
 	Kind       string               `json:"kind"`
 	ScopeName  *string              `json:"scopeName,omitzero"`
 	TraceStore *HandleIdInput       `json:"traceStore,omitzero"`
+}
+
+func (v *MiddlewareParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for MiddlewareParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "auditMode", "kind", "scopeName", "traceStore":
+		default:
+			return fmt.Errorf("unknown field %q in MiddlewareParams", key)
+		}
+	}
+	for _, req := range []string{"kind"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in MiddlewareParams", req)
+		}
+	}
+	for _, req := range []string{"kind"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in MiddlewareParams must not be null", req)
+		}
+	}
+	type alias MiddlewareParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = MiddlewareParams(tmp)
+	return nil
 }
 
 // Reference-failure policy.
@@ -4947,6 +5759,20 @@ const (
 	MoaFailModeBestEffort MoaFailMode = "best-effort"
 	MoaFailModeFailFast   MoaFailMode = "fail-fast"
 )
+
+func (v *MoaFailMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch MoaFailMode(s) {
+	case MoaFailModeBestEffort, MoaFailModeFailFast:
+		*v = MoaFailMode(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid MoaFailMode: %q", s)
+	}
+}
 
 // MoA configuration, camelCase JSON with every field optional. Unknown keys
 // are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
@@ -4968,6 +5794,40 @@ type MoaParams struct {
 	StripReferenceTools *bool `json:"stripReferenceTools,omitzero"`
 }
 
+func (v *MoaParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for MoaParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aggregator", "aggregatorInstructions", "failMode", "modelId", "providerName", "references", "stripReferenceTools":
+		default:
+			return fmt.Errorf("unknown field %q in MoaParams", key)
+		}
+	}
+	for _, req := range []string{"aggregator", "references"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in MoaParams", req)
+		}
+	}
+	for _, req := range []string{"aggregator", "references"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in MoaParams must not be null", req)
+		}
+	}
+	type alias MoaParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = MoaParams(tmp)
+	return nil
+}
+
 // A single input or output modality.
 type Modality string
 
@@ -4981,6 +5841,20 @@ const (
 	ModalityEmbedding Modality = "Embedding"
 	ModalityScore     Modality = "Score"
 )
+
+func (v *Modality) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch Modality(s) {
+	case ModalityText, ModalityImage, ModalityAudio, ModalityVideo, ModalityPdf, ModalityOther, ModalityEmbedding, ModalityScore:
+		*v = Modality(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid Modality: %q", s)
+	}
+}
 
 // Model modality supported by a provider package or registry resolution call.
 type ModalityKind string
@@ -4996,6 +5870,20 @@ const (
 	ModalityKindSearchModel        ModalityKind = "searchModel"
 	ModalityKindDecision           ModalityKind = "decision"
 )
+
+func (v *ModalityKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ModalityKind(s) {
+	case ModalityKindLanguageModel, ModalityKindEmbeddingModel, ModalityKindImageModel, ModalityKindSpeechModel, ModalityKindTranscriptionModel, ModalityKindRerankingModel, ModalityKindVideoModel, ModalityKindSearchModel, ModalityKindDecision:
+		*v = ModalityKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ModalityKind: %q", s)
+	}
+}
 
 // Model-level capability flags (more precise than provider-level `supports_*`).
 type ModelCapabilities struct {
@@ -5027,6 +5915,20 @@ type ModelInfo struct {
 }
 
 type ModelInfoParams struct{}
+
+func (v *ModelInfoParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ModelInfoParams, got null")
+	}
+	if len(raw) > 0 {
+		return fmt.Errorf("unknown field in ModelInfoParams")
+	}
+	return nil
+}
 
 // Token / request limits for a model.
 type ModelLimits struct {
@@ -5166,6 +6068,20 @@ const (
 	ModelMethodDecision           ModelMethod = "decision"
 )
 
+func (v *ModelMethod) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ModelMethod(s) {
+	case ModelMethodLanguageModel, ModelMethodChat, ModelMethodResponses, ModelMethodCompletion, ModelMethodMessages, ModelMethodEmbeddingModel, ModelMethodImageModel, ModelMethodSpeechModel, ModelMethodTranscriptionModel, ModelMethodRerankingModel, ModelMethodVideoModel, ModelMethodSearchModel, ModelMethodDecision:
+		*v = ModelMethod(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ModelMethod: %q", s)
+	}
+}
+
 // Input/output modality sets.
 type ModelModalities struct {
 	Input  []Modality `json:"input,omitzero"`
@@ -5226,8 +6142,76 @@ type ModelRef struct {
 	Namespace string      `json:"namespace"`
 }
 
+func (v *ModelRef) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ModelRef, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key", "method", "modelId", "namespace":
+		default:
+			return fmt.Errorf("unknown field %q in ModelRef", key)
+		}
+	}
+	for _, req := range []string{"key", "method", "modelId", "namespace"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ModelRef", req)
+		}
+	}
+	for _, req := range []string{"key", "method", "modelId", "namespace"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ModelRef must not be null", req)
+		}
+	}
+	type alias ModelRef
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ModelRef(tmp)
+	return nil
+}
+
 type ModelResolveParams struct {
 	ModelRef ModelRef `json:"modelRef"`
+}
+
+func (v *ModelResolveParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ModelResolveParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "modelRef":
+		default:
+			return fmt.Errorf("unknown field %q in ModelResolveParams", key)
+		}
+	}
+	for _, req := range []string{"modelRef"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ModelResolveParams", req)
+		}
+	}
+	for _, req := range []string{"modelRef"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ModelResolveParams must not be null", req)
+		}
+	}
+	type alias ModelResolveParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ModelResolveParams(tmp)
+	return nil
 }
 
 // The full static portrait for a model, supplemented from community knowledge.
@@ -5264,8 +6248,56 @@ const (
 	ModelTypeOther      ModelType = "Other"
 )
 
+func (v *ModelType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ModelType(s) {
+	case ModelTypeChat, ModelTypeCompletion, ModelTypeEmbedding, ModelTypeRerank, ModelTypeImageGen, ModelTypeImageEdit, ModelTypeVideo, ModelTypeAudio, ModelTypeOther:
+		*v = ModelType(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ModelType: %q", s)
+	}
+}
+
 type ModelWrapParams struct {
 	Middleware []string `json:"middleware"`
+}
+
+func (v *ModelWrapParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ModelWrapParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "middleware":
+		default:
+			return fmt.Errorf("unknown field %q in ModelWrapParams", key)
+		}
+	}
+	for _, req := range []string{"middleware"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ModelWrapParams", req)
+		}
+	}
+	for _, req := range []string{"middleware"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ModelWrapParams must not be null", req)
+		}
+	}
+	type alias ModelWrapParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ModelWrapParams(tmp)
+	return nil
 }
 
 // A `${string}.${string}` identifier, `<provider-id>.<name>`: the V4
@@ -5283,11 +6315,79 @@ type OpenAiOutputRequest struct {
 	Result            GenerateTextResultInput `json:"result"`
 }
 
+func (v *OpenAiOutputRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for OpenAiOutputRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "metadataNamespace", "result":
+		default:
+			return fmt.Errorf("unknown field %q in OpenAiOutputRequest", key)
+		}
+	}
+	for _, req := range []string{"metadataNamespace", "result"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in OpenAiOutputRequest", req)
+		}
+	}
+	for _, req := range []string{"metadataNamespace", "result"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in OpenAiOutputRequest must not be null", req)
+		}
+	}
+	type alias OpenAiOutputRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = OpenAiOutputRequest(tmp)
+	return nil
+}
+
 type OpenAiTextRequest struct {
 	Abort         *HandleIdInput `json:"abort,omitzero"`
 	Options       *Options       `json:"options,omitzero"`
 	Prompt        ModelPrompt    `json:"prompt"`
 	StreamOptions *StreamOptions `json:"streamOptions,omitzero"`
+}
+
+func (v *OpenAiTextRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for OpenAiTextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options", "prompt", "streamOptions":
+		default:
+			return fmt.Errorf("unknown field %q in OpenAiTextRequest", key)
+		}
+	}
+	for _, req := range []string{"prompt"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in OpenAiTextRequest", req)
+		}
+	}
+	for _, req := range []string{"prompt"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in OpenAiTextRequest must not be null", req)
+		}
+	}
+	type alias OpenAiTextRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = OpenAiTextRequest(tmp)
+	return nil
 }
 
 type OperationCapabilities struct {
@@ -5301,6 +6401,30 @@ type OperationNextParams struct {
 	TimeoutMs *uint64 `json:"timeoutMs,omitzero"`
 }
 
+func (v *OperationNextParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for OperationNextParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "timeoutMs":
+		default:
+			return fmt.Errorf("unknown field %q in OperationNextParams", key)
+		}
+	}
+	type alias OperationNextParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = OperationNextParams(tmp)
+	return nil
+}
+
 type OperationOutcome string
 
 const (
@@ -5308,6 +6432,20 @@ const (
 	OperationOutcomeError     OperationOutcome = "error"
 	OperationOutcomeCancelled OperationOutcome = "cancelled"
 )
+
+func (v *OperationOutcome) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch OperationOutcome(s) {
+	case OperationOutcomeSuccess, OperationOutcomeError, OperationOutcomeCancelled:
+		*v = OperationOutcome(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid OperationOutcome: %q", s)
+	}
+}
 
 type OperationPollResultVariant interface{ isOperationPollResult() }
 type OperationPollResult struct {
@@ -5397,6 +6535,20 @@ const (
 	OperationStateTerminal    OperationState = "terminal"
 )
 
+func (v *OperationState) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch OperationState(s) {
+	case OperationStateRunning, OperationStateInputClosed, OperationStateTerminal:
+		*v = OperationState(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid OperationState: %q", s)
+	}
+}
+
 type OperationStatus struct {
 	Capabilities   OperationCapabilities `json:"capabilities"`
 	CleanupFailure *string               `json:"cleanupFailure,omitzero"`
@@ -5463,6 +6615,30 @@ type Options struct {
 	TopP       *float64              `json:"topP,omitzero"`
 }
 
+func (v *Options) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for Options, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "strictStream", "temperature", "timeout", "toolChoice", "tools", "topK", "topP":
+		default:
+			return fmt.Errorf("unknown field %q in Options", key)
+		}
+	}
+	type alias Options
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = Options(tmp)
+	return nil
+}
+
 type Outcome string
 
 const (
@@ -5470,6 +6646,20 @@ const (
 	OutcomeError     Outcome = "error"
 	OutcomeCancelled Outcome = "cancelled"
 )
+
+func (v *Outcome) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch Outcome(s) {
+	case OutcomeSuccess, OutcomeError, OutcomeCancelled:
+		*v = Outcome(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid Outcome: %q", s)
+	}
+}
 
 // 最终结果摘要。
 type OutcomeRecord struct {
@@ -5496,6 +6686,20 @@ const (
 	OutcomeStatusIncomplete OutcomeStatus = "incomplete"
 	OutcomeStatusCancelled  OutcomeStatus = "cancelled"
 )
+
+func (v *OutcomeStatus) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch OutcomeStatus(s) {
+	case OutcomeStatusSuccess, OutcomeStatusPending, OutcomeStatusError, OutcomeStatusIncomplete, OutcomeStatusCancelled:
+		*v = OutcomeStatus(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid OutcomeStatus: %q", s)
+	}
+}
 
 // What the final text of a generation is parsed into.
 //
@@ -5675,6 +6879,20 @@ const (
 	PackageAuthKindNone               PackageAuthKind = "none"
 )
 
+func (v *PackageAuthKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch PackageAuthKind(s) {
+	case PackageAuthKindBearer, PackageAuthKindHeader, PackageAuthKindQueryParam, PackageAuthKindBasic, PackageAuthKindAwsSigV4, PackageAuthKindAwsBearerOrSigV4, PackageAuthKindAnthropicAws, PackageAuthKindGoogleVertex, PackageAuthKindAzureApiKeyOrToken, PackageAuthKindCodexChannel, PackageAuthKindOptionalBearer, PackageAuthKindNone:
+		*v = PackageAuthKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid PackageAuthKind: %q", s)
+	}
+}
+
 // Secret-free static metadata describing a provider package.
 type PackageDescriptor struct {
 	APIKeyEnv               *string                   `json:"apiKeyEnv,omitzero"`
@@ -5694,6 +6912,40 @@ type PackageDescriptor struct {
 	TemplateParams          []TemplateParamDescriptor `json:"templateParams"`
 }
 
+func (v *PackageDescriptor) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for PackageDescriptor, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "apiKeyEnv", "authKind", "baseUrlEnv", "defaultBaseUrl", "defaultMethod", "id", "kind", "languageApis", "modalities", "settings", "supportsDefaultInstance", "supportsDiscovery", "supportsFiles", "supportsSkills", "templateParams":
+		default:
+			return fmt.Errorf("unknown field %q in PackageDescriptor", key)
+		}
+	}
+	for _, req := range []string{"authKind", "id", "kind", "languageApis", "modalities", "settings", "supportsDefaultInstance", "supportsDiscovery", "supportsFiles", "supportsSkills", "templateParams"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in PackageDescriptor", req)
+		}
+	}
+	for _, req := range []string{"authKind", "id", "kind", "languageApis", "modalities", "settings", "supportsDefaultInstance", "supportsDiscovery", "supportsFiles", "supportsSkills", "templateParams"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in PackageDescriptor must not be null", req)
+		}
+	}
+	type alias PackageDescriptor
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = PackageDescriptor(tmp)
+	return nil
+}
+
 // Architectural category of a provider package.
 type PackageKind string
 
@@ -5703,6 +6955,20 @@ const (
 	PackageKindPreset      PackageKind = "preset"
 	PackageKindSpecialized PackageKind = "specialized"
 )
+
+func (v *PackageKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch PackageKind(s) {
+	case PackageKindNative, PackageKindProtocol, PackageKindPreset, PackageKindSpecialized:
+		*v = PackageKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid PackageKind: %q", s)
+	}
+}
 
 // A prefix break between two consecutive records of a session.
 type PrefixBreak struct {
@@ -5721,6 +6987,40 @@ type PromptTokensDetails struct {
 // Declarative provider registry configuration document.
 type ProviderConfigDocument struct {
 	Providers map[string]ProviderEntrySpec `json:"providers"`
+}
+
+func (v *ProviderConfigDocument) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderConfigDocument, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "providers":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderConfigDocument", key)
+		}
+	}
+	for _, req := range []string{"providers"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderConfigDocument", req)
+		}
+	}
+	for _, req := range []string{"providers"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderConfigDocument must not be null", req)
+		}
+	}
+	type alias ProviderConfigDocument
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderConfigDocument(tmp)
+	return nil
 }
 
 // Secret-safe declarative settings shared across provider packages.
@@ -5757,6 +7057,30 @@ type ProviderConfigSettings struct {
 	WorkspaceID                  *string            `json:"workspaceId,omitzero"`
 }
 
+func (v *ProviderConfigSettings) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderConfigSettings, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "accessKeyId", "accessToken", "apiKey", "apiVersion", "authToken", "baseUrl", "codexMode", "cx", "endpoint", "headers", "includeUsage", "location", "login", "name", "organization", "originator", "params", "password", "probabilitySource", "project", "queryParams", "region", "resourceName", "secretAccessKey", "sessionToken", "speechBaseUrl", "supportsMultiPartToolContent", "supportsStructuredOutputs", "useDeploymentBasedUrls", "workspaceId":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderConfigSettings", key)
+		}
+	}
+	type alias ProviderConfigSettings
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderConfigSettings(tmp)
+	return nil
+}
+
 // Trusted-caller operation: constructs a provider handle from package settings
 // and optional `{ "env": ... }` references. Untrusted callers must not be
 // permitted to supply arbitrary `baseUrl` values with omitted credentials.
@@ -5768,6 +7092,40 @@ type ProviderCreateParams struct {
 	EnvAllowlist []string          `json:"envAllowlist,omitzero"`
 	Package      string            `json:"package"`
 	Settings     *ProviderSettings `json:"settings,omitzero"`
+}
+
+func (v *ProviderCreateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "envAllowlist", "package", "settings":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderCreateParams", key)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderCreateParams", req)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderCreateParams must not be null", req)
+		}
+	}
+	type alias ProviderCreateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderCreateParams(tmp)
+	return nil
 }
 
 type ProviderCustomParams struct {
@@ -5791,12 +7149,94 @@ type ProviderCustomParams struct {
 	VideoModels             map[string]HandleIdInput `json:"videoModels,omitzero"`
 }
 
+func (v *ProviderCustomParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderCustomParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "chatModels", "completionModels", "decisionModels", "defaultMethod", "embeddingModels", "fallbackProvider", "files", "imageModelMiddleware", "imageModels", "languageModelMiddleware", "languageModels", "messagesModels", "rerankingModels", "responsesModels", "searchModels", "speechModels", "transcriptionModels", "videoModels":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderCustomParams", key)
+		}
+	}
+	type alias ProviderCustomParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderCustomParams(tmp)
+	return nil
+}
+
 type ProviderDefaultParams struct {
 	Package string `json:"package"`
 }
 
+func (v *ProviderDefaultParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderDefaultParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "package":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderDefaultParams", key)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderDefaultParams", req)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderDefaultParams must not be null", req)
+		}
+	}
+	type alias ProviderDefaultParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderDefaultParams(tmp)
+	return nil
+}
+
 type ProviderDescriptorsParams struct {
 	Package *string `json:"package,omitzero"`
+}
+
+func (v *ProviderDescriptorsParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderDescriptorsParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "package":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderDescriptorsParams", key)
+		}
+	}
+	type alias ProviderDescriptorsParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderDescriptorsParams(tmp)
+	return nil
 }
 
 // Configuration for a single provider entry (`package` + typed `settings`).
@@ -5805,14 +7245,116 @@ type ProviderEntrySpec struct {
 	Settings *ProviderConfigSettings `json:"settings,omitzero"`
 }
 
+func (v *ProviderEntrySpec) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderEntrySpec, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "package", "settings":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderEntrySpec", key)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderEntrySpec", req)
+		}
+	}
+	for _, req := range []string{"package"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderEntrySpec must not be null", req)
+		}
+	}
+	type alias ProviderEntrySpec
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderEntrySpec(tmp)
+	return nil
+}
+
 type ProviderInvokeParams struct {
 	Abort  *HandleIdInput `json:"abort,omitzero"`
 	Method string         `json:"method"`
 }
 
+func (v *ProviderInvokeParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderInvokeParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "method":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderInvokeParams", key)
+		}
+	}
+	for _, req := range []string{"method"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderInvokeParams", req)
+		}
+	}
+	for _, req := range []string{"method"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderInvokeParams must not be null", req)
+		}
+	}
+	type alias ProviderInvokeParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderInvokeParams(tmp)
+	return nil
+}
+
 type ProviderModelParams struct {
 	Method  *string `json:"method,omitzero"`
 	ModelID string  `json:"modelId"`
+}
+
+func (v *ProviderModelParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderModelParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "method", "modelId":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderModelParams", key)
+		}
+	}
+	for _, req := range []string{"modelId"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ProviderModelParams", req)
+		}
+	}
+	for _, req := range []string{"modelId"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ProviderModelParams must not be null", req)
+		}
+	}
+	type alias ProviderModelParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderModelParams(tmp)
+	return nil
 }
 
 // ② 配置侧:provider 身份(请求回放重建用)。
@@ -5866,6 +7408,30 @@ type ProviderSettings struct {
 	WorkspaceID                  *string            `json:"workspaceId,omitzero"`
 }
 
+func (v *ProviderSettings) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderSettings, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "accessKeyId", "accessToken", "apiKey", "apiVersion", "authToken", "baseUrl", "codexMode", "credentialResolver", "cx", "endpoint", "fetch", "headers", "includeUsage", "location", "login", "name", "organization", "originator", "params", "password", "probabilitySource", "project", "queryParams", "region", "resourceName", "secretAccessKey", "sessionToken", "speechBaseUrl", "supportsMultiPartToolContent", "supportsStructuredOutputs", "useDeploymentBasedUrls", "webSocket", "workspaceId":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderSettings", key)
+		}
+	}
+	type alias ProviderSettings
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderSettings(tmp)
+	return nil
+}
+
 // A provider-defined tool (e.g. `anthropic.web_search_20250305`,
 // `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`
 // (`@ai-sdk/provider@4.0.21
@@ -5893,6 +7459,30 @@ type ProviderTool struct {
 type ProviderWrapParams struct {
 	ImageModelMiddleware    []HandleIdInput `json:"imageModelMiddleware,omitzero"`
 	LanguageModelMiddleware []HandleIdInput `json:"languageModelMiddleware,omitzero"`
+}
+
+func (v *ProviderWrapParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ProviderWrapParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "imageModelMiddleware", "languageModelMiddleware":
+		default:
+			return fmt.Errorf("unknown field %q in ProviderWrapParams", key)
+		}
+	}
+	type alias ProviderWrapParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ProviderWrapParams(tmp)
+	return nil
 }
 
 // Provider approval request for a provider-executed call.
@@ -5930,6 +7520,20 @@ const (
 	ReasoningEffortHigh            ReasoningEffort = "high"
 	ReasoningEffortXhigh           ReasoningEffort = "xhigh"
 )
+
+func (v *ReasoningEffort) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ReasoningEffort(s) {
+	case ReasoningEffortProviderDefault, ReasoningEffortNone, ReasoningEffortMinimal, ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh, ReasoningEffortXhigh:
+		*v = ReasoningEffort(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ReasoningEffort: %q", s)
+	}
+}
 
 // A file generated as part of reasoning.
 type ReasoningFilePart struct {
@@ -5997,6 +7601,20 @@ const (
 	ReasoningModeMixed  ReasoningMode = "Mixed"
 	ReasoningModeToggle ReasoningMode = "Toggle"
 )
+
+func (v *ReasoningMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ReasoningMode(s) {
+	case ReasoningModeOther, ReasoningModeBudget, ReasoningModeEffort, ReasoningModeLevel, ReasoningModeFixed, ReasoningModeMixed, ReasoningModeToggle:
+		*v = ReasoningMode(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ReasoningMode: %q", s)
+	}
+}
 
 // A reasoning / thinking segment produced by the model. Mirrors the Vercel AI
 // SDK `reasoning` content type; `provider_metadata` carries provider-specific
@@ -6105,6 +7723,20 @@ const (
 	ReasoningVisibilityOmitted ReasoningVisibility = "Omitted"
 	ReasoningVisibilityOther   ReasoningVisibility = "Other"
 )
+
+func (v *ReasoningVisibility) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ReasoningVisibility(s) {
+	case ReasoningVisibilityHidden, ReasoningVisibilitySummary, ReasoningVisibilityFull, ReasoningVisibilityMixed, ReasoningVisibilityOmitted, ReasoningVisibilityOther:
+		*v = ReasoningVisibility(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ReasoningVisibility: %q", s)
+	}
+}
 
 type RecorderExport struct {
 	Jsonl string `json:"jsonl"`
@@ -6228,15 +7860,97 @@ const (
 	RecordingOperationDecision      RecordingOperation = "decision"
 )
 
+func (v *RecordingOperation) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch RecordingOperation(s) {
+	case RecordingOperationLanguageModel, RecordingOperationDecision:
+		*v = RecordingOperation(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid RecordingOperation: %q", s)
+	}
+}
+
 type RegistryCreateParams struct {
 	Entries   []RegistryEntry `json:"entries"`
 	Namespace *string         `json:"namespace,omitzero"`
 	Separator *string         `json:"separator,omitzero"`
 }
 
+func (v *RegistryCreateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "entries", "namespace", "separator":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryCreateParams", key)
+		}
+	}
+	for _, req := range []string{"entries"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RegistryCreateParams", req)
+		}
+	}
+	for _, req := range []string{"entries"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RegistryCreateParams must not be null", req)
+		}
+	}
+	type alias RegistryCreateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RegistryCreateParams(tmp)
+	return nil
+}
+
 type RegistryEntry struct {
 	Key      string `json:"key"`
 	Provider string `json:"provider"`
+}
+
+func (v *RegistryEntry) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryEntry, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key", "provider":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryEntry", key)
+		}
+	}
+	for _, req := range []string{"key", "provider"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RegistryEntry", req)
+		}
+	}
+	for _, req := range []string{"key", "provider"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RegistryEntry must not be null", req)
+		}
+	}
+	type alias RegistryEntry
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RegistryEntry(tmp)
+	return nil
 }
 
 // Trusted-caller operation: constructs a provider registry from a declarative
@@ -6254,7 +7968,55 @@ type RegistryFromConfigParams struct {
 	Separator    *string  `json:"separator,omitzero"`
 }
 
+func (v *RegistryFromConfigParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryFromConfigParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "config", "envAllowlist", "namespace", "separator":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryFromConfigParams", key)
+		}
+	}
+	for _, req := range []string{"config"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RegistryFromConfigParams", req)
+		}
+	}
+	for _, req := range []string{"config"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RegistryFromConfigParams must not be null", req)
+		}
+	}
+	type alias RegistryFromConfigParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RegistryFromConfigParams(tmp)
+	return nil
+}
+
 type RegistryListParams struct{}
+
+func (v *RegistryListParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryListParams, got null")
+	}
+	if len(raw) > 0 {
+		return fmt.Errorf("unknown field in RegistryListParams")
+	}
+	return nil
+}
 
 type RegistryListResult struct {
 	Keys      []string `json:"keys"`
@@ -6266,11 +8028,69 @@ type RegistryProviderParams struct {
 	Key string `json:"key"`
 }
 
+func (v *RegistryProviderParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryProviderParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "key":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryProviderParams", key)
+		}
+	}
+	for _, req := range []string{"key"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RegistryProviderParams", req)
+		}
+	}
+	for _, req := range []string{"key"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RegistryProviderParams must not be null", req)
+		}
+	}
+	type alias RegistryProviderParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RegistryProviderParams(tmp)
+	return nil
+}
+
 type RegistryUpdateParams struct {
 	Derive  *bool           `json:"derive,omitzero"`
 	Remove  []string        `json:"remove,omitzero"`
 	Replace *bool           `json:"replace,omitzero"`
 	Set     []RegistryEntry `json:"set,omitzero"`
+}
+
+func (v *RegistryUpdateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RegistryUpdateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "derive", "remove", "replace", "set":
+		default:
+			return fmt.Errorf("unknown field %q in RegistryUpdateParams", key)
+		}
+	}
+	type alias RegistryUpdateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RegistryUpdateParams(tmp)
+	return nil
 }
 
 type RegistryUpdateResult struct {
@@ -6295,6 +8115,40 @@ type ReplayCreateParams struct {
 	RecordingsJsonl string `json:"recordingsJsonl"`
 }
 
+func (v *ReplayCreateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ReplayCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "recordingsJsonl":
+		default:
+			return fmt.Errorf("unknown field %q in ReplayCreateParams", key)
+		}
+	}
+	for _, req := range []string{"recordingsJsonl"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ReplayCreateParams", req)
+		}
+	}
+	for _, req := range []string{"recordingsJsonl"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ReplayCreateParams must not be null", req)
+		}
+	}
+	type alias ReplayCreateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ReplayCreateParams(tmp)
+	return nil
+}
+
 type ReplayInspection struct {
 	Recordings []ReplayRecordingInfo `json:"recordings"`
 }
@@ -6303,6 +8157,40 @@ type ReplayLiveParams struct {
 	Abort  *HandleIdInput `json:"abort,omitzero"`
 	CallID string         `json:"callId"`
 	Target LiveTarget     `json:"target"`
+}
+
+func (v *ReplayLiveParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ReplayLiveParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "callId", "target":
+		default:
+			return fmt.Errorf("unknown field %q in ReplayLiveParams", key)
+		}
+	}
+	for _, req := range []string{"callId", "target"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ReplayLiveParams", req)
+		}
+	}
+	for _, req := range []string{"callId", "target"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ReplayLiveParams must not be null", req)
+		}
+	}
+	type alias ReplayLiveParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ReplayLiveParams(tmp)
+	return nil
 }
 
 type ReplayLiveResultVariant interface{ isReplayLiveResult() }
@@ -6407,6 +8295,40 @@ type RerankingCallOptions struct {
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
 	// Optional limit: return only the top `n` documents.
 	TopN *uint32 `json:"topN,omitzero"`
+}
+
+func (v *RerankingCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RerankingCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "documents", "headers", "maxRetries", "providerOptions", "query", "timeout", "topN":
+		default:
+			return fmt.Errorf("unknown field %q in RerankingCallOptions", key)
+		}
+	}
+	for _, req := range []string{"documents", "query"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RerankingCallOptions", req)
+		}
+	}
+	for _, req := range []string{"documents", "query"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RerankingCallOptions must not be null", req)
+		}
+	}
+	type alias RerankingCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RerankingCallOptions(tmp)
+	return nil
 }
 
 // Documents to rerank: either a list of texts or a list of JSON objects.
@@ -6563,6 +8485,20 @@ const (
 	RetryErrorReasonErrorNotRetryable  RetryErrorReason = "errorNotRetryable"
 )
 
+func (v *RetryErrorReason) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch RetryErrorReason(s) {
+	case RetryErrorReasonMaxRetriesExceeded, RetryErrorReasonErrorNotRetryable:
+		*v = RetryErrorReason(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid RetryErrorReason: %q", s)
+	}
+}
+
 type RouterParams struct {
 	Children     []string  `json:"children"`
 	Fallback     *Fallback `json:"fallback,omitzero"`
@@ -6571,12 +8507,84 @@ type RouterParams struct {
 	Strategy     Strategy  `json:"strategy"`
 }
 
+func (v *RouterParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RouterParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "children", "fallback", "modelId", "providerName", "strategy":
+		default:
+			return fmt.Errorf("unknown field %q in RouterParams", key)
+		}
+	}
+	for _, req := range []string{"children", "strategy"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in RouterParams", req)
+		}
+	}
+	for _, req := range []string{"children", "strategy"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in RouterParams must not be null", req)
+		}
+	}
+	type alias RouterParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RouterParams(tmp)
+	return nil
+}
+
 type RuntimeConfigureParams struct {
 	Logging *LoggingConfig  `json:"logging,omitzero"`
 	Proxy   *TransportProxy `json:"proxy,omitzero"`
 }
 
+func (v *RuntimeConfigureParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RuntimeConfigureParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "logging", "proxy":
+		default:
+			return fmt.Errorf("unknown field %q in RuntimeConfigureParams", key)
+		}
+	}
+	type alias RuntimeConfigureParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = RuntimeConfigureParams(tmp)
+	return nil
+}
+
 type RuntimeDescribeParams struct{}
+
+func (v *RuntimeDescribeParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for RuntimeDescribeParams, got null")
+	}
+	if len(raw) > 0 {
+		return fmt.Errorf("unknown field in RuntimeDescribeParams")
+	}
+	return nil
+}
 
 // A model entry returned by a provider's `/models` endpoint (the sparse,
 // account-level truth of "what this key can call").
@@ -6627,6 +8635,40 @@ type SearchCallOptions struct {
 	TimeRange *string `json:"timeRange,omitzero"`
 	// Per-call operation timeout.
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
+}
+
+func (v *SearchCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for SearchCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "excludeDomains", "headers", "includeDomains", "includeRawContent", "maxResults", "maxRetries", "providerOptions", "query", "timeRange", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in SearchCallOptions", key)
+		}
+	}
+	for _, req := range []string{"query"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in SearchCallOptions", req)
+		}
+	}
+	for _, req := range []string{"query"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in SearchCallOptions must not be null", req)
+		}
+	}
+	type alias SearchCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = SearchCallOptions(tmp)
+	return nil
 }
 
 // Optional response information for a search call.
@@ -6698,6 +8740,20 @@ const (
 	SessionSourceInferred SessionSource = "Inferred"
 )
 
+func (v *SessionSource) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch SessionSource(s) {
+	case SessionSourceExplicit, SessionSourceInferred:
+		*v = SessionSource(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid SessionSource: %q", s)
+	}
+}
+
 // One step of a session's cache-hit trajectory (RFC-0024 §4.3).
 type SessionStepStat struct {
 	// The call's id (association key into Recording / replay, RFC-0023).
@@ -6717,8 +8773,76 @@ type SessionStoreCallsParams struct {
 	SessionID string `json:"sessionId"`
 }
 
+func (v *SessionStoreCallsParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for SessionStoreCallsParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "sessionId":
+		default:
+			return fmt.Errorf("unknown field %q in SessionStoreCallsParams", key)
+		}
+	}
+	for _, req := range []string{"sessionId"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in SessionStoreCallsParams", req)
+		}
+	}
+	for _, req := range []string{"sessionId"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in SessionStoreCallsParams must not be null", req)
+		}
+	}
+	type alias SessionStoreCallsParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = SessionStoreCallsParams(tmp)
+	return nil
+}
+
 type SessionStoreCreateParams struct {
 	Infer bool `json:"infer"`
+}
+
+func (v *SessionStoreCreateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for SessionStoreCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "infer":
+		default:
+			return fmt.Errorf("unknown field %q in SessionStoreCreateParams", key)
+		}
+	}
+	for _, req := range []string{"infer"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in SessionStoreCreateParams", req)
+		}
+	}
+	for _, req := range []string{"infer"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in SessionStoreCreateParams must not be null", req)
+		}
+	}
+	type alias SessionStoreCreateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = SessionStoreCreateParams(tmp)
+	return nil
 }
 
 type SessionStoreHandle struct {
@@ -6746,6 +8870,20 @@ const (
 	SettingFieldKindCodexMode  SettingFieldKind = "codexMode"
 )
 
+func (v *SettingFieldKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch SettingFieldKind(s) {
+	case SettingFieldKindString, SettingFieldKindCredential, SettingFieldKindBoolean, SettingFieldKindHeaderMap, SettingFieldKindStringMap, SettingFieldKindCodexMode:
+		*v = SettingFieldKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid SettingFieldKind: %q", s)
+	}
+}
+
 // Static description of one setting accepted when constructing a provider package.
 type SettingFieldSpec struct {
 	Credential bool             `json:"credential"`
@@ -6753,6 +8891,40 @@ type SettingFieldSpec struct {
 	Kind       SettingFieldKind `json:"kind"`
 	Name       string           `json:"name"`
 	Required   bool             `json:"required"`
+}
+
+func (v *SettingFieldSpec) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for SettingFieldSpec, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "credential", "envVar", "kind", "name", "required":
+		default:
+			return fmt.Errorf("unknown field %q in SettingFieldSpec", key)
+		}
+	}
+	for _, req := range []string{"credential", "kind", "name", "required"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in SettingFieldSpec", req)
+		}
+	}
+	for _, req := range []string{"credential", "kind", "name", "required"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in SettingFieldSpec must not be null", req)
+		}
+	}
+	type alias SettingFieldSpec
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = SettingFieldSpec(tmp)
+	return nil
 }
 
 // Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
@@ -6875,6 +9047,40 @@ type SpeechCallOptions struct {
 	// The voice to use (provider-specific voice ID, name, or other
 	// identifier).
 	Voice *string `json:"voice,omitzero"`
+}
+
+func (v *SpeechCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for SpeechCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "headers", "instructions", "language", "maxRetries", "outputFormat", "providerOptions", "speed", "text", "timeout", "voice":
+		default:
+			return fmt.Errorf("unknown field %q in SpeechCallOptions", key)
+		}
+	}
+	for _, req := range []string{"text"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in SpeechCallOptions", req)
+		}
+	}
+	for _, req := range []string{"text"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in SpeechCallOptions must not be null", req)
+		}
+	}
+	type alias SpeechCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = SpeechCallOptions(tmp)
+	return nil
 }
 
 // Optional request information for a speech call.
@@ -7116,6 +9322,24 @@ func (v *Strategy) UnmarshalJSON(data []byte) error {
 
 type StrategyVariantRule struct{}
 
+func (v *StrategyVariantRule) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StrategyVariantRule, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "type":
+		default:
+			return fmt.Errorf("unknown field %q in StrategyVariantRule", key)
+		}
+	}
+	return nil
+}
+
 func (StrategyVariantRule) isStrategy() {}
 
 func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
@@ -7128,6 +9352,40 @@ func (v StrategyVariantRule) MarshalJSON() ([]byte, error) {
 
 type StrategyVariantWeighted struct {
 	Weights []float64 `json:"weights"`
+}
+
+func (v *StrategyVariantWeighted) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StrategyVariantWeighted, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "weights", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StrategyVariantWeighted", key)
+		}
+	}
+	for _, req := range []string{"weights"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in StrategyVariantWeighted", req)
+		}
+	}
+	for _, req := range []string{"weights"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in StrategyVariantWeighted must not be null", req)
+		}
+	}
+	type alias StrategyVariantWeighted
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StrategyVariantWeighted(tmp)
+	return nil
 }
 
 func (StrategyVariantWeighted) isStrategy() {}
@@ -7225,6 +9483,40 @@ type StreamFrameVariantEvent struct {
 	Seq   Uint64String `json:"seq"`
 }
 
+func (v *StreamFrameVariantEvent) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StreamFrameVariantEvent, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "event", "seq", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StreamFrameVariantEvent", key)
+		}
+	}
+	for _, req := range []string{"event", "seq"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in StreamFrameVariantEvent", req)
+		}
+	}
+	for _, req := range []string{"event", "seq"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in StreamFrameVariantEvent must not be null", req)
+		}
+	}
+	type alias StreamFrameVariantEvent
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StreamFrameVariantEvent(tmp)
+	return nil
+}
+
 func (StreamFrameVariantEvent) isStreamFrame() {}
 
 func (v StreamFrameVariantEvent) MarshalJSON() ([]byte, error) {
@@ -7241,6 +9533,40 @@ type StreamFrameVariantEnd struct {
 	Seq     Uint64String   `json:"seq"`
 }
 
+func (v *StreamFrameVariantEnd) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StreamFrameVariantEnd, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "error", "outcome", "seq", "type":
+		default:
+			return fmt.Errorf("unknown field %q in StreamFrameVariantEnd", key)
+		}
+	}
+	for _, req := range []string{"outcome", "seq"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in StreamFrameVariantEnd", req)
+		}
+	}
+	for _, req := range []string{"outcome", "seq"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in StreamFrameVariantEnd must not be null", req)
+		}
+	}
+	type alias StreamFrameVariantEnd
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StreamFrameVariantEnd(tmp)
+	return nil
+}
+
 func (StreamFrameVariantEnd) isStreamFrame() {}
 
 func (v StreamFrameVariantEnd) MarshalJSON() ([]byte, error) {
@@ -7254,6 +9580,30 @@ func (v StreamFrameVariantEnd) MarshalJSON() ([]byte, error) {
 type StreamOptions struct {
 	IncludeReasoning *bool `json:"includeReasoning,omitzero"`
 	IncludeUsage     *bool `json:"includeUsage,omitzero"`
+}
+
+func (v *StreamOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for StreamOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "includeReasoning", "includeUsage":
+		default:
+			return fmt.Errorf("unknown field %q in StreamOptions", key)
+		}
+	}
+	type alias StreamOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = StreamOptions(tmp)
+	return nil
 }
 
 // Configuration string accepting either a literal secret/value or an `{ "env": "VAR" }` reference.
@@ -7339,6 +9689,40 @@ type TemplateParamDescriptor struct {
 	Name   string `json:"name"`
 }
 
+func (v *TemplateParamDescriptor) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TemplateParamDescriptor, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "envVar", "name":
+		default:
+			return fmt.Errorf("unknown field %q in TemplateParamDescriptor", key)
+		}
+	}
+	for _, req := range []string{"envVar", "name"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in TemplateParamDescriptor", req)
+		}
+	}
+	for _, req := range []string{"envVar", "name"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in TemplateParamDescriptor must not be null", req)
+		}
+	}
+	type alias TemplateParamDescriptor
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TemplateParamDescriptor(tmp)
+	return nil
+}
+
 type TerminalSummary struct {
 	Error   *ErrorEnvelope   `json:"error,omitzero"`
 	Outcome OperationOutcome `json:"outcome"`
@@ -7354,6 +9738,40 @@ type TextRequest struct {
 	Abort   *HandleIdInput `json:"abort,omitzero"`
 	Options *Options       `json:"options,omitzero"`
 	Prompt  ModelPrompt    `json:"prompt"`
+}
+
+func (v *TextRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "options", "prompt":
+		default:
+			return fmt.Errorf("unknown field %q in TextRequest", key)
+		}
+	}
+	for _, req := range []string{"prompt"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in TextRequest", req)
+		}
+	}
+	for _, req := range []string{"prompt"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in TextRequest must not be null", req)
+		}
+	}
+	type alias TextRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TextRequest(tmp)
+	return nil
 }
 
 // A public call-layer stream chunk: the AI SDK's `TextStreamPart`
@@ -8093,6 +10511,30 @@ type TimeoutConfiguration struct {
 	TotalMs *uint64 `json:"totalMs,omitzero"`
 }
 
+func (v *TimeoutConfiguration) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TimeoutConfiguration, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "chunkMs", "firstChunkMs", "stepMs", "totalMs":
+		default:
+			return fmt.Errorf("unknown field %q in TimeoutConfiguration", key)
+		}
+	}
+	type alias TimeoutConfiguration
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TimeoutConfiguration(tmp)
+	return nil
+}
+
 // A point in time: a `Date` in the AI SDK, whose JSON is
 // `Date.prototype.toISOString()` (`2024-03-01T12:00:00.000Z`).
 //
@@ -8363,6 +10805,40 @@ type ToolCallRepairReplyVariantRepaired struct {
 	ToolCall RepairedToolCall `json:"toolCall"`
 }
 
+func (v *ToolCallRepairReplyVariantRepaired) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantRepaired, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "toolCall", "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantRepaired", key)
+		}
+	}
+	for _, req := range []string{"toolCall"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ToolCallRepairReplyVariantRepaired", req)
+		}
+	}
+	for _, req := range []string{"toolCall"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ToolCallRepairReplyVariantRepaired must not be null", req)
+		}
+	}
+	type alias ToolCallRepairReplyVariantRepaired
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolCallRepairReplyVariantRepaired(tmp)
+	return nil
+}
+
 func (ToolCallRepairReplyVariantRepaired) isToolCallRepairReply() {}
 
 func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
@@ -8374,6 +10850,24 @@ func (v ToolCallRepairReplyVariantRepaired) MarshalJSON() ([]byte, error) {
 }
 
 type ToolCallRepairReplyVariantUnchanged struct{}
+
+func (v *ToolCallRepairReplyVariantUnchanged) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantUnchanged, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantUnchanged", key)
+		}
+	}
+	return nil
+}
 
 func (ToolCallRepairReplyVariantUnchanged) isToolCallRepairReply() {}
 
@@ -8387,6 +10881,40 @@ func (v ToolCallRepairReplyVariantUnchanged) MarshalJSON() ([]byte, error) {
 
 type ToolCallRepairReplyVariantFailed struct {
 	Message string `json:"message"`
+}
+
+func (v *ToolCallRepairReplyVariantFailed) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolCallRepairReplyVariantFailed, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "message", "type":
+		default:
+			return fmt.Errorf("unknown field %q in ToolCallRepairReplyVariantFailed", key)
+		}
+	}
+	for _, req := range []string{"message"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ToolCallRepairReplyVariantFailed", req)
+		}
+	}
+	for _, req := range []string{"message"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ToolCallRepairReplyVariantFailed must not be null", req)
+		}
+	}
+	type alias ToolCallRepairReplyVariantFailed
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolCallRepairReplyVariantFailed(tmp)
+	return nil
 }
 
 func (ToolCallRepairReplyVariantFailed) isToolCallRepairReply() {}
@@ -8461,6 +10989,20 @@ const (
 	ToolChoiceModeNone     ToolChoiceMode = "none"
 	ToolChoiceModeRequired ToolChoiceMode = "required"
 )
+
+func (v *ToolChoiceMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch ToolChoiceMode(s) {
+	case ToolChoiceModeAuto, ToolChoiceModeNone, ToolChoiceModeRequired:
+		*v = ToolChoiceMode(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid ToolChoiceMode: %q", s)
+	}
+}
 
 // The named-tool form of a user's tool choice.
 type ToolChoiceTool struct {
@@ -8644,6 +11186,40 @@ type ToolRepairApplyRequest struct {
 	ToolCall ToolCallInput        `json:"toolCall"`
 }
 
+func (v *ToolRepairApplyRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolRepairApplyRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "reply", "toolCall":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairApplyRequest", key)
+		}
+	}
+	for _, req := range []string{"reply", "toolCall"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ToolRepairApplyRequest", req)
+		}
+	}
+	for _, req := range []string{"reply", "toolCall"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ToolRepairApplyRequest must not be null", req)
+		}
+	}
+	type alias ToolRepairApplyRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolRepairApplyRequest(tmp)
+	return nil
+}
+
 type ToolRepairApplyResultRequest struct {
 	Options    *GenerateTextOptions    `json:"options,omitzero"`
 	Reply      ToolCallRepairReply     `json:"reply"`
@@ -8651,10 +11227,78 @@ type ToolRepairApplyResultRequest struct {
 	ToolCallID string                  `json:"toolCallId"`
 }
 
+func (v *ToolRepairApplyResultRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolRepairApplyResultRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "reply", "result", "toolCallId":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairApplyResultRequest", key)
+		}
+	}
+	for _, req := range []string{"reply", "result", "toolCallId"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ToolRepairApplyResultRequest", req)
+		}
+	}
+	for _, req := range []string{"reply", "result", "toolCallId"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ToolRepairApplyResultRequest must not be null", req)
+		}
+	}
+	type alias ToolRepairApplyResultRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolRepairApplyResultRequest(tmp)
+	return nil
+}
+
 type ToolRepairContextRequest struct {
 	Options  *GenerateTextOptions `json:"options,omitzero"`
 	Prompt   ModelPrompt          `json:"prompt"`
 	ToolCall ToolCallInput        `json:"toolCall"`
+}
+
+func (v *ToolRepairContextRequest) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for ToolRepairContextRequest, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "options", "prompt", "toolCall":
+		default:
+			return fmt.Errorf("unknown field %q in ToolRepairContextRequest", key)
+		}
+	}
+	for _, req := range []string{"prompt", "toolCall"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in ToolRepairContextRequest", req)
+		}
+	}
+	for _, req := range []string{"prompt", "toolCall"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in ToolRepairContextRequest must not be null", req)
+		}
+	}
+	type alias ToolRepairContextRequest
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = ToolRepairContextRequest(tmp)
+	return nil
 }
 
 type ToolRepairContextResult = *ToolRepairContextSchema
@@ -9273,8 +11917,56 @@ type TraceAggregateFilter struct {
 	SinceUnixMs *int64  `json:"sinceUnixMs,omitzero"`
 }
 
+func (v *TraceAggregateFilter) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TraceAggregateFilter, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "model", "provider", "sessionId", "sinceUnixMs":
+		default:
+			return fmt.Errorf("unknown field %q in TraceAggregateFilter", key)
+		}
+	}
+	type alias TraceAggregateFilter
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TraceAggregateFilter(tmp)
+	return nil
+}
+
 type TraceAggregateParams struct {
 	Filter *TraceAggregateFilter `json:"filter,omitzero"`
+}
+
+func (v *TraceAggregateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TraceAggregateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "filter":
+		default:
+			return fmt.Errorf("unknown field %q in TraceAggregateParams", key)
+		}
+	}
+	type alias TraceAggregateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TraceAggregateParams(tmp)
+	return nil
 }
 
 type TraceAuditMode string
@@ -9285,10 +11977,48 @@ const (
 	TraceAuditModeStrict TraceAuditMode = "strict"
 )
 
+func (v *TraceAuditMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch TraceAuditMode(s) {
+	case TraceAuditModeOff, TraceAuditModeShared, TraceAuditModeStrict:
+		*v = TraceAuditMode(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid TraceAuditMode: %q", s)
+	}
+}
+
 type TraceCreateParams struct {
 	AuditMode        *TraceAuditMode `json:"auditMode,omitzero"`
 	Capacity         *uint64         `json:"capacity,omitzero"`
 	PerScopeCapacity *uint64         `json:"perScopeCapacity,omitzero"`
+}
+
+func (v *TraceCreateParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TraceCreateParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "auditMode", "capacity", "perScopeCapacity":
+		default:
+			return fmt.Errorf("unknown field %q in TraceCreateParams", key)
+		}
+	}
+	type alias TraceCreateParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TraceCreateParams(tmp)
+	return nil
 }
 
 // One probed call. Plaintext never persists — fingerprints only.
@@ -9324,6 +12054,40 @@ type TraceRecord struct {
 
 type TraceSessionParams struct {
 	SessionID string `json:"sessionId"`
+}
+
+func (v *TraceSessionParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TraceSessionParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "sessionId":
+		default:
+			return fmt.Errorf("unknown field %q in TraceSessionParams", key)
+		}
+	}
+	for _, req := range []string{"sessionId"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in TraceSessionParams", req)
+		}
+	}
+	for _, req := range []string{"sessionId"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in TraceSessionParams must not be null", req)
+		}
+	}
+	type alias TraceSessionParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TraceSessionParams(tmp)
+	return nil
 }
 
 // Aggregated statistics (RFC-0015 §5.2 — the two hit rates are reported
@@ -9363,6 +12127,40 @@ type TranscriptionCallOptions struct {
 	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	// Per-call operation timeout.
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
+}
+
+func (v *TranscriptionCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TranscriptionCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "audio", "headers", "maxRetries", "mediaType", "providerOptions", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in TranscriptionCallOptions", key)
+		}
+	}
+	for _, req := range []string{"audio", "mediaType"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in TranscriptionCallOptions", req)
+		}
+	}
+	for _, req := range []string{"audio", "mediaType"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in TranscriptionCallOptions must not be null", req)
+		}
+	}
+	type alias TranscriptionCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TranscriptionCallOptions(tmp)
+	return nil
 }
 
 // Optional request information for a transcription call.
@@ -9422,6 +12220,30 @@ type TranscriptionStartParams struct {
 	InputAudioFormat *InputAudioFormat                     `json:"inputAudioFormat,omitzero"`
 	ProviderOptions  map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
 	Timeout          *TimeoutConfiguration                 `json:"timeout,omitzero"`
+}
+
+func (v *TranscriptionStartParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TranscriptionStartParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "headers", "includeRawChunks", "inputAudioFormat", "providerOptions", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in TranscriptionStartParams", key)
+		}
+	}
+	type alias TranscriptionStartParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TranscriptionStartParams(tmp)
+	return nil
 }
 
 // A single chunk in the stream returned by `do_stream`.
@@ -9681,6 +12503,30 @@ type TransportParamsVariantFetch struct {
 	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
+func (v *TransportParamsVariantFetch) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantFetch, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "proxy", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantFetch", key)
+		}
+	}
+	type alias TransportParamsVariantFetch
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantFetch(tmp)
+	return nil
+}
+
 func (TransportParamsVariantFetch) isTransportParams() {}
 
 func (v TransportParamsVariantFetch) MarshalJSON() ([]byte, error) {
@@ -9695,6 +12541,30 @@ type TransportParamsVariantWs struct {
 	Proxy *TransportProxy `json:"proxy,omitzero"`
 }
 
+func (v *TransportParamsVariantWs) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantWs, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "proxy", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantWs", key)
+		}
+	}
+	type alias TransportParamsVariantWs
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantWs(tmp)
+	return nil
+}
+
 func (TransportParamsVariantWs) isTransportParams() {}
 
 func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
@@ -9707,6 +12577,30 @@ func (v TransportParamsVariantWs) MarshalJSON() ([]byte, error) {
 
 type TransportParamsVariantDownload struct {
 	MaxBytes *uint64 `json:"maxBytes,omitzero"`
+}
+
+func (v *TransportParamsVariantDownload) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportParamsVariantDownload, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "maxBytes", "kind":
+		default:
+			return fmt.Errorf("unknown field %q in TransportParamsVariantDownload", key)
+		}
+	}
+	type alias TransportParamsVariantDownload
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportParamsVariantDownload(tmp)
+	return nil
 }
 
 func (TransportParamsVariantDownload) isTransportParams() {}
@@ -9728,6 +12622,30 @@ type TransportProxy struct {
 	HTTPURL  *string `json:"http_url,omitzero"`
 	HttpsURL *string `json:"https_url,omitzero"`
 	NoProxy  *string `json:"no_proxy,omitzero"`
+}
+
+func (v *TransportProxy) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for TransportProxy, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "all_url", "http_url", "https_url", "no_proxy":
+		default:
+			return fmt.Errorf("unknown field %q in TransportProxy", key)
+		}
+	}
+	type alias TransportProxy
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = TransportProxy(tmp)
+	return nil
 }
 
 // A source in a text result's `sources`: a [`Source`] with its `type` tag,
@@ -9960,6 +12878,40 @@ type UploadFileDataVariantData struct {
 	Data FileBytes `json:"data"`
 }
 
+func (v *UploadFileDataVariantData) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for UploadFileDataVariantData, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "data", "type":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileDataVariantData", key)
+		}
+	}
+	for _, req := range []string{"data"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in UploadFileDataVariantData", req)
+		}
+	}
+	for _, req := range []string{"data"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in UploadFileDataVariantData must not be null", req)
+		}
+	}
+	type alias UploadFileDataVariantData
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = UploadFileDataVariantData(tmp)
+	return nil
+}
+
 func (UploadFileDataVariantData) isUploadFileData() {}
 
 func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
@@ -9972,6 +12924,40 @@ func (v UploadFileDataVariantData) MarshalJSON() ([]byte, error) {
 
 type UploadFileDataVariantText struct {
 	Text string `json:"text"`
+}
+
+func (v *UploadFileDataVariantText) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for UploadFileDataVariantText, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "text", "type":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileDataVariantText", key)
+		}
+	}
+	for _, req := range []string{"text"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in UploadFileDataVariantText", req)
+		}
+	}
+	for _, req := range []string{"text"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in UploadFileDataVariantText must not be null", req)
+		}
+	}
+	type alias UploadFileDataVariantText
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = UploadFileDataVariantText(tmp)
+	return nil
 }
 
 func (UploadFileDataVariantText) isUploadFileData() {}
@@ -9995,6 +12981,40 @@ type UploadFileParams struct {
 	MediaType string `json:"mediaType"`
 	// Additional provider-specific options, keyed by provider name.
 	ProviderOptions map[string]map[string]json.RawMessage `json:"providerOptions,omitzero"`
+}
+
+func (v *UploadFileParams) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for UploadFileParams, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "abort", "data", "filename", "mediaType", "providerOptions":
+		default:
+			return fmt.Errorf("unknown field %q in UploadFileParams", key)
+		}
+	}
+	for _, req := range []string{"data", "mediaType"} {
+		if _, ok := raw[req]; !ok {
+			return fmt.Errorf("missing required field %q in UploadFileParams", req)
+		}
+	}
+	for _, req := range []string{"data", "mediaType"} {
+		if bytes.Equal(bytes.TrimSpace(raw[req]), []byte("null")) {
+			return fmt.Errorf("required field %q in UploadFileParams must not be null", req)
+		}
+	}
+	type alias UploadFileParams
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = UploadFileParams(tmp)
+	return nil
 }
 
 // Result of [`Files::upload_file`].
@@ -10257,6 +13277,20 @@ const (
 	VerdictConfidenceLow    VerdictConfidence = "Low"
 )
 
+func (v *VerdictConfidence) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch VerdictConfidence(s) {
+	case VerdictConfidenceHigh, VerdictConfidenceMedium, VerdictConfidenceLow:
+		*v = VerdictConfidence(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid VerdictConfidence: %q", s)
+	}
+}
+
 // Verdict kinds (RFC-0015 §4.1).
 type VerdictKind string
 
@@ -10266,6 +13300,20 @@ const (
 	VerdictKindSuspectUnderclaim VerdictKind = "SuspectUnderclaim"
 	VerdictKindUnknown           VerdictKind = "Unknown"
 )
+
+func (v *VerdictKind) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch VerdictKind(s) {
+	case VerdictKindTrusted, VerdictKindSuspectOverclaim, VerdictKindSuspectUnderclaim, VerdictKindUnknown:
+		*v = VerdictKind(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid VerdictKind: %q", s)
+	}
+}
 
 // Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].
 //
@@ -10307,6 +13355,30 @@ type VideoCallOptions struct {
 	Seed *uint64 `json:"seed,omitzero"`
 	// Per-call operation timeout.
 	Timeout *TimeoutConfiguration `json:"timeout,omitzero"`
+}
+
+func (v *VideoCallOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for VideoCallOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "aspectRatio", "duration", "fps", "frameImages", "generateAudio", "headers", "image", "inputReferences", "maxRetries", "n", "poll", "prompt", "providerOptions", "resolution", "seed", "timeout":
+		default:
+			return fmt.Errorf("unknown field %q in VideoCallOptions", key)
+		}
+	}
+	type alias VideoCallOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = VideoCallOptions(tmp)
+	return nil
 }
 
 // Generated video data: a URL, base64-encoded string, or binary data.
@@ -10500,6 +13572,20 @@ const (
 	VideoFrameTypeLastFrame  VideoFrameType = "last_frame"
 )
 
+func (v *VideoFrameType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch VideoFrameType(s) {
+	case VideoFrameTypeFirstFrame, VideoFrameTypeLastFrame:
+		*v = VideoFrameType(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid VideoFrameType: %q", s)
+	}
+}
+
 // Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`,
 // ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 // belong to the operation, as upstream: a video model has none of its own.
@@ -10508,6 +13594,30 @@ type VideoPollOptions struct {
 	IntervalMs *uint64 `json:"intervalMs,omitzero"`
 	// Maximum total time to wait for completion, in milliseconds.
 	TimeoutMs *uint64 `json:"timeoutMs,omitzero"`
+}
+
+func (v *VideoPollOptions) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		return fmt.Errorf("expected object for VideoPollOptions, got null")
+	}
+	for key := range raw {
+		switch key {
+		case "intervalMs", "timeoutMs":
+		default:
+			return fmt.Errorf("unknown field %q in VideoPollOptions", key)
+		}
+	}
+	type alias VideoPollOptions
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*v = VideoPollOptions(tmp)
+	return nil
 }
 
 // Response information for a video generation call.

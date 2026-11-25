@@ -6,7 +6,7 @@
 > [ops ABI migration](../upgrading-to-ops-abi.md).
 
 The C ABI is shared by Swift, Kotlin, Flutter, Go, Java and C/C++. It exposes
-14 primitives; operation names, versions and the manifest digest come from the
+16 primitives (including `aimux_call_async` and `aimux_stream_async`); operation names, versions and the manifest digest come from the
 generated header. Results are JSON strings in a trailing out-parameter. Errors
 are one owned `aimux_error_t *` (`NULL` means success).
 
@@ -115,7 +115,7 @@ if (err) {
 - `aimux_error_json` returns the full envelope, including `error.cause`.
 - Every output JSON string and error getter string is freed with
   `aimux_free_string`.
-- Do not free callback JSON.
+- Do not free stream callback frames (`aimux_stream`, `aimux_stream_async`); they are borrowed for the callback call. `aimux_call_async` completion callbacks own their `result_json` or `error` and must release it once with `aimux_free_string` or `aimux_error_free`.
 - `aimux_abi_version()` and `AIMUX_MANIFEST_DIGEST` let a consumer verify the
   loaded library before use.
 
@@ -129,7 +129,10 @@ if (err) {
   are gone. Read the envelope with `aimux_error_json`.
 - Provider/model creation is `aimux_call(..., AIMUX_OP_PROVIDER_CREATE, ...)`
   followed by `AIMUX_OP_PROVIDER_MODEL`.
-- The generated header and manifest digest must match the library.
+- The generated header's `AIMUX_ABI_VERSION`, `AIMUX_OPS_VERSION`, and
+  `AIMUX_MANIFEST_DIGEST` match the native library (`aimux_abi_version()` and
+  `aimux_manifest_json()`, which also exposes `types[].schemaHash` if a C
+  consumer implements custom per-type schema hash checks; see RFC-0039 R116).
 
 ## See also
 

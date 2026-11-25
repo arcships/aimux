@@ -1,0 +1,8 @@
+{
+  "toolCallId": "call-10",
+  "toolName": "safeInt",
+  "input": {
+    "maxSafe": 9007199254740991,
+    "minSafe": -9007199254740991
+  }
+}

@@ -62,8 +62,9 @@ inspect its result before closing; finalization does not flush. Dropping a
 provider does not revoke a model's strong reference. Dropping an Operation
 cancels it; dropping an Abort releases the handle without signalling shared work.
 
-The binding requires the exact generated ABI version, ops version and manifest
-`digest` at load, and exposes the verified manifest and digest.
+The binding checks the generated ABI version, ops version, and manifest
+compatibility (`MANIFEST_DIGEST` fast-path with full `TYPE_SCHEMA_HASHES`
+`schemaHash` fallback) at load, and exposes `manifest` and `manifestDigest` on `Client` and raw `Runtime`.
 
 Run `npm run test:facade` for the JSON-transport facade tests (Node with TypeScript stripping,
 22.18+). These tests use a transport double. Run `npm run test:native` after
@@ -87,6 +88,6 @@ same provider, registry, trace, recorder, session, replay and error vectors.
 
 Recorder, session storage and inference state are process-wide. Trace middleware
 wraps language models using a TraceStore. Credential resolver creation and replay
-transport capabilities report UnsupportedFunctionality. Recording schemas
-are unchanged; business type schema generation and per-platform installation
-verification are separate release work.
+transport capabilities report UnsupportedFunctionality. Recording schemas and
+per-type DTO schemas/hashes (`schema/types/*.json`, `TYPE_SCHEMA_HASHES`) are
+generated; per-platform installation verification remains separate release work.

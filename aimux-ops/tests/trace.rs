@@ -196,6 +196,9 @@ async fn invalid_controls_fail_before_mutation() {
     trace.store.record(record("a", "s", "p", 1));
     for (op, params) in [
         ("trace.create", json!({"capacity":0})),
+        ("trace.create", json!({"capacity":1_048_577})),
+        ("trace.create", json!({"capacity":u32::MAX})),
+        ("trace.create", json!({"capacity":u64::MAX})),
         ("trace.create", json!({"perScopeCapacity":0})),
         ("trace.create", json!({"capacity":-1})),
         ("trace.create", json!({"capacity":1.5})),

@@ -216,6 +216,14 @@ struct WireTests {
         let decoded = try JSONDecoder().decode(GenerateTextResult.self, from: reencoded)
         try assertEqual(original, decoded)
     }
+#if !AIMUX_STANDALONE
+    @Test
+#endif
+    static func testClosedTaggedVariantsRejectUnknownFields() throws {
+        _ = try JSONDecoder().decode(BackendConfig.self, from: Data(#"{"type":"ring","capacity":1}"#.utf8))
+        try assertThrows(try JSONDecoder().decode(BackendConfig.self, from: Data(#"{"type":"ring","capacity":1,"extra":true}"#.utf8)))
+        try assertThrows(try JSONDecoder().decode(StreamFrame.self, from: Data(#"{"type":"end","seq":"0","outcome":"success","extra":true}"#.utf8)))
+    }
 }
 private func assertEqual<T: Equatable>(_ lhs: T, _ rhs: T) throws {
     try require(lhs == rhs, "Values differ: \(lhs) versus \(rhs)")

@@ -1512,7 +1512,6 @@ ErrorDomain = TypeAliasType("ErrorDomain", Literal["aimux", "recording", "bindin
 #: Keep the payload open so newer error variants, provider data, and explicit
 #: JSON nulls survive decoding and re-encoding by an older adapter.
 class ErrorEnvelope(_Wire):
-    model_config = ConfigDict(extra="forbid")
     code: I32 = Field(alias="code")
     error: Any = Field(alias="error")
     kind: "_dto.ErrorDomain" = Field(alias="kind")

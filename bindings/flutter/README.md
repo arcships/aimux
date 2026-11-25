@@ -5,7 +5,9 @@
 > [Upgrading to 0.6](../../docs/upgrading-to-0.6.md).
 
 The binding uses the versioned C ops ABI. `Aimux.open()` checks the ABI
-major, ops major, manifest structure and any required operations before use.
+major, exact ops version, manifest compatibility (`MANIFEST_DIGEST` fast-path or
+full `TYPE_SCHEMA_HASHES` `schemaHash` fallback), and any required operations
+before use.
 The previous unversioned constructors and per-feature native exports are removed.
 
 ```dart

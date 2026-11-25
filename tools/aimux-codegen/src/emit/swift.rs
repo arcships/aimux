@@ -246,7 +246,7 @@ fn storage(field: &Field) -> String {
     format!("_{}", camel(&field.json_name).trim_matches('`'))
 }
 
-fn structure(out: &mut String, name: &str, fields: &[Field]) {
+fn structure(out: &mut String, name: &str, fields: &[Field], closed: bool) {
     writeln!(
         out,
         "public struct {}: Codable, Equatable, Sendable {{",
@@ -305,6 +305,7 @@ fn structure(out: &mut String, name: &str, fields: &[Field]) {
     }
     out.push_str("    }\n");
     if !fields.is_empty()
+        && !closed
         && fields.iter().all(|field| {
             !boxed(name, field)
                 && !matches!(nonnull(&field.ty), Ty::Literal(_))
@@ -323,8 +324,18 @@ fn structure(out: &mut String, name: &str, fields: &[Field]) {
     }
     keys(out, fields, None);
     out.push_str("    public init(from decoder: any Decoder) throws {\n");
+    if closed {
+        out.push_str("        let raw = try decoder.container(keyedBy: WireKey.self)\n");
+        if fields.is_empty() {
+            out.push_str("        if let unexpected = raw.allKeys.first {\n            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [unexpected], debugDescription: \"Unknown field \\(unexpected.stringValue)\"))\n        }\n");
+        } else {
+            out.push_str("        for key in raw.allKeys {\n            if CodingKeys(stringValue: key.stringValue) == nil {\n                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: \"Unknown field \\(key.stringValue)\"))\n            }\n        }\n");
+        }
+    }
     if fields.is_empty() {
-        out.push_str("        _ = try decoder.container(keyedBy: WireKey.self)\n");
+        if !closed {
+            out.push_str("        _ = try decoder.container(keyedBy: WireKey.self)\n");
+        }
     } else {
         out.push_str("        let c = try decoder.container(keyedBy: CodingKeys.self)\n");
         for field in fields {
@@ -381,7 +392,12 @@ impl Emitter for Swift {
                 Kind::Alias(value) => {
                     writeln!(out, "public typealias {name} = {}\n", ty(value)).unwrap()
                 }
-                Kind::Struct { fields, .. } => structure(&mut out, &named.name, fields),
+                Kind::Struct { fields, closed } => structure(
+                    &mut out,
+                    &named.name,
+                    fields,
+                    *closed && named.name != "ErrorEnvelope",
+                ),
                 Kind::StringEnum(values) => {
                     writeln!(
                         out,
@@ -458,6 +474,11 @@ impl Emitter for Swift {
                         writeln!(out, "        case {} = {}", camel(key), quoted(key)).unwrap();
                     }
                     out.push_str("    }\n    public init(from decoder: any Decoder) throws {\n        let c = try decoder.container(keyedBy: CodingKeys.self)\n");
+                    if variants.iter().any(|v| v.closed) {
+                        out.push_str(
+                            "        let raw = try decoder.container(keyedBy: WireKey.self)\n",
+                        );
+                    }
                     writeln!(out, "        let tag = try c.decode(String.self, forKey: .{})\n        switch tag {{", camel(tag)).unwrap();
                     let mut groups = BTreeMap::<&str, Vec<_>>::new();
                     for variant in variants {
@@ -474,6 +495,20 @@ impl Emitter for Swift {
                             } else {
                                 "            "
                             };
+                            if variant.closed {
+                                let allowed = variant
+                                    .fields
+                                    .iter()
+                                    .map(|f| quoted(&f.json_name))
+                                    .chain(std::iter::once(quoted(tag)))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                writeln!(
+                                    out,
+                                    "{indent}let allowed: Set<String> = [{allowed}]\n{indent}for key in raw.allKeys {{\n{indent}    if !allowed.contains(key.stringValue) {{\n{indent}        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath + [key], debugDescription: \"Unknown field \\(key.stringValue)\"))\n{indent}    }}\n{indent}}}"
+                                )
+                                .unwrap();
+                            }
                             write!(out, "{indent}self = .{}", camel(&variant.name)).unwrap();
                             if !variant.fields.is_empty() {
                                 let values: Vec<_> = variant

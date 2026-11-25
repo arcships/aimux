@@ -70,6 +70,35 @@ void main() {
     }
   });
 
+  test('negotiates manifest via type schema hashes when packages/digest change', () {
+    expect(ops.TYPE_SCHEMA_HASHES, isNotEmpty);
+    final types = [
+      for (final entry in ops.TYPE_SCHEMA_HASHES.entries)
+        {'id': entry.key, 'revision': '1', 'schemaHash': entry.value},
+    ];
+    final negotiated = {
+      ...client.manifest,
+      'digest': 'changed-digest-from-new-package',
+      'packages': ['openai', 'extra-package'],
+      'types': types,
+    };
+    validateManifest(ops.ABI_VERSION, negotiated);
+
+    final targetType = types.first['id'] as String;
+    final brokenTypes = [
+      {...types.first, 'schemaHash': '0' * 64},
+      ...types.skip(1),
+    ];
+    expect(
+      () => validateManifest(ops.ABI_VERSION, {...negotiated, 'types': brokenTypes}),
+      throwsA(
+        isA<StateError>()
+            .having((e) => e.message, 'expected digest', contains(ops.MANIFEST_DIGEST))
+            .having((e) => e.message, 'mismatched type', contains(targetType)),
+      ),
+    );
+  });
+
   test('load validates ABI, manifest and required ops', () async {
     expect(client.manifest['opsVersion'], ops.OPS_VERSION);
     await expectLater(

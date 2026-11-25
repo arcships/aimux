@@ -105,7 +105,8 @@ changes:
   the native `cause` chain; retry delays are read from `responseHeaders`, not
   `retryMs`.
 - **DTOs are generated.** Hand-written 0.5 wire types are removed; ABI 1 /
-  ops 1.0 and the manifest digest must match the native library.
+  ops 1.0 and manifest compatibility (`MANIFEST_DIGEST` fast-path or full
+  `TYPE_SCHEMA_HASHES` `schemaHash` fallback) are checked against the native library.
 - **Recording stays on schema 2.** Schema 3 and transport replay are a
   follow-up.
 

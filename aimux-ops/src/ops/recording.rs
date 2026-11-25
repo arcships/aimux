@@ -59,7 +59,24 @@ struct RecorderHandle {
 }
 
 impl RecorderHandle {
+    fn validate(params: &CreateRecorderParams) -> Result<(), OpsError> {
+        let CreateRecorderParams {
+            backend,
+            capture_policy: CapturePolicy::Full,
+        } = params;
+        if let BackendConfig::Ring { capacity } = backend {
+            let capacity = capacity.unwrap_or(recording::DEFAULT_RING_CAPACITY);
+            if capacity == 0
+                || capacity > isize::MAX as usize / std::mem::size_of::<recording::Recording>()
+            {
+                return Err(invalid("ring capacity must be positive and fit in memory"));
+            }
+        }
+        Ok(())
+    }
+
     fn new(params: CreateRecorderParams) -> Result<Self, OpsError> {
+        Self::validate(&params)?;
         let CreateRecorderParams {
             backend,
             capture_policy: CapturePolicy::Full,
@@ -67,11 +84,6 @@ impl RecorderHandle {
         let backend = match backend {
             BackendConfig::Ring { capacity } => {
                 let capacity = capacity.unwrap_or(recording::DEFAULT_RING_CAPACITY);
-                if capacity == 0
-                    || capacity > isize::MAX as usize / std::mem::size_of::<recording::Recording>()
-                {
-                    return Err(invalid("ring capacity must be positive and fit in memory"));
-                }
                 Backend::Ring(RingRecorder::with_capacity(capacity))
             }
             BackendConfig::Jsonl { directory } => {
@@ -261,9 +273,12 @@ async fn blocking<T: Send + 'static>(
 fn create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let params = params(value)?;
+        RecorderHandle::validate(&params)?;
+        let reservation = HandleRegistry::global().reserve()?;
         blocking(move || {
             let recorder = Arc::new(RecorderHandle::new(params)?);
-            let handle = HandleRegistry::global().insert(ctx.owner, Entry::Recorder(recorder))?;
+            let handle =
+                HandleRegistry::global().commit(ctx.owner, reservation, Entry::Recorder(recorder));
             result(RecorderHandleResult { handle })
         })
         .await
