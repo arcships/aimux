@@ -16,7 +16,7 @@ public final class HandleIdInput {
     private final String value;
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public HandleIdInput(String value) { this.value = value; }
+    public HandleIdInput(String value) { DtoJson.u64Input(value); this.value = value; }
 
     public String getValue() { return value; }
 }

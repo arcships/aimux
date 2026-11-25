@@ -10,13 +10,14 @@
     "capacity": {
       "default": 2048,
       "format": "uint",
-      "minimum": 0,
+      "maximum": 1048576,
+      "minimum": 1,
       "type": "integer"
     },
     "perScopeCapacity": {
       "default": 512,
       "format": "uint",
-      "minimum": 0,
+      "minimum": 1,
       "type": "integer"
     }
   },

@@ -18,6 +18,9 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const INDEX: &str = "tools/aimux-codegen/generated-files.json";
 const MANIFEST_SNAPSHOT: &str = "aimux-ops/src/manifest.json.zlib";
 const MANIFEST_DIGEST_FILE: &str = "aimux-ops/src/manifest.digest";
+/// Human-readable mirror of the snapshot for binding contract tests and review.
+const MANIFEST: &str = "schema/manifest.json";
+const SOURCES: &str = "aimux-ops/src/sources.rs";
 const HEADERS: [&str; 2] = [
     "aimux-ffi/include/aimux.h",
     "bindings/flutter/native/aimux_ops.h",
@@ -41,6 +44,8 @@ struct Manifest {
     abi_version: u32,
     ops_version: String,
     manifest_revision: Value,
+    #[serde(default)]
+    sources: Vec<UpstreamSource>,
     ops: Vec<Op>,
     handle_kinds: Vec<String>,
     error_codes: Vec<ErrorCode>,
@@ -49,10 +54,20 @@ struct Manifest {
     type_defs: Value,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct UpstreamSource {
+    pub package: String,
+    pub version: String,
+    pub integrity: String,
+}
+
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TypeSchema {
     id: String,
     input: Option<String>,
+    #[serde(default)]
+    schema_hash: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -191,10 +206,11 @@ fn validate(manifest: &Manifest) -> Result<()> {
 /// collisions, or serialization failure.
 pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     let mut unsigned = value.clone();
-    unsigned
+    let unsigned_object = unsigned
         .as_object_mut()
-        .ok_or("manifest must be an object")?
-        .remove("digest");
+        .ok_or("manifest must be an object")?;
+    unsigned_object.remove("digest");
+    unsigned_object.remove("inputHash");
     if let Some(ops) = unsigned.get_mut("ops").and_then(Value::as_array_mut) {
         ops.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     }
@@ -210,17 +226,6 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     manifest.ops.sort_by(|a, b| a.name.cmp(&b.name));
     manifest.error_codes.sort_by_key(|error| error.code);
     let mut artifacts = Artifacts::new();
-    let mut signed: Value = serde_json::from_slice(&canonical_bytes)?;
-    signed["digest"] = json!(digest);
-    let signed_compact = serde_json::to_vec(&signed)?;
-    artifacts.insert(
-        MANIFEST_SNAPSHOT.into(),
-        miniz_oxide::deflate::compress_to_vec_zlib(&signed_compact, 9),
-    );
-    artifacts.insert(
-        MANIFEST_DIGEST_FILE.into(),
-        format!("{digest}\n").into_bytes(),
-    );
     let header = header(&manifest, &digest)?.into_bytes();
     let [c_header, flutter_header] = HEADERS;
     artifacts.insert(c_header.into(), header.clone());
@@ -255,6 +260,31 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
             pretty_json(&schema)?,
         );
     }
+    // The embedded snapshot is what `aimux_manifest_json` serves: the live
+    // manifest document (key order preserved by `generate_manifest`), with
+    // `digest` and `inputHash` appended. `canonical_digest` strips both.
+    let mut manifest_doc = value.clone();
+    if let Some(object) = manifest_doc.as_object_mut() {
+        if let Some(ops) = object.get_mut("ops").and_then(Value::as_array_mut) {
+            ops.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        }
+        object.insert("digest".into(), json!(digest));
+        object.insert("inputHash".into(), json!(digest));
+    }
+    let signed_compact = serde_json::to_vec(&manifest_doc)?;
+    artifacts.insert(
+        MANIFEST_SNAPSHOT.into(),
+        miniz_oxide::deflate::compress_to_vec_zlib(&signed_compact, 9),
+    );
+    artifacts.insert(MANIFEST.into(), pretty_json(&manifest_doc)?);
+    artifacts.insert(
+        MANIFEST_DIGEST_FILE.into(),
+        format!("{digest}\n").into_bytes(),
+    );
+    artifacts.insert(
+        SOURCES.into(),
+        render_sources(&manifest.sources).into_bytes(),
+    );
     let mut files: Vec<_> = artifacts
         .keys()
         .map(|path| path.to_string_lossy().into_owned())
@@ -393,8 +423,201 @@ fn constants(manifest: &Manifest, digest: &str, language: &str) -> Result<String
         };
         text.push_str(&format!("{indent}{declaration}\n"));
     }
-    text.push_str(suffix);
+    if language == "go" {
+        text.push_str(suffix);
+    }
+    text.push_str(&type_schema_hashes_block(manifest, language, indent)?);
+    if language != "go" {
+        text.push_str(suffix);
+    }
     Ok(text)
+}
+
+fn string_literal(value: &str, escape_dollar: bool) -> Result<String> {
+    let encoded = serde_json::to_string(value)?;
+    if escape_dollar {
+        Ok(encoded.replace('$', "\\$"))
+    } else {
+        Ok(encoded)
+    }
+}
+
+fn type_schema_hashes_block(manifest: &Manifest, language: &str, indent: &str) -> Result<String> {
+    let mut entries: Vec<(&str, &str)> = manifest
+        .types
+        .iter()
+        .filter_map(|ty| ty.schema_hash.as_deref().map(|hash| (ty.id.as_str(), hash)))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    let escape_dollar = matches!(language, "kotlin" | "flutter");
+    let mut out = String::new();
+    match language {
+        "go" => {
+            if entries.is_empty() {
+                out.push_str("\nvar TYPE_SCHEMA_HASHES = map[string]string{}\n");
+            } else {
+                out.push_str("\nvar TYPE_SCHEMA_HASHES = map[string]string{\n");
+                for (id, hash) in entries {
+                    out.push_str(&format!(
+                        "{indent}{}: {},\n",
+                        string_literal(id, false)?,
+                        string_literal(hash, false)?
+                    ));
+                }
+                out.push_str("}\n");
+            }
+        }
+        "java" => {
+            out.push_str(&format!(
+                "{indent}public static final java.util.Map<String, String> TYPE_SCHEMA_HASHES;\n"
+            ));
+            out.push_str(&format!("{indent}static {{\n"));
+            out.push_str(&format!(
+                "{indent}    java.util.Map<String, String> hashes = new java.util.LinkedHashMap<>();\n"
+            ));
+            for (id, hash) in entries {
+                out.push_str(&format!(
+                    "{indent}    hashes.put({}, {});\n",
+                    string_literal(id, false)?,
+                    string_literal(hash, false)?
+                ));
+            }
+            out.push_str(&format!(
+                "{indent}    TYPE_SCHEMA_HASHES = java.util.Collections.unmodifiableMap(hashes);\n"
+            ));
+            out.push_str(&format!("{indent}}}\n"));
+        }
+        "kotlin" => {
+            if entries.is_empty() {
+                out.push_str(&format!(
+                    "{indent}val TYPE_SCHEMA_HASHES: Map<String, String> = emptyMap()\n"
+                ));
+            } else {
+                out.push_str(&format!(
+                    "{indent}val TYPE_SCHEMA_HASHES: Map<String, String> = mapOf(\n"
+                ));
+                let last = entries.len() - 1;
+                for (index, (id, hash)) in entries.into_iter().enumerate() {
+                    let comma = if index == last { "" } else { "," };
+                    out.push_str(&format!(
+                        "{indent}    {} to {}{comma}\n",
+                        string_literal(id, escape_dollar)?,
+                        string_literal(hash, escape_dollar)?
+                    ));
+                }
+                out.push_str(&format!("{indent})\n"));
+            }
+        }
+        "swift" => {
+            if entries.is_empty() {
+                out.push_str(&format!(
+                    "{indent}public static let TYPE_SCHEMA_HASHES: [String: String] = [:]\n"
+                ));
+            } else {
+                out.push_str(&format!(
+                    "{indent}public static let TYPE_SCHEMA_HASHES: [String: String] = [\n"
+                ));
+                for (id, hash) in entries {
+                    out.push_str(&format!(
+                        "{indent}    {}: {},\n",
+                        string_literal(id, false)?,
+                        string_literal(hash, false)?
+                    ));
+                }
+                out.push_str(&format!("{indent}]\n"));
+            }
+        }
+        "flutter" => {
+            out.push_str("const Map<String, String> TYPE_SCHEMA_HASHES = <String, String>{\n");
+            for (id, hash) in entries {
+                out.push_str(&format!(
+                    "  {}: {},\n",
+                    string_literal(id, escape_dollar)?,
+                    string_literal(hash, escape_dollar)?
+                ));
+            }
+            out.push_str("};\n");
+        }
+        "node" => {
+            out.push_str("export const TYPE_SCHEMA_HASHES: Readonly<Record<string, string>> = {\n");
+            for (id, hash) in entries {
+                out.push_str(&format!(
+                    "  {}: {},\n",
+                    string_literal(id, false)?,
+                    string_literal(hash, false)?
+                ));
+            }
+            out.push_str("};\n");
+        }
+        "python" => {
+            out.push_str("TYPE_SCHEMA_HASHES = {\n");
+            for (id, hash) in entries {
+                out.push_str(&format!(
+                    "    {}: {},\n",
+                    string_literal(id, false)?,
+                    string_literal(hash, false)?
+                ));
+            }
+            out.push_str("}\n");
+        }
+        _ => return Err(format!("unsupported language: {language}").into()),
+    }
+    Ok(out)
+}
+
+/// Render `aimux-ops/src/sources.rs` from sorted upstream package descriptors.
+#[must_use]
+pub fn render_sources(sources: &[UpstreamSource]) -> String {
+    let mut out = String::from(
+        "//! Kept inside `aimux-ops/src/` so `cargo package -p aimux-ops` remains self-contained.\n\n",
+    );
+    let mut sorted = sources.to_vec();
+    sorted.sort_by(|a, b| a.package.cmp(&b.package));
+    if sorted.is_empty() {
+        out.push_str("#[cfg(feature = \"runtime-manifest\")]\npub(crate) const UPSTREAM_SOURCES: &[(&str, &str, &str)] = &[];\n");
+        return out;
+    }
+    out.push_str("#[cfg(feature = \"runtime-manifest\")]\npub(crate) const UPSTREAM_SOURCES: &[(&str, &str, &str)] = &[\n");
+    for source in sorted {
+        out.push_str(&format!(
+            "    (\n        {:?},\n        {:?},\n        {:?},\n    ),\n",
+            source.package, source.version, source.integrity
+        ));
+    }
+    out.push_str("];\n");
+    out
+}
+
+fn reject_symlinks(root: &Path, relative: &Path) -> Result<()> {
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!("symlink in generated files: {}", current.display()).into());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+/// Write `aimux-ops/src/sources.rs` under `root` after rejecting symlinks along the path.
+///
+/// # Errors
+/// Returns an error if `aimux-ops`, `aimux-ops/src`, or `aimux-ops/src/sources.rs` is a symlink,
+/// or on filesystem I/O failure.
+pub fn write_sources(root: &Path, sources: &[UpstreamSource]) -> Result<()> {
+    reject_symlinks(root, Path::new(SOURCES))?;
+    let full = root.join(SOURCES);
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(full, render_sources(sources))?;
+    Ok(())
 }
 
 fn web_type_defs() -> Value {
@@ -505,6 +728,8 @@ fn managed_path(path: &Path) -> bool {
     if path == Path::new(INDEX)
         || path == Path::new(MANIFEST_SNAPSHOT)
         || path == Path::new(MANIFEST_DIGEST_FILE)
+        || path == Path::new(MANIFEST)
+        || path == Path::new(SOURCES)
         || HEADERS.iter().any(|header| path == Path::new(header))
     {
         return true;
@@ -529,14 +754,13 @@ fn managed_path(path: &Path) -> bool {
 }
 
 fn collect_files(root: &Path, relative: &Path, output: &mut BTreeSet<PathBuf>) -> Result<()> {
+    reject_symlinks(root, relative)?;
     let full = root.join(relative);
-    if !full.exists() {
-        return Ok(());
-    }
-    let metadata = fs::symlink_metadata(&full)?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("symlink in generated files: {}", full.display()).into());
-    }
+    let metadata = match fs::symlink_metadata(&full) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
     if metadata.is_file() {
         output.insert(relative.to_path_buf());
     } else if metadata.is_dir() {
@@ -549,11 +773,17 @@ fn collect_files(root: &Path, relative: &Path, output: &mut BTreeSet<PathBuf>) -
 
 fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
-    for path in [INDEX, MANIFEST_SNAPSHOT, MANIFEST_DIGEST_FILE]
-        .into_iter()
-        .chain(HEADERS)
-        .chain(["schema/ops", "schema/types"])
-        .chain(emit::owned_paths())
+    for path in [
+        INDEX,
+        MANIFEST_SNAPSHOT,
+        MANIFEST_DIGEST_FILE,
+        MANIFEST,
+        SOURCES,
+    ]
+    .into_iter()
+    .chain(HEADERS)
+    .chain(["schema/ops", "schema/types"])
+    .chain(emit::owned_paths())
     {
         collect_files(root, Path::new(path), &mut files)?;
     }
@@ -577,9 +807,11 @@ pub fn write(root: &Path, artifacts: &Artifacts) -> Result<()> {
         {
             return Err(format!("unowned artifact path: {}", path.display()).into());
         }
+        reject_symlinks(root, path)?;
     }
     let existing = existing_files(root)?;
     for (path, bytes) in artifacts {
+        reject_symlinks(root, path)?;
         let full = root.join(path);
         if let Some(parent) = full.parent() {
             fs::create_dir_all(parent)?;
@@ -588,6 +820,7 @@ pub fn write(root: &Path, artifacts: &Artifacts) -> Result<()> {
     }
     for stale in existing {
         if !artifacts.contains_key(&stale) {
+            reject_symlinks(root, &stale)?;
             fs::remove_file(root.join(stale))?;
         }
     }

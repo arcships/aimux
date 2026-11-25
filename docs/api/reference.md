@@ -45,9 +45,13 @@ names. A typical sequence is:
 provider.create → provider.model → text.generate / text.stream / ...
 ```
 
-`runtime.describe` returns the manifest, ABI/ops versions, manifest digest and
-the operation names available in the loaded native library. A binding must
-reject a mismatched ABI, ops version or digest before any call.
+`runtime.describe` returns the runtime version, ABI/ops versions, manifest
+revision and digest, and the operation names, handle kinds, and provider
+packages available in the loaded native library (full `types[].schemaHash`
+metadata lives in the manifest JSON). Bindings reject an incompatible ABI (`ABI_VERSION` exact in
+Node/Python/Java+Kotlin; major `>> 16` in Go/Swift/Flutter), mismatched exact
+`opsVersion`, or incompatible manifest (`MANIFEST_DIGEST` fast-path with full
+`TYPE_SCHEMA_HASHES` `schemaHash` fallback) before any call.
 
 ## Errors
 

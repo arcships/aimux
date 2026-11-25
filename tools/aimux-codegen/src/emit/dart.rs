@@ -22,7 +22,14 @@ impl Emitter for Dart {
             let name = &type_name(&named.name);
             docs(&mut out, named.doc.as_deref(), "");
             match &named.kind {
-                Kind::Struct { fields, .. } => class(&mut out, name, fields, None, model)?,
+                Kind::Struct { fields, closed } => class(
+                    &mut out,
+                    name,
+                    fields,
+                    None,
+                    *closed && named.name != "ErrorEnvelope",
+                    model,
+                )?,
                 Kind::StringEnum(values) => {
                     writeln!(out, "enum {name} {{").unwrap();
                     for (i, value) in values.iter().enumerate() {
@@ -103,6 +110,7 @@ impl Emitter for Dart {
                             &format!("{name}{}", v.name),
                             &v.fields,
                             Some((name, tag, &v.tag_value)),
+                            v.closed,
                             model,
                         )?;
                     }
@@ -486,6 +494,7 @@ fn class(
     name: &str,
     fields: &[Field],
     parent: Option<(&str, &str, &str)>,
+    closed: bool,
     model: &Model,
 ) -> Result<()> {
     let base = parent.map_or(String::new(), |(base, _, _)| format!(" extends {base}"));
@@ -538,6 +547,18 @@ fn class(
         " {",
         2,
     );
+    if closed {
+        let mut allowed_list: Vec<String> = fields.iter().map(|f| quote(&f.json_name)).collect();
+        if let Some((_, tag, _)) = parent {
+            allowed_list.push(quote(tag));
+        }
+        let allowed = allowed_list.join(", ");
+        writeln!(
+            out,
+            "    const allowedKeys = <String>{{{allowed}}};\n    for (final key in json.keys) {{\n      if (!allowedKeys.contains(key)) {{\n        throw FormatException('Unknown field $key for {name}');\n      }}\n    }}"
+        )
+        .unwrap();
+    }
     writeln!(
         out,
         "    return {name}{}",

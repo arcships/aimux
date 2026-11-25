@@ -87,9 +87,9 @@ subclass, an underlying OS, TLS or parser error as `SourceError`, each with its
 own `__cause__` down the chain. Recording, binding and protocol errors
 have separate bases. Python never performs retries.
 
-`ABI_VERSION`, `OPS_VERSION`, `manifest` and `manifest_digest()` are public.
-Import checks the exact ABI/ops versions and digest pinned in the generated
-metadata. `verify_contract(other_digest)` checks an additional consumer pin.
+`ABI_VERSION`, `OPS_VERSION`, `manifest`, and `manifest_digest()` are public on `aimux`; `aimux.ops` exposes `MANIFEST_DIGEST` and `TYPE_SCHEMA_HASHES`.
+Import checks the ABI/ops versions and manifest compatibility (`MANIFEST_DIGEST` fast-path with
+full `TYPE_SCHEMA_HASHES` `schemaHash` fallback). `verify_contract(other_digest)` checks an additional consumer pin.
 Recorder/session/infer state is process-wide. Recording schema migration,
 transport replay, credential creation and complete
 platform install verification are outside this package's current guarantees.

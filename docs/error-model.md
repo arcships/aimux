@@ -28,7 +28,7 @@
 |---|---|---|
 | `300` | `InvalidOp` | 操作名不存在或不在当前 manifest |
 | `301` | `InvalidParams` | 请求参数不是该操作的合法 DTO |
-| `302` | `UnsupportedOpsVersion` | ABI、ops 版本或 manifest digest 不匹配 |
+| `302` | `UnsupportedOpsVersion` | ABI、ops 版本、manifest digest 或 `TYPE_SCHEMA_HASHES` `schemaHash` 不匹配 |
 | `303` | `ConcurrentConsumer` | 同一 stream/operation 出现第二个消费者 |
 | `304` | `InvalidState` | 操作或 handle 当前状态不允许该调用 |
 | `305` | `ResourceLimit` | 队列、字节数或 admission 超过限制 |

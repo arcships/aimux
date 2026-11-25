@@ -13,9 +13,9 @@ use std::time::Duration;
 #[serde(deny_unknown_fields)]
 pub(crate) struct EmptyParams {}
 
-#[derive(Deserialize, schemars::JsonSchema)]
+#[derive(Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct OperationNextParams {
+pub(crate) struct OperationNextParams {
     #[serde(default)]
     pub timeout_ms: u64,
 }
@@ -192,8 +192,10 @@ fn start(ctx: Ctx, target: Target, params: Params<'_>) -> CallFuture<'_> {
             timeout: request.timeout,
             ..Default::default()
         };
+        let reservation = HandleRegistry::global().reserve()?;
         let operation = Operation::start(model, options, ctx.abort).await?;
-        let id = HandleRegistry::global().insert(ctx.owner, Entry::Operation(operation))?;
+        let id =
+            HandleRegistry::global().commit(ctx.owner, reservation, Entry::Operation(operation));
         serialize(id)
     })
 }

@@ -56,8 +56,10 @@ await providerHandle.close();
 ```
 
 `call(op, handle:, params:, abort:)` accepts the canonical request DTO from the
-manifest. Global operations omit `handle`. `Aimux.open()` checks the ABI major,
-ops major, manifest structure and required operations before use.
+manifest. Global operations omit `handle`. `Aimux.open()` checks ABI major
+compatibility, the exact generated `opsVersion`, manifest compatibility
+(`MANIFEST_DIGEST` fast-path or every `TYPE_SCHEMA_HASHES` entry against
+`manifest.types[].schemaHash`), and any required operations before use.
 
 ## Handles and streams
 

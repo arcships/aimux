@@ -82,8 +82,9 @@ push/poll validation. These native checks require no provider credentials or
 network. Successful provider requests and realtime audio require a configured
 provider. Recorder, session-store and inference configuration remain process
 wide. Transport replay and credential-resolver creation are reserved native
-capabilities; business-type schemas and per-platform packaging verification
-are separate from this package's tests.
+capabilities; per-type DTO schemas (`schema/types/*.json`), `AimuxOps.TYPE_SCHEMA_HASHES`,
+and cross-language DTO vector parity tests are included alongside the contract
+suite, while per-platform packaging verification remains separate.
 
 The synthetic C backend separately exercises callback/lifecycle races:
 

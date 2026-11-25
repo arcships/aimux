@@ -22,8 +22,8 @@ the manifest digest changes even though the ops version does not.
 | C ABI | ABI major `1` (`AIMUX_ABI_VERSION == 65536`), now 16 exports |
 | Ops protocol | `1.0`, 76 operations (72 in 0.6) |
 | C header | `aimux-ffi/include/aimux.h` generated from the same commit |
-| Manifest | the runtime's manifest `digest` must equal the generated `MANIFEST_DIGEST` |
-| Bindings | Node/Python/Go/Java/Kotlin/Swift/Flutter/C from the same release |
+| Manifest | runtime's manifest `digest` equals `MANIFEST_DIGEST` (fast path), or every entry in `TYPE_SCHEMA_HASHES` matches `manifest.types[].schemaHash` |
+| Bindings | Node/Python/Go/Java/Kotlin/Swift/Flutter/C from the same release (or compatible `TYPE_SCHEMA_HASHES` set) |
 | iOS | `aimux_ffi.xcframework` now ships a **dynamic** framework; the podspec no longer uses `-force_load` |
 
 ## Shared: `provider.create` validates settings

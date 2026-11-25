@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -64,8 +66,9 @@ func (h *Handle) ID() (HandleID, error) {
 	return 0, ErrClosed
 }
 
-// CheckABI checks the ABI major and exact generated operation version and digest once,
-// before any operation is executed.
+// CheckABI checks the ABI major, exact generated operation version, and manifest
+// compatibility (MANIFEST_DIGEST fast-path or full generated.TYPE_SCHEMA_HASHES fallback)
+// once, before any operation is executed.
 func CheckABI() error {
 	abiCheck.Do(func() {
 		actual := nativeABIVersion()
@@ -83,18 +86,59 @@ func CheckABI() error {
 	return abiCheck.err
 }
 
+type manifestTypeEntry struct {
+	ID         string `json:"id"`
+	SchemaHash string `json:"schemaHash"`
+}
+
+func mismatchedTypeSchemas(entries []manifestTypeEntry) ([]string, bool) {
+	if len(generated.TYPE_SCHEMA_HASHES) == 0 || len(entries) == 0 {
+		return nil, false
+	}
+	actual := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		if entry.ID != "" && entry.SchemaHash != "" {
+			actual[entry.ID] = entry.SchemaHash
+		}
+	}
+	var mismatches []string
+	for id, expectedHash := range generated.TYPE_SCHEMA_HASHES {
+		if actual[id] != expectedHash {
+			mismatches = append(mismatches, id)
+		}
+	}
+	sort.Strings(mismatches)
+	return mismatches, true
+}
+
 func validateManifest(actual uint32, raw []byte) error {
 	var manifest struct {
-		ABI    uint32 `json:"abiVersion"`
-		Ops    string `json:"opsVersion"`
-		Digest string `json:"digest"`
+		ABI    uint32              `json:"abiVersion"`
+		Ops    string              `json:"opsVersion"`
+		Digest string              `json:"digest"`
+		Types  []manifestTypeEntry `json:"types"`
 	}
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return localError("binding", 205, "ResultSerialization", err.Error())
-	} else if manifest.ABI != actual || manifest.Ops != generated.OPS_VERSION || manifest.Digest != generated.MANIFEST_DIGEST {
+	} else if manifest.ABI != actual || manifest.Ops != generated.OPS_VERSION {
 		return localError("protocol", 302, "UnsupportedOpsVersion", fmt.Sprintf("incompatible runtime manifest: opsVersion %q (expected %q), digest %q (expected %q)", manifest.Ops, generated.OPS_VERSION, manifest.Digest, generated.MANIFEST_DIGEST))
 	}
-	return nil
+	if manifest.Digest == generated.MANIFEST_DIGEST {
+		return nil
+	}
+	mismatches, hasTypes := mismatchedTypeSchemas(manifest.Types)
+	if hasTypes && len(mismatches) == 0 {
+		return nil
+	}
+	detail := ""
+	if len(mismatches) > 0 {
+		limit := len(mismatches)
+		if limit > 5 {
+			limit = 5
+		}
+		detail = fmt.Sprintf(" (incompatible types: %s)", strings.Join(mismatches[:limit], ", "))
+	}
+	return localError("protocol", 302, "UnsupportedOpsVersion", fmt.Sprintf("incompatible runtime manifest: opsVersion %q (expected %q), digest %q (expected %q)%s", manifest.Ops, generated.OPS_VERSION, manifest.Digest, generated.MANIFEST_DIGEST, detail))
 }
 
 func Manifest() (json.RawMessage, error) {

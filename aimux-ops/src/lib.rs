@@ -9,6 +9,7 @@ pub mod manifest;
 pub mod op;
 pub mod operation;
 mod request;
+mod sources;
 
 pub mod ops {
     pub mod composite;

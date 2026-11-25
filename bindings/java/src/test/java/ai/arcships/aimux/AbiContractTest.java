@@ -6,6 +6,9 @@ import ai.arcships.aimux.types.DtoJson;
 
 import ai.arcships.aimux.generated.AimuxOps;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
 import org.junit.jupiter.api.AfterEach;
@@ -102,6 +105,56 @@ class AbiContractTest {
         assertThatThrownBy(() -> Aimux.load(System.getProperty("aimux.testLibrary")))
             .isInstanceOf(IllegalStateException.class).hasMessageContainingAll("wrong-digest", AimuxOps.MANIFEST_DIGEST);
         assertThat(fixture.fixture_provider_calls()).isZero();
+    }
+
+    @Test void negotiatesManifestViaTypeSchemaHashesWhenDigestChanges() {
+        assertThat(AimuxOps.TYPE_SCHEMA_HASHES).isNotEmpty();
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode types = mapper.createArrayNode();
+        String targetType = null;
+        for (java.util.Map.Entry<String, String> entry : AimuxOps.TYPE_SCHEMA_HASHES.entrySet()) {
+            if (targetType == null) {
+                targetType = entry.getKey();
+            }
+            ObjectNode item = mapper.createObjectNode();
+            item.put("id", entry.getKey());
+            item.put("revision", "1");
+            item.put("schemaHash", entry.getValue());
+            types.add(item);
+        }
+        ObjectNode negotiated = mapper.createObjectNode();
+        negotiated.put("abiVersion", Aimux.ABI_VERSION);
+        negotiated.put("opsVersion", Aimux.OPS_VERSION);
+        negotiated.put("digest", "changed-digest-from-new-package");
+        negotiated.putArray("packages").add("openai").add("extra-package");
+        negotiated.set("types", types);
+        Aimux.validateManifest(Aimux.ABI_VERSION, negotiated);
+
+        ObjectNode broken = negotiated.deepCopy();
+        ((ObjectNode) broken.get("types").get(0)).put("schemaHash", "0000000000000000000000000000000000000000000000000000000000000000");
+        final String expectedTarget = targetType;
+        assertThatThrownBy(() -> Aimux.validateManifest(Aimux.ABI_VERSION, broken))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContainingAll(AimuxOps.MANIFEST_DIGEST, expectedTarget);
+    }
+
+    @Test void errorEnvelopeRemainsOpenForForwardCompatibility() {
+        JsonNode envelope = DtoJson.parse(
+            "{\"kind\":\"protocol\",\"code\":302,\"message\":\"future\",\"error\":{\"name\":\"UnsupportedOpsVersion\"},\"futureField\":true}"
+        );
+        NativeException decoded = AimuxResult.decode(envelope);
+        assertThat(decoded).isInstanceOf(ProtocolException.class);
+        assertThat(decoded.getCode()).isEqualTo(302);
+    }
+
+    @Test void handleIdInputAcceptsLeadingZerosWhileHandleIdRemainsCanonical() {
+        ai.arcships.aimux.types.HandleIdInput input = DtoJson.decode(
+            DtoJson.parse("\"0001\""),
+            ai.arcships.aimux.types.HandleIdInput.class
+        );
+        assertThat(input.getValue()).isEqualTo("0001");
+        assertThatThrownBy(() -> DtoJson.decode(DtoJson.parse("\"0001\""), ai.arcships.aimux.types.HandleId.class))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private java.lang.ref.WeakReference<Resource> abandon(int id, boolean close) {

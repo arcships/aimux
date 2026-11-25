@@ -228,3 +228,42 @@ func TestUnionIgnoresUnrelatedSecondaryTag(t *testing.T) {
 		}
 	}
 }
+
+func TestClosedParentsKeepNestedOpenStructsAndClosedVariantsRejectUnknown(t *testing.T) {
+	var outputReq OpenAiOutputRequest
+	if err := json.Unmarshal([]byte(`{"metadataNamespace":"openai","result":{"steps":[],"totalUsage":{"inputTokens":1,"outputTokens":2,"totalTokens":3,"inputTokenDetails":{},"outputTokenDetails":{}},"futureField":true}}`), &outputReq); err != nil {
+		t.Fatalf("closed OpenAiOutputRequest rejected open field in nested GenerateTextResultInput: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"metadataNamespace":"openai","result":{"steps":[],"totalUsage":{"inputTokens":1,"outputTokens":2,"totalTokens":3,"inputTokenDetails":{},"outputTokenDetails":{}}},"extraParent":1}`), &outputReq); err == nil {
+		t.Fatal("closed OpenAiOutputRequest accepted unknown parent field")
+	}
+
+	var repairReq ToolRepairApplyRequest
+	if err := json.Unmarshal([]byte(`{"reply":{"type":"repaired","toolCall":{"toolCallId":"c1","toolName":"t","input":"{}"}},"toolCall":{"toolCallId":"c1","toolName":"t","input":{},"futureCallField":1}}`), &repairReq); err != nil {
+		t.Fatalf("closed ToolRepairApplyRequest rejected open field in nested ToolCallInput: %v", err)
+	}
+
+	var videoOpts VideoCallOptions
+	if err := json.Unmarshal([]byte(`{"frameImages":[{"frameType":"first_frame","image":{"type":"url","url":"https://example.com/a.png"},"futureFrame":1}]}`), &videoOpts); err != nil {
+		t.Fatalf("closed VideoCallOptions rejected open field in nested VideoFrameImage: %v", err)
+	}
+
+	var backend BackendConfig
+	if err := json.Unmarshal([]byte(`{"type":"ring","capacity":4}`), &backend); err != nil {
+		t.Fatalf("valid closed tagged variant rejected: %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"type":"ring","capacity":4,"extra":true}`), &backend); err == nil {
+		t.Fatal("closed tagged variant BackendConfigVariantRing accepted unknown field")
+	}
+	var recorder CreateRecorderParams
+	if err := json.Unmarshal([]byte(`{"backend":{"type":"jsonl"},"capturePolicy":"full"}`), &recorder); err == nil {
+		t.Fatal("closed tagged variant BackendConfigVariantJsonl accepted missing required directory")
+	}
+	if err := json.Unmarshal([]byte(`{"backend":{"type":"jsonl","directory":null},"capturePolicy":"full"}`), &recorder); err == nil {
+		t.Fatal("closed tagged variant BackendConfigVariantJsonl accepted null required directory")
+	}
+	var frame StreamFrame
+	if err := json.Unmarshal([]byte(`{"type":"end","seq":"0","outcome":"success","extra":true}`), &frame); err == nil {
+		t.Fatal("closed tagged variant StreamFrameVariantEnd accepted unknown field")
+	}
+}

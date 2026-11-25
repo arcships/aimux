@@ -90,17 +90,36 @@ pub(crate) struct TraceStore {
 }
 
 impl TraceStore {
+    #[cfg(test)]
     pub fn new(cap: usize, per_scope_cap: usize) -> Self {
-        assert!(cap > 0);
-        TraceStore {
+        Self::try_new(cap, per_scope_cap).expect("trace store capacity allocation")
+    }
+
+    pub fn try_new(cap: usize, per_scope_cap: usize) -> Result<Self, &'static str> {
+        if cap == 0 {
+            return Err("trace store capacity must be greater than zero");
+        }
+        let mut ring = Vec::new();
+        ring.try_reserve_exact(cap)
+            .map_err(|_| "trace store capacity exceeds available memory")?;
+        ring.resize_with(cap, RingSlot::default);
+        Ok(TraceStore {
             cap,
             per_scope_cap,
-            ring: (0..cap).map(|_| RingSlot::default()).collect(),
+            ring,
             next: 0,
             index: HashMap::new(),
             scope_count: HashMap::new(),
             tombstone_hits: 0,
-        }
+        })
+    }
+
+    pub fn clear(&mut self) {
+        self.ring.fill_with(RingSlot::default);
+        self.next = 0;
+        self.index.clear();
+        self.scope_count.clear();
+        self.tombstone_hits = 0;
     }
 
     pub fn records_in_scope(&self, scope: u64) -> u64 {
@@ -421,15 +440,30 @@ impl RingTraceStore {
 
     #[must_use]
     pub fn with_capacity(cap: usize, per_scope_cap: usize) -> Self {
-        assert!(cap > 0 && per_scope_cap > 0);
-        Self {
+        Self::try_with_capacity(cap, per_scope_cap).expect("ring trace store capacity allocation")
+    }
+
+    /// Create a bounded ring trace store without aborting on allocation failure.
+    ///
+    /// # Errors
+    /// Returns an error if either capacity is zero or memory allocation fails.
+    pub fn try_with_capacity(cap: usize, per_scope_cap: usize) -> Result<Self, &'static str> {
+        if cap == 0 || per_scope_cap == 0 {
+            return Err("trace store capacities must be greater than zero");
+        }
+        let store = TraceStore::try_new(cap, per_scope_cap)?;
+        let mut records = VecDeque::new();
+        records
+            .try_reserve_exact(cap)
+            .map_err(|_| "trace store capacity exceeds available memory")?;
+        Ok(Self {
             audit_mode: TraceAuditMode::Off,
             inner: Mutex::new(Inner {
-                store: TraceStore::new(cap, per_scope_cap),
-                records: VecDeque::with_capacity(cap),
+                store,
+                records,
                 by_session: HashMap::new(),
             }),
-        }
+        })
     }
 
     /// Audit policy inherited by trace decorators created for this store.
@@ -446,7 +480,7 @@ impl RingTraceStore {
 
     pub fn clear(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.store = TraceStore::new(inner.store.cap, inner.store.per_scope_cap);
+        inner.store.clear();
         inner.records.clear();
         inner.by_session.clear();
     }
