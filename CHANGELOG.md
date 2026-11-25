@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `aimux_ops::op::TypeRef`: removed the public `schema` field from default
+  builds by gating it behind the opt-in `aimux-ops/runtime-manifest` feature so
+  shipped native binaries drop `schemars`'s `JsonSchema` machinery (#537).
+  Default builds serve the precomputed compressed manifest snapshot
+  (`aimux_ops::manifest::{manifest, manifest_json, manifest_digest}`) with
+  byte-for-byte identical JSON and digest; enable `runtime-manifest` to access
+  `TypeRef::schema` and `aimux_ops::manifest::generate_manifest`.
+
 ## [0.7.0] - 2026-11-24
 
 **Breaking release** (pre-1.0 SemVer). The Rust API surface changes in a few

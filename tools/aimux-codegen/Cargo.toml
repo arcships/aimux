@@ -6,8 +6,9 @@ license.workspace = true
 description = "Deterministic C ABI, control schema, and op constant generation from aimux-ops"
 
 [dependencies]
-aimux-ops = { path = "../../aimux-ops" }
+aimux-ops = { path = "../../aimux-ops", features = ["runtime-manifest"] }
 aimux-web = { path = "../aimux-web", default-features = false }
+miniz_oxide.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

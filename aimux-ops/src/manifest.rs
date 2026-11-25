@@ -1,76 +1,110 @@
 use std::sync::OnceLock;
 
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(feature = "runtime-manifest")]
+use serde_json::json;
+#[cfg(any(feature = "runtime-manifest", test))]
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "runtime-manifest")]
 use crate::{ABI_VERSION, HandleKind, OPS_VERSION};
 
 pub(crate) const MANIFEST_REVISION: &str = "1";
 
-static MANIFEST_CACHE: OnceLock<(Box<str>, String)> = OnceLock::new();
+const EMBEDDED_MANIFEST_ZLIB: &[u8] = include_bytes!("manifest.json.zlib");
+const EMBEDDED_MANIFEST_DIGEST: &str = include_str!("manifest.digest");
 
-fn cached_manifest() -> &'static (Box<str>, String) {
-    MANIFEST_CACHE.get_or_init(|| {
-        let (input_types, input) = type_contract(false);
-        let (output_types, output) = type_contract(true);
-        let mut types = std::collections::BTreeMap::new();
-        for ty in input_types.into_iter().chain(output_types) {
-            let id = ty["id"].as_str().unwrap().to_owned();
-            let entry = types
-                .entry(id.clone())
-                .or_insert_with(|| json!({"id": id, "rustPath": id}));
-            entry[ty["direction"].as_str().unwrap()] = ty["name"].clone();
-        }
-        let types: Vec<_> = types.into_values().collect();
-        let ops: Vec<_> = crate::dispatch::registrations()
-            .iter()
-            .map(|(descriptor, _)| json!(descriptor))
-            .collect();
-        let mut error_codes = Vec::new();
-        for (kind, entries) in ERROR_CODES {
-            for (code, name) in *entries {
-                error_codes.push(
-                    json!({ "kind": kind, "code": code, "name": name, "aliases": aliases(*code) }),
-                );
-            }
-        }
-        let mut value = json!({
-            "abiVersion": ABI_VERSION,
-            "opsVersion": OPS_VERSION,
-            "manifestRevision": MANIFEST_REVISION,
-            "ops": ops,
-            "handleKinds": HandleKind::ALL,
-            "packages": crate::ops::provider::packages(),
-            "errorCodes": error_codes,
-            "types": types,
-            "typeDefs": {"input": input, "output": output},
-            "registeredGaps": [
-                "G-a: recording/session/infer state remains process-wide",
-                "G-b: recording schema migration belongs to RFC-0041",
-                "G-c: replay transport capabilities and credential creation are future",
-                "G-e: per-asset platform install verification is not claimed"
-            ],
-        });
-        canonicalize(&mut value);
-        let digest_str = format!("{:x}", Sha256::digest(value.to_string().as_bytes()));
-        value["digest"] = json!(digest_str.clone());
-        let compact_json = value.to_string().into_boxed_str();
-        (compact_json, digest_str)
-    })
+static MANIFEST_JSON: OnceLock<Box<str>> = OnceLock::new();
+
+/// Compact canonical manifest JSON, decompressed once from the precomputed snapshot.
+///
+/// # Panics
+/// Panics only if the build-time generated snapshot embedded in the crate is corrupt.
+#[must_use]
+pub fn manifest_json() -> &'static str {
+    MANIFEST_JSON
+        .get_or_init(|| {
+            let bytes = miniz_oxide::inflate::decompress_to_vec_zlib(EMBEDDED_MANIFEST_ZLIB)
+                .expect("embedded manifest snapshot is valid zlib");
+            String::from_utf8(bytes)
+                .expect("embedded manifest snapshot is valid UTF-8")
+                .into_boxed_str()
+        })
+        .as_ref()
 }
 
 /// Describe all registered operations and their wire metadata.
+///
+/// # Panics
+/// Panics only if the build-time generated snapshot embedded in the crate is corrupt.
 #[must_use]
 pub fn manifest() -> Value {
-    serde_json::from_str(&cached_manifest().0).expect("cached manifest is valid JSON")
+    serde_json::from_str(manifest_json()).expect("embedded manifest is valid JSON")
 }
 
 /// SHA-256 of recursively key-sorted compact JSON, independent of map insertion order.
 #[must_use]
 pub fn manifest_digest() -> String {
-    cached_manifest().1.clone()
+    EMBEDDED_MANIFEST_DIGEST.trim().to_owned()
 }
 
+/// Build the canonical manifest JSON and its SHA-256 digest live from registered
+/// operations and `schemars` type contracts. Used by `aimux-codegen` and contract
+/// tests to regenerate and drift-check the embedded snapshot.
+///
+/// # Panics
+/// Panics if a registered type schema lacks an `id` or `direction` field.
+#[cfg(feature = "runtime-manifest")]
+#[must_use]
+pub fn generate_manifest() -> (Box<str>, String) {
+    let (input_types, input) = type_contract(false);
+    let (output_types, output) = type_contract(true);
+    let mut types = std::collections::BTreeMap::new();
+    for ty in input_types.into_iter().chain(output_types) {
+        let id = ty["id"].as_str().unwrap().to_owned();
+        let entry = types
+            .entry(id.clone())
+            .or_insert_with(|| json!({"id": id, "rustPath": id}));
+        entry[ty["direction"].as_str().unwrap()] = ty["name"].clone();
+    }
+    let types: Vec<_> = types.into_values().collect();
+    let ops: Vec<_> = crate::dispatch::registrations()
+        .iter()
+        .map(|(descriptor, _)| json!(descriptor))
+        .collect();
+    let mut error_codes = Vec::new();
+    for (kind, entries) in ERROR_CODES {
+        for (code, name) in *entries {
+            error_codes.push(
+                json!({ "kind": kind, "code": code, "name": name, "aliases": aliases(*code) }),
+            );
+        }
+    }
+    let mut value = json!({
+        "abiVersion": ABI_VERSION,
+        "opsVersion": OPS_VERSION,
+        "manifestRevision": MANIFEST_REVISION,
+        "ops": ops,
+        "handleKinds": HandleKind::ALL,
+        "packages": crate::ops::provider::packages(),
+        "errorCodes": error_codes,
+        "types": types,
+        "typeDefs": {"input": input, "output": output},
+        "registeredGaps": [
+            "G-a: recording/session/infer state remains process-wide",
+            "G-b: recording schema migration belongs to RFC-0041",
+            "G-c: replay transport capabilities and credential creation are future",
+            "G-e: per-asset platform install verification is not claimed"
+        ],
+    });
+    canonicalize(&mut value);
+    let digest_str = format!("{:x}", Sha256::digest(value.to_string().as_bytes()));
+    value["digest"] = json!(digest_str.clone());
+    let compact_json = value.to_string().into_boxed_str();
+    (compact_json, digest_str)
+}
+
+#[cfg(any(feature = "runtime-manifest", test))]
 fn canonicalize(value: &mut Value) {
     match value {
         Value::Object(object) => {
@@ -98,6 +132,7 @@ fn digest(mut value: Value) -> String {
 }
 
 // Slot 4 remains retired; protocol codes occupy a separate range.
+#[cfg(feature = "runtime-manifest")]
 const ERROR_CODES: &[(&str, &[(i32, &str)])] = &[
     (
         "aimux",
@@ -160,6 +195,7 @@ const ERROR_CODES: &[(&str, &[(i32, &str)])] = &[
     ),
 ];
 
+#[cfg(feature = "runtime-manifest")]
 fn aliases(code: i32) -> &'static [&'static str] {
     match code {
         3 => &[
@@ -173,6 +209,7 @@ fn aliases(code: i32) -> &'static [&'static str] {
     }
 }
 
+#[cfg(feature = "runtime-manifest")]
 fn type_contract(serialize: bool) -> (Vec<Value>, Value) {
     use schemars::generate::{Contract, SchemaSettings};
     let direction = if serialize { "output" } else { "input" };
@@ -233,6 +270,7 @@ fn type_contract(serialize: bool) -> (Vec<Value>, Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn digest_sorts_objects_recursively_and_preserves_arrays() {
@@ -264,6 +302,20 @@ mod tests {
         assert!(
             ops.windows(2)
                 .all(|pair| pair[0]["name"].as_str() < pair[1]["name"].as_str())
+        );
+        assert_eq!(value["digest"], manifest_digest());
+        assert_eq!(serde_json::to_string(&value).unwrap(), manifest_json());
+    }
+
+    #[cfg(feature = "runtime-manifest")]
+    #[test]
+    fn embedded_snapshot_matches_live_runtime_manifest_byte_for_byte() {
+        let (live_json, live_digest) = generate_manifest();
+        assert_eq!(manifest_digest(), live_digest);
+        assert_eq!(manifest_json(), live_json.as_ref());
+        assert_eq!(
+            manifest(),
+            serde_json::from_str::<Value>(&live_json).unwrap()
         );
     }
 }

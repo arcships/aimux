@@ -16,6 +16,8 @@ use std::{
 pub type Artifacts = BTreeMap<PathBuf, Vec<u8>>;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const INDEX: &str = "tools/aimux-codegen/generated-files.json";
+const MANIFEST_SNAPSHOT: &str = "aimux-ops/src/manifest.json.zlib";
+const MANIFEST_DIGEST_FILE: &str = "aimux-ops/src/manifest.digest";
 const HEADERS: [&str; 2] = [
     "aimux-ffi/include/aimux.h",
     "bindings/flutter/native/aimux_ops.h",
@@ -196,7 +198,8 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     if let Some(ops) = unsigned.get_mut("ops").and_then(Value::as_array_mut) {
         ops.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     }
-    let digest = format!("{:x}", Sha256::digest(canonical_json(&unsigned)?));
+    let canonical_bytes = canonical_json(&unsigned)?;
+    let digest = format!("{:x}", Sha256::digest(&canonical_bytes));
     if runtime_digest != digest {
         return Err(
             format!("manifest digest drift: runtime={runtime_digest}, canonical={digest}").into(),
@@ -207,6 +210,17 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     manifest.ops.sort_by(|a, b| a.name.cmp(&b.name));
     manifest.error_codes.sort_by_key(|error| error.code);
     let mut artifacts = Artifacts::new();
+    let mut signed: Value = serde_json::from_slice(&canonical_bytes)?;
+    signed["digest"] = json!(digest);
+    let signed_compact = serde_json::to_vec(&signed)?;
+    artifacts.insert(
+        MANIFEST_SNAPSHOT.into(),
+        miniz_oxide::deflate::compress_to_vec_zlib(&signed_compact, 9),
+    );
+    artifacts.insert(
+        MANIFEST_DIGEST_FILE.into(),
+        format!("{digest}\n").into_bytes(),
+    );
     let header = header(&manifest, &digest)?.into_bytes();
     let [c_header, flutter_header] = HEADERS;
     artifacts.insert(c_header.into(), header.clone());
@@ -488,7 +502,11 @@ fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
 }
 
 fn managed_path(path: &Path) -> bool {
-    if path == Path::new(INDEX) || HEADERS.iter().any(|header| path == Path::new(header)) {
+    if path == Path::new(INDEX)
+        || path == Path::new(MANIFEST_SNAPSHOT)
+        || path == Path::new(MANIFEST_DIGEST_FILE)
+        || HEADERS.iter().any(|header| path == Path::new(header))
+    {
         return true;
     }
     if path.starts_with("schema/ops") || path.starts_with("schema/types") {
@@ -531,7 +549,7 @@ fn collect_files(root: &Path, relative: &Path, output: &mut BTreeSet<PathBuf>) -
 
 fn existing_files(root: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
-    for path in [INDEX]
+    for path in [INDEX, MANIFEST_SNAPSHOT, MANIFEST_DIGEST_FILE]
         .into_iter()
         .chain(HEADERS)
         .chain(["schema/ops", "schema/types"])

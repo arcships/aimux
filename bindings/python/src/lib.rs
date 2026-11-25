@@ -69,6 +69,7 @@ fn parse_params(text: &str) -> Result<serde_json::Value, OpsError> {
     })
 }
 
+#[cfg(feature = "contract-tests")]
 fn serialize(value: &impl serde::Serialize) -> Result<String, OpsError> {
     serde_json::to_string(value)
         .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
@@ -308,8 +309,7 @@ impl Client {
 
 #[pyfunction]
 fn manifest_json(py: Python<'_>) -> PyResult<String> {
-    py.allow_threads(|| serialize(&aimux_ops::manifest::manifest()))
-        .map_err(|e| error::ops_error(py, e))
+    Ok(py.allow_threads(|| aimux_ops::manifest::manifest_json().to_owned()))
 }
 
 #[pyfunction]

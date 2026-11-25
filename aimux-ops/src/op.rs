@@ -1,4 +1,6 @@
-use schemars::{JsonSchema, Schema, SchemaGenerator};
+use schemars::JsonSchema;
+#[cfg(feature = "runtime-manifest")]
+use schemars::{Schema, SchemaGenerator};
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 
@@ -20,6 +22,7 @@ pub enum OpMode {
 #[derive(Clone, Copy, Debug)]
 pub struct TypeRef {
     pub id: fn() -> Cow<'static, str>,
+    #[cfg(feature = "runtime-manifest")]
     pub schema: fn(&mut SchemaGenerator) -> Schema,
 }
 
@@ -28,6 +31,7 @@ impl TypeRef {
     pub const fn of<T: JsonSchema>() -> Self {
         Self {
             id: T::schema_id,
+            #[cfg(feature = "runtime-manifest")]
             schema: SchemaGenerator::subschema_for::<T>,
         }
     }

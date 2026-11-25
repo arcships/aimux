@@ -1,6 +1,8 @@
 {
   "files": [
     "aimux-ffi/include/aimux.h",
+    "aimux-ops/src/manifest.digest",
+    "aimux-ops/src/manifest.json.zlib",
     "bindings/flutter/lib/generated/ops.dart",
     "bindings/flutter/lib/src/generated/dto_vectors.dart",
     "bindings/flutter/lib/src/generated/types.dart",

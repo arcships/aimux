@@ -52,10 +52,13 @@ lto = false
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 futures = "0.3"
 async-trait = "0.1"
 pin-project-lite = "0.2"
+
+# Compression (precomputed ops manifest snapshot)
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
 
 # Serialization
 schemars = { version = "=1.2.2", features = ["indexmap2"] }

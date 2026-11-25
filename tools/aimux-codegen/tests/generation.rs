@@ -29,11 +29,13 @@ fn cli_generates_and_checks_the_runtime_manifest_in_a_selected_root() {
         "{}",
         String::from_utf8_lossy(&checked.stderr)
     );
-    for header in [
+    for path in [
         "aimux-ffi/include/aimux.h",
         "bindings/flutter/native/aimux_ops.h",
+        "aimux-ops/src/manifest.json.zlib",
+        "aimux-ops/src/manifest.digest",
     ] {
-        fs::remove_file(root.path().join(header)).unwrap();
+        fs::remove_file(root.path().join(path)).unwrap();
         let stale = std::process::Command::new(binary)
             .arg("--root")
             .arg(root.path())
@@ -41,8 +43,8 @@ fn cli_generates_and_checks_the_runtime_manifest_in_a_selected_root() {
             .output()
             .unwrap();
         assert!(!stale.status.success());
-        assert!(String::from_utf8_lossy(&stale.stderr).contains(&format!("missing: {header}")));
-        assert!(!root.path().join(header).exists());
+        assert!(String::from_utf8_lossy(&stale.stderr).contains(&format!("missing: {path}")));
+        assert!(!root.path().join(path).exists());
     }
     assert!(
         !std::process::Command::new(binary)

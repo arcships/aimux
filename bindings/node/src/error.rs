@@ -1,8 +1,8 @@
 //! Project the shared envelope once, then materialize it on the JS thread.
 
 #[cfg(feature = "contract-tests")]
-use aimux_ops::envelope::SourceError;
-use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError};
+use aimux_ops::envelope::{BindingError, SourceError};
+use aimux_ops::envelope::{ErrorEnvelope, OpsError};
 use napi::bindgen_prelude::*;
 use napi::{Env, sys};
 
@@ -26,6 +26,7 @@ pub(crate) fn parse(
     })
 }
 
+#[cfg(feature = "contract-tests")]
 pub(crate) fn serialize(
     value: &impl serde::Serialize,
 ) -> std::result::Result<String, ErrorEnvelope> {

@@ -26,6 +26,7 @@ RFC-0043 §3.1.
 import os
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 GO_TARGETS = [
@@ -59,6 +60,15 @@ ASSETS = (
 )
 
 
+def _zip_dir_deflate9(root_dir: Path, base_dir: str, dest_zip: Path) -> Path:
+    """Zip `root_dir / base_dir` into `dest_zip` using standard Deflate-9."""
+    target = root_dir / base_dir
+    with zipfile.ZipFile(dest_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        for entry in sorted([target, *target.rglob("*")], key=lambda p: p.relative_to(root_dir).as_posix()):
+            zf.write(entry, entry.relative_to(root_dir).as_posix())
+    return dest_zip
+
+
 def stage(src: Path, out: Path):
     """Copy the listed assets from `src` to `out`. Returns (staged, missing,
     left_out): staged is [(name, bytes)], missing the download paths that are
@@ -68,9 +78,9 @@ def stage(src: Path, out: Path):
     for name, rel in ASSETS:
         path = src / rel
         if path.is_dir():
-            archive = shutil.make_archive(str(out / name[: -len(".zip")]), "zip", root_dir=src, base_dir=rel)
+            archive = _zip_dir_deflate9(src, rel, out / name)
             used.update(p for p in path.rglob("*") if p.is_file())
-            staged.append((name, Path(archive).stat().st_size))
+            staged.append((name, archive.stat().st_size))
         elif path.is_file():
             shutil.copyfile(path, out / name)
             used.add(path)

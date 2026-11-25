@@ -196,7 +196,7 @@ impl Runtime {
 
     #[napi]
     pub fn manifest_json(&self) -> WireResult<String> {
-        WireResult(error::serialize(&aimux_ops::manifest::manifest()))
+        WireResult(Ok(aimux_ops::manifest::manifest_json().to_owned()))
     }
 
     #[napi]

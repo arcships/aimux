@@ -252,13 +252,20 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Clippy without the realtime feature (deny warnings)
         run: cargo clippy -p aimux-providers --no-default-features -- -D warnings
+      - name: Clippy aimux-ops and aimux-ffi without runtime-manifest (deny warnings)
+        run: cargo clippy -p aimux-ops -p aimux-ffi --no-default-features --all-targets -- -D warnings
       - name: Rustdoc (deny warnings)
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
       # Includes aimux-ops (matrix, lifecycle, streams, envelopes, manifest).
+      # Workspace feature unification enables aimux-ops/runtime-manifest via
+      # aimux-codegen, so also test aimux-ops standalone with default features
+      # (feature-off) to keep the production snapshot-only path covered.
       - name: Test workspace
         run: cargo test --workspace
+      - name: Test aimux-ops (default features, snapshot-only)
+        run: cargo test -p aimux-ops --no-default-features
 
   # ── Node binding: build all desktop targets, test on native hosts ───────────
   node-binding:
