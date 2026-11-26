@@ -356,6 +356,11 @@
     "file": "FinishReasonUnified/002.json"
   },
   {
+    "type": "FinishReasonUnified",
+    "file": "FinishReasonUnified/003.negative.json",
+    "expectError": true
+  },
+  {
     "type": "GenerateContent",
     "file": "GenerateContent/001.json"
   },
@@ -392,6 +397,11 @@
     "file": "GenerateContent/009.json"
   },
   {
+    "type": "GenerateContent",
+    "file": "GenerateContent/010.negative.json",
+    "expectError": true
+  },
+  {
     "type": "GenerateObjectResponse",
     "file": "GenerateObjectResponse/001.json"
   },
@@ -426,6 +436,21 @@
   {
     "type": "HandleId",
     "file": "HandleId/002.json"
+  },
+  {
+    "type": "HandleId",
+    "file": "HandleId/003.negative.json",
+    "expectError": true
+  },
+  {
+    "type": "HandleId",
+    "file": "HandleId/004.negative.json",
+    "expectError": true
+  },
+  {
+    "type": "HandleId",
+    "file": "HandleId/005.negative.json",
+    "expectError": true
   },
   {
     "type": "HandleIdInput",
@@ -553,6 +578,25 @@
     "file": "NamespacedKind/002.json"
   },
   {
+    "type": "OperationNextParams",
+    "file": "OperationNextParams/001.json"
+  },
+  {
+    "type": "OperationNextParams",
+    "file": "OperationNextParams/002.negative.json",
+    "expectError": true
+  },
+  {
+    "type": "OperationNextParams",
+    "file": "OperationNextParams/003.negative.json",
+    "expectError": true
+  },
+  {
+    "type": "OperationNextParams",
+    "file": "OperationNextParams/004.negative.json",
+    "expectError": true
+  },
+  {
     "type": "Output",
     "file": "Output/001.json"
   },
@@ -563,6 +607,42 @@
   {
     "type": "RawToolCall",
     "file": "RawToolCall/001.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/002.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/003.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/004.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/005.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/006.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/007.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/008.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/009.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/010.json"
   },
   {
     "type": "ReasoningFilePartData",
@@ -823,6 +903,43 @@
   {
     "type": "ToolCall",
     "file": "ToolCall/002.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/003.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/004.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/005.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/006.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/007.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/008.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/009.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/010.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/011.negative.json",
+    "expectError": true
   },
   {
     "type": "ToolCallInput",

@@ -1,9 +1,10 @@
 //! Frozen RFC-0039 §3.2 inventory, independent of the implementation table.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::path::Path;
 
 use aimux_ops::dispatch::descriptor;
-use aimux_ops::manifest::{manifest, manifest_digest};
+use aimux_ops::manifest::{canonical_digest, manifest, manifest_digest};
 use aimux_ops::op::{ABI_VERSION, OPS_VERSION};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -294,6 +295,21 @@ fn digest_is_stable_and_hashes_the_complete_canonical_manifest() {
         assert_eq!(manifest(), first);
         assert_eq!(manifest_digest(), digest);
     }
+}
+
+#[test]
+fn canonical_digest_self_verifies_emitted_schema_manifest_with_input_hash() {
+    let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../schema/manifest.json");
+    let emitted: Value =
+        serde_json::from_str(&std::fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let expected = manifest_digest();
+    assert_eq!(emitted["digest"], expected);
+    assert_eq!(emitted["inputHash"], expected);
+    assert_eq!(canonical_digest(emitted.clone()), expected);
+
+    let mut reversed_ops = emitted;
+    reversed_ops["ops"].as_array_mut().unwrap().reverse();
+    assert_eq!(canonical_digest(reversed_ops), expected);
 }
 
 #[test]
@@ -687,4 +703,279 @@ fn trusted_caller_and_env_allowlist_boundaries_are_published_in_manifest_schemas
             "{type_name}.envAllowlist must clarify default env fallback boundary: {allowlist_desc}"
         );
     }
+}
+
+fn collect_refs_for_hash(
+    value: &Value,
+    seen: &mut BTreeSet<(String, String)>,
+    queue: &mut VecDeque<(String, String)>,
+) {
+    match value {
+        Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str)
+                && let Some(rest) = reference.strip_prefix("#/typeDefs/")
+                && let Some((dir, tail)) = rest.split_once('/')
+                && matches!(dir, "input" | "output")
+                && let Some(raw_name) = tail.split('/').next()
+                && !raw_name.is_empty()
+            {
+                let decoded = raw_name.replace("~1", "/").replace("~0", "~");
+                let key = (dir.to_owned(), decoded);
+                if seen.insert(key.clone()) {
+                    queue.push_back(key);
+                }
+            }
+            for child in object.values() {
+                collect_refs_for_hash(child, seen, queue);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_refs_for_hash(item, seen, queue);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn independent_schema_hash(entry: &Value, type_defs: &Value) -> String {
+    let mut seen = BTreeSet::new();
+    let mut queue = VecDeque::new();
+    for dir in ["input", "output"] {
+        if let Some(name) = entry.get(dir).and_then(Value::as_str) {
+            let key = (dir.to_owned(), name.to_owned());
+            if seen.insert(key.clone()) {
+                queue.push_back(key);
+            }
+        }
+    }
+    let mut input_defs = serde_json::Map::new();
+    let mut output_defs = serde_json::Map::new();
+    while let Some((dir, name)) = queue.pop_front() {
+        if let Some(def) = type_defs.get(&dir).and_then(|defs| defs.get(&name)) {
+            collect_refs_for_hash(def, &mut seen, &mut queue);
+            if dir == "input" {
+                input_defs.insert(name, def.clone());
+            } else {
+                output_defs.insert(name, def.clone());
+            }
+        }
+    }
+    let mut spec = serde_json::json!({
+        "id": entry["id"],
+        "revision": entry["revision"],
+        "typeDefs": {
+            "input": Value::Object(input_defs),
+            "output": Value::Object(output_defs),
+        },
+    });
+    if let Some(input_name) = entry.get("input") {
+        spec["input"] = input_name.clone();
+    }
+    if let Some(output_name) = entry.get("output") {
+        spec["output"] = output_name.clone();
+    }
+    let mut encoded = String::new();
+    canonical(&spec, &mut encoded);
+    format!("{:x}", Sha256::digest(encoded.as_bytes()))
+}
+
+#[test]
+fn type_entries_include_revision_and_independent_canonical_schema_hash() {
+    let manifest = manifest();
+    let types = manifest["types"].as_array().expect("manifest.types");
+    assert!(!types.is_empty());
+    let type_defs = &manifest["typeDefs"];
+
+    for entry in types {
+        let id = entry["id"].as_str().expect("type id");
+        assert_eq!(entry["revision"], "1", "{id}");
+        let hash = entry["schemaHash"].as_str().expect("schemaHash");
+        assert_eq!(hash.len(), 64, "{id}");
+        assert!(
+            hash.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "{id}: non-lowercase-hex hash {hash}"
+        );
+        assert_eq!(hash, independent_schema_hash(entry, type_defs), "{id}");
+    }
+}
+
+#[test]
+fn unrelated_type_def_mutation_keeps_schema_hash_stable() {
+    let manifest = manifest();
+    let types = manifest["types"].as_array().expect("manifest.types");
+    let generate_entry = types
+        .iter()
+        .find(|entry| entry["id"] == "aimux_core::generate::GenerateTextResult")
+        .expect("GenerateTextResult type entry");
+    let mut mutated = manifest.clone();
+    mutated["typeDefs"]["output"]["UnrelatedSyntheticType"] = serde_json::json!({"type": "string"});
+    assert_eq!(
+        generate_entry["schemaHash"],
+        independent_schema_hash(generate_entry, &mutated["typeDefs"])
+    );
+}
+
+#[test]
+fn transitive_type_def_mutation_changes_schema_hash() {
+    let manifest = manifest();
+    let types = manifest["types"].as_array().expect("manifest.types");
+    let generate_entry = types
+        .iter()
+        .find(|entry| entry["id"] == "aimux_core::generate::GenerateTextResult")
+        .expect("GenerateTextResult type entry");
+    let mut transitive_mutated = manifest["typeDefs"].clone();
+    transitive_mutated["output"]["LanguageModelUsage"] = serde_json::json!({"type": "null"});
+    assert_ne!(
+        generate_entry["schemaHash"],
+        independent_schema_hash(generate_entry, &transitive_mutated)
+    );
+}
+
+#[test]
+fn manifest_records_generator_version_and_upstream_sources() {
+    let manifest = manifest();
+    assert_eq!(manifest["generatorVersion"], env!("CARGO_PKG_VERSION"));
+    let versions_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/aisdk/VERSIONS.json");
+    let raw = std::fs::read_to_string(&versions_path).expect("read VERSIONS.json");
+    let expected_map: BTreeMap<String, Value> =
+        serde_json::from_str(&raw).expect("parse VERSIONS.json");
+    let actual_sources = manifest["sources"].as_array().expect("manifest.sources");
+    assert_eq!(actual_sources.len(), expected_map.len());
+    let expected_sources: Vec<Value> = expected_map
+        .into_iter()
+        .map(|(package, info)| {
+            serde_json::json!({
+                "package": package,
+                "version": info["version"],
+                "integrity": info["integrity"],
+            })
+        })
+        .collect();
+    assert_eq!(actual_sources, &expected_sources);
+}
+
+#[test]
+fn encoded_positive_dto_vectors_decode_through_rust() {
+    fn round_trip_json<T: serde::Serialize + serde::de::DeserializeOwned>(
+        encoded: &str,
+        expected: &Value,
+        label: &str,
+    ) {
+        let decoded: T = serde_json::from_str(encoded)
+            .unwrap_or_else(|error| panic!("{label}: initial Rust decode failed: {error}"));
+        let reencoded = serde_json::to_string(&decoded)
+            .unwrap_or_else(|error| panic!("{label}: Rust re-encode failed: {error}"));
+        let redecoded: T = serde_json::from_str(&reencoded)
+            .unwrap_or_else(|error| panic!("{label}: second Rust decode failed: {error}"));
+        let actual_value = serde_json::to_value(&redecoded).unwrap();
+        assert_eq!(&actual_value, expected, "{label}");
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract-tests/dto");
+    let index: Vec<Value> =
+        serde_json::from_str(&std::fs::read_to_string(root.join("index.json")).unwrap()).unwrap();
+
+    let mut tool_inputs_checked = 0usize;
+    let mut positive_checked = 0usize;
+    for entry in &index {
+        if entry["expectError"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let kind = entry["type"].as_str().unwrap();
+        let file = entry["file"].as_str().unwrap();
+        let raw_json = std::fs::read_to_string(root.join(file)).unwrap();
+        let expected_path = entry["expect"]
+            .as_str()
+            .map_or_else(|| root.join(file), |expect_file| root.join(expect_file));
+        let expected: Value =
+            serde_json::from_str(&std::fs::read_to_string(&expected_path).unwrap()).unwrap();
+
+        match kind {
+            "RawToolCall" => {
+                round_trip_json::<aimux_core::tool::RawToolCall>(&raw_json, &expected, file);
+                tool_inputs_checked += 1;
+                positive_checked += 1;
+            }
+            "ToolCall" | "ToolCallInput" => {
+                round_trip_json::<aimux_core::tool::ToolCall>(&raw_json, &expected, file);
+                tool_inputs_checked += 1;
+                positive_checked += 1;
+            }
+            "AiMuxError" | "AiMuxErrorInput" => {
+                round_trip_json::<aimux_core::error::AiMuxError>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ErrorEnvelope" => {
+                round_trip_json::<aimux_ops::ErrorEnvelope>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "FinishReasonUnified" => {
+                round_trip_json::<aimux_core::types::FinishReasonUnified>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "GenerateContent" => {
+                round_trip_json::<aimux_core::result::GenerateContent>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "GenerateTextResult" => {
+                round_trip_json::<aimux_core::generate::GenerateTextResult>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "HandleId" | "HandleIdInput" => {
+                round_trip_json::<aimux_ops::HandleId>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ModelLimits" => {
+                round_trip_json::<aimux_core::model_catalogue::ModelLimits>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "Recording" => {
+                round_trip_json::<aimux_core::recording::Recording>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "ContentPart" | "ContentPartInput" => {
+                round_trip_json::<aimux_core::result::ContentPart>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            "TextStreamPart" => {
+                round_trip_json::<aimux_core::stream_part::TextStreamPart>(
+                    &raw_json, &expected, file,
+                );
+                positive_checked += 1;
+            }
+            "TraceRecord" => {
+                round_trip_json::<aimux_core::trace::TraceRecord>(&raw_json, &expected, file);
+                positive_checked += 1;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        tool_inputs_checked >= 19,
+        "tool_inputs_checked={tool_inputs_checked}"
+    );
+    assert!(
+        positive_checked >= 60,
+        "positive_checked={positive_checked}"
+    );
+}
+
+#[test]
+fn scientific_notation_tool_inputs_decode_through_rust() {
+    let raw_sci: aimux_core::tool::RawToolCall =
+        serde_json::from_str(r#"{"toolCallId":"call-sci","toolName":"calc","input":" 1e2 "}"#)
+            .unwrap();
+    assert_eq!(raw_sci.input, " 1e2 ");
+    let parsed_sci: aimux_core::tool::ToolCall =
+        serde_json::from_str(r#"{"toolCallId":"call-sci","toolName":"calc","input":1e2}"#).unwrap();
+    assert_eq!(parsed_sci.input.as_f64(), Some(100.0));
 }

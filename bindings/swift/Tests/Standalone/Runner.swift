@@ -6,6 +6,8 @@ import Foundation
         // The same checks used by swift test, runnable when SwiftPM cannot load.
         let checks: [(String, @Sendable () async throws -> Void)] = [
             ("manifestRequiresExactVersionAndDigest", { try ContractTests.manifestRequiresExactVersionAndDigest() }),
+            ("manifestNegotiatesByTypeSchemaHashesWhenDigestChanges", { try ContractTests.manifestNegotiatesByTypeSchemaHashesWhenDigestChanges() }),
+            ("schemaManifestSelfVerifiesAfterStrippingDigestAndInputHash", { try ContractTests.schemaManifestSelfVerifiesAfterStrippingDigestAndInputHash() }),
             ("manifestAndHandles", { try await ContractTests.manifestAndHandles() }),
             ("versionMismatch", { try await ContractTests.versionMismatch() }),
             ("mainActorHeartbeat", { try await ContractTests.mainActorHeartbeat() }),
@@ -37,6 +39,7 @@ import Foundation
             ("testFilePartsAreTheAiSdkFilePart", { try WireTests.testFilePartsAreTheAiSdkFilePart() }),
             ("testToolChoiceCodableWire", { try WireTests.testToolChoiceCodableWire() }),
             ("testGenerateTextResultRoundTrip", { try WireTests.testGenerateTextResultRoundTrip() }),
+            ("testClosedTaggedVariantsRejectUnknownFields", { try WireTests.testClosedTaggedVariantsRejectUnknownFields() }),
         ]
         for (name, check) in checks {
             try await check()

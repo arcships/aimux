@@ -1,6 +1,7 @@
 //! TypeScript wire declarations and DTO vector type metadata.
 use super::Emitter;
 use crate::model::{Codec, Field, Kind, Model, NamedType, Result, Ty};
+use serde_json::{Value, json};
 use std::{collections::BTreeMap, fmt::Write, path::PathBuf};
 
 pub struct Node;
@@ -24,6 +25,7 @@ impl Emitter for Node {
             "export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: readonly string[] }>> = {\n",
         );
         let mut names = String::from("export const dtoTypeNames = [\n");
+        let mut schemas = serde_json::Map::new();
         for named in &model.types {
             write_declaration(&mut out, named);
             if let Kind::Tagged { tag, variants } = &named.kind {
@@ -40,20 +42,222 @@ impl Emitter for Node {
                 )
                 .unwrap();
             }
+            schemas.insert(named.name.clone(), schema_spec(named));
             writeln!(table, "  {}: T.{}", quote(&named.name), named.name).unwrap();
             writeln!(names, "  {},", quote(&named.name)).unwrap();
         }
         table.push_str("}\n\n");
         tags.push_str("}\n\n");
-        names.push_str("] as const satisfies readonly (keyof DtoTypes)[]\n");
+        names.push_str("] as const satisfies readonly (keyof DtoTypes)[]\n\n");
         table.push_str(&tags);
         table.push_str(&names);
+        writeln!(
+            table,
+            "const dtoSchemas: Record<string, unknown> = {}\n",
+            serde_json::to_string(&Value::Object(schemas)).unwrap()
+        )
+        .unwrap();
+        table.push_str(NODE_VALIDATOR);
         Ok(vec![
             (self.owned()[0].into(), out),
             (self.owned()[1].into(), table),
         ])
     }
 }
+
+fn schema_fields(fields: &[Field]) -> Value {
+    let mut map = serde_json::Map::new();
+    for f in fields {
+        map.insert(f.json_name.clone(), json!([f.required, schema_ty(&f.ty)]));
+    }
+    Value::Object(map)
+}
+
+fn schema_ty(ty: &Ty) -> Value {
+    match ty {
+        Ty::Ref(name) => json!(["r", name]),
+        Ty::String => json!("s"),
+        Ty::Bool => json!("b"),
+        Ty::Int { unsigned, bits } => json!(["i", unsigned, bits]),
+        Ty::Float => json!("f"),
+        Ty::Json => json!("j"),
+        Ty::Literal(expected) => json!(["l", expected]),
+        Ty::Array(inner) => json!(["a", schema_ty(inner)]),
+        Ty::Map(inner) => json!(["m", schema_ty(inner)]),
+        Ty::Nullable(inner) => json!(["n", schema_ty(inner)]),
+        Ty::Codec(Codec::U64String, _) => json!("u64"),
+        Ty::Codec(_, inner) => schema_ty(inner),
+    }
+}
+
+fn schema_spec(named: &NamedType) -> Value {
+    match &named.kind {
+        Kind::Struct { fields, closed } => json!({
+            "k": "s",
+            "c": *closed && named.name != "ErrorEnvelope",
+            "f": schema_fields(fields),
+        }),
+        Kind::StringEnum(values) => json!({ "k": "e", "v": values }),
+        Kind::Tagged { tag, variants } => json!({
+            "k": "t",
+            "g": tag,
+            "v": variants.iter().map(|v| json!({
+                "tv": v.tag_value,
+                "c": v.closed,
+                "f": schema_fields(&v.fields),
+            })).collect::<Vec<_>>(),
+        }),
+        Kind::Untagged(branches) => json!({
+            "k": "u",
+            "b": branches.iter().map(|b| schema_ty(&b.ty)).collect::<Vec<_>>(),
+        }),
+        Kind::Alias(ty) => json!({ "k": "a", "t": schema_ty(ty) }),
+    }
+}
+
+const NODE_VALIDATOR: &str = r#"type SchemaTy =
+  | 's' | 'b' | 'f' | 'j' | 'u64'
+  | ['i', boolean, number]
+  | ['r', string] | ['l', string] | ['a', SchemaTy] | ['m', SchemaTy] | ['n', SchemaTy]
+
+type FieldSpec = readonly [boolean, SchemaTy]
+
+type TypeSpec =
+  | { k: 's'; c: boolean; f: Record<string, FieldSpec> }
+  | { k: 'e'; v: readonly string[] }
+  | { k: 't'; g: string; v: ReadonlyArray<{ tv: string; c: boolean; f: Record<string, FieldSpec> }> }
+  | { k: 'u'; b: readonly SchemaTy[] }
+  | { k: 'a'; t: SchemaTy }
+
+export class NonIntegerNumber {
+  readonly value: number
+  constructor(value: number) { this.value = value }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof NonIntegerNumber)
+}
+
+function isU64String(value: unknown): boolean {
+  if (typeof value !== 'string' || !/^[0-9]+$/.test(value)) return false
+  const digits = value.replace(/^0+/, '')
+  return digits.length < 20 || (digits.length === 20 && digits <= '18446744073709551615')
+}
+
+function isIntInRange(value: unknown, unsigned: boolean, bits: number): boolean {
+  if (typeof value === 'bigint') {
+    if (unsigned) {
+      if (value < 0n) return false
+      return value <= (1n << BigInt(bits)) - 1n
+    }
+    const bound = 1n << BigInt(bits - 1)
+    return value >= -bound && value <= bound - 1n
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value)) return false
+  if (unsigned) {
+    if (value < 0) return false
+    if (bits <= 32) return value <= (bits === 32 ? 4294967295 : (1 << bits) - 1)
+    return value < 2 ** 64
+  }
+  if (bits <= 32) {
+    const bound = 2 ** (bits - 1)
+    return value >= -bound && value <= bound - 1
+  }
+  return value >= -(2 ** 63) && value < 2 ** 63
+}
+
+function checkFields(name: string, obj: Record<string, unknown>, fields: Record<string, FieldSpec>, closed: boolean, tag?: string): void {
+  if (closed) {
+    for (const k of Object.keys(obj)) {
+      if (k !== tag && !Object.prototype.hasOwnProperty.call(fields, k)) {
+        throw new Error(`Unknown field ${k} for ${name}`)
+      }
+    }
+  }
+  for (const [k, [required, ty]] of Object.entries(fields)) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      checkTy(`${name}.${k}`, obj[k], ty)
+    } else if (required) {
+      throw new Error(`Missing required field ${name}.${k}`)
+    }
+  }
+}
+
+function checkTy(path: string, value: unknown, ty: SchemaTy): void {
+  if (typeof ty === 'string') {
+    switch (ty) {
+      case 's': if (typeof value !== 'string') throw new Error(`Expected string at ${path}`); return
+      case 'b': if (typeof value !== 'boolean') throw new Error(`Expected boolean at ${path}`); return
+      case 'f': if (value instanceof NonIntegerNumber ? !Number.isFinite(value.value) : typeof value === 'bigint' ? !Number.isFinite(Number(value)) : typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Expected number at ${path}`); return
+      case 'j': if (value === undefined) throw new Error(`Expected JSON value at ${path}`); return
+      case 'u64': if (!isU64String(value)) throw new Error(`Expected u64 string at ${path}`); return
+    }
+  }
+  switch (ty[0]) {
+    case 'i': if (!isIntInRange(value, ty[1], ty[2])) throw new Error(`Expected integer at ${path}`); return
+    case 'r': validateDto(ty[1], value); return
+    case 'l': if (value !== ty[1]) throw new Error(`Expected literal ${ty[1]} at ${path}`); return
+    case 'a':
+      if (!Array.isArray(value)) throw new Error(`Expected array at ${path}`)
+      for (let i = 0; i < value.length; i++) checkTy(`${path}[${i}]`, value[i], ty[1])
+      return
+    case 'm':
+      if (!isPlainObject(value)) throw new Error(`Expected map object at ${path}`)
+      for (const [k, v] of Object.entries(value)) checkTy(`${path}.${k}`, v, ty[1])
+      return
+    case 'n':
+      if (value !== null) checkTy(path, value, ty[1])
+      return
+  }
+}
+
+export function validateDto(type: string, value: unknown): void {
+  const spec = dtoSchemas[type] as TypeSpec | undefined
+  if (!spec) throw new Error(`Unknown DTO type: ${type}`)
+  switch (spec.k) {
+    case 's':
+      if (!isPlainObject(value)) throw new Error(`Expected object for ${type}`)
+      checkFields(type, value, spec.f, spec.c)
+      return
+    case 'e':
+      if (typeof value !== 'string' || !spec.v.includes(value)) {
+        throw new Error(`Invalid ${type} enum value: ${String(value)}`)
+      }
+      return
+    case 't': {
+      if (!isPlainObject(value)) throw new Error(`Expected object for ${type}`)
+      const tag = value[spec.g]
+      const candidates = typeof tag === 'string' ? spec.v.filter(v => v.tv === tag) : []
+      if (candidates.length === 0) throw new Error(`Unknown ${type} tag: ${String(tag)}`)
+      let lastError: unknown
+      for (const candidate of candidates) {
+        try {
+          checkFields(type, value, candidate.f, candidate.c, spec.g)
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError
+    }
+    case 'u': {
+      let lastError: unknown
+      for (const branch of spec.b) {
+        try {
+          checkTy(type, value, branch)
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError ?? new Error(`No matching ${type} branch`)
+    }
+    case 'a':
+      checkTy(type, value, spec.t)
+      return
+  }
+}
+"#;
 
 /// Console wire types, one file per root, sharing core types through `@aimux/types`.
 #[must_use]

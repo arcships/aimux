@@ -9,6 +9,8 @@ pub mod manifest;
 pub mod op;
 pub mod operation;
 mod request;
+#[cfg(feature = "runtime-manifest")]
+mod sources;
 
 pub mod ops {
     pub mod composite;

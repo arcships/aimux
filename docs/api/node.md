@@ -103,7 +103,7 @@ try {
   are gone.
 - DTOs are generated from the Rust types; hand-written 0.5 wire types are
   removed.
-- The runtime requires the exact ABI, ops version and manifest digest.
+- The runtime requires the exact `ABI_VERSION`, exact `opsVersion`, and manifest compatibility (`MANIFEST_DIGEST` fast-path or full `TYPE_SCHEMA_HASHES` `schemaHash` fallback).
 
 ## See also
 

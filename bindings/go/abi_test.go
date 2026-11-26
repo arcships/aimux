@@ -1,12 +1,18 @@
 package aimux
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -97,6 +103,50 @@ func TestManifestRequiresExactGeneratedVersionAndDigest(t *testing.T) {
 				t.Fatalf("mismatch omits %q: %v", value, err)
 			}
 		}
+	}
+}
+
+func TestManifestNegotiatesByTypeSchemaHashesWhenDigestChanges(t *testing.T) {
+	if len(generated.TYPE_SCHEMA_HASHES) == 0 {
+		t.Fatal("expected generated.TYPE_SCHEMA_HASHES to be populated")
+	}
+	types := make([]map[string]any, 0, len(generated.TYPE_SCHEMA_HASHES))
+	var firstID string
+	for id, hash := range generated.TYPE_SCHEMA_HASHES {
+		if firstID == "" {
+			firstID = id
+		}
+		types = append(types, map[string]any{"id": id, "revision": "1", "schemaHash": hash})
+	}
+	raw, err := json.Marshal(map[string]any{
+		"abiVersion": ABIVersion,
+		"opsVersion": generated.OPS_VERSION,
+		"digest":     "changed-digest-from-new-package",
+		"packages":   []string{"openai", "extra-package"},
+		"types":      types,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateManifest(ABIVersion, raw); err != nil {
+		t.Fatalf("expected matching types[].schemaHash to negotiate across changed digest: %v", err)
+	}
+
+	types[0]["schemaHash"] = strings.Repeat("0", 64)
+	brokenID := types[0]["id"].(string)
+	brokenRaw, err := json.Marshal(map[string]any{
+		"abiVersion": ABIVersion,
+		"opsVersion": generated.OPS_VERSION,
+		"digest":     "changed-digest-from-new-package",
+		"types":      types,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateManifest(ABIVersion, brokenRaw)
+	checkCode(t, err, "protocol", 302)
+	if !strings.Contains(err.Error(), generated.MANIFEST_DIGEST) || !strings.Contains(err.Error(), brokenID) {
+		t.Fatalf("expected error containing MANIFEST_DIGEST and %q, got: %v", brokenID, err)
 	}
 }
 
@@ -537,5 +587,105 @@ func TestStreamSingleEventLimitIncludesFrameOverhead(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("event count = %d", count)
+	}
+}
+
+func writeCanonicalJSONString(buf *bytes.Buffer, s string) error {
+	var raw bytes.Buffer
+	enc := json.NewEncoder(&raw)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
+		return err
+	}
+	buf.Write(bytes.TrimSuffix(raw.Bytes(), []byte{'\n'}))
+	return nil
+}
+
+func writeCanonicalManifestJSON(buf *bytes.Buffer, v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			if err := writeCanonicalJSONString(buf, k); err != nil {
+				return err
+			}
+			buf.WriteByte(':')
+			if err := writeCanonicalManifestJSON(buf, x[k]); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte('}')
+		return nil
+	case []any:
+		buf.WriteByte('[')
+		for i, elem := range x {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			if err := writeCanonicalManifestJSON(buf, elem); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte(']')
+		return nil
+	case json.Number:
+		buf.WriteString(x.String())
+		return nil
+	case string:
+		return writeCanonicalJSONString(buf, x)
+	case bool:
+		buf.WriteString(strconv.FormatBool(x))
+		return nil
+	case nil:
+		buf.WriteString("null")
+		return nil
+	default:
+		return fmt.Errorf("unexpected JSON value type %T", v)
+	}
+}
+
+func TestSchemaManifestSelfVerifiesAfterStrippingDigestAndInputHash(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "schema", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var emitted map[string]any
+	if err := dec.Decode(&emitted); err != nil {
+		t.Fatal(err)
+	}
+	if emitted["digest"] != generated.MANIFEST_DIGEST {
+		t.Fatalf("manifest digest = %v, want %s", emitted["digest"], generated.MANIFEST_DIGEST)
+	}
+	if emitted["inputHash"] != generated.MANIFEST_DIGEST {
+		t.Fatalf("manifest inputHash = %v, want %s", emitted["inputHash"], generated.MANIFEST_DIGEST)
+	}
+	delete(emitted, "digest")
+	delete(emitted, "inputHash")
+	opsSlice, ok := emitted["ops"].([]any)
+	if !ok {
+		t.Fatalf("expected ops array, got %T", emitted["ops"])
+	}
+	sort.Slice(opsSlice, func(i, j int) bool {
+		a := opsSlice[i].(map[string]any)["name"].(string)
+		b := opsSlice[j].(map[string]any)["name"].(string)
+		return a < b
+	})
+	var canonical bytes.Buffer
+	if err := writeCanonicalManifestJSON(&canonical, emitted); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(canonical.Bytes())
+	if got := hex.EncodeToString(sum[:]); got != generated.MANIFEST_DIGEST {
+		t.Fatalf("self-verified manifest digest = %s, want %s", got, generated.MANIFEST_DIGEST)
 	}
 }

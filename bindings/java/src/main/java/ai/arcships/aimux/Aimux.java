@@ -10,7 +10,11 @@ import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -42,16 +46,55 @@ public final class Aimux {
         if (abi != ABI_VERSION) throw new IllegalStateException("Incompatible aimux ABI: " + abi);
         PointerByReference out = new PointerByReference();
         manifest = AimuxResult.result(ffi, ffi.aimux_manifest_json(out), out);
+        validateManifest(ABI_VERSION, manifest);
+    }
+
+    static void validateManifest(int expectedAbi, JsonNode manifest) {
         if (!manifest.path("abiVersion").isIntegralNumber()
-            || manifest.path("abiVersion").asLong() != ABI_VERSION
+            || manifest.path("abiVersion").asLong() != expectedAbi
             || !manifest.path("opsVersion").isTextual()
             || !manifest.path("digest").isTextual()
-            || !OPS_VERSION.equals(manifest.path("opsVersion").asText())
-            || !AimuxOps.MANIFEST_DIGEST.equals(manifest.path("digest").asText())) {
-            throw new IllegalStateException("Incompatible aimux ABI/ops manifest: opsVersion "
-                + manifest.path("opsVersion") + " (expected " + OPS_VERSION + "), digest "
-                + manifest.path("digest") + " (expected " + AimuxOps.MANIFEST_DIGEST + ")");
+            || !OPS_VERSION.equals(manifest.path("opsVersion").asText())) {
+            throw incompatibilityError(manifest, Collections.emptyList());
         }
+        if (AimuxOps.MANIFEST_DIGEST.equals(manifest.path("digest").asText())) {
+            return;
+        }
+        List<String> mismatches = findMismatchedTypes(manifest.path("types"));
+        if (mismatches != null && mismatches.isEmpty()) {
+            return;
+        }
+        throw incompatibilityError(manifest, mismatches == null ? Collections.emptyList() : mismatches);
+    }
+
+    private static List<String> findMismatchedTypes(JsonNode types) {
+        if (AimuxOps.TYPE_SCHEMA_HASHES.isEmpty() || !types.isArray() || types.size() == 0) {
+            return null;
+        }
+        Map<String, String> actual = new HashMap<>();
+        for (JsonNode entry : types) {
+            JsonNode id = entry.path("id");
+            JsonNode hash = entry.path("schemaHash");
+            if (id.isTextual() && hash.isTextual()) {
+                actual.put(id.asText(), hash.asText());
+            }
+        }
+        List<String> mismatches = new ArrayList<>();
+        for (Map.Entry<String, String> entry : AimuxOps.TYPE_SCHEMA_HASHES.entrySet()) {
+            if (!entry.getValue().equals(actual.get(entry.getKey()))) {
+                mismatches.add(entry.getKey());
+            }
+        }
+        return mismatches;
+    }
+
+    private static IllegalStateException incompatibilityError(JsonNode manifest, List<String> mismatches) {
+        String detail = mismatches.isEmpty()
+            ? ""
+            : " (incompatible types: " + String.join(", ", mismatches.subList(0, Math.min(5, mismatches.size()))) + ")";
+        return new IllegalStateException("Incompatible aimux ABI/ops manifest: opsVersion "
+            + manifest.path("opsVersion") + " (expected " + OPS_VERSION + "), digest "
+            + manifest.path("digest") + " (expected " + AimuxOps.MANIFEST_DIGEST + ")" + detail);
     }
 
     public static Aimux load() { return load("aimux_ffi"); }

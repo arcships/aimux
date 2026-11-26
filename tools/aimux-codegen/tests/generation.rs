@@ -477,3 +477,196 @@ fn manifest_digest_ignores_its_own_field_and_operation_order() {
     value["ops"].as_array_mut().unwrap().reverse();
     assert_eq!(generate(&value, &digest(&fixture())).unwrap(), expected);
 }
+
+#[test]
+fn emits_schema_manifest_sources_and_type_schema_hashes_in_all_bindings() {
+    let runtime = aimux_ops::manifest::manifest();
+    let runtime_digest = aimux_ops::manifest::manifest_digest();
+    let outputs = generate(&runtime, &runtime_digest).unwrap();
+
+    let manifest_bytes = &outputs[Path::new("schema/manifest.json")];
+    let emitted_manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
+    assert_eq!(emitted_manifest["digest"], runtime_digest);
+    assert_eq!(emitted_manifest["inputHash"], runtime_digest);
+    assert_eq!(
+        aimux_ops::manifest::canonical_digest(emitted_manifest.clone()),
+        runtime_digest,
+        "emitted schema/manifest.json must self-verify after stripping digest and inputHash"
+    );
+    generate(&emitted_manifest, &runtime_digest)
+        .expect("aimux-codegen must accept emitted schema/manifest.json on re-generation");
+    assert_eq!(
+        emitted_manifest["generatorVersion"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert_eq!(emitted_manifest["sources"], runtime["sources"]);
+
+    let index: Value =
+        serde_json::from_slice(&outputs[Path::new("tools/aimux-codegen/generated-files.json")])
+            .unwrap();
+    let indexed: std::collections::BTreeSet<&str> = index["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry.as_str().unwrap())
+        .collect();
+    assert!(indexed.contains("schema/manifest.json"));
+    assert!(indexed.contains("aimux-ops/src/sources.rs"));
+
+    let runtime_types = runtime["types"].as_array().unwrap();
+    assert!(!runtime_types.is_empty());
+    let ops_paths = [
+        "bindings/go/generated/ops.go",
+        "bindings/java/generated/AimuxOps.java",
+        "bindings/kotlin/generated/AimuxOps.kt",
+        "bindings/swift/generated/AimuxOps.swift",
+        "bindings/flutter/lib/generated/ops.dart",
+        "bindings/node/src/generated/ops.ts",
+        "bindings/python/python/aimux/ops.py",
+    ];
+    for path in ops_paths {
+        let content = std::str::from_utf8(&outputs[Path::new(path)]).unwrap();
+        assert!(
+            content.contains("TYPE_SCHEMA_HASHES"),
+            "{path} missing TYPE_SCHEMA_HASHES"
+        );
+        for ty in runtime_types {
+            let id = ty["id"].as_str().unwrap();
+            let hash = ty["schemaHash"].as_str().unwrap();
+            assert!(content.contains(id), "{path} missing type id {id}");
+            assert!(
+                content.contains(hash),
+                "{path} missing schemaHash {hash} for {id}"
+            );
+        }
+    }
+}
+
+#[test]
+fn error_envelope_stays_open_and_closed_tagged_variants_stay_closed() {
+    let runtime = aimux_ops::manifest::manifest();
+    let outputs = generate(&runtime, &aimux_ops::manifest::manifest_digest()).unwrap();
+
+    let java_env = std::str::from_utf8(
+        &outputs[Path::new("bindings/java/generated/ai/arcships/aimux/types/ErrorEnvelope.java")],
+    )
+    .unwrap();
+    assert!(
+        java_env.contains("@JsonIgnoreProperties(ignoreUnknown = true)"),
+        "Java ErrorEnvelope must ignore unknown fields"
+    );
+
+    let py_types =
+        std::str::from_utf8(&outputs[Path::new("bindings/python/python/aimux/_types.py")]).unwrap();
+    let py_env_block = py_types
+        .split("class ErrorEnvelope(_Wire):")
+        .nth(1)
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        !py_env_block.contains("extra=\"forbid\""),
+        "Python ErrorEnvelope must remain open"
+    );
+
+    let dart_types =
+        std::str::from_utf8(&outputs[Path::new("bindings/flutter/lib/src/generated/types.dart")])
+            .unwrap();
+    assert!(
+        dart_types.contains("const allowedKeys = <String>{'capacity', 'type'};"),
+        "Dart BackendConfigRing must enforce closed keys while allowing discriminator"
+    );
+
+    let go_types = std::str::from_utf8(&outputs[Path::new("bindings/go/types_gen.go")]).unwrap();
+    assert!(
+        !go_types.contains("DisallowUnknownFields"),
+        "Go closed structs must not use decoder-wide DisallowUnknownFields"
+    );
+    assert!(
+        go_types.contains("func (v *BackendConfigVariantRing) UnmarshalJSON"),
+        "Go closed tagged variants must validate their own keys"
+    );
+
+    let java_handle_input = std::str::from_utf8(
+        &outputs[Path::new("bindings/java/generated/ai/arcships/aimux/types/HandleIdInput.java")],
+    )
+    .unwrap();
+    assert!(
+        java_handle_input.contains("DtoJson.u64Input(value);"),
+        "Java HandleIdInput must accept leading-zero decimal handle inputs"
+    );
+    let java_handle = std::str::from_utf8(
+        &outputs[Path::new("bindings/java/generated/ai/arcships/aimux/types/HandleId.java")],
+    )
+    .unwrap();
+    assert!(
+        java_handle.contains("DtoJson.u64(value);"),
+        "Java HandleId must retain canonical decimal validation"
+    );
+}
+
+#[test]
+fn generated_manifest_without_generator_version_still_self_verifies() {
+    let input = fixture();
+    let expected_digest = digest(&input);
+    let outputs = generate(&input, &expected_digest).unwrap();
+    let emitted: Value =
+        serde_json::from_slice(&outputs[Path::new("schema/manifest.json")]).unwrap();
+    assert_eq!(
+        aimux_ops::manifest::canonical_digest(emitted.clone()),
+        expected_digest
+    );
+    generate(&emitted, &expected_digest)
+        .expect("re-running generate on emitted fixture manifest must succeed");
+}
+
+#[cfg(unix)]
+#[test]
+fn write_sources_rejects_symlink_destination() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let canary = dir.path().join("canary.txt");
+    fs::write(&canary, "untouched").unwrap();
+    let src_dir = dir.path().join("aimux-ops/src");
+    fs::create_dir_all(&src_dir).unwrap();
+    symlink(&canary, src_dir.join("sources.rs")).unwrap();
+
+    let err = aimux_codegen::write_sources(dir.path(), &[]).unwrap_err();
+    assert!(
+        err.to_string().contains("symlink"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(fs::read_to_string(&canary).unwrap(), "untouched");
+}
+
+#[cfg(unix)]
+#[test]
+fn write_and_check_reject_symlinked_parent_and_dangling_leaf() {
+    use std::os::unix::fs::symlink;
+    let input = fixture();
+    let artifacts = generate(&input, &digest(&input)).unwrap();
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir_all(parent_dir.path().join("aimux-ops")).unwrap();
+    symlink(outside.path(), parent_dir.path().join("aimux-ops/src")).unwrap();
+    let write_err = write(parent_dir.path(), &artifacts).unwrap_err();
+    assert!(write_err.to_string().contains("symlink"), "{write_err}");
+    assert!(!outside.path().join("sources.rs").exists());
+    let check_err = check(parent_dir.path(), &artifacts).unwrap_err();
+    assert!(check_err.to_string().contains("symlink"), "{check_err}");
+
+    let dangling_dir = tempfile::tempdir().unwrap();
+    let src_dir = dangling_dir.path().join("aimux-ops/src");
+    fs::create_dir_all(&src_dir).unwrap();
+    symlink(
+        dangling_dir.path().join("missing-target.rs"),
+        src_dir.join("sources.rs"),
+    )
+    .unwrap();
+    let write_err = write(dangling_dir.path(), &artifacts).unwrap_err();
+    assert!(write_err.to_string().contains("symlink"), "{write_err}");
+    let check_err = check(dangling_dir.path(), &artifacts).unwrap_err();
+    assert!(check_err.to_string().contains("symlink"), "{check_err}");
+}

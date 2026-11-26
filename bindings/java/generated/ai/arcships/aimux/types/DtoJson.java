@@ -54,9 +54,17 @@ public final class DtoJson {
         }
     }
 
-    /** Checked unsigned identifier; its wire form remains a string. */
+    /** Checked unsigned identifier; its wire form remains a canonical decimal string. */
     public static long u64(String value) {
-        if (!value.matches("0|[1-9][0-9]*")) {
+        if (value == null || !value.matches("0|[1-9][0-9]*")) {
+            throw new IllegalArgumentException("Invalid uint64 string: " + value);
+        }
+        return Long.parseUnsignedLong(value);
+    }
+
+    /** Checked unsigned input identifier accepting leading zeroes per HandleIdInput schema. */
+    public static long u64Input(String value) {
+        if (value == null || !value.matches("[0-9]+")) {
             throw new IllegalArgumentException("Invalid uint64 string: " + value);
         }
         return Long.parseUnsignedLong(value);

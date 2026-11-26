@@ -359,6 +359,46 @@ class NativeBoundary(unittest.TestCase):
         with self.assertRaises(ImportError):
             aimux.verify_contract('a different consumer digest')
         aimux.verify_contract(aimux.manifest_digest())
+        types = [
+            {'id': type_id, 'revision': '1', 'schemaHash': schema_hash}
+            for type_id, schema_hash in ops.TYPE_SCHEMA_HASHES.items()
+        ]
+        negotiated = {
+            'abiVersion': aimux.ABI_VERSION,
+            'opsVersion': ops.OPS_VERSION,
+            'digest': 'changed-digest',
+            'packages': ['openai', 'extra'],
+            'types': types,
+        }
+        aimux._manifest.verify_manifest_contract(
+            negotiated,
+            actual_digest='changed-digest',
+            expected_abi=aimux.ABI_VERSION,
+            expected_ops=ops.OPS_VERSION,
+            compile_time_abi=aimux.EXPECTED_ABI_VERSION,
+            compile_time_ops=aimux.EXPECTED_OPS_VERSION,
+            compile_time_digest=aimux.EXPECTED_MANIFEST_DIGEST,
+            python_abi=ops.ABI_VERSION,
+            python_ops=ops.OPS_VERSION,
+            python_digest=ops.MANIFEST_DIGEST,
+            type_hashes=ops.TYPE_SCHEMA_HASHES,
+        )
+        broken_types = [dict(types[0], schemaHash='0' * 64), *types[1:]]
+        with self.assertRaises(ImportError) as error:
+            aimux._manifest.verify_manifest_contract(
+                dict(negotiated, types=broken_types),
+                actual_digest='changed-digest',
+                expected_abi=aimux.ABI_VERSION,
+                expected_ops=ops.OPS_VERSION,
+                compile_time_abi=aimux.EXPECTED_ABI_VERSION,
+                compile_time_ops=aimux.EXPECTED_OPS_VERSION,
+                compile_time_digest=aimux.EXPECTED_MANIFEST_DIGEST,
+                python_abi=ops.ABI_VERSION,
+                python_ops=ops.OPS_VERSION,
+                python_digest=ops.MANIFEST_DIGEST,
+                type_hashes=ops.TYPE_SCHEMA_HASHES,
+            )
+        self.assertIn(types[0]['id'], str(error.exception))
 
 
 if __name__ == '__main__':

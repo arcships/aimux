@@ -31,8 +31,10 @@ pub enum AuditMode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TraceCreateParams {
     #[serde(default = "default_capacity")]
+    #[schemars(range(min = 1, max = 1_048_576))]
     capacity: usize,
     #[serde(default = "default_scope_capacity")]
+    #[schemars(range(min = 1))]
     per_scope_capacity: usize,
     #[serde(default)]
     audit_mode: AuditMode,
@@ -102,23 +104,35 @@ fn store(target: Target) -> Result<Arc<RingTraceStore>, OpsError> {
     }
 }
 
+const MAX_TRACE_CAPACITY: usize = 1 << 20;
+
 fn create(ctx: Ctx, _target: Target, value: Params<'_>) -> CallFuture<'_> {
     Box::pin(async move {
         let p: TraceCreateParams = decode(value)?;
-        if p.capacity == 0 || p.per_scope_capacity == 0 {
+        if p.capacity == 0 || p.capacity > MAX_TRACE_CAPACITY {
             return Err(OpsError::Protocol(ProtocolError::invalid_params(
-                "trace capacities must be greater than zero",
+                "trace capacity must be between 1 and 1048576",
             )));
         }
+        if p.per_scope_capacity == 0 {
+            return Err(OpsError::Protocol(ProtocolError::invalid_params(
+                "trace perScopeCapacity must be greater than zero",
+            )));
+        }
+        let reservation = HandleRegistry::global().reserve()?;
         let mode = match p.audit_mode {
             AuditMode::Off => TraceAuditMode::Off,
             AuditMode::Shared => TraceAuditMode::Shared,
             AuditMode::Strict => TraceAuditMode::Strict,
         };
-        let trace = Arc::new(
-            RingTraceStore::with_capacity(p.capacity, p.per_scope_capacity).with_audit_mode(mode),
+        let trace = RingTraceStore::try_with_capacity(p.capacity, p.per_scope_capacity)
+            .map_err(|msg| OpsError::Protocol(ProtocolError::invalid_params(msg)))?
+            .with_audit_mode(mode);
+        let id = HandleRegistry::global().commit(
+            ctx.owner,
+            reservation,
+            Entry::TraceStore(Arc::new(trace)),
         );
-        let id = HandleRegistry::global().insert(ctx.owner, Entry::TraceStore(trace))?;
         result(id)
     })
 }

@@ -44,12 +44,19 @@ the ABI major, their required ABI minor, exact expected opsVersion, required
 operations and kinds. There is no FFI minor negotiation or stdio hello. The
 manifest digest identifies canonical metadata, not binary identity.
 
-Python verifies its generated ABI/ops/digest at import. Node checks
-ABI/ops/digest at load and exposes the verified manifest and digest. Go, Java,
-Swift and Dart enforce their implemented ABI/ops checks, and Dart can require
-operation names. Per-business-type schema revisions/hashes are not yet
-available. Use one coherent release set; these current checks do not replace
-the missing per-type compatibility gate.
+All generated bindings verify ABI compatibility (`ABI_VERSION` exact in Node, Python,
+and Java/Kotlin; ABI major `>> 16` in Go, Swift, and Dart), exact `opsVersion`, and
+manifest compatibility at load (using `MANIFEST_DIGEST` fast-path with full
+`TYPE_SCHEMA_HASHES` fallback verifying every entry against `manifest.types[].schemaHash`).
+Python verifies ABI/ops/manifest at import and exposes `manifest`, `manifest_digest()`,
+and `verify_contract(...)` on `aimux` (with `MANIFEST_DIGEST` and `TYPE_SCHEMA_HASHES`
+on `aimux.ops`); Node verifies at load and exposes `manifest` and `manifestDigest` on
+`Client` and raw `Runtime`; Go, Java, Kotlin, Swift, and Dart enforce ABI/ops/manifest
+checks on load/first use, and Dart can require operation names. Use one coherent release
+set when possible;
+older or newer runtimes remain compatible on whole-manifest digest changes when every
+type in the generated `TYPE_SCHEMA_HASHES` table matches `manifest.types[].schemaHash`
+(per-operation consumed-type subset filtering remains deferred with D10).
 
 ## Provider → model in eight interfaces
 
@@ -60,7 +67,7 @@ snippets demonstrate calls and do not claim a successful provider network run.
 
 ### C / C++
 
-C has only the fourteen primitives; use your JSON library to extract the
+C has only the sixteen primitives; use your JSON library to extract the
 decimal `handle` field from resource results. The calls are:
 
 ```c

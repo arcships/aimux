@@ -227,19 +227,48 @@ Object? _execute(NativeRequest r) {
   }
 }
 
+List<String>? _findMismatchedTypes(Object? types) {
+  if (ops.TYPE_SCHEMA_HASHES.isEmpty || types is! List || types.isEmpty) {
+    return null;
+  }
+  final actual = <String, String>{};
+  for (final entry in types) {
+    if (entry is Map) {
+      final id = entry['id'];
+      final schemaHash = entry['schemaHash'];
+      if (id is String && schemaHash is String) {
+        actual[id] = schemaHash;
+      }
+    }
+  }
+  final mismatches = <String>[];
+  for (final expected in ops.TYPE_SCHEMA_HASHES.entries) {
+    if (actual[expected.key] != expected.value) {
+      mismatches.add(expected.key);
+    }
+  }
+  return mismatches;
+}
+
 void validateManifest(int version, Map<String, dynamic> manifest) {
   final opsVersion = manifest['opsVersion'];
+  final digestMatches = manifest['digest'] == ops.MANIFEST_DIGEST;
+  final mismatches = digestMatches ? const <String>[] : _findMismatchedTypes(manifest['types']);
+  final negotiated = mismatches != null && mismatches.isEmpty;
   if (manifest['abiVersion'] != version ||
       opsVersion != ops.OPS_VERSION ||
-      manifest['digest'] != ops.MANIFEST_DIGEST ||
+      (!digestMatches && !negotiated) ||
       manifest['manifestRevision'] == null ||
       manifest['ops'] is! List ||
       manifest['handleKinds'] is! List ||
       manifest['errorCodes'] is! List) {
+    final detail = mismatches != null && mismatches.isNotEmpty
+        ? ' (incompatible types: ${mismatches.take(5).join(', ')})'
+        : '';
     throw StateError(
       'Incompatible aimux manifest: opsVersion $opsVersion '
       '(expected ${ops.OPS_VERSION}), digest ${manifest['digest']} '
-      '(expected ${ops.MANIFEST_DIGEST})',
+      '(expected ${ops.MANIFEST_DIGEST})$detail',
     );
   }
   final names = <String>{};
