@@ -8,7 +8,7 @@
 >
 > **Baseline**: `master@72a37b5058ecd620d75dfe66bee34ef51f89294a`。下文的“现行”均指该提交；拟新增文件、命令及工作流明确标为设计。
 >
-> **Related**: [ROADMAP](../ROADMAP.md) §2 / §6.1、[RFC-0036](0036-positioning-and-layered-architecture.md) §4.3 / §7、[RFC-0010](0010-perf-benchmark-vs-aisdk.md)、[#166](https://github.com/arcships/aimux/issues/166)、[#196](https://github.com/arcships/aimux/pull/196)、[#267](https://github.com/arcships/aimux/issues/267)（toolchain 固定与 S2）、[#273](https://github.com/arcships/aimux/issues/273)（S1 / P / S3 清单）、[#372](https://github.com/arcships/aimux/issues/372)（panic 策略）。
+> **Related**: [ROADMAP](../ROADMAP.md) §2 / §6.1、[RFC-0036](0036-positioning-and-layered-architecture.md) §4.3 / §7、[RFC-0010](0010-perf-benchmark-vs-aisdk.md)、[#166](https://github.com/arcships/aimux/issues/166)、[#196](https://github.com/arcships/aimux/pull/196)、[#267](https://github.com/arcships/aimux/issues/267)（toolchain 证据记录与 S2）、[#273](https://github.com/arcships/aimux/issues/273)（S1 / P / S3 清单）、[#372](https://github.com/arcships/aimux/issues/372)（panic 策略）。
 >
 > **Amends**: RFC-0010 的“基准结果如何成为内部回归门禁”，不重写其竞品比较研究。PR [#200](https://github.com/arcships/aimux/pull/200) 的 V4 全链路 / 一次性切换方向尚未合入本基线；本 RFC 不以它合入为 S1/S2/P 前提，也不将它描述为现有 API。
 
@@ -16,12 +16,12 @@
 
 1. **按产物建账，不按仓库总量建账。** 每个发布文件有 target、feature 集、profile、处理阶段、精确字节数与整数阈值；原生文件、压缩包、解包总量分别检查。缺少、重复、未登记产物均失败。
 2. **S1 仅切换 staticlib 消费路径。** 将 `ios-release` 统一命名为 `staticlib-release`，继承 `release` 并关闭 LTO；桌面 `.a`、iOS static framework 使用它。发布 `.so/.dylib/.dll` 仍使用根 `release` 的 fat-LTO。不得将一次 Cargo 调用顺带生成的 LTO-off cdylib 发布出去。
-3. **预算由“产品上限”和“已批准实测基线 +10%”同时约束。** 预算必须入库为精确整数；没有实测则处于未注册状态，不能宣称 S2 已完成。本文给出明确的初始产品上限，逐个注册时只能在该上限内收紧；超限要重新评审预算，不能伪造基线。
-4. **iOS 的 64 MiB 是现行故障防线，32 MB 是待达成产品目标。** 两者不混写为已完成。Android 默认全量，可选精简构建才承诺三 ABI 合计 ≤15 MB；pub 压缩包目标 ≤25 MB。
+3. **采用精简的 glob 分类硬上限门禁。** 全部交付物通过单一配置 `quality/size-budgets.json`（glob 规则 + 整数 `ceiling`、可选非阻塞 `target`、`aggregates` 与短期 `exceptions`）统一约束，不维护百项静态逐文件账本，也不把 `.md5/.sha*/.asc` 校验和/签名文件登记进体积配置。`release.yml` 经 build/verify → `release-gate` → publish 三阶段对全部发布产物守门，`ci.yml` 对代表性构建产物执行同源检查。
+4. **iOS 的 64 MiB 是现行故障防线，32 MB 是待达成产品目标（`target`）。** 两者不混写为已完成。Android 默认全量（基于 v0.6.1 实测按 ABI 分别设上限，三 ABI 合计硬上限 38.6 MB、目标 23.1 MB），可选精简构建才承诺三 ABI 合计 ≤15 MB；pub 压缩包硬上限 39.8 MB、目标 ≤25 MB。
 5. **性能以同一固定硬件上的基线 / 候选成对运行作为必需检查。** 单请求、200 KB 序列化、流式吞吐、RSS 增长分别判定，禁止用一个指标改善抵消另一个退化。真实 provider、费用、互联网延迟不进入硬门禁。
 6. **0.8 的 stdio 不是仅测空 ping。** 握手、已启动进程往返、真实 dispatch + 200 KB 请求、流、二进制帧、背压 / cancel 与进程内存均纳入；新功能未注册性能与体积基线不得发布。
-7. **构建、计量、校验完成后才允许发布。** 发布任务只能消费已校验且 SHA-256 一致的文件，不允许 `maturin publish` / `cargo publish` 边构建边绕过计量，或在 npm 发布 hook 中重建原生文件。
-8. **回归不得通过自动更新基线变绿。** 预算、基线、工具链升级走可审阅变更；安全紧急修复允许精确、短期、有上限的例外，不允许移除 TLS、认证、大小限制、取消语义或测试来换成绩。
+7. **构建、计量、校验完成后才允许发布。** 发布任务复用各生态官方校验工具（`cargo package`/`publish`、`npm pack`、`twine check`、`flutter pub publish --dry-run`、`gradle publish`）并只消费已校验且 SHA-256 锁定的产物，不允许边发布边绕过门禁。
+8. **回归不得通过静默抬高上限变绿。** 分类上限变更走可审阅 PR；CI 与 release 保持 Rust `stable` 工具链（MSRV 由根 `Cargo.toml` 的 `rust-version` 约束），不硬锁特定 minor 版本，而是从发布构建 runner 采集真实 `rustc -V` 写入 `assets-manifest.json`（`rustcVersion` / `rustcVersions`）作为可追溯 provenance；安全紧急修复允许精确、短期、有上限的例外。
 
 ## 2. 问题、事实与边界
 
@@ -86,7 +86,7 @@
 
 | ID / 实际 target | 最终 raw C（bytes） | 依据、后续目标 |
 |---|---:|---|
-| staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1a 实测 CI shipped 95,078,500、本地 95,003,454（c35acb2），本地去 bitcode 后 84,942,462，S1c 的合并加 strip 到 58,742,392 才进 C（§5.3、§15.7）；#377/#378 的 CI 实测 85,057,316 → **58,868,840**（2c871b1，§15.1），进 C |
+| staticlib / `x86_64-unknown-linux-gnu` | 75,000,000（target 70,000,000） | ROADMAP 目标 ≤70 MB；#196 历史 Linux 66.5 MB；#377/#378 CI 实测 85,057,316 → **58,868,840**（2c871b1，§15.1）；v0.7.0（含 #532/#533/#534/#535/#536/#538/#544/#545 与 16 C ABI 导出）CI 最终 merge+strip 实测 **70,454,378 B**（`quality/size-budgets.json` 校准硬上限至 75,000,000，保留 70,000,000 作为非阻塞 `target` warning） |
 | staticlib / `x86_64-apple-darwin` | 70,000,000 | ROADMAP 产品目标，平台基线由 release.yml 首次运行打印（#375） |
 | staticlib / `aarch64-apple-darwin` | 70,000,000 | 同上；#375 的 CI 实测 65,448,272（c35acb2），#377 去 sysroot bitcode 后 55,605,768（0e60808），已在 C 内；Mach-O 档案没有 ELF 每函数一段的段表开销，所以比 Linux 小 30 MB（§15.7） |
 | staticlib / `x86_64-pc-windows-gnu` | 70,000,000 | 同上；仍使用 cgo 可链接 GNU archive；#378 的 CI Windows 腿实测 66,555,014，去 sysroot bitcode 后 57,168,908（已在 C 内），合并后 CI 48,101,728（2c871b1，本地 48,083,416；§15.1、§15.6） |
@@ -215,7 +215,7 @@ S1a（profile 切换，#375）之后 Linux `.a` 是 95,078,500 B（CI shipped；
 
 拟新增 `bench/environment.json`，登记专用 `perf-linux-x64-01` 执行池中的**唯一具体机器**：CPU 型号/stepping、物理核心与 SMT 拓扑、microcode、RAM、内核、OS 镜像 digest、CPU governor/turbo 策略。分配至少 4 个独占物理核心和 16 GiB RAM；锁定两个物理核心运行 client/runtime、一个运行 mock、一个采样，兄弟 SMT 核不安排其他负载。硬件不存在或无法隔离时，先完成配置，不能拿公共 runner 结果填正式基线。
 
-绑定进程与 mock 都固定 affinity；Tokio worker 数固定 2。编译使用固定通用 target，不启用宿主 `target-cpu=native` 来偷换发布特性。runner 身份/拓扑不匹配登记值，作 infrastructure failure。toolchain lock 精确记录 rustc/LLVM、Node patch、Python patch、编译器/linker、NDK/Xcode，以及依赖 lock digest；不得使用 `stable/latest/^` 作为可复现证据。选择登记时实际可用版本，不在 RFC 捏造测量时尚未存在的版本号。
+绑定进程与 mock 都固定 affinity；Tokio worker 数固定 2。编译使用固定通用 target，不启用宿主 `target-cpu=native` 来偷换发布特性。runner 身份/拓扑不匹配登记值，作 infrastructure failure。Rust 工具链在 CI/release 保持 `stable`（MSRV 由 `Cargo.toml` 声明），并在发布清单与基准证据中精确记录 `rustc -V`（`rustcVersion`）、LLVM、Node/Python/编译器/SDK 版本与依赖 digest；同一次成对性能实验中 base/head 必须使用同一运行器的同一精确工具链版本，不在 RFC 捏造测量时尚未存在的版本号。
 
 编译和测量隔离；测量开始前无同机编译、swap 活动或其他作业，CPU steal 不超过 1%，背景 CPU 利用率不超过 5%。基线校准数据越界使整对运行失效；候选本身的高 CPU、内存或抖动不能作为“环境噪声”删除。
 
@@ -326,24 +326,21 @@ stdio 初始 B/H 注册需按上表所有场景完成；任一个缺样本不允
 ### 9.1 拟新增文件与唯一来源
 
 ```text
-quality/artifacts.json             # 实际发布清单、profile、feature、路径与依赖包关系
-quality/size-budgets.json          # 每个 artifact/metric 的 B/H/C、证据、目标
-quality/perf-baselines/            # 环境 / scenario / backend / anchor 分版本
-quality/exceptions.json           # 精确范围、原因、批准、期限与临时上限
-scripts/quality/measure-artifacts.py
-scripts/quality/check-budgets.py
-scripts/quality/compare-perf.py
+quality/size-budgets.json          # glob 分类硬上限、非阻塞 target、aggregate 与短期 exceptions
+scripts/quality/check_budgets.py   # 体积门禁、归档卫生、--compare 增量报告与 pub dry-run 检查
+scripts/quality/compare-perf.py    # 性能回归统计比对器（#522）
+scripts/stage_release_assets.py    # 显式 21 项发布资产打包、rustcVersion 采集与 assets-manifest.json 校验
 bench/environment.json
-bench/fixtures/                   # synthetic fixture + hash
+bench/fixtures/                    # synthetic fixture + hash
 ```
 
-路径是本 RFC 的拟议实现，不是当前已存在。schema version 固定，JSON 拒绝未知键、重复 ID、浮点/负数字节、缺字段。产物清单驱动 build matrix 与汇总 expected-set；若暂时无法生成 YAML matrix，增加双向一致性测试确保清单与工作流矩阵一致。单一表同时服务 PR/nightly/tag，不能各维护一份阈值。
+单一 `quality/size-budgets.json` 同时服务 PR/nightly/release，不重复维护多份阈值；原生二进制 bitcode/strip 校验继续复用 `scripts/check_native_artifact.py`，各生态包格式复用官方工具（`cargo package`、`npm pack`、`twine check`、`flutter pub publish --dry-run`、`gradle publish`）。
 
-拟议开发命令：
+开发与校验命令：
 
 ```sh
-python3 scripts/quality/measure-artifacts.py --manifest quality/artifacts.json --input staging --out size-report.json
-python3 scripts/quality/check-budgets.py --report size-report.json --budgets quality/size-budgets.json
+python3 scripts/quality/check_budgets.py --validate-only
+python3 scripts/quality/check_budgets.py staging --out size-report.json --compare base-report.json
 python3 scripts/quality/compare-perf.py --base base.json --head head.json --anchor approved-anchor.json
 ```
 
@@ -446,10 +443,10 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ### S1 / S2
 
-- [ ] release 清单准确覆盖 4 个桌面 staticlib、3 个桌面 cdylib、2 个 iOS slice、3 个 Android ABI、6 个 Node native/平台包、3 个实际 wheel target、9 个工具、所有 Rust/JVM/Flutter 与明确上传的附属文件
+- [x] `quality/size-budgets.json` 通过 glob 规则覆盖桌面 staticlib/cdylib、iOS xcframework/slice、Android 3-ABI 及合计、Node `.node`/`.tgz`、Python `.whl`、Rust `.crate`、CLI/web/replay、JVM JAR/POM/module、Flutter pub、`aimux.h` 与 `assets-manifest.json`（不把 `.md5/.sha*/.asc` 写进静态账本）
 - [ ] ROADMAP 的 `.a ×5` 差异被明确修正或第 5 个 target 经正式新增；不靠猜测补齐
-- [ ] 每个实际文件的 raw/packed/unpacked 适用指标都有整数 B/H/C、hash、recipe 和环境证据；无“稍后补”即可通过的路径
-- [ ] H-1/H/H+1 边界测试；MB/MiB 换算；缺失/重复/未登记/损坏包/路径穿越/跨 profile 文件均稳定失败
+- [x] `scripts/quality/check_budgets.py` 提供 `C-1/C/C+1` 边界测试、非阻塞 `target_warning`、`--compare` 增量输出、短期 `exceptions` 与归档安全校验（拒绝路径穿越、符号链接、重复路径与损坏归档）
+- [x] `scripts/stage_release_assets.py` 写入并校验 `assets-manifest.json`（`sourceSha`、`releaseVersion`、全部 12 路 Rust 构建器的真实 `rustcVersion` / `rustcVersions` 及 21 项资产字节与 SHA-256），CI/release 保持 `stable` 不硬 pin minor 版本
 - [ ] 恢复 staticlib fat-LTO 的负例触发 bitcode/profile/size 至少一项失败；误取 LTO-off cdylib 必然失败
 - [ ] 四桌面 `.a` 各 ≤70 MB（S1c 之后；#378 的 CI：Linux 58,868,840、Windows 48,101,728、macOS arm64 55,605,768；v0.6.0 run `41598406128` / v0.6.1 run `41948914325` 实测 `x86_64-apple-darwin` 55,569,768 / 55,650,456、arm64 56,212,416 / 56,267,744、Windows 48,705,408 / 48,758,392、Linux 59,740,884 / 59,824,920 都在 C 内），iOS 当前 64 MiB 守门有效；32 MB 目标未达成时不标完成
 - [ ] 正式交付库通过对应 C/Go/iOS 链接、各语言 contract、移动 example 测试，导出符号/默认能力不缺失

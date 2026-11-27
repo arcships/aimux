@@ -1,8 +1,9 @@
 name: Release
 
-# First-release pipeline (M1): Rust crates → crates.io, Node → npm,
-# Python → PyPI (trusted publishing), Go .a artifacts + C ABI artifacts →
-# GitHub Release. Swift / Kotlin / Flutter land in later milestones.
+# Immutable release pipeline:
+#   Phase 1: Build, test, and enforce quality/size-budgets.json (no publish credentials)
+#   Phase 2: Unified `release-gate` barrier (all selected builds + tag/SHA alignment)
+#   Phase 3: Scoped-credential publishers consuming pre-verified artifacts
 
 on:
   push:
@@ -35,93 +36,38 @@ on:
         default: false
 
 permissions:
-  contents: write
-  id-token: write   # npm provenance + PyPI trusted publishing
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Rust core → crates.io (dependency order) ─────────────────────────────
-  rust-publish:
-    name: Publish crates to crates.io
+  # ── Phase 1: Build & Verify (no publish credentials) ─────────────────────
+
+  rust-build:
+    name: Build & verify Rust crates
     runs-on: ubuntu-latest
-    environment: release
     if: github.event_name == 'push' || github.event.inputs.rust == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # Idempotent publish: skips a crate whose version already exists on
-      # crates.io, so re-running the workflow after a partial failure is safe.
-      # The version is read from the workspace Cargo.toml so this never goes
-      # stale across releases.
-      - name: Publish aimux-stream
+      - uses: Swatinem/rust-cache@v2
+      - name: Check workspace and verify all 6 .crate budgets
         run: |
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-stream/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-stream@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-stream
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-core
-        run: |
-          sleep 30
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-core/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-core@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-core
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-provider-utils
-        run: |
-          sleep 30
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-provider-utils/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-provider-utils@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-provider-utils
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-providers
-        run: |
-          sleep 30
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-providers/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-providers@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-providers
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-ops
-        run: |
-          sleep 30
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ops/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-ops@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-ops
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-ffi
-        run: |
-          sleep 30
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ffi/${VERSION}" > /dev/null 2>&1; then
-            echo "aimux-ffi@${VERSION} already published, skipping"
-          else
-            cargo publish -p aimux-ffi
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          rustc -V
+          cargo check --workspace
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          rm -rf target/package
+          cargo package --no-verify \
+            -p aimux-stream -p aimux-core -p aimux-provider-utils \
+            -p aimux-providers -p aimux-ops -p aimux-ffi
+          for crate in aimux-stream aimux-core aimux-provider-utils aimux-providers aimux-ops aimux-ffi; do
+            test -f "target/package/${crate}-${VERSION}.crate" || { echo "Missing ${crate}-${VERSION}.crate" >&2; exit 1; }
+          done
+          python3 scripts/quality/check_budgets.py target/package/*.crate \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
 
-  # ── Node binding: build per-platform .node, then publish to npm ──────────
   node-build:
     name: Node build (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -175,33 +121,28 @@ jobs:
         working-directory: bindings/node
         shell: bash
         run: npx napi build --platform --release --target ${{ matrix.settings.target }}
-      - name: Verify artifact
-        working-directory: bindings/node
-        shell: bash
-        run: test -f '${{ matrix.settings.binary }}'
-      # Load the built binding where the runner can run it (the two cross
-      # targets, aarch64 Linux and arm64 Windows, are only built here), and
-      # print every slice's size (RFC-0043 §3.1).
-      - name: Load the binding, print its size
+      - name: Load binding and verify native ceilings
         working-directory: bindings/node
         shell: bash
         run: |
+          test -f '${{ matrix.settings.binary }}'
           case '${{ matrix.settings.target }}' in
             x86_64-unknown-linux-gnu|x86_64-apple-darwin|aarch64-apple-darwin|x86_64-pc-windows-msvc)
               node -e "const m = require('./index.js'); const n = Object.keys(m).length; if (!n) throw new Error('the binding loaded with no exports'); console.log(n, 'exports')" ;;
           esac
-          "$(command -v python3 || command -v python)" ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
+          PY="$(command -v python3 || command -v python)"
+          "$PY" ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
+          "$PY" ../../scripts/quality/check_budgets.py '${{ matrix.settings.binary }}' --source-sha "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: node-${{ matrix.settings.target }}
           path: bindings/node/*.node
 
-  node-publish:
-    name: Publish Node to npm
+  node-pack:
+    name: Pack & verify npm tarballs
     needs: node-build
     runs-on: ubuntu-latest
-    environment: release
     if: github.event_name == 'push' || github.event.inputs.node == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -209,59 +150,81 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-      - name: Install dependencies
+      - name: Build napi JS wrapper, compile TypeScript dist/, and create platform packages
         working-directory: bindings/node
-        run: npm ci
-      - name: Build napi index.js + d.ts (regenerate from current lib.rs)
-        # index.js / index.d.ts are napi build artifacts; the committed
-        # copies may be stale (e.g. initLogging added in RFC-0014 but not
-        # re-exported in the committed index.js). Rebuild on the host to
-        # regenerate them before tsc + prepublish.
-        working-directory: bindings/node
-        run: npm run build
-      - name: Create platform packages
-        working-directory: bindings/node
-        run: npx napi create-npm-dirs
+        run: |
+          npm ci
+          npm run build
+          npm run build:typed
+          npx napi create-npm-dirs
       - name: Download platform binaries
         uses: actions/download-artifact@v4
         with:
           path: bindings/node/artifacts
           pattern: node-*
-      - name: Collect and verify platform packages
+      - name: Pack all 7 npm tarballs and verify structure & ceilings
         working-directory: bindings/node
         shell: bash
         run: |
           npx napi artifacts --output-dir artifacts --npm-dir npm
-          expected=(
-            npm/win32-x64-msvc/aimux.win32-x64-msvc.node
-            npm/win32-arm64-msvc/aimux.win32-arm64-msvc.node
-            npm/darwin-x64/aimux.darwin-x64.node
-            npm/darwin-arm64/aimux.darwin-arm64.node
-            npm/linux-x64-gnu/aimux.linux-x64-gnu.node
-            npm/linux-arm64-gnu/aimux.linux-arm64-gnu.node
-          )
-          for binary in "${expected[@]}"; do
-            test -f "$binary" || { echo "Missing $binary" >&2; exit 1; }
+          rm -rf packed && mkdir -p packed
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const opt = {};
+            for (const d of fs.readdirSync("npm").sort()) {
+              const p = JSON.parse(fs.readFileSync(`npm/${d}/package.json`, "utf8"));
+              opt[p.name] = p.version;
+            }
+            if (Object.keys(opt).length !== 6) throw new Error(`Expected 6 platform packages, got ${Object.keys(opt).length}`);
+            pkg.optionalDependencies = opt;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          '
+          for dir in npm/*; do
+            test -d "$dir"
+            (cd "$dir" && npm pack --pack-destination ../../packed)
           done
-          test "$(find npm -type f -name 'aimux.*.node' | wc -l | tr -d ' ')" = 6
-      - name: Publish
-        working-directory: bindings/node
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
-          NPM_CONFIG_ACCESS: public
+          npm pack --pack-destination packed
+          test "$(find packed -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')" = 7
+          node -e '
+            const fs = require("fs");
+            const { execFileSync } = require("child_process");
+            const main = fs.readdirSync("packed").find((f) => /^arcships-aimux-\d/.test(f));
+            if (!main) throw new Error("Missing main npm tarball");
+            const list = new Set(execFileSync("tar", ["-tzf", `packed/${main}`], { encoding: "utf8" }).trim().split(/\r?\n/));
+            for (const req of ["package/dist/index.js", "package/dist/index.d.ts", "package/index.js", "package/package.json"]) {
+              if (!list.has(req)) throw new Error(`${main}: missing required ${req}`);
+            }
+            const pkg = JSON.parse(execFileSync("tar", ["-xOf", `packed/${main}`, "package/package.json"], { encoding: "utf8" }));
+            if (!pkg.optionalDependencies || Object.keys(pkg.optionalDependencies).length !== 6) {
+              throw new Error(`${main}: missing 6 optionalDependencies`);
+            }
+          '
+          python3 ../../scripts/quality/check_budgets.py packed/*.tgz \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          (cd packed && LC_ALL=C ls -1 *.tgz | xargs sha256sum > SHA256SUMS)
+      - name: Upload verified npm tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-packed-release
+          path: bindings/node/packed/
+          retention-days: 90
 
-  # ── Python binding: build + publish platform wheels (OIDC trusted) ───────
-  python-release:
-    name: Publish Python (${{ matrix.os }})
+  python-build:
+    name: Build & verify Python wheel (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || github.event.inputs.python == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            manylinux: auto
+          - os: macos-latest
+            manylinux: ""
+          - os: windows-latest
+            manylinux: ""
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -269,17 +232,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Build and publish wheel
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          command: publish
-          args: --no-sdist --compression-method deflated --compression-level 9
+          command: build
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist --compression-method deflated --compression-level 9
           working-directory: bindings/python
+      - name: Verify wheel with twine and size ceilings
+        working-directory: bindings/python
+        shell: bash
+        run: |
+          PY="$(command -v python3 || command -v python)"
+          "$PY" -m pip install --quiet twine
+          "$PY" -m twine check dist/*.whl
+          "$PY" ../../scripts/quality/check_budgets.py dist/*.whl \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          (cd dist && "$PY" -c 'import hashlib, pathlib; [print(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}") for p in sorted(pathlib.Path(".").glob("*.whl"))]' > "SHA256SUMS-${{ matrix.os }}")
+      - name: Upload verified wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.os }}
+          path: bindings/python/dist/
+          retention-days: 90
 
-  # ── Go binding: build libaimux_ffi.a per platform, ship on GitHub Release
-  #    (users download the archive for their platform via `go generate`).
-  #    NOTE: Windows uses the gnu target — Go's cgo links with mingw gcc,
-  #    which cannot consume MSVC-format .a archives. ─────────────────────────
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -303,29 +280,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
-          # rust-objcopy strips the sysroot bitcode out of the archive below.
           components: llvm-tools
       - uses: Swatinem/rust-cache@v2
-      # macos-13 runners do not preinstall Go (ubuntu/windows do) — pin it
-      # explicitly so every host has the same toolchain.
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-      # staticlib-release: the release profile without LTO. The consumer's
-      # cgo link step does the dead-code elimination, so fat LTO only embeds
-      # bitcode into the archive and doubles it (RFC-0043 §5.1, §15.1).
       - name: Build static archive
-        run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.settings.target }}
-      # rustup's sysroot objects (std, alloc, core, ...) carry their LLVM
-      # bitcode even under lto = false, about 10 MB per archive that no
-      # consumer's linker reads; --strip-bitcode removes those sections in
-      # place and then requires the archive to carry none (RFC-0043 §5.3
-      # S1b). The Go tests below link the stripped archive, which is the
-      # file that gets staged. The Windows runner's bash may know only
-      # `python`. cargo emits the cdylib next to the archive and ld64 would
-      # link the .dylib instead of the .a, so the shared libraries go before
-      # the Go tests link.
-      - name: Strip sysroot bitcode, check the archive, keep only the archive
+        run: |
+          rustc -V
+          cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.settings.target }}
+      - name: Strip sysroot bitcode, check archive, keep only the archive
         shell: bash
         run: |
           "$(command -v python3 || command -v python)" scripts/check_native_artifact.py --strip-bitcode \
@@ -333,11 +297,7 @@ jobs:
           rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
                 target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
-      # Merge the members into one object rooted at the exported C API and
-      # strip local symbols (RFC-0043 §5.3 S1c): GNU ld `-r --gc-sections`
-      # on ELF, GNU ld `-r` on COFF, and Apple `ld -r -exported_symbols_list`
-      # + `strip -S -x` on Mach-O. The Go tests below link the merged archive.
-      - name: Merge the archive into one object, strip local symbols
+      - name: Merge archive into one object and strip local symbols
         shell: bash
         run: |
           "$(command -v python3 || command -v python)" scripts/merge_archive.py \
@@ -349,18 +309,30 @@ jobs:
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/staticlib-release"
           go vet ./...
           go test ./...
-      - name: Stage archive with platform name
+      - name: Stage archive, verify ceiling, and record rustc provenance
         shell: bash
         run: |
-          mkdir -p staging
-          cp target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a staging/libaimux_ffi-${{ matrix.settings.target }}.a
+          mkdir -p staging rustc-provenance
+          TARGET="${{ matrix.settings.target }}"
+          rustc -V > "rustc-provenance/go-${TARGET}.txt"
+          cp "target/${TARGET}/staticlib-release/libaimux_ffi.a" "staging/libaimux_ffi-${TARGET}.a"
+          "$(command -v python3 || command -v python)" scripts/quality/check_budgets.py \
+            "staging/libaimux_ffi-${TARGET}.a" \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: libaimux_ffi-${{ matrix.settings.target }}.a
           path: staging/libaimux_ffi-${{ matrix.settings.target }}.a
+      - name: Upload rustc provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustc-provenance-go-${{ matrix.settings.target }}
+          path: rustc-provenance/go-${{ matrix.settings.target }}.txt
+          if-no-files-found: error
+          retention-days: 90
 
-  # ── C ABI shared libraries (C/C++ + reference for other bindings) ────────
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
@@ -387,32 +359,38 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build cdylib
-        run: cargo build -p aimux-ffi --release --target ${{ matrix.target }}
-      - name: Stage library with platform name
+        run: |
+          rustc -V
+          cargo build -p aimux-ffi --release --target ${{ matrix.target }}
+      - name: Stage library, verify ceiling, and record rustc provenance
         shell: bash
         run: |
-          mkdir -p staging
-          cp aimux-ffi/include/aimux.h staging/aimux.h
+          mkdir -p staging rustc-provenance
+          rustc -V > "rustc-provenance/ffi-${{ matrix.target }}.txt"
           case "${{ matrix.target }}" in
             *linux*) cp target/${{ matrix.target }}/release/libaimux_ffi.so staging/${{ matrix.artifact }} ;;
             *darwin*) cp target/${{ matrix.target }}/release/libaimux_ffi.dylib staging/${{ matrix.artifact }} ;;
             *windows*) cp target/${{ matrix.target }}/release/aimux_ffi.dll staging/${{ matrix.artifact }} ;;
           esac
-          # RFC-0043 §3.1 raw_bytes of the shipped shared library (the
-          # Windows runner's bash may know only `python`).
-          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/${{ matrix.artifact }}
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            cp aimux-ffi/include/aimux.h staging/aimux.h
+          fi
+          PY="$(command -v python3 || command -v python)"
+          "$PY" scripts/check_native_artifact.py staging/${{ matrix.artifact }}
+          "$PY" scripts/quality/check_budgets.py staging --source-sha "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            staging/${{ matrix.artifact }}
-            staging/aimux.h
+          path: staging/*
+      - name: Upload rustc provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustc-provenance-ffi-${{ matrix.target }}
+          path: rustc-provenance/ffi-${{ matrix.target }}.txt
+          if-no-files-found: error
+          retention-days: 90
 
-  # ── aimux-web console + CLI: self-contained binaries with the embedded
-  #    frontend, shipped on the GitHub Release so users download one file and
-  #    run it (no cargo / npm step). The CLI tools ride along on the same
-  #    matrix — they share the heavy provider dependency tree. ───────────────
   console-build:
     name: aimux-web (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -420,12 +398,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # NOTE: the entries MUST live under a `settings:` key — the job
-        # references matrix.settings.*. A bare `include:` list defines
-        # matrix.host/target/suffix instead, so runs-on resolves to an empty
-        # runner label and GitHub silently drops the job from the run (no
-        # error, not even a "skipped" entry — verified by bisect on
-        # 2026-08-17; this kept the console binaries out of the v0.3.0 tag run).
         settings:
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -450,41 +422,37 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Build console (embedded frontend)
-        run: cargo build --release --target ${{ matrix.settings.target }} -p aimux-web --features embed-frontend
-      - name: Build CLI tools
-        run: cargo build --release --target ${{ matrix.settings.target }} -p aimux-cli -p aimux-replay
-      - name: Stage binaries with platform suffix
+      - name: Build console and CLI binaries
+        run: |
+          rustc -V
+          cargo build --release --target ${{ matrix.settings.target }} -p aimux-web --features embed-frontend
+          cargo build --release --target ${{ matrix.settings.target }} -p aimux-cli -p aimux-replay
+      - name: Stage binaries, verify ceilings, and record rustc provenance
         shell: bash
         run: |
-          mkdir -p staging
+          mkdir -p staging rustc-provenance
+          rustc -V > "rustc-provenance/console-${{ matrix.settings.target }}.txt"
           EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
           cp "target/${{ matrix.settings.target }}/release/aimux-web$EXT" "staging/aimux-web${{ matrix.settings.suffix }}"
-          # aimux-cli's [[bin]] is named "aimux" — rename on the way out so
-          # the release asset stays aimux-cli-<platform> (the -f guard keeps
-          # the replay step honest on platforms where a tool is absent).
-          if [ -f "target/${{ matrix.settings.target }}/release/aimux$EXT" ]; then
-            cp "target/${{ matrix.settings.target }}/release/aimux$EXT" "staging/aimux-cli${{ matrix.settings.suffix }}"
-          fi
-          for tool in aimux-replay; do
-            if [ -f "target/${{ matrix.settings.target }}/release/$tool$EXT" ]; then
-              cp "target/${{ matrix.settings.target }}/release/$tool$EXT" "staging/$tool${{ matrix.settings.suffix }}"
-            fi
-          done
+          cp "target/${{ matrix.settings.target }}/release/aimux$EXT" "staging/aimux-cli${{ matrix.settings.suffix }}"
+          cp "target/${{ matrix.settings.target }}/release/aimux-replay$EXT" "staging/aimux-replay${{ matrix.settings.suffix }}"
+          "$(command -v python3 || command -v python)" scripts/quality/check_budgets.py staging --source-sha "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: aimux-web-${{ matrix.settings.target }}
           path: staging/*
+      - name: Upload rustc provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustc-provenance-console-${{ matrix.settings.target }}
+          path: rustc-provenance/console-${{ matrix.settings.target }}.txt
+          if-no-files-found: error
+          retention-days: 90
 
-  # ── Flutter mobile artifacts: Android .so per ABI + iOS .xcframework ──────
-  # Built at release time and embedded into the Flutter plugin package by the
-  # flutter-publish job, so the pub.dev artifact ships with its native core.
   flutter-ffi-mobile:
     name: Flutter mobile FFI (${{ matrix.platform }})
     runs-on: ${{ matrix.host }}
-    # Built for both the GitHub Release (manual integration) and the
-    # pub.dev plugin package (flutter input).
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true' || github.event.inputs.flutter == 'true'
     strategy:
       fail-fast: false
@@ -502,9 +470,11 @@ jobs:
         with:
           targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
-      - name: Build Android .so (cargo-ndk)
+      - name: Build Android .so (cargo-ndk) and verify ceilings
         if: matrix.platform == 'android'
         run: |
+          mkdir -p rustc-provenance
+          rustc -V | tee rustc-provenance/flutter-android.txt
           cargo install cargo-ndk
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o staging/android \
@@ -512,71 +482,32 @@ jobs:
           for abi in arm64-v8a armeabi-v7a x86_64; do
             test -f "staging/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
           done
-          # RFC-0043 §3.1 raw_bytes per ABI.
-          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/android/*/libaimux_ffi.so
-      - name: Build iOS xcframework
+          python3 scripts/check_native_artifact.py staging/android/*/libaimux_ffi.so
+          python3 scripts/quality/check_budgets.py staging/android --source-sha "${{ github.sha }}"
+      - name: Build iOS xcframework and verify ceilings
         if: matrix.platform == 'ios'
         run: |
-          mkdir -p staging
+          mkdir -p staging rustc-provenance
+          rustc -V | tee rustc-provenance/flutter-ios.txt
           bash scripts/build-ios-xcframework.sh staging/aimux_ffi.xcframework
+          python3 scripts/quality/check_budgets.py staging/aimux_ffi.xcframework --source-sha "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: flutter-${{ matrix.platform }}
           path: staging/
-
-  # ── JVM bindings: publish aimux-java + aimux-kotlin to Maven Central ──────
-  jvm-publish:
-    name: Publish Java+Kotlin to Maven Central
-    runs-on: ubuntu-latest
-    environment: release
-    if: github.event_name == 'push' || github.event.inputs.jvm == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Upload rustc provenance
+        uses: actions/upload-artifact@v4
         with:
-          distribution: temurin
-          java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Publish aimux-java
-        working-directory: bindings/java
-        run: gradle publish
-        env:
-          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
-          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
-          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
-      - name: Publish aimux-kotlin
-        working-directory: bindings/kotlin
-        run: gradle publish
-        env:
-          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
-          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
-          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
-      - name: Submit deployments to Central Portal
-        # The OSSRH Staging API compatibility service only stages uploads;
-        # this POST (same IP, same runner) moves them into the Portal for
-        # the ai.arcships namespace.
-        env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-        run: |
-          curl -sS -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" \
-            -X POST "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/ai.arcships" \
-            -w '\nHTTP %{http_code}\n'
-          # 201/202 = accepted; the deployment then appears in the Portal
-          # (central.sonatype.com/publishing) for release.
+          name: rustc-provenance-flutter-${{ matrix.platform }}
+          path: rustc-provenance/flutter-${{ matrix.platform }}.txt
+          if-no-files-found: error
+          retention-days: 90
 
-  # ── Flutter plugin: embed mobile FFI libs, test, publish to pub.dev ───────
-  # Publisher: arcships.ai (pub.dev). The native core (Android .so per ABI +
-  # iOS xcframework) is built by flutter-ffi-mobile and embedded into the
-  # package so consumers get a working plugin from `flutter pub add aimux`.
-  flutter-publish:
-    name: Publish Flutter to pub.dev
+  flutter-verify:
+    name: Verify Flutter pub package
     needs: flutter-ffi-mobile
     runs-on: ubuntu-latest
-    environment: release
     if: github.event_name == 'push' || github.event.inputs.flutter == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -591,80 +522,813 @@ jobs:
           path: mobile-artifacts
           pattern: flutter-*
           merge-multiple: true
-      - name: Embed Android .so per ABI
+      - name: Embed mobile FFI libraries, test, and pack exact pub archive
         run: |
           for abi in arm64-v8a armeabi-v7a x86_64; do
             test -f "mobile-artifacts/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
             cp "mobile-artifacts/android/$abi/libaimux_ffi.so" \
                "bindings/flutter/android/src/main/jniLibs/$abi/libaimux_ffi.so"
           done
-      - name: Embed iOS xcframework
-        run: |
-          # flutter-ffi-mobile (ios) uploads staging/ contents, so the
-          # artifact lands at the root (no ios/ prefix).
           test -f mobile-artifacts/aimux_ffi.xcframework/Info.plist
+          rm -rf bindings/flutter/ios/aimux_ffi.xcframework
           cp -r mobile-artifacts/aimux_ffi.xcframework bindings/flutter/ios/
-      - name: Build host FFI library (for tests)
-        run: cargo build -p aimux-ffi --release
-      # The Dart ABI tests load a deterministic fixture and the Dart bridge.
-      # CI builds both in its flutter-binding job; the release job needs the
-      # same preparation before `flutter test`.
-      - name: Build the ABI test fixtures and the Dart bridge
-        working-directory: bindings/flutter
-        run: |
-          python3 tool/build_test_fixture.py
-          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
-            -o .dart_tool/native/libaimux_dart.so
-      - name: Test
-        working-directory: bindings/flutter
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-        run: flutter test
-      - name: Analyze
-        working-directory: bindings/flutter
-        run: flutter analyze
-      - name: Publish to pub.dev
-        working-directory: bindings/flutter
-        env:
-          # OAuth credentials from `dart pub login` (pub-credentials.json),
-          # stored as a single JSON secret.
-          PUB_DEV_TOKEN: ${{ secrets.PUB_DEV_TOKEN }}
-        run: |
-          mkdir -p "$HOME/.config/dart"
-          printf '%s' "$PUB_DEV_TOKEN" > "$HOME/.config/dart/pub-credentials.json"
-          flutter pub publish --force
+          cargo build -p aimux-ffi --release
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          rm -rf flutter-packed
+          mkdir -p flutter-packed
+          (
+            cd bindings/flutter
+            python3 tool/build_test_fixture.py
+            cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
+              -o .dart_tool/native/libaimux_dart.so
+            LD_LIBRARY_PATH="${{ github.workspace }}/target/release" flutter test
+            flutter analyze
+            flutter pub publish --to-archive="../../flutter-packed/aimux-${VERSION}.tar.gz"
+          )
+          test -f "flutter-packed/aimux-${VERSION}.tar.gz"
+          python3 scripts/quality/check_budgets.py "flutter-packed/aimux-${VERSION}.tar.gz" \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          (cd flutter-packed && sha256sum "aimux-${VERSION}.tar.gz" > SHA256SUMS)
+      - name: Upload verified Flutter pub archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-packed-release
+          path: flutter-packed
+          retention-days: 90
 
-  # ── GitHub Release: aggregate all binary artifacts (C ABI libs + Go .a) ──
-  github-release:
-    name: Create GitHub Release
+  jvm-build:
+    name: Build & verify JVM artifacts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.jvm == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Stage locally, verify JVM ceilings, and record reproducible SHA-256 sums
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          rm -rf "$HOME/.m2/repository/ai/arcships"
+          (cd bindings/java && gradle publishToMavenLocal)
+          (cd bindings/kotlin && gradle publishToMavenLocal)
+          python3 scripts/quality/check_budgets.py \
+            "$HOME/.m2/repository/ai/arcships" \
+            --allow-unmatched \
+            --source-sha "${{ github.sha }}" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+          (
+            cd "$HOME/.m2/repository/ai/arcships"
+            for art in aimux-java aimux-kotlin; do
+              for ext in ".jar" "-sources.jar" "-javadoc.jar" ".pom" ".module"; do
+                f="${art}/${VERSION}/${art}-${VERSION}${ext}"
+                test -f "$f" || { echo "Missing JVM artifact $f" >&2; exit 1; }
+                sha256sum "$f"
+              done
+            done
+          ) > jvm-verified.sha256
+      - name: Upload verified JVM checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-verified-checksums
+          path: jvm-verified.sha256
+          retention-days: 90
+
+  github-stage:
+    name: Stage & verify GitHub Release assets
     needs: [go-build, ffi-build, console-build, flutter-ffi-mobile]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     steps:
       - uses: actions/checkout@v4
-      # workflow_dispatch runs have no tag ref; resolve it from Cargo.toml so
-      # softprops/action-gh-release can target the right tag either way.
-      - name: Resolve version
-        id: version
-        run: |
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-      - name: Download all artifacts
+      - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
-      # The download holds every artifact of the run, the Node binaries too
-      # when the Node build finished first. Only the assets on the list in
-      # scripts/stage_release_assets.py go up, under the names it gives them
-      # (one library per Android ABI, the xcframework as one zip), and a
-      # missing one fails the job before the release is created (#273).
-      - name: Stage the release assets by their list
-        run: python3 scripts/stage_release_assets.py release-assets release-upload
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Download Rust toolchain provenance
+        uses: actions/download-artifact@v4
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          files: release-upload/*
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+          pattern: rustc-provenance-*
+          path: rustc-provenance
+          merge-multiple: true
+      - name: Stage assets, emit assets-manifest.json, and verify ceilings
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          TAG="v${VERSION}"
+          rm -rf release-upload
+          python3 scripts/stage_release_assets.py \
+            --source-sha "$TARGET_SHA" \
+            --tag "$TAG" \
+            --rustc-version-dir rustc-provenance \
+            --expected-rustc-builders release \
+            --require-rustc-version \
+            release-assets release-upload
+          python3 scripts/stage_release_assets.py \
+            --verify \
+            --source-sha "$TARGET_SHA" \
+            --tag "$TAG" \
+            --expected-rustc-builders release \
+            --require-rustc-version \
+            release-upload
+          python3 scripts/quality/check_budgets.py \
+            release-upload \
+            --source-sha "$TARGET_SHA" \
+            --step-summary "${GITHUB_STEP_SUMMARY:-}"
+      - name: Upload verified GitHub Release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-staged
+          path: release-upload/
+          retention-days: 90
+
+  # ── Phase 2: Unified Pre-Publish Barrier ─────────────────────────────────
+
+  release-gate:
+    name: Pre-publish verification gate
+    if: always()
+    needs:
+      - rust-build
+      - node-pack
+      - python-build
+      - jvm-build
+      - go-build
+      - ffi-build
+      - console-build
+      - flutter-ffi-mobile
+      - flutter-verify
+      - github-stage
+    runs-on: ubuntu-latest
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      REF_TYPE: ${{ github.ref_type }}
+      REF_NAME: ${{ github.ref_name }}
+      TARGET_SHA: ${{ github.sha }}
+      IN_RUST: ${{ github.event.inputs.rust }}
+      IN_NODE: ${{ github.event.inputs.node }}
+      IN_PYTHON: ${{ github.event.inputs.python }}
+      IN_JVM: ${{ github.event.inputs.jvm }}
+      IN_FLUTTER: ${{ github.event.inputs.flutter }}
+      IN_ARTIFACTS: ${{ github.event.inputs.artifacts }}
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag/version/SHA alignment and all selected build gates
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          TAG="v${VERSION}"
+          if [ "$REF_TYPE" = "tag" ] && [ "$REF_NAME" != "$TAG" ]; then
+            echo "Tag ${REF_NAME} disagrees with Cargo.toml version ${VERSION}" >&2
+            exit 1
+          fi
+          ls_out=$(git ls-remote --tags origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}")
+          tag_sha=$(printf '%s\n' "$ls_out" | awk -v ref="refs/tags/${TAG}^{}" '$2 == ref { print $1; exit }')
+          if [ -z "$tag_sha" ]; then
+            tag_sha=$(printf '%s\n' "$ls_out" | awk -v ref="refs/tags/${TAG}" '$2 == ref { print $1; exit }')
+          fi
+          if [ "$REF_TYPE" = "tag" ] && [ -z "$tag_sha" ]; then
+            echo "Refusing release: remote tag ${TAG} is missing on origin" >&2
+            exit 1
+          fi
+          if [ -n "$tag_sha" ] && [ "$tag_sha" != "$TARGET_SHA" ]; then
+            echo "Refusing release: remote tag ${TAG} points to ${tag_sha}, not ${TARGET_SHA}" >&2
+            exit 1
+          fi
+          python3 - "$VERSION" <<'PYEOF'
+          import json, os, pathlib, re, sys, tomllib
+          ver = sys.argv[1]
+          ws_ver = tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+          if ws_ver != ver:
+              raise SystemExit(f"Cargo.toml [workspace.package].version {ws_ver!r} != {ver!r}")
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          is_push = os.environ["EVENT_NAME"] == "push"
+          checks = []
+          if is_push or os.environ.get("IN_NODE") == "true":
+              checks.append(("bindings/node/package.json", json.loads(pathlib.Path("bindings/node/package.json").read_text(encoding="utf-8"))["version"]))
+          if is_push or os.environ.get("IN_PYTHON") == "true":
+              py_doc = tomllib.loads(pathlib.Path("bindings/python/pyproject.toml").read_text(encoding="utf-8"))
+              checks.append(("bindings/python/pyproject.toml", py_doc.get("project", {}).get("version")))
+          # JVM build.gradle.kts versions are evaluated directly by Gradle in jvm-build (required below).
+          if is_push or os.environ.get("IN_FLUTTER") == "true":
+              ms = re.findall(
+                  r'''(?m)^version:[ \t]*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s#'"]+))[ \t]*(?:#.*)?$''',
+                  pathlib.Path("bindings/flutter/pubspec.yaml").read_text(encoding="utf-8"),
+              )
+              fv = next((g for g in ms[0] if g), None) if len(ms) == 1 else None
+              checks.append(("bindings/flutter/pubspec.yaml", fv))
+          ver_errs = [f"{p}: version {v!r} != workspace {ver!r}" for p, v in checks if v != ver]
+          if ver_errs:
+              print("Binding version mismatch:\n  - " + "\n  - ".join(ver_errs), file=sys.stderr)
+              sys.exit(1)
+          expected = {
+              "rust-build": is_push or os.environ.get("IN_RUST") == "true",
+              "node-pack": is_push or os.environ.get("IN_NODE") == "true",
+              "python-build": is_push or os.environ.get("IN_PYTHON") == "true",
+              "jvm-build": is_push or os.environ.get("IN_JVM") == "true",
+              "go-build": is_push or os.environ.get("IN_ARTIFACTS") == "true",
+              "ffi-build": is_push or os.environ.get("IN_ARTIFACTS") == "true",
+              "console-build": is_push or os.environ.get("IN_ARTIFACTS") == "true",
+              "flutter-ffi-mobile": is_push or os.environ.get("IN_ARTIFACTS") == "true" or os.environ.get("IN_FLUTTER") == "true",
+              "flutter-verify": is_push or os.environ.get("IN_FLUTTER") == "true",
+              "github-stage": is_push or os.environ.get("IN_ARTIFACTS") == "true",
+          }
+          failures = [f"{j}: got {needs.get(j, {}).get('result')!r}" for j, req in expected.items() if req and needs.get(j, {}).get("result") != "success"]
+          if failures:
+              print("Release gate FAILED:\n  - " + "\n  - ".join(failures), file=sys.stderr)
+              sys.exit(1)
+          print("Release gate PASSED")
+          PYEOF
+
+  # ── Phase 3: Immutable Publish (scoped credentials) ──────────────────────
+
+  rust-publish:
+    name: Publish crates to crates.io
+    needs: [rust-build, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.rust-build.result == 'success' && (github.event_name == 'push' || github.event.inputs.rust == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish workspace crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          CRATES=(aimux-stream aimux-core aimux-provider-utils aimux-providers aimux-ops aimux-ffi)
+          published_any=false
+          for crate in "${CRATES[@]}"; do
+            case "$crate" in
+              aimux-provider-utils) deps=(aimux-stream aimux-core) ;;
+              aimux-providers) deps=(aimux-stream aimux-core aimux-provider-utils) ;;
+              aimux-ops) deps=(aimux-core aimux-provider-utils aimux-providers) ;;
+              aimux-ffi) deps=(aimux-ops aimux-core) ;;
+              *) deps=() ;;
+            esac
+            if [ "$published_any" = true ] && [ "${#deps[@]}" -gt 0 ]; then
+              ready=false
+              for _ in $(seq 1 24); do
+                sleep 5
+                all_ok=true
+                for dep in "${deps[@]}"; do
+                  idx=$(python3 -c 'import sys; n=sys.argv[1].lower(); print(f"1/{n}" if len(n)==1 else f"2/{n}" if len(n)==2 else f"3/{n[0]}/{n}" if len(n)==3 else f"{n[:2]}/{n[2:4]}/{n}")' "$dep")
+                  if ! curl -sfL -H "Cache-Control: no-cache" -A "aimux-ci" "https://index.crates.io/${idx}" | grep -qF "\"vers\":\"${VERSION}\""; then
+                    all_ok=false; break
+                  fi
+                done
+                if [ "$all_ok" = true ]; then ready=true; break; fi
+              done
+              [ "$ready" = true ] || { echo "Timed out waiting for crates.io index for ${crate}@${VERSION}" >&2; exit 1; }
+              sleep 5
+            fi
+            http_code=$(curl -sS -A "aimux-ci" "https://crates.io/api/v1/crates/${crate}/${VERSION}" -o /dev/null -w '%{http_code}')
+            if [ "$http_code" = "200" ]; then
+              echo "${crate}@${VERSION} already on crates.io, skipping"
+            elif [ "$http_code" = "404" ]; then
+              cargo package -p "$crate"
+              python3 scripts/quality/check_budgets.py "target/package/${crate}-${VERSION}.crate" --source-sha "${{ github.sha }}"
+              cargo publish -p "$crate"
+              published_any=true
+            else
+              echo "Unexpected HTTP ${http_code} querying crates.io for ${crate}@${VERSION}" >&2
+              exit 1
+            fi
+          done
+
+  node-publish:
+    name: Publish Node to npm
+    needs: [node-pack, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.node-pack.result == 'success' && (github.event_name == 'push' || github.event.inputs.node == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Download verified npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-packed-release
+          path: bindings/node/packed
+      - name: Verify SHA-256 and publish exact tarballs to npm
+        working-directory: bindings/node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+          NPM_CONFIG_ACCESS: public
+        run: |
+          python3 - <<'PYEOF'
+          import hashlib, pathlib, re
+          pdir = pathlib.Path("packed")
+          manifest = pdir / "SHA256SUMS"
+          if manifest.is_symlink() or not manifest.is_file():
+              raise SystemExit("packed/SHA256SUMS is missing or not a regular file")
+          entries = sorted(pdir.iterdir(), key=lambda p: p.name)
+          actual = []
+          for p in entries:
+              if p.name == "SHA256SUMS":
+                  continue
+              if p.is_symlink() or not p.is_file() or not p.name.endswith(".tgz"):
+                  raise SystemExit(f"Unexpected entry in packed/: {p.name!r}")
+              actual.append(p.name)
+          raw = manifest.read_bytes().decode("utf-8")
+          if "\r" in raw or not raw.endswith("\n"):
+              raise SystemExit("packed/SHA256SUMS: invalid line endings")
+          expected = {}
+          for lineno, line in enumerate(raw[:-1].split("\n"), 1):
+              m = re.fullmatch(r"([0-9a-f]{64})  ([^/\n]+\.tgz)", line)
+              if not m:
+                  raise SystemExit(f"packed/SHA256SUMS:{lineno}: malformed checksum line")
+              digest, name = m.group(1), m.group(2)
+              if name in expected:
+                  raise SystemExit(f"packed/SHA256SUMS:{lineno}: duplicate entry {name!r}")
+              expected[name] = digest
+          if sorted(expected) != actual or len(actual) != 7:
+              raise SystemExit(f"npm SHA256SUMS coverage mismatch: listed={sorted(expected)} actual={actual}")
+          for name, want in expected.items():
+              got = hashlib.sha256((pdir / name).read_bytes()).hexdigest()
+              if got != want:
+                  raise SystemExit(f"npm SHA-256 mismatch for {name}: {got} != {want}")
+          PYEOF
+          python3 ../../scripts/quality/check_budgets.py packed/*.tgz --source-sha "${{ github.sha }}"
+          node -e '
+            const crypto = require("crypto");
+            const fs = require("fs");
+            const path = require("path");
+            const { execFileSync } = require("child_process");
+            const files = fs.readdirSync("packed").filter((f) => f.endsWith(".tgz")).sort((a, b) => {
+              const aMain = /^arcships-aimux-\d/.test(a);
+              const bMain = /^arcships-aimux-\d/.test(b);
+              return aMain === bMain ? a.localeCompare(b) : (aMain ? 1 : -1);
+            });
+            for (const file of files) {
+              const tgz = "./" + path.posix.join("packed", file);
+              const pkg = JSON.parse(execFileSync("tar", ["-xOf", tgz, "package/package.json"], { encoding: "utf8" }));
+              const spec = `${pkg.name}@${pkg.version}`;
+              let remoteIntegrity = null;
+              let notFound = false;
+              try {
+                const out = execFileSync("npm", ["view", spec, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+                if (!out) throw new Error(`Inconclusive npm view for ${spec}: empty stdout`);
+                const meta = JSON.parse(out);
+                remoteIntegrity = meta && meta.dist && typeof meta.dist.integrity === "string" ? meta.dist.integrity.trim() : "";
+                if (!remoteIntegrity) throw new Error(`Inconclusive npm view for ${spec}: missing dist.integrity`);
+              } catch (err) {
+                if (err && typeof err.status !== "number") throw err;
+                const combined = `${err.stderr || ""}\n${err.stdout || ""}`;
+                let code = null;
+                for (const blob of [String(err.stdout || "").trim(), String(err.stderr || "").trim()]) {
+                  if (!blob) continue;
+                  try { const p = JSON.parse(blob); if (p && p.error && p.error.code) { code = p.error.code; break; } } catch (_) {}
+                }
+                if (code === "E404" || (!code && /\bnpm (?:ERR!|error) code E404\b/i.test(combined))) {
+                  notFound = true;
+                } else {
+                  throw new Error(`Unexpected npm view failure for ${spec}: ${combined.trim()}`);
+                }
+              }
+              if (!notFound) {
+                const localSha512 = "sha512-" + crypto.createHash("sha512").update(fs.readFileSync(tgz)).digest("base64");
+                if (remoteIntegrity !== localSha512) throw new Error(`Published ${spec} integrity ${remoteIntegrity} != ${localSha512}`);
+                console.log(`${spec} already published with matching integrity, skipping`);
+                continue;
+              }
+              execFileSync("npm", ["publish", tgz, "--ignore-scripts", "--provenance", "--access", "public"], { stdio: "inherit" });
+            }
+          '
+
+  python-publish:
+    name: Publish Python wheels to PyPI
+    needs: [python-build, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.python-build.result == 'success' && (github.event_name == 'push' || github.event.inputs.python == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download verified wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          pattern: python-wheel-*
+          merge-multiple: true
+      - name: Verify wheel checksums, twine, and ceilings
+        run: |
+          python3 - <<'PYEOF'
+          import hashlib, pathlib, re
+          wdir = pathlib.Path("wheels")
+          sums, actual = [], []
+          for p in sorted(wdir.iterdir(), key=lambda x: x.name):
+              if p.is_symlink() or not p.is_file():
+                  raise SystemExit(f"Unexpected non-regular entry in wheels/: {p.name!r}")
+              if p.name.startswith("SHA256SUMS-"):
+                  sums.append(p)
+              elif p.name.endswith(".whl"):
+                  actual.append(p.name)
+              else:
+                  raise SystemExit(f"Unexpected non-wheel file in wheels/: {p.name!r}")
+          if len(sums) != 3:
+              raise SystemExit(f"Expected 3 SHA256SUMS-* files, found {len(sums)}")
+          expected = {}
+          for s in sums:
+              raw = s.read_bytes().decode("utf-8")
+              if "\r" in raw or not raw.endswith("\n"):
+                  raise SystemExit(f"{s.name}: invalid line endings")
+              lines = raw[:-1].split("\n")
+              if len(lines) != 1:
+                  raise SystemExit(f"{s.name}: expected exactly 1 checksum line, got {len(lines)}")
+              m = re.fullmatch(r"([0-9a-f]{64})  ([^/\n]+\.whl)", lines[0])
+              if not m:
+                  raise SystemExit(f"{s.name}:1: malformed checksum line")
+              digest, name = m.group(1), m.group(2)
+              if name in expected:
+                  raise SystemExit(f"{s.name}:1: duplicate entry {name!r}")
+              expected[name] = digest
+          if sorted(expected) != actual or len(actual) != 3:
+              raise SystemExit(f"wheel SHA256SUMS coverage mismatch: listed={sorted(expected)} actual={actual}")
+          for name, want in expected.items():
+              got = hashlib.sha256((wdir / name).read_bytes()).hexdigest()
+              if got != want:
+                  raise SystemExit(f"wheel SHA-256 mismatch for {name}: {got} != {want}")
+          for s in sums:
+              s.unlink()
+          remaining = sorted(p.name for p in wdir.iterdir())
+          if remaining != actual:
+              raise SystemExit(f"Unexpected files remaining in wheels/: {remaining}")
+          PYEOF
+          python3 -m pip install --quiet twine
+          python3 -m twine check wheels/*.whl
+          python3 scripts/quality/check_budgets.py wheels/*.whl --source-sha "${{ github.sha }}"
+      - name: Publish verified wheels to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheels/
+          skip-existing: true
+
+  jvm-publish:
+    name: Publish Java+Kotlin to Maven Central
+    needs: [jvm-build, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.jvm-build.result == 'success' && (github.event_name == 'push' || github.event.inputs.jvm == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Download verified JVM checksums
+        uses: actions/download-artifact@v4
+        with:
+          name: jvm-verified-checksums
+          path: .
+      - name: Validate JVM checksum manifest and prepare pre-upload verification hook
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          python3 - "$VERSION" <<'PYEOF'
+          import pathlib, re, sys
+          ver = sys.argv[1]
+          manifest = pathlib.Path("jvm-verified.sha256")
+          if manifest.is_symlink() or not manifest.is_file():
+              raise SystemExit("jvm-verified.sha256 is missing or not a regular file")
+          raw = manifest.read_bytes().decode("utf-8")
+          if "\r" in raw or not raw.endswith("\n"):
+              raise SystemExit("jvm-verified.sha256: invalid line endings")
+          expected = sorted(
+              f"{art}/{ver}/{art}-{ver}{ext}"
+              for art in ("aimux-java", "aimux-kotlin")
+              for ext in (".jar", "-sources.jar", "-javadoc.jar", ".pom", ".module")
+          )
+          found = {}
+          for lineno, line in enumerate(raw[:-1].split("\n"), 1):
+              m = re.fullmatch(r"([0-9a-f]{64})  ([^\n]+)", line)
+              if not m:
+                  raise SystemExit(f"jvm-verified.sha256:{lineno}: malformed checksum line")
+              digest, rel = m.group(1), m.group(2)
+              if rel in found:
+                  raise SystemExit(f"jvm-verified.sha256:{lineno}: duplicate entry {rel!r}")
+              found[rel] = digest
+          if sorted(found) != expected:
+              raise SystemExit(f"jvm-verified.sha256 coverage mismatch: got={sorted(found)} want={expected}")
+          PYEOF
+          cat > verify-jvm.gradle <<'GROOVYEOF'
+          import java.math.BigInteger
+          import java.nio.file.Files
+          import java.security.MessageDigest
+          import org.gradle.api.GradleException
+          import org.gradle.api.publish.maven.tasks.GenerateMavenPom
+          import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+          import org.gradle.api.publish.tasks.GenerateModuleMetadata
+
+          def sumFile = new File(System.getenv("JVM_VERIFIED_SHA256"))
+          def sumPath = sumFile.toPath()
+          if (Files.isSymbolicLink(sumPath) || !Files.isRegularFile(sumPath)) {
+              throw new GradleException("jvm-verified.sha256 is missing or not a regular file")
+          }
+          def rawSums = sumFile.getText("UTF-8")
+          if (rawSums.contains("\r") || !rawSums.endsWith("\n")) {
+              throw new GradleException("jvm-verified.sha256 has invalid line endings")
+          }
+          def expected = [:]
+          rawSums.substring(0, rawSums.length() - 1).split("\n", -1).eachWithIndex { line, idx ->
+              def m = (line =~ /^([0-9a-f]{64})  (.+)$/)
+              if (!m.matches()) throw new GradleException("Malformed jvm-verified.sha256 line ${idx + 1}: " + line)
+              def name = m.group(2).split('/').last()
+              if (expected.containsKey(name)) throw new GradleException("Duplicate checksum entry: " + name)
+              expected[name] = m.group(1)
+          }
+          def sha256 = { File f ->
+              def digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(f.toPath()))
+              String.format("%064x", new BigInteger(1, digest))
+          }
+
+          gradle.projectsEvaluated {
+              allprojects { proj ->
+                  proj.tasks.withType(PublishToMavenRepository).configureEach { task ->
+                      doFirst {
+                          def pub = task.publication
+                          def prefix = "${pub.artifactId}-${pub.version}"
+                          def pomTasks = proj.tasks.withType(GenerateMavenPom).findAll { it.name.equalsIgnoreCase("generatePomFileFor${pub.name}Publication") }
+                          def modTasks = proj.tasks.withType(GenerateModuleMetadata).findAll { it.name.equalsIgnoreCase("generateMetadataFileFor${pub.name}Publication") }
+                          if (pomTasks.size() != 1 || modTasks.size() != 1) {
+                              throw new GradleException("Expected 1 pom & 1 module metadata task for ${pub.name}, got pom=${pomTasks.size()} mod=${modTasks.size()}")
+                          }
+                          def filesToCheck = [
+                              ("${prefix}.pom".toString()): pomTasks[0].destination,
+                              ("${prefix}.module".toString()): modTasks[0].outputFile.get().asFile,
+                          ]
+                          pub.artifacts.each { art ->
+                              if (art.extension == "asc" || art.extension.endsWith(".asc")) return
+                              def cls = art.classifier ? "-${art.classifier}" : ""
+                              def key = "${prefix}${cls}.${art.extension}".toString()
+                              if (filesToCheck.containsKey(key)) throw new GradleException("Duplicate publication artifact: " + key)
+                              filesToCheck[key] = art.file
+                          }
+                          def required = ["", "-sources", "-javadoc"].collect { "${prefix}${it}.jar".toString() } + ["${prefix}.pom".toString(), "${prefix}.module".toString()]
+                          if (filesToCheck.keySet() != required.toSet()) {
+                              throw new GradleException("Unexpected JVM upload set for ${pub.artifactId}: ${filesToCheck.keySet().sort()} != ${required.sort()}")
+                          }
+                          filesToCheck.each { name, file ->
+                              if (!file.isFile()) throw new GradleException("Missing JVM upload file: ${file}")
+                              def want = expected[name]
+                              if (!want) throw new GradleException("No verified checksum for ${name}")
+                              def got = sha256(file)
+                              if (got != want) throw new GradleException("JVM upload SHA-256 mismatch for ${name}: ${got} != ${want}")
+                          }
+                          new File(System.getenv("JVM_VERIFIED_MARKER_DIR"), ".jvm-verified-${pub.artifactId}").text = "ok\n"
+                      }
+                  }
+              }
+          }
+          GROOVYEOF
+      - name: Publish aimux-java (verified pre-upload)
+        working-directory: bindings/java
+        run: |
+          rm -f "$GITHUB_WORKSPACE/.jvm-verified-aimux-java"
+          gradle --init-script "$GITHUB_WORKSPACE/verify-jvm.gradle" publish
+          test -f "$GITHUB_WORKSPACE/.jvm-verified-aimux-java"
+        env:
+          JVM_VERIFIED_SHA256: ${{ github.workspace }}/jvm-verified.sha256
+          JVM_VERIFIED_MARKER_DIR: ${{ github.workspace }}
+          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
+      - name: Publish aimux-kotlin (verified pre-upload)
+        working-directory: bindings/kotlin
+        run: |
+          rm -f "$GITHUB_WORKSPACE/.jvm-verified-aimux-kotlin"
+          gradle --init-script "$GITHUB_WORKSPACE/verify-jvm.gradle" publish
+          test -f "$GITHUB_WORKSPACE/.jvm-verified-aimux-kotlin"
+        env:
+          JVM_VERIFIED_SHA256: ${{ github.workspace }}/jvm-verified.sha256
+          JVM_VERIFIED_MARKER_DIR: ${{ github.workspace }}
+          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
+      - name: Submit deployments to Central Portal
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+        run: |
+          curl -fsS -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" \
+            -X POST "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/ai.arcships" \
+            -w '\nHTTP %{http_code}\n'
+
+  flutter-publish:
+    name: Publish Flutter to pub.dev
+    needs: [flutter-verify, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.flutter-verify.result == 'success' && (github.event_name == 'push' || github.event.inputs.flutter == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Download verified Flutter pub archive
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-packed-release
+          path: flutter-packed
+      - name: Verify SHA-256 and publish exact archive to pub.dev
+        env:
+          PUB_DEV_TOKEN: ${{ secrets.PUB_DEV_TOKEN }}
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          python3 - "$VERSION" <<'PYEOF'
+          import hashlib, pathlib, re, sys
+          ver = sys.argv[1]
+          fdir = pathlib.Path("flutter-packed")
+          manifest = fdir / "SHA256SUMS"
+          if manifest.is_symlink() or not manifest.is_file():
+              raise SystemExit("flutter-packed/SHA256SUMS is missing or not a regular file")
+          actual = []
+          for p in sorted(fdir.iterdir(), key=lambda x: x.name):
+              if p.name == "SHA256SUMS":
+                  continue
+              if p.is_symlink() or not p.is_file() or not p.name.endswith(".tar.gz"):
+                  raise SystemExit(f"Unexpected entry in flutter-packed/: {p.name!r}")
+              actual.append(p.name)
+          want_name = f"aimux-{ver}.tar.gz"
+          raw = manifest.read_bytes().decode("utf-8")
+          if "\r" in raw or not raw.endswith("\n"):
+              raise SystemExit("flutter-packed/SHA256SUMS: invalid line endings")
+          lines = raw[:-1].split("\n")
+          if len(lines) != 1:
+              raise SystemExit(f"flutter-packed/SHA256SUMS: expected 1 line, got {len(lines)}")
+          m = re.fullmatch(r"([0-9a-f]{64})  ([^/\n]+\.tar\.gz)", lines[0])
+          if not m or m.group(2) != want_name or actual != [want_name]:
+              raise SystemExit(f"flutter-packed coverage mismatch: line={lines[0]!r} actual={actual} want={[want_name]}")
+          got = hashlib.sha256((fdir / want_name).read_bytes()).hexdigest()
+          if got != m.group(1):
+              raise SystemExit(f"flutter archive SHA-256 mismatch: {got} != {m.group(1)}")
+          PYEOF
+          python3 scripts/quality/check_budgets.py "flutter-packed/aimux-${VERSION}.tar.gz" --source-sha "${{ github.sha }}"
+          mkdir -p "$HOME/.config/dart"
+          trap 'rm -f "$HOME/.config/dart/pub-credentials.json"' EXIT
+          (umask 077 && printf '%s' "$PUB_DEV_TOKEN" > "$HOME/.config/dart/pub-credentials.json")
+          ARCHIVE_PATH="$(pwd)/flutter-packed/aimux-${VERSION}.tar.gz"
+          (cd bindings/flutter && flutter pub publish --force --from-archive="$ARCHIVE_PATH")
+
+  github-release:
+    name: Create GitHub Release
+    needs: [github-stage, release-gate]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.github-stage.result == 'success' && (github.event_name == 'push' || github.event.inputs.artifacts == 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download verified staged release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: github-release-staged
+          path: release-upload
+      - name: Re-verify bundle and publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          VERSION=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"])')
+          TAG="v${VERSION}"
+          if [ "$REF_TYPE" = "tag" ] && [ "$REF_NAME" != "$TAG" ]; then
+            echo "Tag ${REF_NAME} disagrees with Cargo.toml version ${VERSION}" >&2
+            exit 1
+          fi
+          python3 scripts/stage_release_assets.py \
+            --verify \
+            --source-sha "$TARGET_SHA" \
+            --tag "$TAG" \
+            --expected-rustc-builders release \
+            --require-rustc-version \
+            release-upload
+          python3 scripts/quality/check_budgets.py release-upload --source-sha "$TARGET_SHA"
+
+          had_remote_tag=false
+          verify_remote_tag() {
+            local require_present="${1:-false}"
+            local ls_out
+            ls_out=$(git ls-remote --tags origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}")
+            tag_sha=$(printf '%s\n' "$ls_out" | awk -v ref="refs/tags/${TAG}^{}" '$2 == ref { print $1; exit }')
+            if [ -z "$tag_sha" ]; then
+              tag_sha=$(printf '%s\n' "$ls_out" | awk -v ref="refs/tags/${TAG}" '$2 == ref { print $1; exit }')
+            fi
+            if { [ "$REF_TYPE" = "tag" ] || [ "$require_present" = "true" ]; } && [ -z "$tag_sha" ]; then
+              echo "Refusing release: remote tag ${TAG} is missing on origin" >&2
+              exit 1
+            fi
+            if [ -n "$tag_sha" ]; then
+              if [ "$tag_sha" != "$TARGET_SHA" ]; then
+                echo "Refusing release: existing tag ${TAG} points to ${tag_sha}, not ${TARGET_SHA}" >&2
+                exit 1
+              fi
+              had_remote_tag=true
+            fi
+          }
+          verify_remote_tag false
+
+          if gh release view "$TAG" --json id,isDraft,targetCommitish,assets > release-existing.json 2>release-view.err; then
+            python3 - release-existing.json release-upload "$TAG" "$TARGET_SHA" "$tag_sha" > release-missing.txt <<'PYEOF'
+          import hashlib, json, pathlib, subprocess, sys
+          info = json.load(open(sys.argv[1], encoding="utf-8"))
+          upload_dir, tag, target_sha, remote_tag_sha = pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+          if remote_tag_sha and remote_tag_sha != target_sha:
+              raise SystemExit(f"Tag {tag} points to {remote_tag_sha}, not {target_sha}")
+          if not info.get("isDraft") and not remote_tag_sha:
+              raise SystemExit(f"Published release {tag} has no matching remote tag on origin")
+          tc = info.get("targetCommitish") or ""
+          if (not remote_tag_sha or info.get("isDraft")) and tc and tc != target_sha:
+              raise SystemExit(f"Existing release {tag} targetCommitish={tc!r} != {target_sha}")
+          remote_by_name = {a["name"]: a for a in info.get("assets", [])}
+          local_files = sorted((x for x in upload_dir.iterdir() if x.is_file()), key=lambda x: x.name)
+          extra_remote = sorted(set(remote_by_name) - {p.name for p in local_files})
+          if extra_remote:
+              raise SystemExit(f"Refusing release: existing release {tag} has unexpected remote assets: {extra_remote}")
+          for p in local_files:
+              local_bytes = p.stat().st_size
+              local_sha = hashlib.sha256(p.read_bytes()).hexdigest()
+              if p.name not in remote_by_name:
+                  print(str(p))
+                  continue
+              rem = remote_by_name[p.name]
+              if rem.get("size") != local_bytes:
+                  raise SystemExit(f"Refusing to overwrite mismatched asset {p.name}: remote size={rem.get('size')} != {local_bytes}")
+              rem_digest = (rem.get("digest") or "").strip().lower()
+              if rem_digest:
+                  if rem_digest != f"sha256:{local_sha}":
+                      raise SystemExit(f"Refusing to overwrite mismatched asset {p.name}: remote digest={rem_digest} != sha256:{local_sha}")
+              else:
+                  dl_dir = pathlib.Path("release-verify-dl")
+                  dl_dir.mkdir(exist_ok=True)
+                  dl_file = dl_dir / p.name
+                  dl_file.unlink(missing_ok=True)
+                  subprocess.run(["gh", "release", "download", tag, "-p", p.name, "-D", str(dl_dir)], check=True)
+                  if hashlib.sha256(dl_file.read_bytes()).hexdigest() != local_sha:
+                      raise SystemExit(f"Refusing to overwrite mismatched asset {p.name}: downloaded digest differs")
+          PYEOF
+            is_draft=false
+            if python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("isDraft") else 1)' release-existing.json; then
+              is_draft=true
+            fi
+            require_tag_now="$had_remote_tag"
+            if [ "$is_draft" = false ]; then
+              require_tag_now=true
+            fi
+            mapfile -t missing_files < release-missing.txt
+            if [ "${#missing_files[@]}" -gt 0 ]; then
+              verify_remote_tag "$require_tag_now"
+              gh release upload "$TAG" "${missing_files[@]}"
+            else
+              echo "Release ${TAG} already contains all verified assets, skipping upload"
+            fi
+            if [ "$is_draft" = true ]; then
+              verify_remote_tag "$had_remote_tag"
+              if [ -z "$tag_sha" ]; then
+                git tag "$TAG" "$TARGET_SHA"
+                git push origin "refs/tags/${TAG}"
+                verify_remote_tag true
+              fi
+              gh release edit "$TAG" --draft=false
+            fi
+          elif grep -qi "release not found" release-view.err; then
+            verify_remote_tag "$had_remote_tag"
+            if [ -z "$tag_sha" ]; then
+              git tag "$TAG" "$TARGET_SHA"
+              git push origin "refs/tags/${TAG}"
+              verify_remote_tag true
+            fi
+            gh release create "$TAG" release-upload/* \
+              --target "$TARGET_SHA" \
+              --generate-notes
+          else
+            cat release-view.err >&2
+            exit 1
+          fi
