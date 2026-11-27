@@ -341,6 +341,23 @@ let result = search(&model, opts).await?;
 // result.results is Vec<SearchResultItem>
 ```
 
+`google_pse` takes the full endpoint in `base_url`, query parameters excluded.
+The default is `https://www.googleapis.com/customsearch/v1`. Google ends the
+Custom Search JSON API for existing customers on January 1, 2027
+([overview](https://developers.google.com/custom-search/v1/overview)); after
+that, `google_pse` works only with `base_url` set to a service that serves the
+same API. Bindings pass it as `baseUrl` in the `provider.create` settings.
+
+```rust
+use aimux_providers::google_pse::{GooglePseProviderSettings, create_google_pse};
+
+let provider = create_google_pse(GooglePseProviderSettings {
+    base_url: Some("https://search.example/customsearch/v1".into()),
+    ..Default::default()
+})?;
+let model = provider.search_model();
+```
+
 ## File Upload
 
 Uploads a file to the provider and returns a file ID.
