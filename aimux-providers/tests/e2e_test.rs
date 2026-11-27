@@ -8,7 +8,7 @@
 
 use aimux_core::content::{AssistantContentPart, ToolContentPart, ToolResultOutput};
 use aimux_core::error::AiMuxError;
-use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::generate::{GenerateTextOptions, IncludeOptions, generate_text, stream_text};
 use aimux_core::message::ModelMessage;
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolCall, ToolChoice};
@@ -1028,9 +1028,19 @@ async fn e2e_google_stream_text() {
     .unwrap();
     let model = provider.chat("gemini-2.0-flash");
 
-    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
-        .await
-        .expect("stream_text should succeed");
+    let result = stream_text(
+        &model,
+        "Say hello",
+        GenerateTextOptions {
+            include: Some(IncludeOptions {
+                request_body: Some(true),
+                ..Default::default()
+            }),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("stream_text should succeed");
 
     let request_body = result.request_body.clone();
     let text = result.text().await.expect("should collect text");
@@ -1122,9 +1132,19 @@ async fn e2e_mistral_stream_text() {
     .expect("valid settings");
     let model = provider.chat("mistral-small-latest");
 
-    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
-        .await
-        .expect("stream_text should succeed");
+    let result = stream_text(
+        &model,
+        "Say hello",
+        GenerateTextOptions {
+            include: Some(IncludeOptions {
+                request_body: Some(true),
+                ..Default::default()
+            }),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("stream_text should succeed");
 
     let request_body = result.request_body.clone();
     let text = result.text().await.expect("should collect text");
@@ -1226,9 +1246,19 @@ async fn e2e_cohere_stream_text() {
     .expect("valid settings");
     let model = provider.chat("command-r-plus");
 
-    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
-        .await
-        .expect("stream_text should succeed");
+    let result = stream_text(
+        &model,
+        "Say hello",
+        GenerateTextOptions {
+            include: Some(IncludeOptions {
+                request_body: Some(true),
+                ..Default::default()
+            }),
+            ..GenerateTextOptions::default()
+        },
+    )
+    .await
+    .expect("stream_text should succeed");
 
     let request_body = result.request_body.clone();
     let text = result.text().await.expect("should collect text");

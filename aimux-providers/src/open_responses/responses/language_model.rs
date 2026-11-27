@@ -406,6 +406,7 @@ impl LanguageModel for OpenResponsesModel {
                 request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
                 response: Some(aimux_core::shared::StreamResponseInfo {
                     headers: Some(response_headers),
+                    body: None,
                 }),
             },
             options,

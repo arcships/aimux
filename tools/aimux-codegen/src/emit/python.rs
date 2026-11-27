@@ -323,8 +323,18 @@ fn class(
         writeln!(
             out,
             "    {}: {annotation} = Field({}alias={})",
-            ident(&field.json_name),
-            if field.required { "" } else { "default=None, " },
+            if name == "GenerateTextResult" && field.json_name == "output" {
+                "output_value".into()
+            } else {
+                ident(&field.json_name)
+            },
+            if name == "GenerateTextResult" && field.json_name == "steps" {
+                "min_length=1, "
+            } else if field.required {
+                ""
+            } else {
+                "default=None, "
+            },
             quote(&field.json_name)
         )
         .unwrap();
@@ -341,6 +351,9 @@ fn class(
             omit_null.join(", ")
         )
         .unwrap();
+    }
+    if name == "GenerateTextResult" {
+        out.push_str(include_str!("text_result/python.inc"));
     }
     if fields.is_empty() && tag.is_none() && !closed {
         out.push_str("    pass\n");
@@ -439,7 +452,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Unio
 
 from pydantic import (
     BaseModel, BeforeValidator, ConfigDict, Discriminator, Field, Tag,
-    model_serializer,
+    model_serializer, model_validator,
 )
 from typing_extensions import TypeAliasType
 

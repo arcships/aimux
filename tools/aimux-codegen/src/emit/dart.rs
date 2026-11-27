@@ -497,6 +497,13 @@ fn class(
     closed: bool,
     model: &Model,
 ) -> Result<()> {
+    let member = |f: &Field| {
+        if name == "GenerateTextResult" && f.json_name == "output" {
+            "outputValue".into()
+        } else {
+            ident(&f.json_name)
+        }
+    };
     let base = parent.map_or(String::new(), |(base, _, _)| format!(" extends {base}"));
     let declaration = format!("final class {name}{base} {{");
     if declaration.len() > 80 {
@@ -509,7 +516,7 @@ fn class(
             out.push('\n');
         }
         docs(out, f.doc.as_deref(), "  ");
-        writeln!(out, "  final {} {};", field_type(f), ident(&f.json_name)).unwrap();
+        writeln!(out, "  final {} {};", field_type(f), member(f)).unwrap();
     }
     if fields.is_empty() {
         writeln!(out, "  const {name}();").unwrap();
@@ -520,7 +527,7 @@ fn class(
                 out,
                 "    {}this.{}{},",
                 if f.required { "required " } else { "" },
-                ident(&f.json_name),
+                member(f),
                 if !f.required && presence(&f.ty) {
                     " = const Field.absent()"
                 } else {
@@ -559,6 +566,9 @@ fn class(
         )
         .unwrap();
     }
+    if name == "GenerateTextResult" {
+        out.push_str("    if ((json['steps'] as List<dynamic>).isEmpty) {\n      throw const FormatException('GenerateTextResult requires at least one step');\n    }\n    if (json.containsKey('output') && json['outputParsed'] == false) {\n      throw const FormatException('GenerateTextResult cannot carry output when outputParsed is false');\n    }\n");
+    }
     writeln!(
         out,
         "    return {name}{}",
@@ -582,13 +592,7 @@ fn class(
             decode(&f.ty, &v, model)
                 .map_err(|e| format!("{name} #/properties/{}: {e}", escape(&f.json_name)))?
         };
-        expression(
-            out,
-            &format!("      {}: ", ident(&f.json_name)),
-            &expr,
-            ",",
-            6,
-        );
+        expression(out, &format!("      {}: ", member(f)), &expr, ",", 6);
     }
     if !fields.is_empty() {
         out.push_str("    );\n");
@@ -603,7 +607,7 @@ fn class(
         writeln!(out, "        {}: {},", quote(tag), quote(value)).unwrap();
     }
     for f in fields {
-        let field = ident(&f.json_name);
+        let field = member(f);
         let key = quote(&f.json_name);
         let (condition, value) = if !f.required && presence(&f.ty) {
             (format!("if ({field}.isPresent) "), encode(&f.ty, &field))
@@ -622,7 +626,11 @@ fn class(
             expression(out, &format!("        {condition}{key}: "), &value, ",", 8);
         }
     }
-    out.push_str("      };\n}\n\n");
+    out.push_str("      };\n");
+    if name == "GenerateTextResult" {
+        out.push_str(include_str!("text_result/dart.inc"));
+    }
+    out.push_str("}\n\n");
     Ok(())
 }
 

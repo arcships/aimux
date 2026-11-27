@@ -436,6 +436,14 @@ pub struct RequestInfo {
 pub struct StreamResponseInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
+    /// Optional opaque response body supplied with the stream metadata.
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
+    pub body: Option<Value>,
 }
 
 impl From<crate::types::ResponseMetadata> for ResponseInfo {

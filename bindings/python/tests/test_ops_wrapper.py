@@ -84,17 +84,33 @@ class TestStandaloneTypeTags(unittest.TestCase):
 
         call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
         url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
-        result = GenerateTextResult.model_validate(
-            {"text": "", "finishReason": "stop", "toolCalls": [call], "sources": [url],
-             "content": [], "reasoning": [], "files": [], "toolResults": [],
-             "usage": {"inputTokenDetails": {}, "outputTokenDetails": {}},
-             "totalUsage": {"inputTokenDetails": {}, "outputTokenDetails": {}}, "warnings": [], "request": {},
-             "response": {"id": "r", "timestamp": "2026-01-01T00:00:00Z", "modelId": "m", "messages": []},
-             "responseMessages": [], "steps": []}
-        )
-        dumped = result.model_dump(by_alias=True)
-        assert dumped["toolCalls"] == [call]
-        assert dumped["sources"] == [url]
+        usage = {"inputTokenDetails": {}, "outputTokenDetails": {}}
+        step = {
+            "callId": "c", "stepNumber": 0, "model": {"modelId": "m", "provider": "openai"},
+            "content": [call, url, {"type": "text", "text": "ok"}], "finishReason": "stop",
+            "usage": usage, "warnings": [], "request": {},
+            "response": {"id": "r", "timestamp": "2026-01-01T00:00:00Z", "modelId": "m", "messages": []},
+            "performance": {"effectiveOutputTokensPerSecond": 0, "effectiveTotalTokensPerSecond": 0,
+                            "responseTimeMs": 0, "stepTimeMs": 0, "toolExecutionMs": {}},
+        }
+        facts = {"steps": [step], "totalUsage": usage}
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            GenerateTextResult.model_validate({**facts, "steps": []})
+        result = GenerateTextResult.model_validate(facts)
+        assert [part.model_dump(by_alias=True) for part in result.tool_calls] == [call]
+        assert [part.model_dump(by_alias=True) for part in result.sources] == [url]
+        assert result.output == "ok"
+        parsed_null = GenerateTextResult.model_validate({**facts, "output": None})
+        assert parsed_null.output is None
+        assert parsed_null.model_dump(by_alias=True)["output"] is None
+        not_parsed = GenerateTextResult.model_validate({**facts, "outputParsed": False})
+        assert not_parsed.output is None
+        assert not_parsed.output_parsed is False
+        assert not_parsed.model_dump(by_alias=True) == {**facts, "outputParsed": False}
+        with self.assertRaises(ValidationError):
+            GenerateTextResult.model_validate({**facts, "output": None, "outputParsed": False})
+        assert set(result.model_dump(by_alias=True)) == {"steps", "totalUsage"}
         assert TaggedRawToolCall(type="tool-call", tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
             "type": "tool-call", "toolCallId": "c", "toolName": "t", "input": "{}",
         }

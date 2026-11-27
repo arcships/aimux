@@ -265,8 +265,8 @@ fn dto_vectors_round_trip_through_rust() {
     }
 }
 
-/// Keep realistic business vectors tied to Rust serialization, including derived
-/// result fields. Set UPDATE_DTO_VECTORS=1 to refresh these three files.
+/// Keep realistic business vectors tied to Rust serialization, including compact
+/// result facts. Set UPDATE_DTO_VECTORS=1 to refresh these files.
 #[test]
 fn business_vectors_match_rust_serialization() {
     use aimux_core::generate::GenerateTextResult;
@@ -294,7 +294,7 @@ fn business_vectors_match_rust_serialization() {
                 "timestamp": "2026-01-01T00:00:00.000Z",
                 "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello, world!"}]}]},
             "providerMetadata": {"openai": {"serviceTier": "default", "opaque": null}}
-        }], "totalUsage": usage, "output": "Hello, world!"
+        }], "totalUsage": usage
     })).unwrap();
     let cassette: Value = serde_json::from_str(include_str!(
         "../../aimux-providers/tests/cassettes/openai/completions_api_agent_prompt.json"
@@ -352,18 +352,58 @@ fn business_vectors_match_rust_serialization() {
     }))
     .unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract-tests/dto");
-    for (name, value) in [
-        ("GenerateTextResult", serde_json::to_value(result).unwrap()),
-        ("Recording", serde_json::to_value(recording).unwrap()),
-        ("TraceRecord", serde_json::to_value(trace).unwrap()),
+    let plain = serde_json::to_value(result).unwrap();
+    let mut structured = plain.clone();
+    structured["output"] = Value::Null;
+    let structured: GenerateTextResult = serde_json::from_value(structured).unwrap();
+    for (file, value) in [
+        ("GenerateTextResult/001.json", plain),
+        (
+            "GenerateTextResult/002.json",
+            serde_json::to_value(structured).unwrap(),
+        ),
+        (
+            "Recording/001.json",
+            serde_json::to_value(recording).unwrap(),
+        ),
+        ("TraceRecord/001.json", serde_json::to_value(trace).unwrap()),
     ] {
-        let path = root.join(name).join("001.json");
+        let path = root.join(file);
         if std::env::var_os("UPDATE_DTO_VECTORS").is_some() {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap() + "\n").unwrap();
         }
         let expected: Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(value, expected, "{name}");
+        assert_eq!(value, expected, "{file}");
     }
+}
+
+#[test]
+fn aimux_error_vectors_match_legacy_value_bytes() {
+    use crate::dispatch::{Params, WireParams, decode};
+    use aimux_core::error::AiMuxError;
+
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract-tests/dto/AiMuxError");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let json = std::fs::read(&path).unwrap();
+        let value: Value = serde_json::from_slice(&json).unwrap();
+        let expected = round_trip::<AiMuxError>(value).unwrap().to_string();
+        let direct =
+            decode::<AiMuxError>(Params::Wire(WireParams::new(&json, "params_json"))).unwrap();
+        assert_eq!(
+            crate::dispatch::serialize_result(direct).unwrap(),
+            expected,
+            "{}",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert!(checked > 0);
 }

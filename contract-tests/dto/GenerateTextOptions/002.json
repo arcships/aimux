@@ -1,0 +1,15 @@
+{
+  "include": {
+    "requestBody": false,
+    "responseBody": true
+  },
+  "tools": [
+    {
+      "type": "function",
+      "name": "lookup",
+      "inputSchema": {
+        "type": "object"
+      }
+    }
+  ]
+}

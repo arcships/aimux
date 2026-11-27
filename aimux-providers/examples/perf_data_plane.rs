@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
-use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::generate::{GenerateTextOptions, IncludeOptions, generate_text, stream_text};
 use aimux_core::parse_tool_call::parse_tool_call;
 use aimux_core::result::ContentPart;
 use aimux_core::stream_part::TextStreamPart;
@@ -140,7 +140,9 @@ fn main() {
     assert!(samples > 0);
     let (prompt, text, tool_count, streaming) = match scenario {
         "request-small" => ("hi".into(), "hello".into(), 0, false),
-        "request-200k" | "serialize-200k" => ("a".repeat(200_000), "b".repeat(50_000), 0, false),
+        "request-200k" | "request-200k-omit-body" | "serialize-200k" => {
+            ("a".repeat(200_000), "b".repeat(50_000), 0, false)
+        }
         "gen-tools-loop" | "validate-tool" => ("hi".into(), "hello".into(), 30, false),
         "stream-1k-chunks" => ("hi".into(), DELTA_TEXT.repeat(DELTAS), 0, true),
         "id-control" | "id-text" | "id-reasoning" | "active-hashset" | "active-vec"
@@ -166,7 +168,13 @@ fn main() {
     })
     .unwrap()
     .chat("gpt-4o");
-    let options = options(tool_count);
+    let mut options = options(tool_count);
+    if scenario == "request-200k-omit-body" {
+        options.include = Some(IncludeOptions {
+            response_body: Some(false),
+            ..IncludeOptions::default()
+        });
+    }
     let tool_call = RawToolCall {
         tool_call_id: "lookup".into(),
         tool_name: "lookup_0".into(),

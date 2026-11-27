@@ -94,6 +94,7 @@ enum DtoVectorTypes {
         case "ImageResponse": return try encoder.encode(decoder.decode(ImageResponse.self, from: data))
         case "ImageResult": return try encoder.encode(decoder.decode(ImageResult.self, from: data))
         case "ImageUsage": return try encoder.encode(decoder.decode(ImageUsage.self, from: data))
+        case "IncludeOptions": return try encoder.encode(decoder.decode(IncludeOptions.self, from: data))
         case "InputAudioFormat": return try encoder.encode(decoder.decode(InputAudioFormat.self, from: data))
         case "InputRecord": return try encoder.encode(decoder.decode(InputRecord.self, from: data))
         case "InputTokenDetails": return try encoder.encode(decoder.decode(InputTokenDetails.self, from: data))

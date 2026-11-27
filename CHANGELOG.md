@@ -17,6 +17,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-for-byte identical JSON and digest; enable `runtime-manifest` to access
   `TypeRef::schema` and `aimux_ops::manifest::generate_manifest`.
 
+#### Compact text result JSON (RFC-0049)
+
+The JSON returned by `text.generate`, `text.consume`, `toolRepair.applyResult`
+and language-model `replay.live` contains `steps`, `totalUsage`, optional
+`output`, and optional `outputParsed`. Upgrade the C library and generated
+bindings together to match the new manifest digest. In C and other raw JSON
+consumers, let `last` be `steps[steps.length - 1]` and derive the former
+top-level fields as follows.
+
+| Field or option | Value or derivation |
+|---|---|
+| `steps` | Read `steps`, in call order. |
+| `totalUsage` | Read `totalUsage`, the usage summed over the call. |
+| `output` | Use the value if the `output` key exists, including JSON `null`. If `output` is absent and `outputParsed` is `false`, no output was generated (`Err(NoOutputGenerated)` in Rust; `undefined` / `None` / `nil` / absent in bindings). Otherwise use the derived `text`. Providing both `output` and `outputParsed: false` is rejected. |
+| `outputParsed` | Present and `false` only when no output was generated (for example, a final `tool-calls` step without an output spec, or a failed streamed output parse). Omitted when an output was produced. |
+| `text` | Join the `text` values of `last.content` parts with type `text`, in order, with no separator. |
+| `content` | Concatenate each step's `content` in step and part order. |
+| `reasoning` | Select `reasoning` and `reasoning-file` from `last.content`. |
+| `reasoningText` | Join the `text` values of `reasoning` parts from `last.content`. An empty string means absent. |
+| `files` | Map `file` parts across all steps to their inner `file` values. |
+| `sources` | Select `source` parts across all steps. |
+| `toolCalls` | Select `tool-call` parts across all steps. |
+| `staticToolCalls` / `dynamicToolCalls` | From `toolCalls`, select calls with `dynamic` absent or false / exactly true. |
+| `toolResults` | Select `tool-result` parts across all steps. |
+| `staticToolResults` / `dynamicToolResults` | From `toolResults`, select results with `dynamic` absent or false / exactly true. |
+| `finishReason` / `rawFinishReason` | Read the corresponding field from `last`. |
+| `usage` | Read `totalUsage` for call usage and `steps[i].usage` for step usage. |
+| `warnings` | Concatenate each step's `warnings` in step order. |
+| `request` / `response` | Read the corresponding field from `last`. |
+| `providerMetadata` | Read `last.providerMetadata` when present. |
+| `responseMessages` | Concatenate each step's `response.messages` in step and message order. |
+| `include.requestBody` / `include.responseBody` | Each defaults to `false`, including when `include` is omitted. Set each desired field to `true` to return an available body on the step. |
+| Node result copying | The typed client attaches non-enumerable getters. `JSON.stringify`, object spread (`{ ...result }`), and `structuredClone` carry only the enumerable wire facts. Read derived properties on the original typed result. |
+
+Typed bindings provide these values through properties or methods, such as
+`result.Text()` in Go and `result.text` in Node. For a streamed call,
+`responseBody` opts into any body supplied as response metadata by the model.
+Rust implementations that construct `StreamResponseInfo` can set its new
+`body` field to `None` when they only supply headers. Trace fingerprints and
+recording capture have access to the full request body.
+
 ## [0.7.0] - 2026-11-24
 
 **Breaking release** (pre-1.0 SemVer). The Rust API surface changes in a few

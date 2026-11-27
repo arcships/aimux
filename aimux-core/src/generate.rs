@@ -109,6 +109,28 @@ async fn resolve_file(
 // User-facing options
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Controls which raw body fields are exposed in generation results.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IncludeOptions {
+    /// Whether to return the request body. Defaults to false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<bool>,
+    /// Whether to return the response body. Defaults to false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<bool>,
+}
+
+impl IncludeOptions {
+    fn request_body(self) -> bool {
+        self.request_body.unwrap_or(false)
+    }
+
+    fn response_body(self) -> bool {
+        self.response_body.unwrap_or(false)
+    }
+}
+
 /// User-facing options for `generate_text` and `stream_text`.
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
@@ -141,6 +163,9 @@ pub struct GenerateTextOptions {
     /// takes the text as the output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<Output>,
+    /// Controls the raw bodies exposed in the result. Both default to `false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<IncludeOptions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -261,10 +286,9 @@ impl GenerateTextOptions {
 ///
 /// It stores the steps, the usage summed over them and the parsed output, as
 /// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-/// other value is derived from the steps by an accessor. The serialized form
-/// is a snapshot that writes the derived values next to the stored ones, so
-/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-/// `steps`, `total_usage` and `output` are read back.
+/// other value is derived from the steps by an accessor. The wire form carries
+/// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+/// optional `outputParsed: false` (when no output was generated).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "GenerateTextResultFacts")]
 #[derive(JsonSchema)]
@@ -278,7 +302,9 @@ pub struct GenerateTextResult {
 /// The output of a result.
 #[derive(Debug, Clone)]
 pub(crate) enum OutputState {
-    /// Parsed by the output specification.
+    /// Parsed by the default text output, which is implicit on the wire.
+    PlainText(Value),
+    /// Parsed by an explicit output specification.
     Parsed(Value),
     /// Not parsed: `generate_text` parses only a final step that finished
     /// with `stop`, or with text and not with tool calls
@@ -289,9 +315,6 @@ pub(crate) enum OutputState {
     /// (`stream-text.ts:3419-3439`).
     Failed(AiMuxError),
 }
-
-/// The text output, used when no output is configured (`output ?? text()`).
-static TEXT_OUTPUT: Output = Output::Text {};
 
 impl GenerateTextResult {
     /// Aggregate the steps of a call with the usage summed over them
@@ -503,7 +526,7 @@ impl GenerateTextResult {
     /// streamed result, the parse error when parsing failed.
     pub fn output(&self) -> Result<&Value, AiMuxError> {
         match &self.output {
-            OutputState::Parsed(value) => Ok(value),
+            OutputState::Parsed(value) | OutputState::PlainText(value) => Ok(value),
             OutputState::NotParsed => Err(AiMuxError::no_output_generated("No output generated.")),
             OutputState::Failed(error) => Err(error.clone()),
         }
@@ -512,109 +535,57 @@ impl GenerateTextResult {
     pub(crate) fn steps_mut(&mut self) -> &mut [StepResult] {
         &mut self.steps
     }
-
-    fn snapshot(&self) -> GenerateTextResultSnapshot<'_> {
-        let final_step = self.final_step();
-        GenerateTextResultSnapshot {
-            content: self.content(),
-            text: final_step.text(),
-            reasoning: final_step.reasoning_outputs(),
-            reasoning_text: final_step.reasoning_text(),
-            files: self.files(),
-            sources: self.sources(),
-            tool_calls: self.tool_calls(),
-            tool_results: self.tool_results(),
-            finish_reason: final_step.finish_reason,
-            raw_finish_reason: final_step.raw_finish_reason.as_deref(),
-            usage: &self.total_usage,
-            total_usage: &self.total_usage,
-            warnings: self.warnings(),
-            request: &final_step.request,
-            response: &final_step.response,
-            response_messages: self.response_messages(),
-            provider_metadata: final_step.provider_metadata.as_ref(),
-            steps: &self.steps,
-            output: match &self.output {
-                OutputState::Parsed(value) => Some(value),
-                OutputState::NotParsed | OutputState::Failed(_) => None,
-            },
-        }
-    }
 }
 
-/// The serialized [`GenerateTextResult`]: the stored values and the values
-/// the AI SDK's result derives from them (`generate-text.ts:1714-1808`).
-/// `finalStep` and the static/dynamic subsets are left out: they are the
-/// last entry of `steps` and a filter on `dynamic`.
+/// Facts shared by the output and input wire contracts.
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct GenerateTextResultSnapshot<'a> {
-    content: Vec<&'a ContentPart>,
-    text: String,
-    /// Deprecated upstream: the last step's reasoning.
-    reasoning: Vec<ReasoningPart>,
-    /// Deprecated upstream: the last step's reasoning text.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reasoning_text: Option<String>,
-    files: Vec<&'a GeneratedFile>,
-    /// Each with its `type` tag (`generate-text-result.ts:73`).
-    #[serde(with = "crate::wire::typed_vec")]
-    #[schemars(with = "Vec<crate::result::TypedSource>", extend("x-aimux-codec" = "tagged"))]
-    sources: Vec<&'a Source>,
-    /// Each with its `type` tag (`generate-text-result.ts:78`).
-    #[serde(with = "crate::wire::typed_vec")]
-    #[schemars(with = "Vec<crate::tool::TypedToolCall>", extend("x-aimux-codec" = "tagged"))]
-    tool_calls: Vec<&'a ToolCall>,
-    /// Each with its `type` tag (`generate-text-result.ts:93`).
-    #[serde(with = "crate::wire::typed_vec")]
-    #[schemars(with = "Vec<crate::result::TaggedToolResult>", extend("x-aimux-codec" = "tagged"))]
-    tool_results: Vec<&'a TypedToolResult>,
-    finish_reason: FinishReasonUnified,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    raw_finish_reason: Option<&'a str>,
-    usage: &'a LanguageModelUsage,
-    /// Deprecated upstream: equal to `usage`.
-    total_usage: &'a LanguageModelUsage,
-    warnings: Vec<&'a Warning>,
-    /// Deprecated upstream: the last step's request.
-    request: &'a RequestInfo,
-    /// Deprecated upstream: the last step's response.
-    response: &'a StepResponse,
-    response_messages: Vec<&'a ModelMessage>,
-    /// Deprecated upstream: the last step's provider metadata.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    provider_metadata: Option<&'a ProviderMetadata>,
+struct GenerateTextResultWire<'a> {
+    #[schemars(length(min = 1))]
     steps: &'a [StepResult],
-    /// Absent when the output was not parsed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    total_usage: &'a LanguageModelUsage,
+    /// An explicit parsed output, including JSON `null`. When absent and
+    /// `outputParsed` is not `false`, bindings expose the final step's text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(extend("x-aimux-codec" = "presence"))]
     output: Option<&'a Value>,
+    /// Present and `false` when no output was generated (for example, a final
+    /// `tool-calls` step without an output spec). Omitted when an output was
+    /// produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_parsed: Option<bool>,
 }
 
 fn text_result_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    if generator.contract().is_serialize() {
-        GenerateTextResultSnapshot::json_schema(generator)
-    } else {
-        GenerateTextResultFacts::json_schema(generator)
-    }
+    GenerateTextResultWire::json_schema(generator)
 }
 
 impl Serialize for GenerateTextResult {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.snapshot().serialize(serializer)
+        let (output, output_parsed) = match &self.output {
+            OutputState::Parsed(value) => (Some(value), None),
+            OutputState::PlainText(_) => (None, None),
+            OutputState::NotParsed | OutputState::Failed(_) => (None, Some(false)),
+        };
+        GenerateTextResultWire {
+            steps: &self.steps,
+            total_usage: &self.total_usage,
+            output,
+            output_parsed,
+        }
+        .serialize(serializer)
     }
 }
 
-/// The values a serialized [`GenerateTextResult`] is read back from.
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GenerateTextResultFacts {
-    #[schemars(length(min = 1))]
     steps: Vec<StepResult>,
     total_usage: LanguageModelUsage,
     #[serde(default, deserialize_with = "present_value")]
-    #[schemars(extend("x-aimux-codec" = "presence"))]
     output: Option<Value>,
+    #[serde(default)]
+    output_parsed: Option<bool>,
 }
 
 /// A present `output` is `Some`, JSON `null` included.
@@ -626,15 +597,22 @@ impl TryFrom<GenerateTextResultFacts> for GenerateTextResult {
     type Error = String;
 
     fn try_from(facts: GenerateTextResultFacts) -> Result<Self, Self::Error> {
-        if facts.steps.is_empty() {
-            return Err("a text result has at least one step".into());
-        }
+        let step = facts
+            .steps
+            .last()
+            .ok_or("a text result has at least one step")?;
+        let output = match (facts.output, facts.output_parsed) {
+            (Some(_), Some(false)) => {
+                return Err("a text result cannot carry output when outputParsed is false".into());
+            }
+            (Some(value), _) => OutputState::Parsed(value),
+            (None, Some(false)) => OutputState::NotParsed,
+            (None, _) => OutputState::PlainText(Value::String(step.text())),
+        };
         Ok(Self::with_total_usage(
             facts.steps,
             facts.total_usage,
-            facts
-                .output
-                .map_or(OutputState::NotParsed, OutputState::Parsed),
+            output,
         ))
     }
 }
@@ -647,10 +625,10 @@ fn generate_output(step: &StepResult, output: Option<&Output>) -> Result<OutputS
     if step.finish_reason == FinishReasonUnified::Stop
         || (step.finish_reason != FinishReasonUnified::ToolCalls && !text.is_empty())
     {
-        let value = output
-            .unwrap_or(&TEXT_OUTPUT)
-            .parse_complete_output(&text)?;
-        Ok(OutputState::Parsed(value))
+        match output {
+            Some(spec) => spec.parse_complete_output(&text).map(OutputState::Parsed),
+            None => Ok(OutputState::PlainText(Value::String(text))),
+        }
     } else {
         Ok(OutputState::NotParsed)
     }
@@ -659,12 +637,13 @@ fn generate_output(step: &StepResult, output: Option<&Output>) -> Result<OutputS
 /// Parse the output of a streamed final step: always parsed, and a failure
 /// only fails reading the output (`stream-text.ts:3419-3435`).
 fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
-    match output
-        .unwrap_or(&TEXT_OUTPUT)
-        .parse_complete_output(&step.text())
-    {
-        Ok(value) => OutputState::Parsed(value),
-        Err(error) => OutputState::Failed(error),
+    let text = step.text();
+    match output {
+        Some(spec) => match spec.parse_complete_output(&text) {
+            Ok(value) => OutputState::Parsed(value),
+            Err(error) => OutputState::Failed(error),
+        },
+        None => OutputState::PlainText(Value::String(text)),
     }
 }
 
@@ -719,6 +698,7 @@ pub struct StreamTextResult {
     pub response_headers: Option<HashMap<String, String>>,
     call_id: String,
     model: StepModel,
+    response_body: Option<Value>,
     output: Option<Output>,
 }
 
@@ -764,6 +744,7 @@ impl StreamTextResult {
             stream,
             call_id,
             model,
+            mut response_body,
             output,
             ..
         } = self;
@@ -863,7 +844,7 @@ impl StreamTextResult {
                             timestamp: response.timestamp,
                             model_id: response.model_id,
                             headers: response.headers,
-                            body: None,
+                            body: response_body.take(),
                             messages: assembled.messages,
                         },
                         provider_metadata,
@@ -1071,6 +1052,7 @@ async fn generate_in_operation(
     options: GenerateTextOptions,
     settings: OperationSettings,
 ) -> Result<GenerateTextResult, AiMuxError> {
+    let include = options.include.unwrap_or_default();
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
@@ -1163,7 +1145,13 @@ async fn generate_in_operation(
             if let Some(context) = &context {
                 let _ = context.start_attempt();
             }
-            do_generate_with_logging(model, &call_options, span.clone(), started)
+            do_generate_with_logging(
+                model,
+                &call_options,
+                include.response_body(),
+                span.clone(),
+                started,
+            )
         }),
     );
     let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
@@ -1230,6 +1218,7 @@ async fn generate_in_operation(
             content,
             response_time_ms,
             step_time_ms,
+            include,
         ))
     }
     .await;
@@ -1414,6 +1403,7 @@ fn build_generated_step(
     content: crate::response_messages::ResponseMessages,
     response_time_ms: f64,
     step_time_ms: f64,
+    include: IncludeOptions,
 ) -> StepResult {
     let GenerateResult {
         finish_reason,
@@ -1424,6 +1414,10 @@ fn build_generated_step(
         response,
         ..
     } = result;
+    let mut request = request.unwrap_or_default();
+    if !include.request_body() {
+        request.body = None;
+    }
     let response = response.unwrap_or_default();
     let metadata = response_metadata_defaults(
         crate::types::ResponseMetadata {
@@ -1448,7 +1442,7 @@ fn build_generated_step(
         usage,
         performance,
         warnings,
-        request: request.unwrap_or_default(),
+        request,
         response: StepResponse {
             id: metadata.id.unwrap_or_default(),
             timestamp: metadata
@@ -1456,7 +1450,7 @@ fn build_generated_step(
                 .unwrap_or_else(crate::timestamp::Timestamp::now),
             model_id: metadata.model_id.unwrap_or_default(),
             headers: response.headers,
-            body: response.body,
+            body: response.body.filter(|_| include.response_body()),
             messages: content.messages,
         },
         provider_metadata,
@@ -1614,6 +1608,7 @@ async fn stream_in_operation(
     settings: OperationSettings,
 ) -> Result<StreamTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
+    let include = options.include.unwrap_or_default();
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
@@ -1746,8 +1741,12 @@ async fn stream_in_operation(
         request,
         response,
     } = result;
-    let request_body = request.and_then(|request| request.body);
-    let response_headers = response.and_then(|response| response.headers);
+    let request_body = request
+        .and_then(|request| request.body)
+        .filter(|_| include.request_body());
+    let response = response.unwrap_or_default();
+    let response_headers = response.headers;
+    let response_body = response.body.filter(|_| include.response_body());
 
     // The consumption phase keeps observing the same deadlines: the
     // first-chunk budget armed at operation start continues until the first
@@ -2117,6 +2116,7 @@ async fn stream_in_operation(
         response_headers,
         call_id: step_call_id,
         model: step_model,
+        response_body,
         output,
     })
 }
@@ -2460,16 +2460,30 @@ impl Drop for AbortOnDrop {
         self.0.abort();
     }
 }
+tokio::task_local! {
+    static PROVIDER_RESPONSE_BODY: bool;
+}
+
+/// The generation operation's response-body preference, including its default.
+/// Direct model calls retain the provider's default.
+#[doc(hidden)]
+#[must_use]
+pub fn provider_response_body_preference() -> Option<bool> {
+    PROVIDER_RESPONSE_BODY.try_with(|include| *include).ok()
+}
+
 /// Run `do_generate` inside the RFC-0014 `generate` span and emit the
 /// `generate_end` event. A plain async fn (rather than an inline async block)
 /// so the `?` error type is pinned by the declared return type.
 async fn do_generate_with_logging(
     model: &dyn LanguageModel,
     call_options: &CallOptions,
+    response_body: bool,
     span: tracing::Span,
     started: Instant,
 ) -> Result<GenerateResult, AiMuxError> {
-    let r = async { model.do_generate(call_options).await }
+    let r = PROVIDER_RESPONSE_BODY
+        .scope(response_body, model.do_generate(call_options))
         .instrument(span)
         .await?;
     tracing::info!(

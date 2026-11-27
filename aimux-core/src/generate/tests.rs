@@ -77,6 +77,7 @@ impl LanguageModel for ScriptedModel {
                     "x-request-id".to_string(),
                     "req-1".to_string(),
                 )])),
+                body: Some(json!({ "id": "resp-1" })),
             }),
         })
     }
@@ -230,7 +231,7 @@ async fn the_stream_is_framed_as_the_ai_sdk_full_stream() {
     let TextStreamPart::StartStep { request, warnings } = &parts[1] else {
         unreachable!()
     };
-    assert_eq!(request.body, Some(json!({ "model": "mock-model" })));
+    assert_eq!(request.body, None);
     assert_eq!(
         serde_json::to_value(warnings).unwrap(),
         json!([{ "type": "other", "message": "careful" }])
@@ -323,7 +324,7 @@ async fn a_consumed_stream_aggregates_its_step() {
     assert_eq!(step.text(), "Hello");
     assert_eq!(step.response.id, "resp-1");
     assert_eq!(step.response.body, None);
-    assert_eq!(step.request.body, Some(json!({ "model": "mock-model" })));
+    assert_eq!(step.request.body, None);
     assert_eq!(step.warnings.len(), 1);
     assert_eq!(result.text(), "Hello");
     assert_eq!(result.finish_reason(), FinishReasonUnified::Stop);
@@ -376,7 +377,7 @@ async fn generate_text_derives_its_result_from_the_step() {
     assert_eq!(step.response.model_id, "mock-model");
     // The call layer stamps a response without a timestamp.
     assert!(step.response.timestamp.unix_millis() > 0);
-    assert_eq!(step.response.body, Some(json!({ "id": "resp-1" })));
+    assert_eq!(step.response.body, None);
     assert_eq!(step.performance.time_to_first_output_ms, None);
     assert_eq!(step.performance.output_tokens_per_second, None);
     assert_eq!(step.performance.time_between_output_chunks_ms, None);
@@ -407,13 +408,12 @@ async fn generate_text_derives_its_result_from_the_step() {
     ));
 }
 
-/// The serialized result writes the derived values next to the stored ones
-/// and reads back only `steps`, `total_usage` and `output`. The finish reason
+/// The serialized result carries only the stored facts. The finish reason
 /// is a string and the usage is the flat `LanguageModelUsage` (usage.ts:10-67),
 /// camelCase with an unknown count absent; a step is its own fields
 /// (step-result.ts:138-278), camelCase.
 #[tokio::test]
-async fn the_result_snapshot_round_trips() {
+async fn the_result_facts_round_trip() {
     let model = ScriptedModel::generating(generated(
         vec![text_content("Hello")],
         FinishReasonUnified::Stop,
@@ -422,16 +422,14 @@ async fn the_result_snapshot_round_trips() {
         .await
         .unwrap();
     let wire = serde_json::to_value(&result).unwrap();
-    assert_eq!(wire["text"], json!("Hello"));
-    assert_eq!(wire["finishReason"], json!("stop"));
-    assert_eq!(wire["rawFinishReason"], json!("stop"));
-    assert_eq!(wire["usage"]["inputTokens"], json!(10));
+    assert_eq!(wire.as_object().unwrap().len(), 2);
+    assert_eq!(wire["totalUsage"]["inputTokens"], json!(10));
     assert_eq!(
-        wire["usage"]["inputTokenDetails"],
+        wire["totalUsage"]["inputTokenDetails"],
         json!({ "noCacheTokens": 6, "cacheReadTokens": 4 })
     );
-    assert_eq!(wire["usage"]["totalTokens"], json!(16));
-    assert_eq!(wire["output"], json!("Hello"));
+    assert_eq!(wire["totalUsage"]["totalTokens"], json!(16));
+    assert!(wire.get("output").is_none());
     assert_eq!(wire["steps"].as_array().unwrap().len(), 1);
     let step = &wire["steps"][0];
     assert_eq!(step["stepNumber"], json!(0));
@@ -446,6 +444,37 @@ async fn the_result_snapshot_round_trips() {
 
     let back: GenerateTextResult = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&back).unwrap(), wire);
+
+    for value in [Value::Null, json!("Hello"), json!({"parsed": true})] {
+        let mut explicit = wire.clone();
+        explicit["output"] = value.clone();
+        let result: GenerateTextResult = serde_json::from_value(explicit.clone()).unwrap();
+        assert_eq!(result.output().unwrap(), &value);
+        assert_eq!(serde_json::to_value(&result).unwrap(), explicit);
+    }
+
+    // NotParsed (e.g. a tool-calls step with no output spec) carries
+    // `outputParsed: false` and round-trips to `Err(NoOutputGenerated)`.
+    let tool_model = ScriptedModel::generating(generated(
+        vec![text_content("Calling tool")],
+        FinishReasonUnified::ToolCalls,
+    ));
+    let unparsed = generate_text(&tool_model, "hi", GenerateTextOptions::default())
+        .await
+        .unwrap();
+    let unparsed_wire = serde_json::to_value(&unparsed).unwrap();
+    assert!(unparsed_wire.get("output").is_none());
+    assert_eq!(unparsed_wire["outputParsed"], json!(false));
+    let unparsed_back: GenerateTextResult = serde_json::from_value(unparsed_wire.clone()).unwrap();
+    assert!(matches!(
+        unparsed_back.output(),
+        Err(AiMuxError::NoOutputGenerated { .. })
+    ));
+    assert_eq!(serde_json::to_value(&unparsed_back).unwrap(), unparsed_wire);
+
+    let mut contradictory = unparsed_wire;
+    contradictory["output"] = Value::Null;
+    assert!(serde_json::from_value::<GenerateTextResult>(contradictory).is_err());
 
     let mut no_steps = wire;
     no_steps["steps"] = json!([]);
@@ -684,7 +713,7 @@ async fn generate_object_wraps_the_output() {
     assert_eq!(result.finish_reason, FinishReasonUnified::Stop);
     assert_eq!(result.usage.input_tokens, Some(10));
     assert_eq!(result.response.id, "resp-1");
-    assert_eq!(result.response.body, Some(json!({ "id": "resp-1" })));
+    assert_eq!(result.response.body, None);
     assert_eq!(result.reasoning, None);
     let wire = serde_json::to_value(&result).unwrap();
     assert!(wire.get("raw").is_none());
@@ -2560,5 +2589,71 @@ async fn consumer_polling_after_deadline_delivers_sync_tool_call_but_times_out_h
         let err = repair_result.consume().await.unwrap_err();
         assert!(matches!(err, AiMuxError::Timeout(_)), "{err:?}");
         assert!(dropped.load(Ordering::SeqCst));
+    }
+}
+
+#[tokio::test]
+async fn include_controls_body_echoes_without_removing_metadata() {
+    for (include, request, response) in [
+        (None, false, false),
+        (Some(IncludeOptions::default()), false, false),
+        (
+            Some(IncludeOptions {
+                request_body: Some(true),
+                response_body: None,
+            }),
+            true,
+            false,
+        ),
+        (
+            Some(IncludeOptions {
+                request_body: None,
+                response_body: Some(true),
+            }),
+            false,
+            true,
+        ),
+        (
+            Some(IncludeOptions {
+                request_body: Some(true),
+                response_body: Some(true),
+            }),
+            true,
+            true,
+        ),
+    ] {
+        let options = GenerateTextOptions {
+            include,
+            ..Default::default()
+        };
+        let generating = ScriptedModel::generating(generated(
+            vec![text_content("hi")],
+            FinishReasonUnified::Stop,
+        ));
+        let streaming = ScriptedModel::streaming(text_stream(&["hi"], FinishReasonUnified::Stop));
+        let generated = generate_text(&generating, "hi", options.clone())
+            .await
+            .unwrap();
+        let streamed = stream_text(&streaming, "hi", options).await.unwrap();
+        assert_eq!(streamed.request_body.is_some(), request);
+        for result in [generated, streamed.consume().await.unwrap()] {
+            let wire = serde_json::to_value(&result).unwrap();
+            assert_eq!(wire.as_object().unwrap().len(), 2);
+            assert!(wire.get("totalUsage").is_some());
+            let step = &wire["steps"][0];
+            assert_eq!(
+                step["request"].get("body"),
+                request.then(|| json!({"model": "mock-model"})).as_ref()
+            );
+            assert_eq!(
+                step["response"].get("body"),
+                response.then(|| json!({"id": "resp-1"})).as_ref()
+            );
+            assert_eq!(step["response"]["id"], "resp-1");
+            assert_eq!(result.text(), "hi");
+            assert_eq!(result.output().unwrap(), "hi");
+            let round_trip: GenerateTextResult = serde_json::from_value(wire).unwrap();
+            assert_eq!(round_trip.output().unwrap(), "hi");
+        }
     }
 }

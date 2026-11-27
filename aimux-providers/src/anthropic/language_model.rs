@@ -1326,7 +1326,9 @@ pub(crate) async fn anthropic_generate_core(
     let resp = aimux_provider_utils::post_json_to_api(
         request,
         body.clone(),
-        aimux_provider_utils::create_json_response_handler(),
+        aimux_provider_utils::create_json_response_handler_with_body(
+            aimux_core::generate::provider_response_body_preference().unwrap_or(true),
+        ),
         config.failed_response_handler(),
     )
     .await?;
@@ -1498,6 +1500,7 @@ pub(crate) async fn anthropic_stream_core(
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
             response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
+                body: None,
             }),
         },
         options,

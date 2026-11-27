@@ -403,12 +403,16 @@ fn type_contract(serialize: bool) -> (Vec<Value>, Value) {
         }
     }
     if serialize {
-        // Bindings also read errors, recordings and trace records, which no op returns.
+        // Bindings also use these standalone DTOs outside operation results.
         use crate::op::TypeRef;
         for ty in [
             TypeRef::of::<crate::ErrorEnvelope>(),
             TypeRef::of::<aimux_core::recording::Recording>(),
             TypeRef::of::<aimux_core::trace::TraceRecord>(),
+            // These content projections were previously reachable from the text snapshot.
+            TypeRef::of::<aimux_core::result::ReasoningPart>(),
+            TypeRef::of::<aimux_core::result::TaggedToolResult>(),
+            TypeRef::of::<aimux_core::result::TypedSource>(),
         ] {
             roots.insert((ty.id)().into_owned(), ty);
         }
@@ -451,6 +455,10 @@ mod tests {
     #[test]
     fn manifest_has_stable_versions_kinds_codes_and_registered_ops() {
         let value = manifest();
+        assert_eq!(
+            manifest_digest(),
+            "6914772fdc03df08cba497def41cb354fe52e40eba49844a66938b4cd38c5d83",
+        );
         assert_eq!(value["abiVersion"], 65536);
         assert_eq!(value["opsVersion"], "1.0");
         assert_eq!(value["generatorVersion"], env!("CARGO_PKG_VERSION"));

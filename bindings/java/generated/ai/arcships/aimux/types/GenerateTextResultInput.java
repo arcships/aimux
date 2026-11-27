@@ -13,18 +13,28 @@ import java.util.*;
  *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
- * other value is derived from the steps by an accessor. The serialized form
- * is a snapshot that writes the derived values next to the stored ones, so
- * a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
- * `steps`, `total_usage` and `output` are read back.
+ * other value is derived from the steps by an accessor. The wire form carries
+ * `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+ * optional `outputParsed: false` (when no output was generated).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class GenerateTextResultInput {
+    /**
+     * An explicit parsed output, including JSON `null`. When absent and
+     * `outputParsed` is not `false`, bindings expose the final step's text.
+     */
     @JsonProperty("output")
     @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
     private final FieldPresence<JsonNode> output;
+    /**
+     * Present and `false` when no output was generated (for example, a final
+     * `tool-calls` step without an output spec). Omitted when an output was
+     * produced.
+     */
+    @JsonProperty("outputParsed")
+    private final Boolean outputParsed;
     @JsonProperty("steps")
     private final List<StepResultInput> steps;
     @JsonProperty("totalUsage")
@@ -33,9 +43,11 @@ public final class GenerateTextResultInput {
     @JsonCreator
     public GenerateTextResultInput(
         @JsonProperty(value = "output") FieldPresence<JsonNode> output,
+        @JsonProperty(value = "outputParsed") Boolean outputParsed,
         @JsonProperty(value = "steps", required = true) List<StepResultInput> steps,
         @JsonProperty(value = "totalUsage", required = true) LanguageModelUsageInput totalUsage) {
         this.output = output == null ? FieldPresence.absent() : output;
+        this.outputParsed = outputParsed;
         this.steps = steps == null ? null : Collections.unmodifiableList(new ArrayList<>(steps));
         this.totalUsage = totalUsage;
     }
@@ -43,11 +55,13 @@ public final class GenerateTextResultInput {
     public static Builder builder() { return new Builder(); }
     public JsonNode getOutput() { return output.getValue() == null ? null : output.getValue().deepCopy(); }
     public boolean hasOutput() { return output.isPresent(); }
+    public Boolean getOutputParsed() { return outputParsed; }
     public List<StepResultInput> getSteps() { return steps; }
     public LanguageModelUsageInput getTotalUsage() { return totalUsage; }
 
     public static final class Builder {
         private FieldPresence<JsonNode> output = FieldPresence.absent();
+        private Boolean outputParsed;
         private List<StepResultInput> steps;
         private LanguageModelUsageInput totalUsage;
 
@@ -61,6 +75,11 @@ public final class GenerateTextResultInput {
             return this;
         }
 
+        public Builder outputParsed(Boolean value) {
+            this.outputParsed = value;
+            return this;
+        }
+
         public Builder steps(List<StepResultInput> value) {
             this.steps = value;
             return this;
@@ -71,6 +90,6 @@ public final class GenerateTextResultInput {
             return this;
         }
 
-        public GenerateTextResultInput build() { return new GenerateTextResultInput(output, steps, totalUsage); }
+        public GenerateTextResultInput build() { return new GenerateTextResultInput(output, outputParsed, steps, totalUsage); }
     }
 }

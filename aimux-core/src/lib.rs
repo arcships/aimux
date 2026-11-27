@@ -95,7 +95,7 @@ pub mod prelude {
     pub use crate::generate::generate_object;
     pub use crate::generate::{
         GenerateObjectResponse, GenerateObjectResult, GenerateTextOptions, GenerateTextResult,
-        StreamTextResult, generate_text, generate_text_as_openai,
+        IncludeOptions, StreamTextResult, generate_text, generate_text_as_openai,
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};

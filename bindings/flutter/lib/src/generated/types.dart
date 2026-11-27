@@ -5843,6 +5843,9 @@ final class GenerateTextOptions {
   final double? frequencyPenalty;
   final Map<String, String>? headers;
 
+  /// Controls the raw bodies exposed in the result. Both default to `false`.
+  final IncludeOptions? include;
+
   /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
   final bool? includeRawChunks;
 
@@ -5891,6 +5894,7 @@ final class GenerateTextOptions {
   const GenerateTextOptions({
     this.frequencyPenalty,
     this.headers,
+    this.include,
     this.includeRawChunks,
     this.instructions,
     this.maxOutputTokens,
@@ -5911,7 +5915,7 @@ final class GenerateTextOptions {
     this.topP,
   });
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
-    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
+    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'include', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
     for (final key in json.keys) {
       if (!allowedKeys.contains(key)) {
         throw FormatException('Unknown field $key for GenerateTextOptions');
@@ -5924,6 +5928,9 @@ final class GenerateTextOptions {
       headers: json['headers'] == null
           ? null
           : Map<String, String>.from(json['headers'] as Map),
+      include: json['include'] == null
+          ? null
+          : IncludeOptions.fromJson(json['include'] as Map<String, dynamic>),
       includeRawChunks: json['includeRawChunks'] as bool?,
       instructions: json['instructions'] as String?,
       maxOutputTokens: json['maxOutputTokens'] as int?,
@@ -5970,6 +5977,7 @@ final class GenerateTextOptions {
   Map<String, dynamic> toJson() => {
         if (frequencyPenalty != null) 'frequencyPenalty': frequencyPenalty,
         if (headers != null) 'headers': headers,
+        if (include != null) 'include': include!.toJson(),
         if (includeRawChunks != null) 'includeRawChunks': includeRawChunks,
         if (instructions != null) 'instructions': instructions,
         if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
@@ -5997,142 +6005,95 @@ final class GenerateTextOptions {
 ///
 /// It stores the steps, the usage summed over them and the parsed output, as
 /// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-/// other value is derived from the steps by an accessor. The serialized form
-/// is a snapshot that writes the derived values next to the stored ones, so
-/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-/// `steps`, `total_usage` and `output` are read back.
+/// other value is derived from the steps by an accessor. The wire form carries
+/// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+/// optional `outputParsed: false` (when no output was generated).
 final class GenerateTextResult {
-  final List<ContentPart> content;
-  final List<GeneratedFile> files;
-  final FinishReasonUnified finishReason;
+  /// An explicit parsed output, including JSON `null`. When absent and
+  /// `outputParsed` is not `false`, bindings expose the final step's text.
+  final Field<Object?> outputValue;
 
-  /// Absent when the output was not parsed.
-  final Field<Object?> output;
-
-  /// Deprecated upstream: the last step's provider metadata.
-  final Map<String, Map<String, Object?>>? providerMetadata;
-  final String? rawFinishReason;
-
-  /// Deprecated upstream: the last step's reasoning.
-  final List<ReasoningPart> reasoning;
-
-  /// Deprecated upstream: the last step's reasoning text.
-  final String? reasoningText;
-
-  /// Deprecated upstream: the last step's request.
-  final RequestInfo request;
-
-  /// Deprecated upstream: the last step's response.
-  final StepResponse response;
-  final List<ModelMessage> responseMessages;
-
-  /// Each with its `type` tag (`generate-text-result.ts:73`).
-  final List<TypedSource> sources;
+  /// Present and `false` when no output was generated (for example, a final
+  /// `tool-calls` step without an output spec). Omitted when an output was
+  /// produced.
+  final bool? outputParsed;
   final List<StepResult> steps;
-  final String text;
-
-  /// Each with its `type` tag (`generate-text-result.ts:78`).
-  final List<TypedToolCall> toolCalls;
-
-  /// Each with its `type` tag (`generate-text-result.ts:93`).
-  final List<TaggedToolResult> toolResults;
-
-  /// Deprecated upstream: equal to `usage`.
   final LanguageModelUsage totalUsage;
-  final LanguageModelUsage usage;
-  final List<Warning> warnings;
   const GenerateTextResult({
-    required this.content,
-    required this.files,
-    required this.finishReason,
-    this.output = const Field.absent(),
-    this.providerMetadata,
-    this.rawFinishReason,
-    required this.reasoning,
-    this.reasoningText,
-    required this.request,
-    required this.response,
-    required this.responseMessages,
-    required this.sources,
+    this.outputValue = const Field.absent(),
+    this.outputParsed,
     required this.steps,
-    required this.text,
-    required this.toolCalls,
-    required this.toolResults,
     required this.totalUsage,
-    required this.usage,
-    required this.warnings,
   });
   factory GenerateTextResult.fromJson(Map<String, dynamic> json) {
+    if ((json['steps'] as List<dynamic>).isEmpty) {
+      throw const FormatException('GenerateTextResult requires at least one step');
+    }
+    if (json.containsKey('output') && json['outputParsed'] == false) {
+      throw const FormatException('GenerateTextResult cannot carry output when outputParsed is false');
+    }
     return GenerateTextResult(
-      content: (json['content'] as List)
-          .map((item) => ContentPart.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      files: (json['files'] as List)
-          .map((item) => GeneratedFile.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      finishReason: FinishReasonUnified.fromJson(json['finishReason']),
-      output: json.containsKey('output')
+      outputValue: json.containsKey('output')
           ? Field.of(json['output'])
           : const Field.absent(),
-      providerMetadata: json['providerMetadata'] == null
-          ? null
-          : (json['providerMetadata'] as Map).map((key, item) =>
-              MapEntry(key as String, Map<String, Object?>.from(item as Map))),
-      rawFinishReason: json['rawFinishReason'] as String?,
-      reasoning: (json['reasoning'] as List)
-          .map((item) => ReasoningPart.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      reasoningText: json['reasoningText'] as String?,
-      request: RequestInfo.fromJson(json['request'] as Map<String, dynamic>),
-      response: StepResponse.fromJson(json['response'] as Map<String, dynamic>),
-      responseMessages: (json['responseMessages'] as List)
-          .map((item) => ModelMessage.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      sources: (json['sources'] as List)
-          .map((item) => TypedSource.fromJson(item as Map<String, dynamic>))
-          .toList(),
+      outputParsed: json['outputParsed'] as bool?,
       steps: (json['steps'] as List)
           .map((item) => StepResult.fromJson(item as Map<String, dynamic>))
           .toList(),
-      text: json['text'] as String,
-      toolCalls: (json['toolCalls'] as List)
-          .map((item) => TypedToolCall.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      toolResults: (json['toolResults'] as List)
-          .map(
-              (item) => TaggedToolResult.fromJson(item as Map<String, dynamic>))
-          .toList(),
       totalUsage: LanguageModelUsage.fromJson(
           json['totalUsage'] as Map<String, dynamic>),
-      usage: LanguageModelUsage.fromJson(json['usage'] as Map<String, dynamic>),
-      warnings: (json['warnings'] as List)
-          .map((item) => Warning.fromJson(item as Map<String, dynamic>))
-          .toList(),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'content': content.map((item) => item.toJson()).toList(),
-        'files': files.map((item) => item.toJson()).toList(),
-        'finishReason': finishReason.toJson(),
-        if (output.isPresent) 'output': output.value,
-        if (providerMetadata != null) 'providerMetadata': providerMetadata,
-        if (rawFinishReason != null) 'rawFinishReason': rawFinishReason,
-        'reasoning': reasoning.map((item) => item.toJson()).toList(),
-        if (reasoningText != null) 'reasoningText': reasoningText,
-        'request': request.toJson(),
-        'response': response.toJson(),
-        'responseMessages':
-            responseMessages.map((item) => item.toJson()).toList(),
-        'sources': sources.map((item) => item.toJson()).toList(),
+        if (outputValue.isPresent) 'output': outputValue.value,
+        if (outputParsed != null) 'outputParsed': outputParsed,
         'steps': steps.map((item) => item.toJson()).toList(),
-        'text': text,
-        'toolCalls': toolCalls.map((item) => item.toJson()).toList(),
-        'toolResults': toolResults.map((item) => item.toJson()).toList(),
         'totalUsage': totalUsage.toJson(),
-        'usage': usage.toJson(),
-        'warnings': warnings.map((item) => item.toJson()).toList(),
       };
+
+  StepResult get finalStep => steps.last;
+  String get text =>
+      finalStep.content.whereType<ContentPartText>().map((p) => p.text).join();
+  List<ContentPart> get content => steps.expand((step) => step.content).toList();
+  List<ContentPart> get reasoning => finalStep.content
+      .where((p) => p is ContentPartReasoning || p is ContentPartReasoningFile)
+      .toList();
+  String? get reasoningText {
+    final text = reasoning.whereType<ContentPartReasoning>().map((p) => p.text).join();
+    return text.isEmpty ? null : text;
+  }
+
+  List<GeneratedFile> get files =>
+      content.whereType<ContentPartFile>().map((p) => p.file).toList();
+  List<ContentPart> get sources => content
+      .where((p) => p is ContentPartSourceUrl || p is ContentPartSourceDocument)
+      .toList();
+  List<ContentPartToolCall> get toolCalls =>
+      content.whereType<ContentPartToolCall>().toList();
+  List<ContentPartToolCall> get staticToolCalls =>
+      toolCalls.where((p) => p.dynamic_ != true).toList();
+  List<ContentPartToolCall> get dynamicToolCalls =>
+      toolCalls.where((p) => p.dynamic_ == true).toList();
+  List<ContentPartToolResult> get toolResults =>
+      content.whereType<ContentPartToolResult>().toList();
+  List<ContentPartToolResult> get staticToolResults =>
+      toolResults.where((p) => p.dynamic_ != true).toList();
+  List<ContentPartToolResult> get dynamicToolResults =>
+      toolResults.where((p) => p.dynamic_ == true).toList();
+  FinishReasonUnified get finishReason => finalStep.finishReason;
+  String? get rawFinishReason => finalStep.rawFinishReason;
+  LanguageModelUsage get usage => totalUsage;
+  List<Warning> get warnings => steps.expand((step) => step.warnings).toList();
+  RequestInfo get request => finalStep.request;
+  StepResponse get response => finalStep.response;
+  Map<String, Map<String, Object?>>? get providerMetadata =>
+      finalStep.providerMetadata;
+  List<ModelMessage> get responseMessages =>
+      steps.expand((step) => step.response.messages).toList();
+  Field<Object?> get output => outputValue.isPresent
+      ? outputValue
+      : (outputParsed == false ? const Field.absent() : Field.of(text));
 }
 
 /// Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
@@ -6140,16 +6101,23 @@ final class GenerateTextResult {
 ///
 /// It stores the steps, the usage summed over them and the parsed output, as
 /// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
-/// other value is derived from the steps by an accessor. The serialized form
-/// is a snapshot that writes the derived values next to the stored ones, so
-/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
-/// `steps`, `total_usage` and `output` are read back.
+/// other value is derived from the steps by an accessor. The wire form carries
+/// `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+/// optional `outputParsed: false` (when no output was generated).
 final class GenerateTextResultInput {
+  /// An explicit parsed output, including JSON `null`. When absent and
+  /// `outputParsed` is not `false`, bindings expose the final step's text.
   final Field<Object?> output;
+
+  /// Present and `false` when no output was generated (for example, a final
+  /// `tool-calls` step without an output spec). Omitted when an output was
+  /// produced.
+  final bool? outputParsed;
   final List<StepResultInput> steps;
   final LanguageModelUsageInput totalUsage;
   const GenerateTextResultInput({
     this.output = const Field.absent(),
+    this.outputParsed,
     required this.steps,
     required this.totalUsage,
   });
@@ -6158,6 +6126,7 @@ final class GenerateTextResultInput {
       output: json.containsKey('output')
           ? Field.of(json['output'])
           : const Field.absent(),
+      outputParsed: json['outputParsed'] as bool?,
       steps: (json['steps'] as List)
           .map((item) => StepResultInput.fromJson(item as Map<String, dynamic>))
           .toList(),
@@ -6168,6 +6137,7 @@ final class GenerateTextResultInput {
 
   Map<String, dynamic> toJson() => {
         if (output.isPresent) 'output': output.value,
+        if (outputParsed != null) 'outputParsed': outputParsed,
         'steps': steps.map((item) => item.toJson()).toList(),
         'totalUsage': totalUsage.toJson(),
       };
@@ -6773,6 +6743,36 @@ final class ImageUsage {
         if (inputTokens != null) 'inputTokens': inputTokens,
         if (outputTokens != null) 'outputTokens': outputTokens,
         if (totalTokens != null) 'totalTokens': totalTokens,
+      };
+}
+
+/// Controls which raw body fields are exposed in generation results.
+final class IncludeOptions {
+  /// Whether to return the request body. Defaults to false.
+  final bool? requestBody;
+
+  /// Whether to return the response body. Defaults to false.
+  final bool? responseBody;
+  const IncludeOptions({
+    this.requestBody,
+    this.responseBody,
+  });
+  factory IncludeOptions.fromJson(Map<String, dynamic> json) {
+    const allowedKeys = <String>{'requestBody', 'responseBody'};
+    for (final key in json.keys) {
+      if (!allowedKeys.contains(key)) {
+        throw FormatException('Unknown field $key for IncludeOptions');
+      }
+    }
+    return IncludeOptions(
+      requestBody: json['requestBody'] as bool?,
+      responseBody: json['responseBody'] as bool?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (requestBody != null) 'requestBody': requestBody,
+        if (responseBody != null) 'responseBody': responseBody,
       };
 }
 
@@ -8617,6 +8617,9 @@ final class Options {
   final double? frequencyPenalty;
   final Map<String, String>? headers;
 
+  /// Controls the raw bodies exposed in the result. Both default to `false`.
+  final IncludeOptions? include;
+
   /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
   final bool? includeRawChunks;
 
@@ -8665,6 +8668,7 @@ final class Options {
   const Options({
     this.frequencyPenalty,
     this.headers,
+    this.include,
     this.includeRawChunks,
     this.instructions,
     this.maxOutputTokens,
@@ -8685,7 +8689,7 @@ final class Options {
     this.topP,
   });
   factory Options.fromJson(Map<String, dynamic> json) {
-    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
+    const allowedKeys = <String>{'frequencyPenalty', 'headers', 'include', 'includeRawChunks', 'instructions', 'maxOutputTokens', 'maxRetries', 'output', 'presencePenalty', 'providerOptions', 'reasoning', 'seed', 'sessionId', 'stopSequences', 'strictStream', 'temperature', 'timeout', 'toolChoice', 'tools', 'topK', 'topP'};
     for (final key in json.keys) {
       if (!allowedKeys.contains(key)) {
         throw FormatException('Unknown field $key for Options');
@@ -8698,6 +8702,9 @@ final class Options {
       headers: json['headers'] == null
           ? null
           : Map<String, String>.from(json['headers'] as Map),
+      include: json['include'] == null
+          ? null
+          : IncludeOptions.fromJson(json['include'] as Map<String, dynamic>),
       includeRawChunks: json['includeRawChunks'] as bool?,
       instructions: json['instructions'] as String?,
       maxOutputTokens: json['maxOutputTokens'] as int?,
@@ -8744,6 +8751,7 @@ final class Options {
   Map<String, dynamic> toJson() => {
         if (frequencyPenalty != null) 'frequencyPenalty': frequencyPenalty,
         if (headers != null) 'headers': headers,
+        if (include != null) 'include': include!.toJson(),
         if (includeRawChunks != null) 'includeRawChunks': includeRawChunks,
         if (instructions != null) 'instructions': instructions,
         if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,

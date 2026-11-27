@@ -427,8 +427,9 @@ async fn generated_file_is_base64_and_media_type_in_text_results() {
     .await
     .expect("generate_text should succeed");
 
-    let wire = serde_json::to_value(&result).unwrap();
-    let file = &wire["files"][0];
+    let files = result.files();
+    assert_eq!(files.len(), 1);
+    let file = serde_json::to_value(files[0]).unwrap();
     assert_eq!(file["mediaType"], "image/png");
     assert!(
         file["base64"]
@@ -437,9 +438,11 @@ async fn generated_file_is_base64_and_media_type_in_text_results() {
             .starts_with(PNG_BASE64_PREFIX)
     );
     assert!(file.get("data").is_none(), "no tagged data: {file}");
-    let part = &wire["content"][1];
+    let wire = serde_json::to_value(&result).unwrap();
+    assert!(wire.get("files").is_none());
+    let part = &wire["steps"][0]["content"][1];
     assert_eq!(part["type"], "file");
-    assert_eq!(part["file"], *file);
+    assert_eq!(part["file"], file);
 }
 
 #[tokio::test]

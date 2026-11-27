@@ -107,7 +107,9 @@ impl LanguageModel for BedrockModel {
         let resp = aimux_provider_utils::post_to_api(
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
-            aimux_provider_utils::create_json_response_handler_with_body(false),
+            aimux_provider_utils::create_json_response_handler_with_body(
+                aimux_core::generate::provider_response_body_preference() == Some(true),
+            ),
             super::error::bedrock_failed_response_handler(),
         )
         .await?;
@@ -190,7 +192,7 @@ impl LanguageModel for BedrockModel {
                     .and_then(|date| aimux_core::Timestamp::from_http_date(date)),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
-                body: None,
+                body: resp.raw_value,
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -251,6 +253,7 @@ impl LanguageModel for BedrockModel {
                 request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
                 response: Some(aimux_core::shared::StreamResponseInfo {
                     headers: Some(response_headers),
+                    body: None,
                 }),
             },
             options,

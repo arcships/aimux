@@ -37,6 +37,20 @@ original files. A future recording change can make rollback unable to read new
 data; no automatic converter or compatibility release is promised. Pin the
 entire previous release when rolling back, including packages and native assets.
 
+## Compact text result JSON
+
+Update code that reads text-generation results from `aimux_call`. Read
+`steps` and `totalUsage` from the result and check key presence for
+`output`, where a present JSON `null` is a value. When `output` is absent,
+check `outputParsed`: `false` means no output was generated (such as a final
+`tool-calls` step); otherwise the output is the final step's derived `text`.
+The last step supplies `request` and `response`. To retrieve their bodies
+when available, pass `options.include.requestBody` and
+`options.include.responseBody` as `true` in the text request. The full field
+migration covers generation, stream consumption, tool repair, and language
+replay.
+[Compact text result field mapping](../CHANGELOG.md#compact-text-result-json-rfc-0049)
+
 ## Load and validate
 
 Read the ABI and manifest before creating resources. Raw C consumers must check

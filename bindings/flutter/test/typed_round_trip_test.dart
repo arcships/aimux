@@ -365,42 +365,62 @@ void main() {
 
     test('GenerateTextResult round-trips', () {
       final json = jsonDecode(jsonEncode({
-        'content': [
-          {'type': 'text', 'text': 'hi'}
-        ],
-        'text': 'hi',
-        'reasoning': [],
-        'files': [],
-        'sources': [],
-        'toolCalls': [
-          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
-        ],
-        'toolResults': [],
-        'finishReason': 'tool-calls',
-        'rawFinishReason': 'tool_calls',
-        'usage': _lmUsage,
         'totalUsage': _lmUsage,
-        'warnings': [],
-        'request': {},
-        'response': {
-          'id': 'r',
-          'modelId': 'gpt-4o',
-          'timestamp': '2026-01-01T00:00:00.000Z',
-          'messages': []
-        },
-        'responseMessages': [
-          {'role': 'assistant', 'content': 'hi'}
-        ],
-        'steps': [],
+        'steps': [{
+          'callId': 'c',
+          'stepNumber': 0,
+          'model': {'modelId': 'gpt-4o', 'provider': 'openai'},
+          'content': [
+            {'type': 'text', 'text': 'hi'},
+            {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
+          ],
+          'finishReason': 'tool-calls',
+          'rawFinishReason': 'tool_calls',
+          'usage': _lmUsage,
+          'performance': {
+            'effectiveOutputTokensPerSecond': 0.0,
+            'effectiveTotalTokensPerSecond': 0.0,
+            'responseTimeMs': 0.0,
+            'stepTimeMs': 0.0,
+            'toolExecutionMs': {},
+          },
+          'warnings': [],
+          'request': {},
+          'response': {
+            'id': 'r',
+            'modelId': 'gpt-4o',
+            'timestamp': '2026-01-01T00:00:00.000Z',
+            'messages': [
+              {'role': 'assistant', 'content': 'hi'}
+            ],
+          },
+        }],
       })) as Map<String, dynamic>;
+      expect(
+        () => GenerateTextResult.fromJson({...json, 'steps': []}),
+        throwsFormatException,
+      );
       final result = GenerateTextResult.fromJson(json);
       expect(result.finishReason, FinishReasonUnified.toolCalls);
       expect(result.usage.totalTokens, 5);
       expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
       expect(result.reasoningText, isNull);
-      expect(result.output.isPresent, isFalse);
-      expect(result.steps, isEmpty);
+      expect(result.output.value, 'hi');
+      expect(result.outputValue.isPresent, isFalse);
+      expect(result.staticToolCalls.single.toolName, 't');
+      expect(result.steps, hasLength(1));
       expect(jsonDecode(jsonEncode(result)), json);
+
+      // An unparsed result (`outputParsed: false`) keeps `output` absent.
+      final notParsed = Map<String, dynamic>.of(json)..['outputParsed'] = false;
+      final unparsedResult = GenerateTextResult.fromJson(notParsed);
+      expect(unparsedResult.output.isPresent, isFalse);
+      expect(unparsedResult.outputParsed, isFalse);
+      expect(jsonDecode(jsonEncode(unparsedResult)), notParsed);
+      expect(
+        () => GenerateTextResult.fromJson({...notParsed, 'output': null}),
+        throwsFormatException,
+      );
 
       // A parsed JSON null output is written back as null, apart from no
       // output (the public JSON keeps null apart from undefined).

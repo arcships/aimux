@@ -13,6 +13,7 @@ impl Emitter for Node {
             "bindings/node/src/generated/types.ts",
             "bindings/node/src/generated/dto_vectors.ts",
             WEB_DIR,
+            "bindings/node/src/generated/text_result.ts",
         ]
     }
 
@@ -27,7 +28,12 @@ impl Emitter for Node {
         let mut names = String::from("export const dtoTypeNames = [\n");
         let mut schemas = serde_json::Map::new();
         for named in &model.types {
-            write_declaration(&mut out, named);
+            if named.name == "GenerateTextResult" {
+                write_declaration_as(&mut out, named, "GenerateTextResultWire");
+                out.push_str(include_str!("text_result/node-types.ts"));
+            } else {
+                write_declaration(&mut out, named);
+            }
             if let Kind::Tagged { tag, variants } = &named.kind {
                 writeln!(
                     tags,
@@ -61,6 +67,10 @@ impl Emitter for Node {
         Ok(vec![
             (self.owned()[0].into(), out),
             (self.owned()[1].into(), table),
+            (
+                self.owned()[3].into(),
+                include_str!("text_result/node-runtime.ts").into(),
+            ),
         ])
     }
 }
@@ -297,7 +307,10 @@ pub fn web_files(model: &Model) -> Vec<(PathBuf, String)> {
 }
 
 fn write_declaration(out: &mut String, named: &NamedType) {
-    let name = &named.name;
+    write_declaration_as(out, named, &named.name);
+}
+
+fn write_declaration_as(out: &mut String, named: &NamedType, name: &str) {
     docs(out, named.doc.as_deref(), "");
     match &named.kind {
         Kind::Struct { fields, .. } => {

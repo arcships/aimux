@@ -576,9 +576,12 @@ mod tests {
         .unwrap();
         let actual: Value = serde_json::from_str(&actual).unwrap();
         assert_eq!(actual, expected);
-        assert_eq!(actual["toolCalls"][0]["input"], json!({"city":"Tokyo"}));
         assert_eq!(
-            actual["responseMessages"][0]["content"][0]["input"],
+            actual["steps"][0]["content"][0]["input"],
+            json!({"city":"Tokyo"})
+        );
+        assert_eq!(
+            actual["steps"][0]["response"]["messages"][0]["content"][0]["input"],
             json!({"city":"Tokyo"})
         );
     }

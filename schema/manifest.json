@@ -1,6 +1,6 @@
 {
   "abiVersion": 65536,
-  "digest": "cd147fa9595ede3951744fa261da98cc18c204e65b4081073ad3a3c1b68bfd92",
+  "digest": "6914772fdc03df08cba497def41cb354fe52e40eba49844a66938b4cd38c5d83",
   "errorCodes": [
     {
       "aliases": [],
@@ -271,7 +271,7 @@
     "SessionStore",
     "ReplaySession"
   ],
-  "inputHash": "cd147fa9595ede3951744fa261da98cc18c204e65b4081073ad3a3c1b68bfd92",
+  "inputHash": "6914772fdc03df08cba497def41cb354fe52e40eba49844a66938b4cd38c5d83",
   "manifestRevision": "1",
   "ops": [
     {
@@ -4702,6 +4702,17 @@
               "null"
             ]
           },
+          "include": {
+            "anyOf": [
+              {
+                "$ref": "#/typeDefs/input/IncludeOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Controls the raw bodies exposed in the result. Both default to `false`."
+          },
           "includeRawChunks": {
             "description": "Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).",
             "type": [
@@ -4858,11 +4869,18 @@
         "type": "object"
       },
       "GenerateTextResult": {
-        "description": "Result of `generate_text` and of a consumed `stream_text`: the AI SDK's\n`GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).\n\nIt stores the steps, the usage summed over them and the parsed output, as\n`DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every\nother value is derived from the steps by an accessor. The serialized form\nis a snapshot that writes the derived values next to the stored ones, so\na binding reads `text`, `tool_calls`, `usage` and the rest directly. Only\n`steps`, `total_usage` and `output` are read back.",
+        "description": "Result of `generate_text` and of a consumed `stream_text`: the AI SDK's\n`GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).\n\nIt stores the steps, the usage summed over them and the parsed output, as\n`DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every\nother value is derived from the steps by an accessor. The wire form carries\n`steps`, `totalUsage`, optional `output` (when explicitly parsed), and\noptional `outputParsed: false` (when no output was generated).",
         "properties": {
           "output": {
-            "default": null,
+            "description": "An explicit parsed output, including JSON `null`. When absent and\n`outputParsed` is not `false`, bindings expose the final step's text.",
             "x-aimux-codec": "presence"
+          },
+          "outputParsed": {
+            "description": "Present and `false` when no output was generated (for example, a final\n`tool-calls` step without an output spec). Omitted when an output was\nproduced.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "steps": {
             "items": {
@@ -5147,6 +5165,27 @@
         "description": "File payload for an [`ImageFile::File`]: base64 string or raw bytes.\n\nThe JSON is a base64 string either way, as in the AI SDK's JSON.",
         "type": "string",
         "x-aimux-codec": "base64"
+      },
+      "IncludeOptions": {
+        "additionalProperties": false,
+        "description": "Controls which raw body fields are exposed in generation results.",
+        "properties": {
+          "requestBody": {
+            "description": "Whether to return the request body. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "responseBody": {
+            "description": "Whether to return the response body. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "InputAudioFormat": {
         "additionalProperties": false,
@@ -5798,6 +5837,17 @@
               "object",
               "null"
             ]
+          },
+          "include": {
+            "anyOf": [
+              {
+                "$ref": "#/typeDefs/input/IncludeOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Controls the raw bodies exposed in the result. Both default to `false`."
           },
           "includeRawChunks": {
             "description": "Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).",
@@ -12761,135 +12811,33 @@
         "type": "object"
       },
       "GenerateTextResult": {
-        "description": "Result of `generate_text` and of a consumed `stream_text`: the AI SDK's\n`GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).\n\nIt stores the steps, the usage summed over them and the parsed output, as\n`DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every\nother value is derived from the steps by an accessor. The serialized form\nis a snapshot that writes the derived values next to the stored ones, so\na binding reads `text`, `tool_calls`, `usage` and the rest directly. Only\n`steps`, `total_usage` and `output` are read back.",
+        "description": "Result of `generate_text` and of a consumed `stream_text`: the AI SDK's\n`GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).\n\nIt stores the steps, the usage summed over them and the parsed output, as\n`DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every\nother value is derived from the steps by an accessor. The wire form carries\n`steps`, `totalUsage`, optional `output` (when explicitly parsed), and\noptional `outputParsed: false` (when no output was generated).",
         "properties": {
-          "content": {
-            "items": {
-              "$ref": "#/typeDefs/output/ContentPart"
-            },
-            "type": "array"
-          },
-          "files": {
-            "items": {
-              "$ref": "#/typeDefs/output/GeneratedFile"
-            },
-            "type": "array"
-          },
-          "finishReason": {
-            "$ref": "#/typeDefs/output/FinishReasonUnified"
-          },
           "output": {
-            "description": "Absent when the output was not parsed.",
+            "description": "An explicit parsed output, including JSON `null`. When absent and\n`outputParsed` is not `false`, bindings expose the final step's text.",
             "x-aimux-codec": "presence"
           },
-          "providerMetadata": {
-            "additionalProperties": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "description": "Deprecated upstream: the last step's provider metadata.",
+          "outputParsed": {
+            "description": "Present and `false` when no output was generated (for example, a final\n`tool-calls` step without an output spec). Omitted when an output was\nproduced.",
             "type": [
-              "object",
+              "boolean",
               "null"
             ]
-          },
-          "rawFinishReason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "reasoning": {
-            "description": "Deprecated upstream: the last step's reasoning.",
-            "items": {
-              "$ref": "#/typeDefs/output/ReasoningPart"
-            },
-            "type": "array"
-          },
-          "reasoningText": {
-            "description": "Deprecated upstream: the last step's reasoning text.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "request": {
-            "$ref": "#/typeDefs/output/RequestInfo",
-            "description": "Deprecated upstream: the last step's request."
-          },
-          "response": {
-            "$ref": "#/typeDefs/output/StepResponse",
-            "description": "Deprecated upstream: the last step's response."
-          },
-          "responseMessages": {
-            "items": {
-              "$ref": "#/typeDefs/output/ModelMessage"
-            },
-            "type": "array"
-          },
-          "sources": {
-            "description": "Each with its `type` tag (`generate-text-result.ts:73`).",
-            "items": {
-              "$ref": "#/typeDefs/output/TypedSource"
-            },
-            "type": "array",
-            "x-aimux-codec": "tagged"
           },
           "steps": {
             "items": {
               "$ref": "#/typeDefs/output/StepResult"
             },
+            "minItems": 1,
             "type": "array"
-          },
-          "text": {
-            "type": "string"
-          },
-          "toolCalls": {
-            "description": "Each with its `type` tag (`generate-text-result.ts:78`).",
-            "items": {
-              "$ref": "#/typeDefs/output/TypedToolCall"
-            },
-            "type": "array",
-            "x-aimux-codec": "tagged"
-          },
-          "toolResults": {
-            "description": "Each with its `type` tag (`generate-text-result.ts:93`).",
-            "items": {
-              "$ref": "#/typeDefs/output/TaggedToolResult"
-            },
-            "type": "array",
-            "x-aimux-codec": "tagged"
           },
           "totalUsage": {
-            "$ref": "#/typeDefs/output/LanguageModelUsage",
-            "description": "Deprecated upstream: equal to `usage`."
-          },
-          "usage": {
             "$ref": "#/typeDefs/output/LanguageModelUsage"
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/typeDefs/output/Warning"
-            },
-            "type": "array"
           }
         },
         "required": [
-          "content",
-          "text",
-          "reasoning",
-          "files",
-          "sources",
-          "toolCalls",
-          "toolResults",
-          "finishReason",
-          "usage",
-          "totalUsage",
-          "warnings",
-          "request",
-          "response",
-          "responseMessages",
-          "steps"
+          "steps",
+          "totalUsage"
         ],
         "type": "object"
       },
@@ -20025,7 +19973,7 @@
       "output": "GenerateTextResult",
       "revision": "1",
       "rustPath": "aimux_core::generate::GenerateTextResult",
-      "schemaHash": "c5c6016de2c926c85144959d9436c9d2214a27a9724e75d68393e933ef7263f5"
+      "schemaHash": "c75d0e0c2d207f9dfeffe7eb42efb9040d93a8062cdc678054f9bbcb8049e041"
     },
     {
       "id": "aimux_core::image_model::ImageCallOptions",
@@ -20075,6 +20023,27 @@
       "revision": "1",
       "rustPath": "aimux_core::reranking_model::RerankingResult",
       "schemaHash": "d757826963b3ce836e4d76fca8f42455a3a3146c20f3fb74f58cabe465348d01"
+    },
+    {
+      "id": "aimux_core::result::ReasoningPart",
+      "output": "ReasoningPart",
+      "revision": "1",
+      "rustPath": "aimux_core::result::ReasoningPart",
+      "schemaHash": "6210a367b8c084e55a60e0ead74a7ff233b7f357020a028c6879b54ffa8b9b87"
+    },
+    {
+      "id": "aimux_core::result::TaggedToolResult",
+      "output": "TaggedToolResult",
+      "revision": "1",
+      "rustPath": "aimux_core::result::TaggedToolResult",
+      "schemaHash": "a8f688a021397c1159b88546156d5a418e50d6482d39f88c46476297d208e069"
+    },
+    {
+      "id": "aimux_core::result::TypedSource",
+      "output": "TypedSource",
+      "revision": "1",
+      "rustPath": "aimux_core::result::TypedSource",
+      "schemaHash": "0a36b617c3f1bbcd82e4d09c329ad41aba62330b4d0e950125fd62b2053a9368"
     },
     {
       "id": "aimux_core::search_model::SearchCallOptions",
@@ -20270,28 +20239,28 @@
       "input": "OpenAiOutputRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::misc::OpenAiOutputRequest",
-      "schemaHash": "b0c6acc344f0b23b9ea3b693aeadf7aed7eb4fbdfce4b957be83af1154b842b4"
+      "schemaHash": "d30e30aa75703e1404a202d437e69a6873fd2b515c5ed322ab488363be8d2fb0"
     },
     {
       "id": "aimux_ops::ops::misc::ToolRepairApplyRequest",
       "input": "ToolRepairApplyRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::misc::ToolRepairApplyRequest",
-      "schemaHash": "0f430fdb223759ef7c48c4d7f824e7be74d29295a6b4f7caaf82b5acba25e538"
+      "schemaHash": "c1c5f81107f334a94583a4ff4ed394097580bea2f2a66266c11890fe2a3ab3d0"
     },
     {
       "id": "aimux_ops::ops::misc::ToolRepairApplyResultRequest",
       "input": "ToolRepairApplyResultRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::misc::ToolRepairApplyResultRequest",
-      "schemaHash": "fa092862004654e065233b2df2abdbec3befe88d9d734d494679968a5b6e954a"
+      "schemaHash": "649f2b4ff1a2dd0d552e2930b694d7efa3346b2f15a9fb0f14cffd4b6955b508"
     },
     {
       "id": "aimux_ops::ops::misc::ToolRepairContextRequest",
       "input": "ToolRepairContextRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::misc::ToolRepairContextRequest",
-      "schemaHash": "81bae04c56aac3380b75de639d162f819a2dd5717147a53cf1a75281727d78a1"
+      "schemaHash": "fa4802ac20a2b1b540cb727d798ad2a4c44cad6a8f9ad45281fc91ebb065e65f"
     },
     {
       "id": "aimux_ops::ops::misc::ToolRepairContextResult",
@@ -20529,7 +20498,7 @@
       "output": "ReplayLiveResult",
       "revision": "1",
       "rustPath": "aimux_ops::ops::replay::ReplayLiveResult",
-      "schemaHash": "bd9959dd7e0300cb57e6929b2ed29b7e07dcb5aaf65be16b96e34bf8d6577a7f"
+      "schemaHash": "9163acd59ee54db1db2213c0756283b8b27e04a52451dfeef314d63efebbc730"
     },
     {
       "id": "aimux_ops::ops::replay::ReplayPlan",
@@ -20585,14 +20554,14 @@
       "input": "OpenAiTextRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::text::OpenAiTextRequest",
-      "schemaHash": "59293b18b6124a9a394113b8f94f637c65dc35ac44a30f7e0df70855e885f8e4"
+      "schemaHash": "d5afbf2b24ab74b82433d344afb190c18f8aef52988c54ab8b5388579c212f67"
     },
     {
       "id": "aimux_ops::ops::text::TextRequest",
       "input": "TextRequest",
       "revision": "1",
       "rustPath": "aimux_ops::ops::text::TextRequest",
-      "schemaHash": "3a6f59c1f0c3b7ded5f5509d93afe9bddd2b80a8a3cd752d79f97edadae40c3d"
+      "schemaHash": "eb0c25fcbf741834943882d7f901af7439ba30923a391b273526d1887ed156ab"
     },
     {
       "id": "aimux_ops::ops::trace::TraceAggregateParams",

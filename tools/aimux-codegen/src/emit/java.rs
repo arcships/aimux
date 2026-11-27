@@ -385,6 +385,10 @@ fn object(
         )
         .unwrap();
     }
+    if n == "GenerateTextResult" {
+        writeln!(out, "{i}    if (steps == null || steps.isEmpty()) throw new IllegalArgumentException(\"GenerateTextResult requires at least one step\");").unwrap();
+        writeln!(out, "{i}    if (output != null && output.isPresent() && Boolean.FALSE.equals(outputParsed)) throw new IllegalArgumentException(\"GenerateTextResult cannot carry output when outputParsed is false\");").unwrap();
+    }
     for f in fields {
         let id = ident(&f.json_name);
         let expr = if presence(&f.ty) {
@@ -416,7 +420,9 @@ fn object(
     }
     for f in fields {
         let id = ident(&f.json_name);
-        let expr = if presence(&f.ty) {
+        let expr = if n == "GenerateTextResult" && f.json_name == "output" {
+            "output.isPresent() ? (output.getValue() == null ? null : output.getValue().deepCopy()) : (Boolean.FALSE.equals(outputParsed) ? null : com.fasterxml.jackson.databind.node.TextNode.valueOf(getText()))".into()
+        } else if presence(&f.ty) {
             getter(&f.ty, &format!("{id}.getValue()"))
         } else {
             getter(&f.ty, &id)
@@ -429,13 +435,22 @@ fn object(
         )
         .unwrap();
         if presence(&f.ty) {
+            let has_expr = if n == "GenerateTextResult" && f.json_name == "output" {
+                format!("{id}.isPresent() || !Boolean.FALSE.equals(outputParsed)")
+            } else {
+                format!("{id}.isPresent()")
+            };
             writeln!(
                 out,
-                "{i}public boolean has{}() {{ return {id}.isPresent(); }}",
+                "{i}public boolean has{}() {{ return {has_expr}; }}",
                 cap(&id)
             )
             .unwrap();
         }
+    }
+    if n == "GenerateTextResult" {
+        // Kotlin's DTOs use these same JavaBean properties.
+        out.push_str(include_str!("text_result/java.inc"));
     }
     writeln!(out, "\n{i}public static final class Builder {{").unwrap();
     for f in fields {

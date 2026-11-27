@@ -140,8 +140,60 @@ func TestParseFinishPayload(t *testing.T) {
 	}
 }
 
+func TestGenerateTextResultRejectsEmptySteps(t *testing.T) {
+	raw := []byte(`{"steps":[],"totalUsage":{"inputTokenDetails":{},"outputTokenDetails":{}}}`)
+	var result GenerateTextResult
+	if err := json.Unmarshal(raw, &result); err == nil {
+		t.Fatal("decoded a text result without any steps")
+	}
+}
+
 func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
-	roundTripDTO[GenerateTextResult](t, `{"content":[],"text":"ok","reasoning":[],"files":[],"sources":[],"toolCalls":[],"toolResults":[],"finishReason":"stop","usage":{"inputTokenDetails":{},"outputTokenDetails":{}},"totalUsage":{"inputTokenDetails":{},"outputTokenDetails":{}},"warnings":[{"type":"other","message":"some warning"}],"request":{},"response":{"id":"r1","timestamp":"2026-10-16T00:00:00Z","modelId":"model","messages":[]},"responseMessages":[],"steps":[]}`)
+	const facts = `{
+      "steps": [{
+        "callId":"c1","stepNumber":0,"content":[{"type":"text","text":"ok"}],
+        "model":{"modelId":"model","provider":"openai"},"finishReason":"stop",
+        "usage":{"inputTokenDetails":{},"outputTokenDetails":{}},
+        "performance":{"effectiveOutputTokensPerSecond":0,"effectiveTotalTokensPerSecond":0,
+                       "responseTimeMs":0,"stepTimeMs":0,"toolExecutionMs":{}},
+        "warnings":[{"type":"other","message":"some warning"}],"request":{},
+        "response":{"id":"r1","timestamp":"2026-10-16T00:00:00Z","modelId":"model","messages":[]}
+      }],
+      "totalUsage":{"inputTokenDetails":{},"outputTokenDetails":{}}
+    }`
+	roundTripDTO[GenerateTextResult](t, facts)
+	var result GenerateTextResult
+	if err := json.Unmarshal([]byte(facts), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Text() != "ok" || string(result.Output()) != `"ok"` || len(result.Warnings()) != 1 {
+		t.Fatalf("unexpected derived result: %q, %s, %v", result.Text(), result.Output(), result.Warnings())
+	}
+
+	var parsedNull GenerateTextResult
+	withNull := facts[:len(facts)-1] + `,"output":null}`
+	if err := json.Unmarshal([]byte(withNull), &parsedNull); err != nil {
+		t.Fatal(err)
+	}
+	if string(parsedNull.Output()) != "null" {
+		t.Fatalf("expected explicit null output, got %q", parsedNull.Output())
+	}
+
+	unparsed := facts[:len(facts)-1] + `,"outputParsed":false}`
+	roundTripDTO[GenerateTextResult](t, unparsed)
+	var notParsed GenerateTextResult
+	if err := json.Unmarshal([]byte(unparsed), &notParsed); err != nil {
+		t.Fatal(err)
+	}
+	if notParsed.Output() != nil {
+		t.Fatalf("expected nil output when outputParsed is false, got %q", notParsed.Output())
+	}
+
+	contradictory := facts[:len(facts)-1] + `,"output":null,"outputParsed":false}`
+	var bad GenerateTextResult
+	if err := json.Unmarshal([]byte(contradictory), &bad); err == nil {
+		t.Fatal("decoded a text result with both output and outputParsed=false")
+	}
 }
 
 // Provider-tool deferred-result support follows the Rust wire contract.

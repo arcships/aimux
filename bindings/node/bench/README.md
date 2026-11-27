@@ -37,6 +37,12 @@ a size with variable step timing removed. On a build with the `include`
 option, `request-200k-no-bodies` also checks the body fields are absent and
 enforces the 360,000-byte phase 1 budget.
 
+For Stage 2, set `AIMUX_STAGE2_GATE=1` on the candidate commands. The default
+`request-200k` must return only `steps` and `totalUsage` in at most 110,000
+wire bytes, with both bodies absent. With `TOKIO_WORKER_THREADS=2`,
+`stream-burst` must reach 150,000 frames per second. The reported frame rate
+counts every validated frame across the timed batch.
+
 For direct Rust, copy the same example source to both revisions, build once
 per revision, and keep each resulting executable separately:
 

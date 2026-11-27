@@ -13,184 +13,151 @@ import java.util.*;
  *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
- * other value is derived from the steps by an accessor. The serialized form
- * is a snapshot that writes the derived values next to the stored ones, so
- * a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
- * `steps`, `total_usage` and `output` are read back.
+ * other value is derived from the steps by an accessor. The wire form carries
+ * `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+ * optional `outputParsed: false` (when no output was generated).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class GenerateTextResult {
-    @JsonProperty("content")
-    private final List<ContentPart> content;
-    @JsonProperty("files")
-    private final List<GeneratedFile> files;
-    @JsonProperty("finishReason")
-    private final FinishReasonUnified finishReason;
     /**
-     * Absent when the output was not parsed.
+     * An explicit parsed output, including JSON `null`. When absent and
+     * `outputParsed` is not `false`, bindings expose the final step's text.
      */
     @JsonProperty("output")
     @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
     private final FieldPresence<JsonNode> output;
     /**
-     * Deprecated upstream: the last step's provider metadata.
+     * Present and `false` when no output was generated (for example, a final
+     * `tool-calls` step without an output spec). Omitted when an output was
+     * produced.
      */
-    @JsonProperty("providerMetadata")
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    @JsonProperty("rawFinishReason")
-    private final String rawFinishReason;
-    /**
-     * Deprecated upstream: the last step's reasoning.
-     */
-    @JsonProperty("reasoning")
-    private final List<ReasoningPart> reasoning;
-    /**
-     * Deprecated upstream: the last step's reasoning text.
-     */
-    @JsonProperty("reasoningText")
-    private final String reasoningText;
-    /**
-     * Deprecated upstream: the last step's request.
-     */
-    @JsonProperty("request")
-    private final RequestInfo request;
-    /**
-     * Deprecated upstream: the last step's response.
-     */
-    @JsonProperty("response")
-    private final StepResponse response;
-    @JsonProperty("responseMessages")
-    private final List<ModelMessage> responseMessages;
-    /**
-     * Each with its `type` tag (`generate-text-result.ts:73`).
-     */
-    @JsonProperty("sources")
-    private final List<TypedSource> sources;
+    @JsonProperty("outputParsed")
+    private final Boolean outputParsed;
     @JsonProperty("steps")
     private final List<StepResult> steps;
-    @JsonProperty("text")
-    private final String text;
-    /**
-     * Each with its `type` tag (`generate-text-result.ts:78`).
-     */
-    @JsonProperty("toolCalls")
-    private final List<TypedToolCall> toolCalls;
-    /**
-     * Each with its `type` tag (`generate-text-result.ts:93`).
-     */
-    @JsonProperty("toolResults")
-    private final List<TaggedToolResult> toolResults;
-    /**
-     * Deprecated upstream: equal to `usage`.
-     */
     @JsonProperty("totalUsage")
     private final LanguageModelUsage totalUsage;
-    @JsonProperty("usage")
-    private final LanguageModelUsage usage;
-    @JsonProperty("warnings")
-    private final List<Warning> warnings;
 
     @JsonCreator
     public GenerateTextResult(
-        @JsonProperty(value = "content", required = true) List<ContentPart> content,
-        @JsonProperty(value = "files", required = true) List<GeneratedFile> files,
-        @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
         @JsonProperty(value = "output") FieldPresence<JsonNode> output,
-        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
-        @JsonProperty(value = "rawFinishReason") String rawFinishReason,
-        @JsonProperty(value = "reasoning", required = true) List<ReasoningPart> reasoning,
-        @JsonProperty(value = "reasoningText") String reasoningText,
-        @JsonProperty(value = "request", required = true) RequestInfo request,
-        @JsonProperty(value = "response", required = true) StepResponse response,
-        @JsonProperty(value = "responseMessages", required = true) List<ModelMessage> responseMessages,
-        @JsonProperty(value = "sources", required = true) List<TypedSource> sources,
+        @JsonProperty(value = "outputParsed") Boolean outputParsed,
         @JsonProperty(value = "steps", required = true) List<StepResult> steps,
-        @JsonProperty(value = "text", required = true) String text,
-        @JsonProperty(value = "toolCalls", required = true) List<TypedToolCall> toolCalls,
-        @JsonProperty(value = "toolResults", required = true) List<TaggedToolResult> toolResults,
-        @JsonProperty(value = "totalUsage", required = true) LanguageModelUsage totalUsage,
-        @JsonProperty(value = "usage", required = true) LanguageModelUsage usage,
-        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
-        this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
-        this.files = files == null ? null : Collections.unmodifiableList(new ArrayList<>(files));
-        this.finishReason = finishReason;
+        @JsonProperty(value = "totalUsage", required = true) LanguageModelUsage totalUsage) {
+        if (steps == null || steps.isEmpty()) throw new IllegalArgumentException("GenerateTextResult requires at least one step");
+        if (output != null && output.isPresent() && Boolean.FALSE.equals(outputParsed)) throw new IllegalArgumentException("GenerateTextResult cannot carry output when outputParsed is false");
         this.output = output == null ? FieldPresence.absent() : output;
-        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
-        this.rawFinishReason = rawFinishReason;
-        this.reasoning = reasoning == null ? null : Collections.unmodifiableList(new ArrayList<>(reasoning));
-        this.reasoningText = reasoningText;
-        this.request = request;
-        this.response = response;
-        this.responseMessages = responseMessages == null ? null : Collections.unmodifiableList(new ArrayList<>(responseMessages));
-        this.sources = sources == null ? null : Collections.unmodifiableList(new ArrayList<>(sources));
+        this.outputParsed = outputParsed;
         this.steps = steps == null ? null : Collections.unmodifiableList(new ArrayList<>(steps));
-        this.text = text;
-        this.toolCalls = toolCalls == null ? null : Collections.unmodifiableList(new ArrayList<>(toolCalls));
-        this.toolResults = toolResults == null ? null : Collections.unmodifiableList(new ArrayList<>(toolResults));
         this.totalUsage = totalUsage;
-        this.usage = usage;
-        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
 
     public static Builder builder() { return new Builder(); }
-    public List<ContentPart> getContent() { return content; }
-    public List<GeneratedFile> getFiles() { return files; }
-    public FinishReasonUnified getFinishReason() { return finishReason; }
-    public JsonNode getOutput() { return output.getValue() == null ? null : output.getValue().deepCopy(); }
-    public boolean hasOutput() { return output.isPresent(); }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
-    public String getRawFinishReason() { return rawFinishReason; }
-    public List<ReasoningPart> getReasoning() { return reasoning; }
-    public String getReasoningText() { return reasoningText; }
-    public RequestInfo getRequest() { return request; }
-    public StepResponse getResponse() { return response; }
-    public List<ModelMessage> getResponseMessages() { return responseMessages; }
-    public List<TypedSource> getSources() { return sources; }
+    public JsonNode getOutput() { return output.isPresent() ? (output.getValue() == null ? null : output.getValue().deepCopy()) : (Boolean.FALSE.equals(outputParsed) ? null : com.fasterxml.jackson.databind.node.TextNode.valueOf(getText())); }
+    public boolean hasOutput() { return output.isPresent() || !Boolean.FALSE.equals(outputParsed); }
+    public Boolean getOutputParsed() { return outputParsed; }
     public List<StepResult> getSteps() { return steps; }
-    public String getText() { return text; }
-    public List<TypedToolCall> getToolCalls() { return toolCalls; }
-    public List<TaggedToolResult> getToolResults() { return toolResults; }
     public LanguageModelUsage getTotalUsage() { return totalUsage; }
-    public LanguageModelUsage getUsage() { return usage; }
-    public List<Warning> getWarnings() { return warnings; }
+
+    public StepResult getFinalStep() { return steps.get(steps.size() - 1); }
+    public String getText() {
+        return getFinalStep().getContent().stream().filter(ContentPart.Text.class::isInstance)
+            .map(ContentPart::getText).collect(java.util.stream.Collectors.joining());
+    }
+    public List<ContentPart> getContent() {
+        return steps.stream().flatMap(step -> step.getContent().stream())
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<ReasoningPart> getReasoning() {
+        List<ReasoningPart> reasoning = new ArrayList<>();
+        for (ContentPart part : getFinalStep().getContent()) {
+            if (part instanceof ContentPart.Reasoning) {
+                reasoning.add(new ReasoningPart.Reasoning(part.getProviderMetadata(), part.getText()));
+            } else if (part instanceof ContentPart.ReasoningFile) {
+                reasoning.add(new ReasoningPart.ReasoningFile(part.getFile(), part.getProviderMetadata()));
+            }
+        }
+        return reasoning;
+    }
+    public String getReasoningText() {
+        String text = getFinalStep().getContent().stream().filter(ContentPart.Reasoning.class::isInstance)
+            .map(ContentPart::getText).collect(java.util.stream.Collectors.joining());
+        return text.isEmpty() ? null : text;
+    }
+    private <T extends ContentPart> java.util.stream.Stream<T> parts(Class<T> type) {
+        return steps.stream().flatMap(step -> step.getContent().stream())
+            .filter(type::isInstance).map(type::cast);
+    }
+    public List<GeneratedFile> getFiles() {
+        return parts(ContentPart.File.class).map(ContentPart::getFile)
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TypedSource> getSources() {
+        List<TypedSource> sources = new ArrayList<>();
+        parts(ContentPart.SourceUrlGroup.class).forEach(part -> {
+            if (part instanceof ContentPart.SourceUrl) {
+                ContentPart.SourceUrl url = (ContentPart.SourceUrl) part;
+                sources.add(new TypedSource.Url(url.getId(), url.getProviderMetadata(), url.getTitle(),
+                    url.getType(), url.getUrl()));
+            } else if (part instanceof ContentPart.SourceDocument) {
+                ContentPart.SourceDocument doc = (ContentPart.SourceDocument) part;
+                sources.add(new TypedSource.Document(doc.getFilename(), doc.getId(), doc.getMediaType(),
+                    doc.getProviderMetadata(), doc.getTitle(), doc.getType()));
+            }
+        });
+        return sources;
+    }
+    public List<TypedToolCall> getToolCalls() {
+        return parts(ContentPart.ToolCallVariant.class)
+            .map(part -> new TypedToolCall(part.getDynamic(), part.getError(), part.getInput(), part.getInvalid(),
+                part.getProviderExecuted(), part.getProviderMetadata(), part.getToolCallId(), part.getToolName(),
+                part.getType()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TypedToolCall> getStaticToolCalls() {
+        return getToolCalls().stream().filter(part -> !Boolean.TRUE.equals(part.getDynamic()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TypedToolCall> getDynamicToolCalls() {
+        return getToolCalls().stream().filter(part -> Boolean.TRUE.equals(part.getDynamic()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TaggedToolResult> getToolResults() {
+        return parts(ContentPart.ToolResultVariant.class)
+            .map(part -> new TaggedToolResult(part.getDynamic(), part.getInput(), part.getOutput(),
+                part.getPreliminary(), part.getProviderExecuted(), part.getProviderMetadata(), part.getToolCallId(),
+                part.getToolName(), part.getType()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TaggedToolResult> getStaticToolResults() {
+        return getToolResults().stream().filter(part -> !Boolean.TRUE.equals(part.getDynamic()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public List<TaggedToolResult> getDynamicToolResults() {
+        return getToolResults().stream().filter(part -> Boolean.TRUE.equals(part.getDynamic()))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    public FinishReasonUnified getFinishReason() { return getFinalStep().getFinishReason(); }
+    public String getRawFinishReason() { return getFinalStep().getRawFinishReason(); }
+    public LanguageModelUsage getUsage() { return totalUsage; }
+    public RequestInfo getRequest() { return getFinalStep().getRequest(); }
+    public StepResponse getResponse() { return getFinalStep().getResponse(); }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return getFinalStep().getProviderMetadata(); }
+    public List<Warning> getWarnings() {
+        return steps.stream().flatMap(step -> step.getWarnings().stream()).collect(java.util.stream.Collectors.toList());
+    }
+    public List<ModelMessage> getResponseMessages() {
+        return steps.stream().flatMap(step -> step.getResponse().getMessages().stream())
+            .collect(java.util.stream.Collectors.toList());
+    }
 
     public static final class Builder {
-        private List<ContentPart> content;
-        private List<GeneratedFile> files;
-        private FinishReasonUnified finishReason;
         private FieldPresence<JsonNode> output = FieldPresence.absent();
-        private Map<String, Map<String, JsonNode>> providerMetadata;
-        private String rawFinishReason;
-        private List<ReasoningPart> reasoning;
-        private String reasoningText;
-        private RequestInfo request;
-        private StepResponse response;
-        private List<ModelMessage> responseMessages;
-        private List<TypedSource> sources;
+        private Boolean outputParsed;
         private List<StepResult> steps;
-        private String text;
-        private List<TypedToolCall> toolCalls;
-        private List<TaggedToolResult> toolResults;
         private LanguageModelUsage totalUsage;
-        private LanguageModelUsage usage;
-        private List<Warning> warnings;
-
-        public Builder content(List<ContentPart> value) {
-            this.content = value;
-            return this;
-        }
-
-        public Builder files(List<GeneratedFile> value) {
-            this.files = value;
-            return this;
-        }
-
-        public Builder finishReason(FinishReasonUnified value) {
-            this.finishReason = value;
-            return this;
-        }
 
         public Builder output(JsonNode value) {
             this.output = FieldPresence.of(value == null ? null : value.deepCopy());
@@ -202,43 +169,8 @@ public final class GenerateTextResult {
             return this;
         }
 
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
-            this.providerMetadata = value;
-            return this;
-        }
-
-        public Builder rawFinishReason(String value) {
-            this.rawFinishReason = value;
-            return this;
-        }
-
-        public Builder reasoning(List<ReasoningPart> value) {
-            this.reasoning = value;
-            return this;
-        }
-
-        public Builder reasoningText(String value) {
-            this.reasoningText = value;
-            return this;
-        }
-
-        public Builder request(RequestInfo value) {
-            this.request = value;
-            return this;
-        }
-
-        public Builder response(StepResponse value) {
-            this.response = value;
-            return this;
-        }
-
-        public Builder responseMessages(List<ModelMessage> value) {
-            this.responseMessages = value;
-            return this;
-        }
-
-        public Builder sources(List<TypedSource> value) {
-            this.sources = value;
+        public Builder outputParsed(Boolean value) {
+            this.outputParsed = value;
             return this;
         }
 
@@ -247,36 +179,11 @@ public final class GenerateTextResult {
             return this;
         }
 
-        public Builder text(String value) {
-            this.text = value;
-            return this;
-        }
-
-        public Builder toolCalls(List<TypedToolCall> value) {
-            this.toolCalls = value;
-            return this;
-        }
-
-        public Builder toolResults(List<TaggedToolResult> value) {
-            this.toolResults = value;
-            return this;
-        }
-
         public Builder totalUsage(LanguageModelUsage value) {
             this.totalUsage = value;
             return this;
         }
 
-        public Builder usage(LanguageModelUsage value) {
-            this.usage = value;
-            return this;
-        }
-
-        public Builder warnings(List<Warning> value) {
-            this.warnings = value;
-            return this;
-        }
-
-        public GenerateTextResult build() { return new GenerateTextResult(content, files, finishReason, output, providerMetadata, rawFinishReason, reasoning, reasoningText, request, response, responseMessages, sources, steps, text, toolCalls, toolResults, totalUsage, usage, warnings); }
+        public GenerateTextResult build() { return new GenerateTextResult(output, outputParsed, steps, totalUsage); }
     }
 }

@@ -7,7 +7,8 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parents[1]
-cache = Path.home() / '.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core'
+gradle_home = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle'))
+cache = gradle_home / 'caches/modules-2/files-2.1/com.fasterxml.jackson.core'
 jars = []
 for artifact in ('jackson-annotations', 'jackson-core', 'jackson-databind'):
     matches = sorted((cache / artifact / '2.17.2').glob('*/*.jar'))

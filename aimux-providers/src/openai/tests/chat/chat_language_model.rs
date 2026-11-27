@@ -3240,3 +3240,63 @@ mod older_stream {
         );
     }
 }
+
+#[tokio::test]
+async fn generate_retains_raw_usage_and_request_when_response_body_is_omitted() {
+    use aimux_core::generate::{GenerateTextOptions, IncludeOptions, generate_text};
+
+    use aimux_core::language_model_middleware::{LanguageModelMiddleware, wrap_language_model};
+    use aimux_core::result::{GenerateResult, StreamResult};
+    use futures::future::BoxFuture;
+
+    struct ObserveBodies(bool);
+
+    #[async_trait::async_trait]
+    impl LanguageModelMiddleware for ObserveBodies {
+        async fn wrap_generate(
+            &self,
+            _: &CallOptions,
+            _: &dyn LanguageModel,
+            generate: &(
+                 dyn Fn() -> BoxFuture<'_, Result<GenerateResult, AiMuxError>> + Send + Sync
+             ),
+            _: &(dyn Fn() -> BoxFuture<'_, Result<StreamResult, AiMuxError>> + Send + Sync),
+        ) -> Result<GenerateResult, AiMuxError> {
+            let result = generate().await?;
+            assert!(result.request.as_ref().unwrap().body.is_some());
+            assert_eq!(result.response.as_ref().unwrap().body.is_some(), self.0);
+            Ok(result)
+        }
+    }
+
+    let mut response: Value = serde_json::from_str(OPENAI_TEXT_JSON).unwrap();
+    response["usage"]["extension"] = json!({"counter": 19, "missing": null});
+    for response_body in [None, Some(true), Some(false)] {
+        let retained = response_body.unwrap_or(false);
+        let mock = MockFetch::new(vec![json_value(&response)]);
+        let model = wrap_language_model(
+            Arc::new(provider(&mock).chat("gpt-4o")),
+            &[Arc::new(ObserveBodies(retained))],
+            None,
+            None,
+        );
+        let result = generate_text(
+            model.as_ref(),
+            "Hello",
+            GenerateTextOptions {
+                include: response_body.map(|response_body| IncludeOptions {
+                    response_body: Some(response_body),
+                    request_body: Some(true),
+                }),
+                max_retries: Some(0),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+        let step = result.final_step();
+        assert_eq!(step.response.body.as_ref(), retained.then_some(&response));
+        assert_eq!(step.usage.raw.as_ref(), response["usage"].as_object());
+        assert_eq!(step.request.body.is_some(), response_body.is_some());
+    }
+}

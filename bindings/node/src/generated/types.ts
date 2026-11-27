@@ -1853,6 +1853,10 @@ export interface GenerateTextOptions {
   frequencyPenalty?: number | null
   headers?: Record<string, string> | null
   /**
+   * Controls the raw bodies exposed in the result. Both default to `false`.
+   */
+  include?: IncludeOptions | null
+  /**
    * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
    */
   includeRawChunks?: boolean | null
@@ -1914,76 +1918,74 @@ export interface GenerateTextOptions {
  *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
- * other value is derived from the steps by an accessor. The serialized form
- * is a snapshot that writes the derived values next to the stored ones, so
- * a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
- * `steps`, `total_usage` and `output` are read back.
+ * other value is derived from the steps by an accessor. The wire form carries
+ * `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+ * optional `outputParsed: false` (when no output was generated).
  */
-export interface GenerateTextResult {
-  content: Array<ContentPart>
-  files: Array<GeneratedFile>
-  finishReason: FinishReasonUnified
+export interface GenerateTextResultWire {
   /**
-   * Absent when the output was not parsed.
+   * An explicit parsed output, including JSON `null`. When absent and
+   * `outputParsed` is not `false`, bindings expose the final step's text.
    */
   output?: unknown
   /**
-   * Deprecated upstream: the last step's provider metadata.
+   * Present and `false` when no output was generated (for example, a final
+   * `tool-calls` step without an output spec). Omitted when an output was
+   * produced.
    */
-  providerMetadata?: Record<string, Record<string, unknown>> | null
-  rawFinishReason?: string | null
-  /**
-   * Deprecated upstream: the last step's reasoning.
-   */
-  reasoning: Array<ReasoningPart>
-  /**
-   * Deprecated upstream: the last step's reasoning text.
-   */
-  reasoningText?: string | null
-  /**
-   * Deprecated upstream: the last step's request.
-   */
-  request: RequestInfo
-  /**
-   * Deprecated upstream: the last step's response.
-   */
-  response: StepResponse
-  responseMessages: Array<ModelMessage>
-  /**
-   * Each with its `type` tag (`generate-text-result.ts:73`).
-   */
-  sources: Array<TypedSource>
+  outputParsed?: boolean | null
   steps: Array<StepResult>
-  text: string
-  /**
-   * Each with its `type` tag (`generate-text-result.ts:78`).
-   */
-  toolCalls: Array<TypedToolCall>
-  /**
-   * Each with its `type` tag (`generate-text-result.ts:93`).
-   */
-  toolResults: Array<TaggedToolResult>
-  /**
-   * Deprecated upstream: equal to `usage`.
-   */
   totalUsage: LanguageModelUsage
-  usage: LanguageModelUsage
-  warnings: Array<Warning>
 }
 
+
+/** A text result returned by the typed client. Derived properties are non-enumerable. */
+export interface GenerateTextResult extends GenerateTextResultWire {
+  readonly output?: unknown
+  readonly finalStep: StepResult
+  readonly content: ContentPart[]
+  readonly text: string
+  readonly reasoning: ReasoningPart[]
+  readonly reasoningText?: string
+  readonly files: GeneratedFile[]
+  readonly sources: TypedSource[]
+  readonly toolCalls: TypedToolCall[]
+  readonly staticToolCalls: GenerateTextResult['toolCalls']
+  readonly dynamicToolCalls: GenerateTextResult['toolCalls']
+  readonly toolResults: TaggedToolResult[]
+  readonly staticToolResults: GenerateTextResult['toolResults']
+  readonly dynamicToolResults: GenerateTextResult['toolResults']
+  readonly finishReason: FinishReasonUnified
+  readonly rawFinishReason?: string | null
+  readonly usage: LanguageModelUsage
+  readonly warnings: Warning[]
+  readonly request: RequestInfo
+  readonly response: StepResponse
+  readonly providerMetadata?: StepResult['providerMetadata']
+  readonly responseMessages: ModelMessage[]
+}
 /**
  * Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
  * `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
  *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
- * other value is derived from the steps by an accessor. The serialized form
- * is a snapshot that writes the derived values next to the stored ones, so
- * a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
- * `steps`, `total_usage` and `output` are read back.
+ * other value is derived from the steps by an accessor. The wire form carries
+ * `steps`, `totalUsage`, optional `output` (when explicitly parsed), and
+ * optional `outputParsed: false` (when no output was generated).
  */
 export interface GenerateTextResultInput {
+  /**
+   * An explicit parsed output, including JSON `null`. When absent and
+   * `outputParsed` is not `false`, bindings expose the final step's text.
+   */
   output?: unknown
+  /**
+   * Present and `false` when no output was generated (for example, a final
+   * `tool-calls` step without an output spec). Omitted when an output was
+   * produced.
+   */
+  outputParsed?: boolean | null
   steps: Array<StepResultInput>
   totalUsage: LanguageModelUsageInput
 }
@@ -2260,6 +2262,20 @@ export interface ImageUsage {
    * Total tokens as reported by the provider.
    */
   totalTokens?: number | null
+}
+
+/**
+ * Controls which raw body fields are exposed in generation results.
+ */
+export interface IncludeOptions {
+  /**
+   * Whether to return the request body. Defaults to false.
+   */
+  requestBody?: boolean | null
+  /**
+   * Whether to return the response body. Defaults to false.
+   */
+  responseBody?: boolean | null
 }
 
 /**
@@ -2816,6 +2832,10 @@ export interface OperationStatus {
 export interface Options {
   frequencyPenalty?: number | null
   headers?: Record<string, string> | null
+  /**
+   * Controls the raw bodies exposed in the result. Both default to `false`.
+   */
+  include?: IncludeOptions | null
   /**
    * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
    */

@@ -27,6 +27,34 @@ class MultimodalTypesTest {
         assertThat(M.<JsonNode>valueToTree(actual)).isEqualTo(M.valueToTree(expected));
     }
 
+    @Test void generateTextResultRejectsEmptySteps() {
+        assertThatThrownBy(() -> M.readValue(
+            "{\"steps\":[],\"totalUsage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}}}",
+            GenerateTextResult.class))
+            .isInstanceOf(com.fasterxml.jackson.databind.JsonMappingException.class)
+            .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void generateTextResultOutputStates() throws Exception {
+        String base = "{\"steps\":[{\"callId\":\"c1\",\"stepNumber\":0,\"model\":{\"provider\":\"openai\",\"modelId\":\"gpt-4o\"},\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"finishReason\":\"stop\",\"usage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}},\"performance\":{\"effectiveOutputTokensPerSecond\":0.0,\"effectiveTotalTokensPerSecond\":0.0,\"responseTimeMs\":0.0,\"stepTimeMs\":0.0,\"toolExecutionMs\":{}},\"warnings\":[],\"request\":{},\"response\":{\"id\":\"r1\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"modelId\":\"gpt-4o\",\"messages\":[]}}],\"totalUsage\":{\"inputTokenDetails\":{},\"outputTokenDetails\":{}}";
+        GenerateTextResult plain = roundTrip(base + "}", GenerateTextResult.class);
+        assertThat(plain.hasOutput()).isTrue();
+        assertThat(plain.getOutput().asText()).isEqualTo("ok");
+
+        GenerateTextResult parsedNull = roundTrip(base + ",\"output\":null}", GenerateTextResult.class);
+        assertThat(parsedNull.hasOutput()).isTrue();
+        assertThat(parsedNull.getOutput()).isNull();
+
+        GenerateTextResult notParsed = roundTrip(base + ",\"outputParsed\":false}", GenerateTextResult.class);
+        assertThat(notParsed.hasOutput()).isFalse();
+        assertThat(notParsed.getOutput()).isNull();
+        assertThat(notParsed.getOutputParsed()).isFalse();
+
+        assertThatThrownBy(() -> M.readValue(base + ",\"output\":null,\"outputParsed\":false}", GenerateTextResult.class))
+            .isInstanceOf(com.fasterxml.jackson.databind.JsonMappingException.class)
+            .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test void embeddingResultRoundTrip() throws Exception {
         EmbeddingResult result = roundTrip("{\"embeddings\":[[0.1,0.2,0.3],[0.4,0.5,0.6]],\"usage\":{\"tokens\":5},\"warnings\":[]}", EmbeddingResult.class);
         assertThat(result.getEmbeddings()).hasSize(2);
